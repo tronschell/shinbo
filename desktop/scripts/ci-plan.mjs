@@ -14,7 +14,7 @@ export function planChecks(files, { promotion = false, manual = false, packageRe
       continue;
     }
     plan.desktop = plan.rust = plan.harness = true;
-    if (/^(\.github\/|desktop\/scripts\/|desktop\/native\/)|^(package\.json|desktop\/package(?:-lock)?\.json)$/.test(file)) plan.package = true;
+    if (/^(\.github\/|desktop\/scripts\/|desktop\/native\/)|^(package\.json|desktop\/package(?:-lock)?\.json|Cargo\.(toml|lock)|rust-toolchain\.toml|harness\/build\.zig(?:\.zon)?)$|^crates\/.*\/Cargo\.toml$/.test(file)) plan.package = true;
   }
   return plan;
 }

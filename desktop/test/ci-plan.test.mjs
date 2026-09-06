@@ -18,7 +18,7 @@ test("trust boundaries, harness code, deletions and unknown files retain all che
 });
 
 test("build and workflow changes exercise packaging before promotion", () => {
-  for (const file of [".github/workflows/ci.yml", "desktop/scripts/package-windows.mjs", "desktop/native/computer_win.cpp", "package.json", "desktop/package-lock.json"]) assert.equal(planChecks([file]).package, true, file);
+  for (const file of [".github/workflows/ci.yml", "desktop/scripts/package-windows.mjs", "desktop/native/computer_win.cpp", "package.json", "desktop/package-lock.json", "Cargo.lock", "rust-toolchain.toml", "harness/build.zig.zon", "crates/host/Cargo.toml"]) assert.equal(planChecks([file]).package, true, file);
 });
 
 test("promotion and manual runs retain full checks even with no changed paths", () => {
