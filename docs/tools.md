@@ -36,7 +36,7 @@ for each running app per turn, in every mode. Full matrix in
 | `goal` | The one objective this thread keeps working at, and the ledger under it. Actions: `set`, `get`, `update`, `extend`, `clear`. A subagent's call acts on its parent's goal. See [goals.md](goals.md). | auto | [main.ts](../desktop/main/main.ts) |
 | `threads` | Emma's threads: `spawn`, `list`, `read`, `message`, `rename`. | auto | [agent-loop.ts](../desktop/main/agent-loop.ts) |
 | `read_trace` | Reads past runs, nested: model identities, the recorded system prompt, skills, tool settings, applied changes, calls, arguments and outcomes. `offset` pages back through older traces. | auto | [agent-loop.ts](../desktop/main/agent-loop.ts) |
-| `context` | Reads how full this thread's context window is; `compact: true` folds earlier turns into one summary from the next turn on. | auto | [main.ts](../desktop/main/main.ts) |
+| `context` | Reads how full this thread's context window is; `compact: true` folds earlier turns into one summary from the next turn on. With Fresh context on in Settings → Harness there is no summary: the next window starts from the model's `handoff`, or a bounded record of user inputs when no handoff was supplied. | auto | [main.ts](../desktop/main/main.ts) |
 | `keep` | Saves one Markdown note into the user's vault. Replaced the old knowledge-save tool. | auto | [vault.ts](../desktop/main/vault.ts) |
 | `agents` | Lists what is running now; sends a message into a live run or stops it. | auto | [agent-loop.ts](../desktop/main/agent-loop.ts) |
 | `install_mcp` | Adds an MCP server to Emma's config; the harness connects it on the next turn. | ask | [capabilities.ts](../desktop/main/capabilities.ts) |

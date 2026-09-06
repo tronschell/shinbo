@@ -182,9 +182,11 @@ function oneLine(value: string, max = MAX_SPAN_TEXT): string {
   return flat.length > max ? `${flat.slice(0, max)}…` : flat;
 }
 
-export function compactionNotice(removedTurns: number, modelWritten: boolean): string {
+export function compactionNotice(removedTurns: number, modelWritten: boolean, fresh = false): string {
+  const turns = `${removedTurns} ${removedTurns === 1 ? "turn" : "turns"}`;
+  if (fresh) return `Fresh context — ${turns} dropped, handoff ${modelWritten ? "written by the model" : "recorded automatically"}`;
   const summary = modelWritten ? "a summary" : "a rough summary the model did not write";
-  return `Context compacted — ${removedTurns} ${removedTurns === 1 ? "turn" : "turns"} became ${summary}`;
+  return `Context compacted — ${turns} became ${summary}`;
 }
 
 export function clampTrace(text: string, max = MAX_TRACE_CHARS): string {

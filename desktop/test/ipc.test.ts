@@ -422,6 +422,8 @@ test("external navigation is limited to HTTP(S)", () => {
 
 test("IPC sender is limited to the local renderer location", () => {
   assert.equal(trustedSender("file:///Applications/Emma/dist-renderer/index.html", "/Applications/Emma"), true);
+  assert.equal(trustedSender("file://remote-host/Applications/Emma/dist-renderer/index.html", "/Applications/Emma"), false);
+  assert.equal(trustedSender("file://remote-host/C:/Applications/Emma/dist-renderer/index.html", "C:/Applications/Emma"), false);
   assert.equal(trustedSender("file:///tmp/untrusted.html", "/Applications/Emma"), false);
   assert.equal(trustedSender("https://evil.test/", "/Applications/Emma", "http://127.0.0.1:5173"), false);
   assert.equal(trustedSender("http://127.0.0.1:5173/?overlay=1", "/Applications/Emma", "http://127.0.0.1:5173"), true);

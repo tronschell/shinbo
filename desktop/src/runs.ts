@@ -24,7 +24,7 @@ export type Block =
   | { kind: "thinking"; text: string }
   | { kind: "step"; step: ThreadStep }
 
-  | { kind: "notice"; text: string; plain?: boolean; steer?: boolean; compact?: boolean };
+  | { kind: "notice"; text: string; plain?: boolean; steer?: boolean; compact?: boolean; handoff?: string };
 
 const voice = (blocks: Block[], least: number) =>
   blocks.find((block) => (block.kind === "text" || block.kind === "thinking") && block.text.trim().length > least) as { text: string } | undefined;
@@ -76,7 +76,7 @@ export function withoutThinking(blocks: Block[]): Block[] {
 
 export type Grouped =
   | { kind: "text" | "thinking"; text: string }
-  | { kind: "notice"; text: string; plain?: boolean; steer?: boolean }
+  | { kind: "notice"; text: string; plain?: boolean; steer?: boolean; handoff?: string }
 
   | { kind: "steps"; steps: ThreadStep[]; keep: number }
 
@@ -185,7 +185,7 @@ export function restoreBlocks(threadId: string, spans: TraceSpan[], partial?: { 
       block: (span.id.startsWith("steer:")
         ? { kind: "notice", text: span.input ?? "", plain: true, steer: true }
         : span.id.startsWith("compact:")
-        ? { kind: "notice", text: span.input ?? "", plain: true, compact: true }
+        ? { kind: "notice", text: span.input ?? "", plain: true, compact: true, ...(span.output ? { handoff: span.output } : {}) }
         : {
           kind: "step",
           step: {
@@ -313,16 +313,20 @@ export function wire() {
     if (!read(step.threadId).sending) adoptForeign(step.threadId);
     write(step.threadId, (run) => ({ blocks: mergeStep(run.blocks, step), activeAt: Date.now() }));
   });
-  window.emma.onCompacted(({ threadId, removedTurns, modelWritten }) => {
+  window.emma.onCompacted(({ threadId, removedTurns, modelWritten, fresh, handoff }) => {
     if (!read(threadId).sending) adoptForeign(threadId);
-    write(threadId, (run) => ({ blocks: [...run.blocks, { kind: "notice" as const, text: compactionNotice(removedTurns, modelWritten), plain: true, compact: true }] }));
+    write(threadId, (run) => ({ blocks: [...run.blocks, { kind: "notice" as const, text: compactionNotice(removedTurns, modelWritten, fresh), plain: true, compact: true, ...(handoff ? { handoff } : {}) }] }));
   });
   window.emma.onContextExperiment((fired) => {
-    const { threadId, prunedResults, reinjected, savedTokens, addedTokens } = fired;
+    const { threadId, prunedResults, reinjected, savedTokens, addedTokens, checkpoint } = fired;
     if (!read(threadId).sending) adoptForeign(threadId);
 
     recordExperiment(threadId, fired);
-    write(threadId, (run) => ({ blocks: [...run.blocks, { kind: "notice", text: experimentNotice(prunedResults, reinjected, savedTokens, addedTokens) }] }));
+    const notices: Block[] = [
+      ...(prunedResults || reinjected ? [{ kind: "notice" as const, text: experimentNotice(prunedResults, reinjected, savedTokens, addedTokens) }] : []),
+      ...(checkpoint ? [{ kind: "notice" as const, text: checkpoint, plain: true, steer: true }] : []),
+    ];
+    write(threadId, (run) => ({ blocks: [...run.blocks, ...notices] }));
   });
   window.emma.onRoutedModel(({ threadId, model, fellBack }) => {
     if (!read(threadId).sending) adoptForeign(threadId);

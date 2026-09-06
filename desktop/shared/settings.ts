@@ -277,13 +277,16 @@ export interface HarnessExperiments {
   pruneToolsSteps: number;
   pruneToolsPercent: number;
   commandTimeoutMinutes: number;
+  freshContext: boolean;
   semanticGrep: boolean;
   embeddingModel: EmbeddingModel;
 }
 
-export const defaultHarnessExperiments: HarnessExperiments = { autoCompactPercent: 70, reinjectPromptSteps: 0, reinjectPromptPercent: 0, pruneToolsSteps: 0, pruneToolsPercent: 0, commandTimeoutMinutes: 10, semanticGrep: false, embeddingModel: "local/potion-code-16m-v2" };
+export const defaultHarnessExperiments: HarnessExperiments = { autoCompactPercent: 70, reinjectPromptSteps: 0, reinjectPromptPercent: 0, pruneToolsSteps: 0, pruneToolsPercent: 0, commandTimeoutMinutes: 10, freshContext: false, semanticGrep: false, embeddingModel: "local/potion-code-16m-v2" };
 
 export const MAX_EXPERIMENT_STEPS = 120;
+
+export const CHECKPOINT_BAND_PERCENT = 10;
 
 export const MIN_COMMAND_TIMEOUT_MINUTES = 1;
 export const MAX_COMMAND_TIMEOUT_MINUTES = 120;
@@ -309,6 +312,7 @@ export function validateHarnessExperiments(value: unknown): HarnessExperiments {
     pruneToolsSteps: trigger(experiments.pruneToolsSteps, MAX_EXPERIMENT_STEPS),
     pruneToolsPercent: trigger(experiments.pruneToolsPercent, 100),
     commandTimeoutMinutes: minutes(experiments.commandTimeoutMinutes),
+    freshContext: experiments.freshContext === true,
     semanticGrep: experiments.semanticGrep === true,
     embeddingModel: embeddingModel(experiments.embeddingModel),
   };
@@ -675,6 +679,7 @@ export function isAccentChoice(value: unknown): value is AccentChoice {
 export const MAX_FAVORITE_MODELS = 6;
 
 export const MAX_ROUTER_MODELS = 24;
+export const MAX_FALLBACK_MODELS = 3;
 export const MAX_ROUTERS = 5;
 export const MAX_ROUTER_NAME = 40;
 

@@ -33,13 +33,24 @@ function reader(stream: NodeJS.ReadableStream) {
   const chunks = stream[Symbol.asyncIterator]();
   let held: Buffer = Buffer.alloc(0);
   return async (count: number): Promise<Buffer> => {
-    while (held.length < count) {
-      const next = await chunks.next();
-      if (next.done) return Buffer.alloc(0);
-      held = held.length ? Buffer.concat([held, next.value as Buffer]) : (next.value as Buffer);
+    if (held.length >= count) {
+      const out = held.subarray(0, count);
+      held = held.subarray(count);
+      return out;
     }
-    const out = held.subarray(0, count);
-    held = held.subarray(count);
+    const out = Buffer.allocUnsafe(count);
+    let copied = 0;
+    while (copied < count) {
+      if (!held.length) {
+        const next = await chunks.next();
+        if (next.done) return Buffer.alloc(0);
+        held = next.value as Buffer;
+      }
+      const length = Math.min(held.length, count - copied);
+      held.copy(out, copied, 0, length);
+      copied += length;
+      held = held.subarray(length);
+    }
     return out;
   };
 }

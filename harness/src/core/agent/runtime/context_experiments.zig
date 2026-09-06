@@ -36,32 +36,45 @@ pub const Settings = struct {
     context_window_tokens: usize = 0,
     previous_cache_read_tokens: u64 = 0,
     previous_input_tokens: u64 = 0,
-    /// Set by the runtime once a request body has overflowed the provider's
-    /// byte cap: prune on every step from then on, whatever the triggers say.
     force_prune: bool = false,
+    fresh_context: bool = false,
+    checkpoint_sent: bool = false,
 
     pub fn enabled(self: Settings) bool {
         return self.reinject_prompt_steps != 0 or self.reinject_prompt_percent != 0 or
-            self.prune_tools_steps != 0 or self.prune_tools_percent != 0 or self.force_prune;
+            self.prune_tools_steps != 0 or self.prune_tools_percent != 0 or self.force_prune or
+            self.checkpointAt() != null;
+    }
+
+    pub fn checkpointAt(self: Settings) ?usize {
+        if (!self.fresh_context or self.checkpoint_sent or self.auto_compact_percent == 0 or self.context_window_tokens == 0) return null;
+        return @max(1, self.auto_compact_percent -| checkpoint_band_percent);
     }
 };
+
+pub const checkpoint_band_percent: usize = 10;
 
 pub const Outcome = struct {
     estimated_tokens: usize = 0,
     percent_used: usize = 0,
     pruned_results: usize = 0,
     reinjected: bool = false,
-    /// What the step's rewrite did to the projection, in the same ~4-chars-a-token
-    /// estimate as `estimated_tokens`: pruning takes tokens out of the request,
-    /// the reminder puts tokens back in. Reported per step because the effect is
-    /// per step — the front end is the one that totals a thread.
     saved_tokens: usize = 0,
     added_tokens: usize = 0,
+    checkpoint: ?[]const u8 = null,
 
     pub fn changedAnything(self: Outcome) bool {
-        return self.pruned_results != 0 or self.reinjected;
+        return self.pruned_results != 0 or self.reinjected or self.checkpoint != null;
     }
 };
+
+pub fn checkpointMessage(alloc: std.mem.Allocator, percent_used: usize, compact_percent: usize) ![]u8 {
+    return std.fmt.allocPrint(
+        alloc,
+        "[checkpoint] This context window is {d}% full and rolls over to a fresh window once it passes {d}%. Stop normal work now: save the goal, progress, decisions and next steps with goal, task_list or keep, then call context with compact true and a short handoff. Earlier turns leave the window at rollover; only the handoff and what you saved carry over.",
+        .{ percent_used, compact_percent },
+    );
+}
 
 /// Runs both levers against one step's messages, newest-first ordering assumed
 /// (the list ends with the current step's tool results).
@@ -106,6 +119,12 @@ pub fn apply(
         outcome.reinjected = true;
         outcome.added_tokens = reminder.len / chars_per_token;
     }
+    if (settings.checkpointAt()) |remind_at| if (outcome.percent_used >= remind_at) {
+        const checkpoint = try checkpointMessage(alloc, outcome.percent_used, settings.auto_compact_percent);
+        try messages.append(alloc, .{ .role = .user, .content = checkpoint, .cache_policy = .no_cache });
+        outcome.checkpoint = checkpoint;
+        outcome.added_tokens += checkpoint.len / chars_per_token;
+    };
     return outcome;
 }
 
@@ -420,4 +439,41 @@ test "the reminder reports what it put back in" {
     // The 92-character prefix plus the prompt itself, at ~4 chars a token.
     try std.testing.expectEqual(@as(usize, 26), outcome.added_tokens);
     try std.testing.expectEqual(@as(usize, 0), outcome.saved_tokens);
+}
+
+test "fresh context nudges a checkpoint inside the band below the compact mark and not before" {
+    const alloc = std.testing.allocator;
+    const body = try alloc.alloc(u8, 4_800);
+    defer alloc.free(body);
+    @memset(body, 'x');
+
+    var messages: std.ArrayList(ChatMessage) = .empty;
+    defer messages.deinit(alloc);
+    try messages.append(alloc, .{ .role = .user, .content = body });
+
+    const settings: Settings = .{ .fresh_context = true, .auto_compact_percent = 70, .context_window_tokens = 2_000 };
+    try std.testing.expectEqual(@as(?usize, 60), settings.checkpointAt());
+    const outcome = try apply(alloc, &messages, settings, 3, "build the thing");
+    defer alloc.free(messages.items[messages.items.len - 1].content.?);
+    try std.testing.expectEqual(@as(usize, 60), outcome.percent_used);
+    try std.testing.expect(outcome.checkpoint != null);
+    try std.testing.expect(outcome.changedAnything());
+    try std.testing.expectEqual(types.ChatRole.user, messages.items[1].role);
+    try std.testing.expect(std.mem.startsWith(u8, messages.items[1].content.?, "[checkpoint] This context window is 60% full"));
+    try std.testing.expect(std.mem.indexOf(u8, messages.items[1].content.?, "passes 70%") != null);
+
+    var quiet: std.ArrayList(ChatMessage) = .empty;
+    defer quiet.deinit(alloc);
+    try quiet.append(alloc, .{ .role = .user, .content = body[0..4_000] });
+    const below = try apply(alloc, &quiet, settings, 3, "build the thing");
+    try std.testing.expect(below.checkpoint == null);
+    try std.testing.expectEqual(@as(usize, 1), quiet.items.len);
+
+    var off: std.ArrayList(ChatMessage) = .empty;
+    defer off.deinit(alloc);
+    try off.append(alloc, .{ .role = .user, .content = body });
+    try std.testing.expect((try apply(alloc, &off, .{ .fresh_context = true, .auto_compact_percent = 0, .context_window_tokens = 2_000 }, 3, "")).checkpoint == null);
+    try std.testing.expect((try apply(alloc, &off, .{ .fresh_context = true, .auto_compact_percent = 70, .context_window_tokens = 2_000, .checkpoint_sent = true }, 3, "")).checkpoint == null);
+    try std.testing.expect((try apply(alloc, &off, .{ .fresh_context = true, .auto_compact_percent = 70 }, 3, "")).checkpoint == null);
+    try std.testing.expect((try apply(alloc, &off, .{ .auto_compact_percent = 70, .context_window_tokens = 2_000 }, 3, "")).checkpoint == null);
 }

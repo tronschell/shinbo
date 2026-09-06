@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const io_mod = @import("../shared/io.zig");
 
 pub const Server = struct {
@@ -400,23 +401,32 @@ pub fn forPath(path: []const u8) ?Server {
 }
 
 pub fn executablePath(alloc: std.mem.Allocator, name: []const u8) ?[]u8 {
-    if (std.mem.indexOfScalar(u8, name, '/') != null) {
+    if (std.mem.indexOfScalar(u8, name, '/') != null or (builtin.os.tag == .windows and std.mem.indexOfScalar(u8, name, '\\') != null)) {
         std.Io.Dir.cwd().access(io_mod.getIo(), name, .{}) catch return null;
         return alloc.dupe(u8, name) catch null;
     }
     const path_env = io_mod.getenv("PATH") orelse return null;
-    var directories = std.mem.tokenizeScalar(u8, path_env, ':');
+    return executablePathIn(alloc, name, path_env);
+}
+
+fn executablePathIn(alloc: std.mem.Allocator, name: []const u8, path_env: []const u8) ?[]u8 {
+    const suffixes: []const []const u8 = if (builtin.os.tag == .windows and std.fs.path.extension(name).len == 0) &.{ ".exe", "" } else &.{""};
+    var directories = std.mem.tokenizeScalar(u8, path_env, if (builtin.os.tag == .windows) ';' else ':');
     while (directories.next()) |directory| {
-        const candidate = std.fs.path.join(alloc, &.{ directory, name }) catch return null;
-        const stat = std.Io.Dir.cwd().statFile(io_mod.getIo(), candidate, .{}) catch {
-            alloc.free(candidate);
-            continue;
-        };
-        if (stat.kind == .directory) {
-            alloc.free(candidate);
-            continue;
+        for (suffixes) |suffix| {
+            const filename = std.fmt.allocPrint(alloc, "{s}{s}", .{ name, suffix }) catch return null;
+            defer alloc.free(filename);
+            const candidate = std.fs.path.join(alloc, &.{ directory, filename }) catch return null;
+            const stat = std.Io.Dir.cwd().statFile(io_mod.getIo(), candidate, .{}) catch {
+                alloc.free(candidate);
+                continue;
+            };
+            if (stat.kind == .directory) {
+                alloc.free(candidate);
+                continue;
+            }
+            return candidate;
         }
-        return candidate;
     }
     return null;
 }
@@ -494,4 +504,31 @@ test "server ids are unique and every server documents an install command" {
             try std.testing.expect(!std.mem.eql(u8, server.id, other.id));
         }
     }
+}
+
+test "servers discover Windows executables across PATH entries" {
+    if (builtin.os.tag != .windows) return error.SkipZigTest;
+    const alloc = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(std.testing.io, "bin space");
+    var file = try tmp.dir.createFile(std.testing.io, "bin space/clangd.exe", .{});
+    file.close(std.testing.io);
+    const root = try io_mod.dirRealpathAlloc(alloc, tmp.dir, ".");
+    defer alloc.free(root);
+    const directory = try std.fs.path.join(alloc, &.{ root, "bin space" });
+    defer alloc.free(directory);
+    const path_env = try std.fmt.allocPrint(alloc, "{s};{s}", .{ root, directory });
+    defer alloc.free(path_env);
+    const expected = try std.fs.path.join(alloc, &.{ directory, "clangd.exe" });
+    defer alloc.free(expected);
+    const actual = executablePathIn(alloc, "clangd", path_env) orelse return error.ExecutableNotFound;
+    defer alloc.free(actual);
+    try std.testing.expectEqualStrings(expected, actual);
+    const named = executablePathIn(alloc, "clangd.exe", path_env) orelse return error.ExecutableNotFound;
+    defer alloc.free(named);
+    try std.testing.expectEqualStrings(expected, named);
+    const direct = executablePath(alloc, expected) orelse return error.ExecutableNotFound;
+    defer alloc.free(direct);
+    try std.testing.expectEqualStrings(expected, direct);
 }

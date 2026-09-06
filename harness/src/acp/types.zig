@@ -64,12 +64,17 @@ pub fn writeContextExperimentInfoUpdate(
     reinjected: bool,
     saved_tokens: usize,
     added_tokens: usize,
+    checkpoint: ?[]const u8,
 ) !void {
     try writer.writeAll("{\"sessionUpdate\":\"session_info_update\",\"_meta\":{\"fx\":{\"contextExperiment\":{\"prunedResults\":");
     try writer.print("{d}", .{pruned_results});
     try writer.writeAll(",\"reinjected\":");
     try writer.writeAll(if (reinjected) "true" else "false");
     try writer.print(",\"savedTokens\":{d},\"addedTokens\":{d}", .{ saved_tokens, added_tokens });
+    if (checkpoint) |text| {
+        try writer.writeAll(",\"checkpoint\":");
+        try writeJsonStr(text, writer);
+    }
     try writer.writeAll("}}}}");
 }
 
@@ -671,16 +676,20 @@ test "context experiment info update reports both levers" {
     const alloc = std.testing.allocator;
     var out: std.Io.Writer.Allocating = .init(alloc);
     defer out.deinit();
-    try writeContextExperimentInfoUpdate(&out.writer, 6, false, 12_400, 0);
+    try writeContextExperimentInfoUpdate(&out.writer, 6, false, 12_400, 0, null);
     try std.testing.expectEqualStrings(
         "{\"sessionUpdate\":\"session_info_update\",\"_meta\":{\"fx\":{\"contextExperiment\":{\"prunedResults\":6,\"reinjected\":false,\"savedTokens\":12400,\"addedTokens\":0}}}}",
         out.writer.buffered(),
     );
 
     out.writer.end = 0;
-    try writeContextExperimentInfoUpdate(&out.writer, 0, true, 0, 310);
+    try writeContextExperimentInfoUpdate(&out.writer, 0, true, 0, 310, null);
     try std.testing.expect(std.mem.find(u8, out.writer.buffered(), "\"reinjected\":true") != null);
     try std.testing.expect(std.mem.find(u8, out.writer.buffered(), "\"addedTokens\":310") != null);
+
+    out.writer.end = 0;
+    try writeContextExperimentInfoUpdate(&out.writer, 0, false, 0, 80, "[checkpoint] 61% \"full\"");
+    try std.testing.expect(std.mem.find(u8, out.writer.buffered(), ",\"checkpoint\":\"[checkpoint] 61% \\\"full\\\"\"}}}}") != null);
 }
 
 test "the routed model rides the same info channel as the other status updates" {

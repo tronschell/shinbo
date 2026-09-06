@@ -8,7 +8,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::{ThreadId, Timestamp, ValidationError, quote, unquote, validate_text};
+use crate::{ThreadId, Timestamp, ValidationError, append_quoted, unquote, validate_text};
 use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
@@ -622,7 +622,7 @@ impl From<io::Error> for ScheduledJobStoreError {
 fn field(output: &mut String, name: &str, value: &str) {
     output.push_str(name);
     output.push_str(": ");
-    output.push_str(&quote(value));
+    append_quoted(output, value);
     output.push('\n');
 }
 

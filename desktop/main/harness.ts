@@ -31,7 +31,7 @@ export type TurnUsage = { inputTokens: number; outputTokens: number; cacheInputT
 
 const mediaType =(file: string) => `image/${path.extname(file).slice(1).toLowerCase().replace("jpg", "jpeg")}`;
 
-export type TurnExtras = { skillContext?: string; toolHints?: Record<string, string>; preselect?: string[]; stepLimit?: number; contextWindow?: number; effort?: ThinkingRoute; experiments?: HarnessExperiments; semanticGrep?: string; imageInput?: boolean; compact?: boolean; images?: string[]; continueRecovery?: boolean };
+export type TurnExtras = { skillContext?: string; toolHints?: Record<string, string>; preselect?: string[]; stepLimit?: number; contextWindow?: number; effort?: ThinkingRoute; experiments?: HarnessExperiments; semanticGrep?: string; imageInput?: boolean; compact?: boolean; handoff?: string; images?: string[]; continueRecovery?: boolean };
 
 export type ThinkingRoute = { level: string; published: string[] };
 
@@ -45,6 +45,7 @@ export const experimentOption = (experiments: HarnessExperiments) =>
     `prune_steps=${experiments.pruneToolsSteps}`,
     `prune_percent=${experiments.pruneToolsPercent}`,
     `command_timeout_minutes=${experiments.commandTimeoutMinutes}`,
+    `fresh_context=${experiments.freshContext ? 1 : 0}`,
   ].join(",");
 
 
@@ -72,17 +73,22 @@ export type HarnessToolCall = ThreadStep & { filePath?: string };
 
 export const INTERRUPTED_CALL = "The turn was interrupted before this tool call reported a result. It may have partially run, so check the current state before reissuing it.";
 
-export type ContextExperimentFired = { prunedResults: number; reinjected: boolean; savedTokens: number; addedTokens: number };
+export type ContextExperimentFired = { prunedResults: number; reinjected: boolean; savedTokens: number; addedTokens: number; checkpoint?: string };
+
+const MAX_NOTICE_TEXT = 4_000;
+
+const noticeText = (value: unknown) => typeof value === "string" && value.trim() ? value.slice(0, MAX_NOTICE_TEXT) : undefined;
 
 export function contextExperimentFired(update: Record<string, unknown>): ContextExperimentFired | undefined {
   const fired = (update._meta as { fx?: { contextExperiment?: unknown } } | undefined)?.fx?.contextExperiment as
-    { prunedResults?: unknown; reinjected?: unknown; savedTokens?: unknown; addedTokens?: unknown } | undefined;
+    { prunedResults?: unknown; reinjected?: unknown; savedTokens?: unknown; addedTokens?: unknown; checkpoint?: unknown } | undefined;
   if (!fired || typeof fired !== "object") return undefined;
   const pruned = count(fired.prunedResults);
   const reinjected = fired.reinjected === true;
+  const checkpoint = noticeText(fired.checkpoint);
 
-  return pruned || reinjected
-    ? { prunedResults: pruned, reinjected, savedTokens: count(fired.savedTokens), addedTokens: count(fired.addedTokens) }
+  return pruned || reinjected || checkpoint
+    ? { prunedResults: pruned, reinjected, savedTokens: count(fired.savedTokens), addedTokens: count(fired.addedTokens), ...(checkpoint ? { checkpoint } : {}) }
     : undefined;
 }
 
@@ -110,13 +116,17 @@ export function contextBreakdownReported(update: Record<string, unknown>): Conte
   };
 }
 
-export type Compaction = { removedTurns: number; summaryChars: number; modelWritten: boolean };
+export type Compaction = { removedTurns: number; summaryChars: number; modelWritten: boolean; fresh: boolean; handoff?: string };
+
+const MAX_HANDOFF_TEXT = 20_000;
 
 export function compactionReported(update: Record<string, unknown>): Compaction | undefined {
   if (update.sessionUpdate !== "_emma_compacted") return undefined;
   const removedTurns = count(update.removedTurns);
   if (!removedTurns) return undefined;
-  return { removedTurns, summaryChars: count(update.summaryChars), modelWritten: update.modelWritten === true };
+  const fresh = update.fresh === true;
+  const handoff = fresh && typeof update.handoff === "string" && update.handoff.trim() ? update.handoff.slice(0, MAX_HANDOFF_TEXT) : undefined;
+  return { removedTurns, summaryChars: count(update.summaryChars), modelWritten: update.modelWritten === true, fresh, ...(handoff ? { handoff } : {}) };
 }
 
 export function turnUsageReported(update: Record<string, unknown>): TurnUsage | undefined {
@@ -591,7 +601,7 @@ export class Harness {
 
     if (extra.compact) {
       this.phase(threadId, "compacting the context");
-      await this.request("session/compact", { sessionId }).catch((error: unknown) => console.error("Emma: the harness would not compact", error));
+      await this.request("session/compact", { sessionId, ...(extra.handoff ? { handoff: extra.handoff } : {}) }).catch((error: unknown) => console.error("Emma: the harness would not compact", error));
     }
     const prompt = extra.continueRecovery ? [] : [
       { type: "text", text },
@@ -1004,6 +1014,7 @@ export class Harness {
     }
     if (check.cancelled || this.failure || (child && this.children.get(`${threadId}/${child.id}`)?.ended)) chosen = null;
     this.permissionChecks.delete(check);
+    for (const pending of this.pending.values()) pending.touch();
     this.send({
       jsonrpc: "2.0",
       id,

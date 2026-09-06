@@ -586,6 +586,7 @@ export type BridgeEvent = { k: "evt" } & (
       reinjected: boolean;
       savedTokens: number;
       addedTokens: number;
+      checkpoint?: string;
     }
   | {
       t: "context-breakdown";

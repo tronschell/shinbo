@@ -12,16 +12,22 @@ automation.
 ## Invariants
 
 - Feature branches start from and squash-merge into `dev`, the default branch.
-  `ci.yml` runs the full macOS checks on every PR, plus the Windows checks macOS
-  cannot cover: the `windows` job (desktop tests, native helper build, `cargo
-  test`, `cargo clippy`) and the `zig-windows` job. Keep that lane bounded —
+  `ci.yml` selects checks from the actual merge diff and always reports the
+  required `check` gate. Renderer changes run both desktop lanes; docs and
+  version-only bumps avoid compilation. Harness, integration, and unknown paths
+  run all suites. Promotion and manual runs keep full coverage. Keep lanes bounded —
   `timeout-minutes` on every job and `--test-timeout` on every `node --test`.
 - The root `package.json` version is the release version. Bump it on `dev`.
   Nothing else carries version metadata, and there is no changelog file.
 - Only the owner can update `main`, enforced by a GitHub ruleset, not by code.
-  Promote `dev` to `main` with a merge commit.
+  Promote `dev` directly to `main` with a merge commit. Do not create temporary
+  promotion branches, merge main back into dev, or rebase dev. Main requires
+  passing checks without requiring dev to contain main's previous merge commit;
+  dev keeps strict up-to-date checks. The promotion gate requires exactly dev's
+  tree and a newer stable root version. Prefer bumping in the final feature PR.
 - `ci.yml` runs on every pull request and on pushes to `main`. `package-mac` and
-  `package-win` also run on PRs targeting `main`, and a successful main run
+  `package-win` also run on PRs targeting `main` and packaging/workflow changes,
+  and a successful main run for an unpublished version
   uploads the `emma-release-candidate` and `emma-release-candidate-windows`
   artifacts for that exact commit. `release.yml` consumes both from the
   completed main CI run. It skips when the `vX.Y.Z` release already exists.
@@ -32,7 +38,10 @@ automation.
   `contents: write`. Windows PE files can only be signed on the Windows runner,
   so `package-win` does the signing when the certificate secrets exist and
   packages unsigned when they do not.
-- The `workflow_dispatch` path rebuilds and publishes macOS only.
+- The release `workflow_dispatch` path rebuilds and publishes macOS only.
+  A manual `ci` dispatch always runs all checks; its package input additionally
+  exercises both installers without publishing. PR updates cancel obsolete CI;
+  a main build already producing release candidates is not cancelled.
 - Keep release names exactly `vX.Y.Z`. The updater's asset contract:
   `Emma-vX.Y.Z-darwin-arm64.zip` on macOS, and on Windows an installer named
   `Emma-vX.Y.Z-win32-x64-Setup.exe` as the only asset containing `-win32-x64`,

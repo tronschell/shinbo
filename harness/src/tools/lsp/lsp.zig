@@ -904,7 +904,7 @@ fn displayPath(arena: Allocator, workspace_root: []const u8, absolute: []const u
     if (!std.mem.startsWith(u8, absolute, workspace_root)) return absolute;
     if (absolute.len == workspace_root.len) return absolute;
     const rest = absolute[workspace_root.len..];
-    const relative = if (rest.len > 0 and rest[0] == '/') rest[1..] else rest;
+    const relative = if (std.fs.path.isSep(rest[0])) rest[1..] else if (std.fs.path.isSep(workspace_root[workspace_root.len - 1])) rest else return absolute;
     return arena.dupe(u8, relative);
 }
 
@@ -991,4 +991,22 @@ test "positions resolve from a symbol or a column and count utf-16 units" {
 
     var past_end = Input{ .action = .definition, .line = 9, .symbol = @constCast("a") };
     try std.testing.expectError(error.LineOutOfRange, resolvePosition(source, &past_end));
+}
+
+test "lsp displays locations relative to the native workspace path" {
+    const alloc = std.testing.allocator;
+    const root = if (@import("builtin").os.tag == .windows) "C:\\workspace" else "/workspace";
+    const target = try std.fs.path.join(alloc, &.{ root, "main.c" });
+    defer alloc.free(target);
+    const display = try displayPath(alloc, root, target);
+    defer alloc.free(display);
+    try std.testing.expectEqualStrings("main.c", display);
+    const sibling = try std.fmt.allocPrint(alloc, "{s}-other{s}main.c", .{ root, std.fs.path.sep_str });
+    defer alloc.free(sibling);
+    try std.testing.expectEqualStrings(sibling, try displayPath(alloc, root, sibling));
+    const trailing_root = try std.fmt.allocPrint(alloc, "{s}{s}", .{ root, std.fs.path.sep_str });
+    defer alloc.free(trailing_root);
+    const trailing_display = try displayPath(alloc, trailing_root, target);
+    defer alloc.free(trailing_display);
+    try std.testing.expectEqualStrings("main.c", trailing_display);
 }

@@ -17,6 +17,29 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering},
     };
 
+    #[test]
+    fn quoted_records_append_without_changing_escaping() {
+        for (value, expected) in [
+            ("", "\"\""),
+            ("plain text", "\"plain text\""),
+            ("🙂漢字\"\\\n\r\t", "\"🙂漢字\\\"\\\\\\n\\r\\t\""),
+            ("\0\u{7f}\u{2028}", "\"\0\u{7f}\u{2028}\""),
+        ] {
+            let mut output = String::from("already written: ");
+            append_quoted(&mut output, value);
+            assert_eq!(output, format!("already written: {expected}"));
+            assert_eq!(unquote(expected).unwrap(), value);
+        }
+        let value = "🙂漢字\"\\\n\r\t".repeat(100_000);
+        let mut output = String::new();
+        append_quoted(&mut output, &value);
+        assert_eq!(
+            output,
+            format!("\"{}\"", "🙂漢字\\\"\\\\\\n\\r\\t".repeat(100_000))
+        );
+        assert_eq!(unquote(&output).unwrap(), value);
+    }
+
     const STALE_FRONT_MATTER: &str = concat!(
         "---\n",
         "emma-thread-format: 11\n",
@@ -526,6 +549,38 @@ mod tests {
             .unwrap();
         assert_eq!(other.goal.as_ref().unwrap().blocked_streak, 1);
         assert_eq!(other.goal.as_ref().unwrap().status, GoalStatus::Active);
+    }
+
+    #[test]
+    fn a_blocker_streak_restarts_after_an_unblocked_turn() {
+        let at = Timestamp::from_unix_seconds(12);
+        let mut thread = Thread::new("Deploy", at).unwrap();
+        thread.set_goal("Deploy the service", 0, at).unwrap();
+        thread
+            .update_goal(GoalStatus::Blocked, "", "no credentials", at)
+            .unwrap();
+        thread.note_goal_turn(10, 1_000, at);
+        thread.note_goal_turn(10, 1_000, at);
+        thread
+            .update_goal(GoalStatus::Blocked, "", "no credentials", at)
+            .unwrap();
+        assert_eq!(thread.goal.as_ref().unwrap().blocked_streak, 1);
+        thread.note_goal_turn(10, 1_000, at);
+        thread
+            .update_goal(GoalStatus::Blocked, "", "no credentials", at)
+            .unwrap();
+        assert_eq!(thread.goal.as_ref().unwrap().status, GoalStatus::Active);
+        assert_eq!(thread.goal.as_ref().unwrap().blocked_streak, 2);
+        thread
+            .update_goal(GoalStatus::Blocked, "", "the API is down", at)
+            .unwrap();
+        assert_eq!(thread.goal.as_ref().unwrap().blocked_streak, 1);
+        thread.note_goal_turn(10, 1_000, at);
+        thread
+            .update_goal(GoalStatus::Blocked, "", "the API is down", at)
+            .unwrap();
+        assert_eq!(thread.goal.as_ref().unwrap().status, GoalStatus::Active);
+        assert_eq!(thread.goal.as_ref().unwrap().blocked_streak, 2);
     }
 
     #[test]

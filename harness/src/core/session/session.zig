@@ -3346,6 +3346,7 @@ fn compactHistoryWithCache(
 
 pub const SummaryRequest = struct {
     conversation: []const u8,
+    removed: []const HistoryTurn = &.{},
     previous_summary: ?[]const u8 = null,
     max_chars: usize = compact_summary_max_chars,
 };
@@ -3354,6 +3355,7 @@ pub const CompactionEvent = struct {
     removed_turns: usize,
     summary_chars: usize,
     model_written: bool,
+    summary: []const u8 = "",
 };
 
 pub const CompactionObserver = struct {
@@ -3368,6 +3370,7 @@ pub const CompactionObserver = struct {
 pub const Summarizer = struct {
     context: *anyopaque,
     summarize_fn: *const fn (*anyopaque, Allocator, SummaryRequest) anyerror![]u8,
+    verbatim: bool = false,
 
     pub fn summarize(self: Summarizer, alloc: Allocator, request: SummaryRequest) anyerror![]u8 {
         return self.summarize_fn(self.context, alloc, request);
@@ -3599,11 +3602,17 @@ fn modelCompactedSummaryText(
 
     const raw = try summarizer.summarize(alloc, .{
         .conversation = conversation,
+        .removed = removed,
         .previous_summary = if (existing) |entry| entry.summary else null,
         .max_chars = budget.max_chars,
     });
     defer alloc.free(raw);
 
+    if (summarizer.verbatim) {
+        const trimmed = std.mem.trim(u8, raw, " \t\r\n");
+        if (trimmed.len == 0) return error.EmptyCompactionSummary;
+        return alloc.dupe(u8, trimmed[0..@min(trimmed.len, budget.max_chars)]);
+    }
     return acceptModelSummary(alloc, raw, existing, removed, budget);
 }
 
@@ -3655,6 +3664,7 @@ fn buildCompactedSummaryTurn(
         .removed_turns = entry.removed_turn_count,
         .summary_chars = entry.summary.len,
         .model_written = text.model_written,
+        .summary = entry.summary,
     });
     return entry;
 }
@@ -4475,7 +4485,7 @@ fn buildCompactedSummaryText(
     return compressSummaryLines(alloc, lines.items, budget);
 }
 
-fn userTurnText(turn: HistoryTurn) ?[]const u8 {
+pub fn userTurnText(turn: HistoryTurn) ?[]const u8 {
     return switch (turn) {
         .assistant => |entry| entry.user.text,
         .background_command => |entry| entry.user.text,
