@@ -106,7 +106,11 @@ pushed into main: until the window has loaded once, `providers` is empty and a
 A **router** is a named chain of models, best first. `routerChain()` expands
 `router:<id>` into one comma-separated list, which the transport turns into
 OpenRouter's `models` fallback array: the next link answers when the one above it
-is rate-limited, down, or has retired.
+is rate-limited, down, or has retired. OpenRouter rejects more than three entries
+there, so the transport sends the first three links only
+(`max_routed_models_per_request` in
+[emma_openai.zig](../harness/src/gateway/emma_openai.zig), `MAX_FALLBACK_MODELS`
+for the second models); the whole chain stays for the picker and the window lookup.
 
 `routers` on `UserSettings` holds 0 to `MAX_ROUTERS` (5) of them, each
 `{ id, name, models }` with a name the user writes and 1 to `MAX_ROUTER_MODELS`

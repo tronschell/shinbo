@@ -243,8 +243,8 @@ declare global {
       onUpdateReady(listener: (value: string) => void): () => void;
       onDelta(listener: (value: { threadId: string; delta: string; thinking?: boolean; recovery?: boolean }) => void): () => void;
       onStep(listener: (value: ThreadStep) => void): () => void;
-      onCompacted(listener: (value: { threadId: string; removedTurns: number; summaryChars: number; modelWritten: boolean }) => void): () => void;
-      onContextExperiment(listener: (value: { threadId: string; prunedResults: number; reinjected: boolean; savedTokens: number; addedTokens: number }) => void): () => void;
+      onCompacted(listener: (value: { threadId: string; removedTurns: number; summaryChars: number; modelWritten: boolean; fresh: boolean; handoff?: string }) => void): () => void;
+      onContextExperiment(listener: (value: { threadId: string; prunedResults: number; reinjected: boolean; savedTokens: number; addedTokens: number; checkpoint?: string }) => void): () => void;
       onRoutedModel(listener: (value: { threadId: string; model: string; fellBack: boolean }) => void): () => void;
       onContextBreakdown(listener: (value: { threadId: string; systemPromptBytes: number; systemToolsBytes: number; mcpToolsBytes: number; skillsBytes: number; memoryBytes: number }) => void): () => void;
       startScreenAnnotation(): Promise<void>;

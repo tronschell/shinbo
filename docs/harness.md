@@ -315,7 +315,7 @@ fourteen:
 | `session/resume` | Re-activates a session this process displaced, so a thread keeps its history |
 | `session/close` | Flushes usage, drops the active session |
 | `session/prompt` | Runs one turn |
-| `session/compact` | Folds history. Refused mid-turn |
+| `session/compact` | Folds history. An optional `handoff` string (≤ 20 000 chars) becomes the next window's opening record when `fresh_context=1` is set. Refused mid-turn |
 | `session/set_config_option` | `model`, `mode`, `context_window`, `reasoning_effort`, `context_experiments`, `semantic_grep`, `tool_hints`, `preselect`, `agent_step_limit`, `image_input` |
 | `session/set_mode` | `modeId` from [`builtins/modes.zig`](../harness/src/builtins/modes.zig): `plan`, `ask`, `acceptEdits`, `full`. Emma always sends `ask` |
 | `session/cancel` | A notification, not a request — cancellation has no reply and must not hang on a wedged peer |
@@ -364,7 +364,8 @@ hit a gated call sat in `awaiting_approval` forever with nothing on screen.
 1. `session/set_mode`, then `session/set_config_option` for `model`,
    `context_window`, and `context_experiments`. Experiments go out every turn
    even when all off — the harness holds them per session.
-2. `session/compact` if Emma asked for one last turn. Best effort.
+2. `session/compact` if Emma asked for one last turn, carrying the `handoff`
+   the model gave the `context` tool. Best effort.
 3. `session/prompt` with content blocks. Skills, folders, files, and notes ride
    as a separate leading text block, not glued to the user's words.
 4. Updates stream; permission requests and Emma-tool calls come back as
@@ -377,6 +378,33 @@ Stop reasons: `end_turn`, `cancelled`, `refused`, `max_output_tokens`,
 `max_model_turns`. `failedTurn` treats `refused` as a failure, because the
 harness reports a provider or auth failure as ordinary assistant text and still
 resolves the call.
+
+### Fresh context
+
+`fresh_context=1` inside `context_experiments` (Settings → Harness → Fresh
+context instead of a summary) changes what a compaction produces, not when it
+runs. The boundary is the same `context_history_start` that `/compact` and auto
+compact advance; the canonical history on disk is untouched. What differs:
+
+- No model summarizes. [`core/session/fresh_context.zig`](../harness/src/core/session/fresh_context.zig)
+  builds the compacted turn from the `handoff` the model passed to `context`,
+  or, when there was none, a deterministic record of the user's messages in
+  the dropped turns plus the previous handoff. An automatic record is never
+  nested inside a later one. The record starts with "Context window starts
+  here" and names `threads`, `read_trace`, `goal`, `task_list` and `keep` as
+  the way back to what was dropped.
+- `_emma_compacted` carries `fresh: true` and the `handoff` text, and
+  `modelWritten` means the model wrote the handoff rather than the harness
+  recording one.
+- Once a step's projection is within 10 % of the compact mark, the step's
+  request gains a `[checkpoint]` user message telling the model to save its
+  state and call `context` with `compact: true` and a `handoff`. It rides the
+  `contextExperiment` info update as `checkpoint`; Emma shows the first one per
+  window as a steer.
+
+The handoff lives in the harness process only until the next prompt builds the
+compacted turn, which is the very next request Emma sends; a restart between
+the two falls back to the automatic record.
 
 ### Permission
 

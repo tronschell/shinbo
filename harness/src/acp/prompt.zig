@@ -4,6 +4,7 @@ const builtin_context = @import("../builtins/context.zig");
 const tool_overrides = @import("../core/tooling/tool_overrides.zig");
 const app_runtime_setup = @import("../core/app/app_runtime_setup.zig");
 const compaction_summarizer = @import("../builtins/gateway/compaction_summarizer.zig");
+const fresh_context = @import("../core/session/fresh_context.zig");
 const command_admission = @import("../core/permissions/command_admission.zig");
 const auth_runtime = @import("../core/auth/auth_runtime.zig");
 const credentials = @import("../core/auth/credentials.zig");
@@ -174,12 +175,20 @@ const AcpContext = struct {
     }
 
     fn sendCompacted(self: *AcpContext, event: session_runtime.CompactionEvent) void {
+        const session = if (self.state.active_session) |*active| active else return;
+        const fresh = session.context_experiments.fresh_context;
+        const model_written = if (fresh) session.fresh_handoff != null else event.model_written;
         var out: std.Io.Writer.Allocating = .init(self.alloc);
         defer out.deinit();
         out.writer.print(
-            "{{\"sessionUpdate\":\"_emma_compacted\",\"removedTurns\":{d},\"summaryChars\":{d},\"modelWritten\":{s}}}",
-            .{ event.removed_turns, event.summary_chars, if (event.model_written) "true" else "false" },
+            "{{\"sessionUpdate\":\"_emma_compacted\",\"removedTurns\":{d},\"summaryChars\":{d},\"modelWritten\":{s},\"fresh\":{s}",
+            .{ event.removed_turns, event.summary_chars, if (model_written) "true" else "false", if (fresh) "true" else "false" },
         ) catch return;
+        if (fresh) {
+            out.writer.writeAll(",\"handoff\":") catch return;
+            jsonrpc.writeJsonStr(event.summary, &out.writer) catch return;
+        }
+        out.writer.writeByte('}') catch return;
         self.sendRawUpdate(out.writer.buffered()) catch {};
     }
 
@@ -851,7 +860,11 @@ pub fn handlePrompt(
         .model = session.model,
         .cancel_flag = &session.cancel_flag,
     };
-    session.session_rt.summarizer = compaction_summarizer.summarizer(&summarizer_config);
+    var fresh_config = fresh_context.Config{ .handoff = session.fresh_handoff };
+    session.session_rt.summarizer = if (session.context_experiments.fresh_context)
+        fresh_context.summarizer(&fresh_config)
+    else
+        compaction_summarizer.summarizer(&summarizer_config);
     defer session.session_rt.summarizer = null;
     session.session_rt.compaction_observer = .{ .context = @ptrCast(&ctx), .notify_fn = notifyCompacted };
     defer session.session_rt.compaction_observer = null;
@@ -861,6 +874,11 @@ pub fn handlePrompt(
     }
     const context_history = try session.session_rt.snapshotContextHistory(alloc);
     defer types.freeHistoryTurnSlice(alloc, context_history);
+    if (session.fresh_handoff) |handoff| {
+        state.alloc.free(handoff);
+        session.fresh_handoff = null;
+        fresh_config.handoff = null;
+    }
     var context_snapshot = try state.context_snapshot.dupe(alloc);
     defer context_snapshot.deinit(alloc);
     const root_user_intent_context = try auto_classifier_context.buildCanonicalRootUserContext(
@@ -1411,7 +1429,7 @@ fn localFileTargetPath(alloc: Allocator, uri_text: []const u8) Allocator.Error!?
     const decoded_path = localFileUriPath(decoded_storage[0..write_index]);
     if (!std.fs.path.isAbsolute(decoded_path)) return null;
 
-    var components = std.mem.splitScalar(u8, decoded_path, '/');
+    var components = std.mem.splitAny(u8, decoded_path, if (std_builtin.os.tag == .windows) "/\\" else "/");
     while (components.next()) |component| {
         if (std.mem.eql(u8, component, "..")) return null;
     }
@@ -2460,6 +2478,11 @@ pub fn handleCompact(
     const session = if (state.active_session) |*active| active else {
         return state.writer.writeError(alloc, msg.id, no_active_session_rpc_error);
     };
+    const handoff = parseCompactHandoff(state.alloc, msg.params_raw) catch {
+        return state.writer.writeError(alloc, msg.id, .{ .code = ErrorCode.invalid_params, .message = "Invalid handoff" });
+    };
+    if (session.fresh_handoff) |previous| state.alloc.free(previous);
+    session.fresh_handoff = handoff;
     const compacted = try compactAcpSession(alloc, session);
     const start = session.session_rt.contextHistoryStart();
     const total = session.session_rt.historyLen();
@@ -2597,8 +2620,41 @@ fn pushContextExperiment(raw_ctx: *anyopaque, outcome: context_experiments.Outco
     const ctx: *AcpContext = @ptrCast(@alignCast(raw_ctx));
     var out: std.Io.Writer.Allocating = .init(ctx.alloc);
     defer out.deinit();
-    try acp_types.writeContextExperimentInfoUpdate(&out.writer, outcome.pruned_results, outcome.reinjected, outcome.saved_tokens, outcome.added_tokens);
+    try acp_types.writeContextExperimentInfoUpdate(&out.writer, outcome.pruned_results, outcome.reinjected, outcome.saved_tokens, outcome.added_tokens, outcome.checkpoint);
     ctx.sendUpdate(out.writer.buffered()) catch {};
+}
+
+const max_compact_handoff_chars: usize = 20_000;
+
+fn parseCompactHandoff(owner: Allocator, params_raw: ?[]const u8) !?[]u8 {
+    const params = params_raw orelse return null;
+    var arena_state = std.heap.ArenaAllocator.init(owner);
+    defer arena_state.deinit();
+    const parsed = try std.json.parseFromSliceLeaky(std.json.Value, arena_state.allocator(), params, .{});
+    if (parsed != .object) return error.InvalidParams;
+    const value = parsed.object.get("handoff") orelse return null;
+    if (value != .string) return error.InvalidParams;
+    const trimmed = std.mem.trim(u8, value.string, " \t\r\n");
+    if (trimmed.len == 0) return null;
+    if (trimmed.len > max_compact_handoff_chars) return error.InvalidParams;
+    return try owner.dupe(u8, trimmed);
+}
+
+test "a compact request carries an optional bounded handoff" {
+    const alloc = std.testing.allocator;
+    try std.testing.expect((try parseCompactHandoff(alloc, null)) == null);
+    try std.testing.expect((try parseCompactHandoff(alloc, "{\"sessionId\":\"s\"}")) == null);
+    try std.testing.expect((try parseCompactHandoff(alloc, "{\"handoff\":\"   \"}")) == null);
+    const handoff = (try parseCompactHandoff(alloc, "{\"handoff\":\" Goal: ship \"}")).?;
+    defer alloc.free(handoff);
+    try std.testing.expectEqualStrings("Goal: ship", handoff);
+    try std.testing.expectError(error.InvalidParams, parseCompactHandoff(alloc, "{\"handoff\":7}"));
+    const huge = try alloc.alloc(u8, max_compact_handoff_chars + 1);
+    defer alloc.free(huge);
+    @memset(huge, 'h');
+    const body = try std.fmt.allocPrint(alloc, "{{\"handoff\":\"{s}\"}}", .{huge});
+    defer alloc.free(body);
+    try std.testing.expectError(error.InvalidParams, parseCompactHandoff(alloc, body));
 }
 
 fn pushRoutedModel(raw_ctx: *anyopaque, model: []const u8, fell_back: bool) !void {
@@ -3526,15 +3582,15 @@ test "parsePromptInput carries local image blocks as attachments" {
     file.close(std.testing.io);
     const expected_path = try io_mod.dirRealpathAlloc(alloc, tmp.dir, "shot.png");
     defer alloc.free(expected_path);
-    const image_uri = try testFileUri(alloc, expected_path);
-    defer alloc.free(image_uri);
-    const params = try std.fmt.allocPrint(
-        alloc,
-        "{{\"sessionId\":\"s1\",\"prompt\":[" ++
-            "{{\"type\":\"text\",\"text\":\"look\"}}," ++
-            "{{\"type\":\"image\",\"mimeType\":\"image/png\",\"uri\":{f}}}]}}",
-        .{std.json.fmt(image_uri, .{})},
-    );
+    const local_uri = try @import("../core/lsp/client.zig").pathToUri(alloc, expected_path);
+    defer alloc.free(local_uri);
+    const params = try std.json.Stringify.valueAlloc(alloc, .{
+        .sessionId = "s1",
+        .prompt = .{
+            .{ .type = "text", .text = "look" },
+            .{ .type = "image", .mimeType = "image/png", .uri = local_uri },
+        },
+    }, .{});
     defer alloc.free(params);
 
     var parsed = try parsePromptInput(alloc, params);
@@ -3553,22 +3609,18 @@ test "parsePromptInput preserves resource text and accepts only local absolute f
     try tmp.dir.createDirPath(std.testing.io, "Fx Project/src");
     var file = try tmp.dir.createFile(std.testing.io, "Fx Project/src/main.zig", .{});
     file.close(std.testing.io);
-    const root = try io_mod.dirRealpathAlloc(alloc, tmp.dir, ".");
-    defer alloc.free(root);
     const expected_path = try io_mod.dirRealpathAlloc(alloc, tmp.dir, "Fx Project/src/main.zig");
     defer alloc.free(expected_path);
-    const root_uri = try testFileUri(alloc, root);
-    defer alloc.free(root_uri);
-    const local_uri = try std.fmt.allocPrint(alloc, "{s}/Fx%20Project/src/main.zig", .{root_uri});
+    const local_uri = try @import("../core/lsp/client.zig").pathToUri(alloc, expected_path);
     defer alloc.free(local_uri);
     const remote_uri = "https://example.test/reference.txt";
-    const params = try std.fmt.allocPrint(
-        alloc,
-        "{{\"sessionId\":\"s1\",\"prompt\":[" ++
-            "{{\"type\":\"resource\",\"resource\":{{\"uri\":{f},\"text\":\"local body\"}}}}," ++
-            "{{\"type\":\"resource\",\"resource\":{{\"uri\":{f},\"text\":\"remote body\"}}}}]}}",
-        .{ std.json.fmt(local_uri, .{}), std.json.fmt(remote_uri, .{}) },
-    );
+    const params = try std.json.Stringify.valueAlloc(alloc, .{
+        .sessionId = "s1",
+        .prompt = .{
+            .{ .type = "resource", .resource = .{ .uri = local_uri, .text = "local body" } },
+            .{ .type = "resource", .resource = .{ .uri = remote_uri, .text = "remote body" } },
+        },
+    }, .{});
     defer alloc.free(params);
 
     var parsed = try parsePromptInput(alloc, params);
@@ -3646,6 +3698,25 @@ test "parsePromptInput bounds remote resource omissions with a stable summary" {
     try std.testing.expectEqual(@as(usize, 96), summary.reason_counts[@intFromEnum(context_contract.OmissionReason.unsafe_target)]);
     const zero_digest = [_]u8{0} ** std.crypto.hash.sha2.Sha256.digest_length;
     try std.testing.expect(!std.mem.eql(u8, &summary.digest, &zero_digest));
+}
+
+test "localFileTargetPath rejects encoded native parent traversal" {
+    const alloc = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(std.testing.io, "nested");
+    var file = try tmp.dir.createFile(std.testing.io, "target.txt", .{});
+    file.close(std.testing.io);
+    const root = try io_mod.dirRealpathAlloc(alloc, tmp.dir, ".");
+    defer alloc.free(root);
+    const root_uri = try @import("../core/lsp/client.zig").pathToUri(alloc, root);
+    defer alloc.free(root_uri);
+    const separator = if (std_builtin.os.tag == .windows) "%5C" else "%2F";
+    const uri = try std.fmt.allocPrint(alloc, "{s}/nested{s}..{s}target.txt", .{ root_uri, separator, separator });
+    defer alloc.free(uri);
+    const actual = try localFileTargetPath(alloc, uri);
+    defer if (actual) |path| alloc.free(path);
+    try std.testing.expect(actual == null);
 }
 
 test "localFileTargetPath canonicalizes a local symlink target" {
@@ -4814,11 +4885,10 @@ test "ACP auto mode automatic review allows or asks prepared external file mutat
     };
 
     const target_path = try std.fs.path.join(arena, &.{ external, "desktop-test.txt" });
-    const arguments_json = try std.fmt.allocPrint(
-        arena,
-        "{{\"path\":{f},\"content\":\"hello\\n\"}}",
-        .{std.json.fmt(target_path, .{})},
-    );
+    const arguments_json = try std.json.Stringify.valueAlloc(arena, .{
+        .path = target_path,
+        .content = "hello\n",
+    }, .{});
     const accepted_call: ToolCall = .{
         .id = "external-write",
         .name = "write_file",
@@ -4922,7 +4992,7 @@ test "ACP auto mode requires review when only one copy target is configured" {
 
     const source = try std.fs.path.join(arena, &.{ workspace, "source.txt" });
     const destination = try std.fs.path.join(arena, &.{ external, "copied.txt" });
-    const args = try std.fmt.allocPrint(arena, "{{\"source\":{f},\"destination\":{f}}}", .{ std.json.fmt(source, .{}), std.json.fmt(destination, .{}) });
+    const args = try std.json.Stringify.valueAlloc(arena, .{ .source = source, .destination = destination }, .{});
     const decision = (try requestToolPermissionOutcome(&ctx, arena, .{
         .id = "call_1",
         .name = "copy_file",

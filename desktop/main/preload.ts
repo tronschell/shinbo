@@ -84,18 +84,18 @@ contextBridge.exposeInMainWorld("emma", {
     ipcRenderer.on("emma:step", wrapped);
     return () => ipcRenderer.removeListener("emma:step", wrapped);
   },
-  onCompacted: (listener: (value: { threadId: string; removedTurns: number; summaryChars: number; modelWritten: boolean }) => void) => {
+  onCompacted: (listener: (value: { threadId: string; removedTurns: number; summaryChars: number; modelWritten: boolean; fresh: boolean; handoff?: string }) => void) => {
     const wrapped = (_event: unknown, value: unknown) => {
-      const compacted = value as { threadId?: unknown; removedTurns?: unknown; summaryChars?: unknown; modelWritten?: unknown };
-      if (typeof compacted?.threadId === "string") listener({ threadId: compacted.threadId, removedTurns: Number(compacted.removedTurns) || 0, summaryChars: Number(compacted.summaryChars) || 0, modelWritten: compacted.modelWritten === true });
+      const compacted = value as { threadId?: unknown; removedTurns?: unknown; summaryChars?: unknown; modelWritten?: unknown; fresh?: unknown; handoff?: unknown };
+      if (typeof compacted?.threadId === "string") listener({ threadId: compacted.threadId, removedTurns: Number(compacted.removedTurns) || 0, summaryChars: Number(compacted.summaryChars) || 0, modelWritten: compacted.modelWritten === true, fresh: compacted.fresh === true, ...(typeof compacted.handoff === "string" ? { handoff: compacted.handoff } : {}) });
     };
     ipcRenderer.on("emma:compacted", wrapped);
     return () => ipcRenderer.removeListener("emma:compacted", wrapped);
   },
-  onContextExperiment: (listener: (value: { threadId: string; prunedResults: number; reinjected: boolean; savedTokens: number; addedTokens: number }) => void) => {
+  onContextExperiment: (listener: (value: { threadId: string; prunedResults: number; reinjected: boolean; savedTokens: number; addedTokens: number; checkpoint?: string }) => void) => {
     const wrapped = (_event: unknown, value: unknown) => {
-      const fired = value as { threadId?: unknown; prunedResults?: unknown; reinjected?: unknown; savedTokens?: unknown; addedTokens?: unknown };
-      if (typeof fired?.threadId === "string") listener({ threadId: fired.threadId, prunedResults: Number(fired.prunedResults) || 0, reinjected: fired.reinjected === true, savedTokens: Number(fired.savedTokens) || 0, addedTokens: Number(fired.addedTokens) || 0 });
+      const fired = value as { threadId?: unknown; prunedResults?: unknown; reinjected?: unknown; savedTokens?: unknown; addedTokens?: unknown; checkpoint?: unknown };
+      if (typeof fired?.threadId === "string") listener({ threadId: fired.threadId, prunedResults: Number(fired.prunedResults) || 0, reinjected: fired.reinjected === true, savedTokens: Number(fired.savedTokens) || 0, addedTokens: Number(fired.addedTokens) || 0, ...(typeof fired.checkpoint === "string" ? { checkpoint: fired.checkpoint } : {}) });
     };
     ipcRenderer.on("emma:context-experiment", wrapped);
     return () => ipcRenderer.removeListener("emma:context-experiment", wrapped);

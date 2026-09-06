@@ -198,6 +198,9 @@
 .context-notice > span { min-width: 0; }
 .context-notice > button { flex: none; padding: 0; color: var(--violet); background: none; font: inherit; letter-spacing: inherit; text-transform: inherit; text-decoration: underline; text-underline-offset: 2px; opacity: .7; transition: opacity var(--t); }
 .context-notice > button:hover { opacity: 1; }
+.context-handoff { width: 100%; max-width: var(--conversation-column); margin: calc(var(--s-4) * -1) auto var(--s-4); padding: var(--s-2) var(--s-3); color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.6; }
+.context-handoff > summary { color: var(--violet); font-size: var(--fs-2xs); letter-spacing: var(--ls-caps); text-transform: uppercase; cursor: pointer; }
+.context-handoff > pre { margin: var(--s-2) 0 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .project-rules { display: flex; align-items: center; gap: var(--s-2); max-width: var(--conversation-column); margin: 0 auto var(--s-4); padding-bottom: var(--s-3); border-bottom: 1px solid var(--border); color: var(--text-3); font-family: var(--font-mono); font-size: var(--fs-2xs); letter-spacing: var(--ls-caps); text-transform: uppercase; }
 .project-rules > svg { flex: 0 0 auto; color: var(--accent); }

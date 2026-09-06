@@ -22,15 +22,45 @@ export function HarnessStatus() {
   const dialog = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
-    const load = () => void window.emma.harnessReport().then(setReport).catch(() => undefined);
-    load();
-    const timer = setInterval(load, POLL_MS);
+    let live = true;
+    let loading = false;
+    let queued = false;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const load = () => {
+      if (!live || document.hidden) return;
+      if (loading) { queued = true; return; }
+      loading = true;
+      void window.emma.harnessReport().then((found) => {
+        if (live && !document.hidden) setReport(open ? found : { processes: found.processes, lines: EMPTY.lines });
+      }).catch(() => undefined).finally(() => {
+        loading = false;
+        if (!queued) return;
+        queued = false;
+        load();
+      });
+    };
+    const sync = () => {
+      clearInterval(timer);
+      timer = undefined;
+      if (document.hidden) return;
+      load();
+      timer = setInterval(load, POLL_MS);
+    };
+    sync();
+    document.addEventListener("visibilitychange", sync);
     const off = window.emma.onHarnessLog((line) => {
+      if (document.hidden) return;
       if (line.flow === "err") return load();
+      if (!open) return;
       setReport((current) => ({ ...current, lines: [...current.lines, line].slice(-MAX_LOG_LINES) }));
     });
-    return () => { clearInterval(timer); off(); };
-  }, []);
+    return () => {
+      live = false;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", sync);
+      off();
+    };
+  }, [open]);
 
   useEffect(() => { if (open && !dialog.current?.open) dialog.current?.showModal(); }, [open]);
   useEffect(() => {

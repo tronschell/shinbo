@@ -1,10 +1,37 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import childProcess from "node:child_process";
+import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
-import { MAX_TERMINAL_SELECTION_CHARS, MAX_TERMINAL_SELECTION_LINES, terminalSelection, terminalTitle, type TerminalTab } from "../shared/terminal";
+import { MAX_TERMINAL_SCROLLBACK, MAX_TERMINAL_SELECTION_CHARS, MAX_TERMINAL_SELECTION_LINES, terminalSelection, terminalTitle, type TerminalTab } from "../shared/terminal";
+import { Terminals } from "../main/terminal";
 import { defaultPaneLayout, validatePaneLayout } from "../src/layout";
+
+test("terminal scrollback preserves output and offsets through repeated eviction and compaction", (t) => {
+  const child = Object.assign(new EventEmitter(), { stdin: new EventEmitter(), stdout: new EventEmitter(), stderr: new EventEmitter() });
+  t.mock.method(childProcess, "spawn", () => child);
+  let written = 0;
+  const terminals = new Terminals(() => "pty", (_id, data, at) => {
+    written += data.length;
+    assert.equal(at, written);
+  }, () => undefined);
+  const tab = terminals.open({ threadId: "thread", cwd: process.cwd(), columns: 80, rows: 24 });
+  const expected: Buffer[] = [];
+  for (let index = 0; index < 16_000; index++) {
+    const chunk = Buffer.alloc(64, index % 256);
+    expected.push(chunk);
+    (index % 2 ? child.stdout : child.stderr).emit("data", chunk);
+    if (index % 4000 === 3999) {
+      const snapshot = terminals.buffer(tab.id);
+      assert.equal(snapshot.at, written);
+      assert.deepEqual(snapshot.data, Buffer.concat(expected).subarray(-MAX_TERMINAL_SCROLLBACK));
+    }
+  }
+  terminals.close(tab.id);
+  assert.deepEqual(terminals.buffer(tab.id), { data: Buffer.alloc(0), at: 0 });
+});
 
 test("terminal subscriptions follow the selected thread and ignore stale tabs and responses", async () => {
   const source = ts.createSourceFile("terminal.tsx", readFileSync(path.join(__dirname, "../../src/terminal.tsx"), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);

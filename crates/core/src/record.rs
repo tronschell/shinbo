@@ -152,8 +152,8 @@ pub(crate) fn validate_text(
     Ok(())
 }
 
-pub(crate) fn quote(value: &str) -> String {
-    let mut output = String::with_capacity(value.len() + 2);
+pub(crate) fn append_quoted(output: &mut String, value: &str) {
+    output.reserve(value.len() + 2);
     output.push('"');
     for character in value.chars() {
         match character {
@@ -166,7 +166,6 @@ pub(crate) fn quote(value: &str) -> String {
         }
     }
     output.push('"');
-    output
 }
 
 pub(crate) fn unquote(value: &str) -> Result<String, ValidationError> {

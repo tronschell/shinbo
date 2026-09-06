@@ -1,12 +1,75 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import childProcess from "node:child_process";
+import os from "node:os";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
-import { parseGpu, parseProbe } from "../main/machine";
+import { machineFacts, machineSample, parseGpu, parseProbe } from "../main/machine";
 import { MACHINE_TICK_MS } from "../shared/machine";
 
 const SAMPLE = { cpu: 0.1, memory: 0.2, memoryUsedBytes: 1, memoryTotalBytes: 2, gpu: null, rxBytes: 3, txBytes: 4 };
+
+test("concurrent machine requests share one probe and later requests read fresh counters", async (t) => {
+  const callbacks: ((error: Error | null, stdout: string) => void)[] = [];
+  t.mock.method(childProcess, "execFile", (_file: string, _args: string[], _options: unknown, callback: (error: Error | null, stdout: string) => void) => { callbacks.push(callback); });
+  let at = 1000;
+  let idle = 50;
+  let user = 50;
+  let fail = false;
+  t.mock.method(Date, "now", () => at);
+  t.mock.method(os, "cpus", () => {
+    if (fail) throw new Error("cpu probe failed");
+    return [{ model: "test", speed: 1, times: { idle, user, nice: 0, sys: 0, irq: 0 } }];
+  });
+  const first = machineSample();
+  const concurrent = machineSample();
+  assert.equal(callbacks.length, 1);
+  assert.equal(first, concurrent);
+  callbacks[0](null, "win 100 200 1000 2000 25");
+  const initial = await first;
+  assert.equal(await concurrent, initial);
+  assert.equal(initial.rxBytes, 0);
+  at = 2000;
+  idle = 75;
+  user = 125;
+  const next = machineSample();
+  assert.equal(callbacks.length, 2);
+  callbacks[1](null, "win 300 500 1200 2000 30");
+  const fresh = await next;
+  assert.equal(fresh.rxBytes, 200);
+  assert.equal(fresh.txBytes, 300);
+  assert.equal(fresh.cpu, 0.75);
+  fail = true;
+  const rejected = machineSample();
+  callbacks[2](null, "win 300 500 1200 2000 30");
+  await assert.rejects(rejected, /cpu probe failed/);
+  fail = false;
+  const recovered = machineSample();
+  assert.equal(callbacks.length, 4);
+  callbacks[3](null, "win 300 500 1200 2000 30");
+  await recovered;
+});
+
+test("machine facts coalesce initialization, retry failures, and preserve the completed cache", async (t) => {
+  const callbacks: ((error: Error | null, stdout: string) => void)[] = [];
+  t.mock.method(childProcess, "execFile", (_file: string, _args: string[], _options: unknown, callback: (error: Error | null, stdout: string) => void) => { callbacks.push(callback); });
+  const failure = t.mock.method(os, "cpus", () => { throw new Error("cpu probe failed"); });
+  const first = machineFacts(process.cwd());
+  assert.equal(machineFacts(process.cwd()), first);
+  assert.equal(callbacks.length, 1);
+  callbacks[0](null, "gpu 1024 Test GPU");
+  await assert.rejects(first, /cpu probe failed/);
+  failure.mock.restore();
+  const retry = machineFacts(process.cwd());
+  assert.equal(machineFacts(process.cwd()), retry);
+  assert.equal(callbacks.length, 2);
+  callbacks[1](null, "gpu 1024 Test GPU");
+  const result = await retry;
+  assert.equal(result.gpu, "Test GPU");
+  assert.equal(await machineFacts(process.cwd()), result);
+  assert.equal(callbacks.length, 2);
+});
 
 function loadRendererMachine(
   document: { hidden: boolean; addEventListener: (type: string, listener: () => void) => void; removeEventListener: (type: string, listener: () => void) => void },

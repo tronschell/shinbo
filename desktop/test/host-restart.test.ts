@@ -84,3 +84,24 @@ test("a host closed on purpose stays closed", async () => {
   await assert.rejects(host.request({ method: "thread", params: {} }), /closed/);
   assert.equal(spawned.length, 1);
 });
+
+test("a late write failure from a replaced host cannot fail its replacement", async () => {
+  const spawned: FakeChild[] = [];
+  const host = new (hostClass(spawned, 1000))("emma-host");
+  let finishWrite: ((error?: Error) => void) | undefined;
+  spawned[0].stdin.write = (line, done) => {
+    spawned[0].written.push(line);
+    finishWrite = done;
+  };
+  const failed = host.request({ method: "createThread", params: {} });
+  const rejected = assert.rejects(failed, /stopped/);
+  spawned[0].emit("exit");
+  await rejected;
+
+  const answered = host.request({ method: "createThread", params: {} });
+  finishWrite!(new Error("old pipe closed"));
+  const id = String(JSON.parse(spawned[1].written[0]).id);
+  spawned[1].stdout.emit("data", Buffer.from(`${JSON.stringify({ id, ok: true, result: { threadId: "t2" } })}\n`));
+  assert.deepEqual(await answered, { threadId: "t2" });
+  host.close();
+});

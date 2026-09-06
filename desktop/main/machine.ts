@@ -62,8 +62,15 @@ const probe = () => isWindows
   });
 
 let previous: { at: number; idle: number; total: number; rx: number; tx: number } | undefined;
+let sampling: Promise<MachineSample> | undefined;
 
-export async function machineSample(): Promise<MachineSample> {
+export function machineSample(): Promise<MachineSample> {
+  if (sampling) return sampling;
+  sampling = readSample().finally(() => { sampling = undefined; });
+  return sampling;
+}
+
+async function readSample(): Promise<MachineSample> {
   const reading = parseProbe(await probe());
   const ticks = cpuTicks();
   const at = Date.now();
@@ -114,10 +121,15 @@ const freeDisk = async (root: string) => {
 };
 
 let facts: MachineFacts | undefined;
+let readingFacts: Promise<MachineFacts> | undefined;
 
-export async function machineFacts(root: string): Promise<MachineFacts> {
-  if (facts) return facts;
-  const card = parseGpu(await gpuProbe());
-  facts = { platform: process.platform, arch: process.arch, gpu: card.gpu, vramBytes: card.vramBytes, memoryBytes: totalmem(), cores: cpus().length, freeDiskBytes: await freeDisk(root) };
-  return facts;
+export function machineFacts(root: string): Promise<MachineFacts> {
+  if (facts) return Promise.resolve(facts);
+  if (readingFacts) return readingFacts;
+  readingFacts = gpuProbe().then(async (value) => {
+    const card = parseGpu(value);
+    facts = { platform: process.platform, arch: process.arch, gpu: card.gpu, vramBytes: card.vramBytes, memoryBytes: totalmem(), cores: cpus().length, freeDiskBytes: await freeDisk(root) };
+    return facts;
+  }).finally(() => { readingFacts = undefined; });
+  return readingFacts;
 }

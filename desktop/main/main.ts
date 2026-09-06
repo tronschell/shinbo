@@ -175,8 +175,9 @@ class Host {
         resolve: (value) => { clearTimeout(timer); resolve(value); },
         reject: (error) => { clearTimeout(timer); reject(error); },
       });
-      this.child.stdin.write(`${JSON.stringify({ id, ...request })}\n`, (error) => {
-        if (error) this.fail(error);
+      const child = this.child;
+      child.stdin.write(`${JSON.stringify({ id, ...request })}\n`, (error) => {
+        if (error && this.child === child) this.fail(error);
       });
     });
   }
@@ -1303,7 +1304,7 @@ const BRIDGE_EVENTS: Record<string, (payload: unknown) => BridgeEvent> = {
   "emma:step": (payload) => ({ k: "evt", t: "step", step: phoneStep(payload as RemoteStep) }),
   "emma:agents": (payload) => ({ k: "evt", t: "agents", agents: payload as LiveAgent[] }),
   "emma:spans": (payload) => ({ k: "evt", t: "spans", spans: phoneSpans(payload as Record<string, TraceSpan[]>) }),
-  "emma:context-experiment": (payload) => ({ k: "evt", ...(payload as { threadId: string; prunedResults: number; reinjected: boolean; savedTokens: number; addedTokens: number }), t: "context-experiment" }),
+  "emma:context-experiment": (payload) => ({ k: "evt", ...(payload as { threadId: string; prunedResults: number; reinjected: boolean; savedTokens: number; addedTokens: number; checkpoint?: string }), t: "context-experiment" }),
   "emma:context-breakdown": (payload) => ({ k: "evt", ...(payload as { threadId: string; systemPromptBytes: number; systemToolsBytes: number; mcpToolsBytes: number; skillsBytes: number; memoryBytes: number }), t: "context-breakdown" }),
 };
 
@@ -1518,7 +1519,7 @@ function ensureComputerRun(threadId: string) {
   if (computerRuntime!.threadId !== threadId) throw new Error("Another thread owns the computer run. Wait for it to finish.");
 }
 
-async function reportContext(turn: TurnRequest, compact: boolean): Promise<string> {
+async function reportContext(turn: TurnRequest, compact: boolean, handoff?: string): Promise<string> {
   const window = contextWindowFor(turn.model) ?? 0;
   const live = agents!.list().find((agent) => agent.threadId === turn.threadId)?.inputTokens ?? 0;
   const thread = await host!.request({ method: "thread", params: { threadId: turn.threadId } }).catch(() => undefined) as {
@@ -1533,9 +1534,15 @@ async function reportContext(turn: TurnRequest, compact: boolean): Promise<strin
     : window
       ? `${carried}, of a ${window.toLocaleString()}-token window — ${Math.round((used / window) * 100)}% of it.`
       : `${carried}. This route does not report its context window, so there is no share to give.`;
-  if (!compact) return head;
-  compactNext.add(turn.threadId);
-  return `${head}\n\nCompaction is set for your next turn: everything before the most recent turn becomes one summary. This turn keeps the history it started with, so finish here — say in one line what you compacted, and stop.`;
+  const fresh = (turn.knobs?.freshContext ?? harnessExperiments.freshContext) === true;
+  if (!compact) return fresh ? `${head}\n\nFresh context is on: compaction drops every earlier turn and starts the next window from your handoff, so pass one with compact true.` : head;
+  compactNext.set(turn.threadId, handoff ?? "");
+  if (fresh) {
+    const carried = handoff ? "your handoff" : "an automatic record of the user's messages, not your progress";
+    return `${head}\n\nA fresh context window is set for your next turn: every earlier turn leaves the window and only ${carried} and what you saved with goal, task_list or keep carry over. This turn keeps the history it started with, so finish here — say in one line what you handed over, and stop.`;
+  }
+  const ignored = handoff ? " The handoff was ignored because Fresh context is off in Settings → Harness; a summary is written instead." : "";
+  return `${head}\n\nCompaction is set for your next turn: everything before the most recent turn becomes one summary.${ignored} This turn keeps the history it started with, so finish here — say in one line what you compacted, and stop.`;
 }
 
 const browserPage = (status: BrowserStatus) => `${status.url ?? "about:blank"}${status.title ? ` — ${status.title}` : ""}`;
@@ -1670,7 +1677,7 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
     case "goal":
       return await goalTool(args, turn);
     case "context":
-      return await reportContext(turn, args.compact);
+      return await reportContext(turn, args.compact, args.handoff);
     case "keep":
       return await keepTool(args);
     case "web_search": {
@@ -2107,10 +2114,20 @@ function harnessClient(cwd: string, key = cwd, route?: ProviderRoute): Harness {
       broadcast("emma:step", wrote ? { ...call, edit: editStat(wrote) } : call);
     },
     onCompacted: (threadId, compacted) => {
-      agents?.noteNotice(threadId, "compact", compactionNotice(compacted.removedTurns, compacted.modelWritten));
+      checkpointNoted.delete(threadId);
+      agents?.noteNotice(threadId, "compact", compactionNotice(compacted.removedTurns, compacted.modelWritten, compacted.fresh), compacted.handoff);
       broadcast("emma:compacted", { threadId, ...compacted });
     },
-    onContextExperiment: (threadId, fired) => broadcast("emma:context-experiment", { threadId, ...fired }),
+    onContextExperiment: (threadId, fired) => {
+      const { checkpoint, ...rest } = fired;
+      if (!checkpoint || checkpointNoted.has(threadId)) {
+        if (rest.prunedResults || rest.reinjected) broadcast("emma:context-experiment", { threadId, ...rest });
+        return;
+      }
+      checkpointNoted.add(threadId);
+      agents?.noteNotice(threadId, "steer", checkpoint);
+      broadcast("emma:context-experiment", { threadId, ...fired });
+    },
     onContextBreakdown: (threadId, parts) => broadcast("emma:context-breakdown", { threadId, ...parts }),
     onRoutedModel: (threadId, routed) => {
       harnessRouted.set(threadId, routed.model);
@@ -2537,7 +2554,8 @@ async function readThreadTraces(threadId: string): Promise<StoredThreadTrace[]> 
   return recoveredSessionTraces(path.join(app.getPath("userData"), "harness"), threadId, traces);
 }
 
-const compactNext = new Set<string>();
+const compactNext = new Map<string, string>();
+const checkpointNoted = new Set<string>();
 
 function harnessCwd(threadId: string) {
   const id = threadFolder(threadId);
@@ -2643,6 +2661,8 @@ async function runOnHarness(client: Harness, cwd: string, turn: TurnRequest, key
   const startedAt = Date.now();
   agents!.adopt({ ...turn, model: modelName(turn.model) });
   const route = harnessModel(turn.model);
+  const handoff = compactNext.get(turn.threadId);
+  compactNext.delete(turn.threadId);
   try {
     const { stopReason, usage } = await client.prompt(turn.threadId, cwd, resume || turn.content, turn.mode, route, {
       skillContext: typeof turn.params?.skillContext === "string" ? turn.params.skillContext : undefined,
@@ -2655,7 +2675,8 @@ async function runOnHarness(client: Harness, cwd: string, turn: TurnRequest, key
       experiments: turn.knobs ? { ...harnessExperiments, ...turn.knobs } : harnessExperiments,
       semanticGrep: semanticGrep.option(harnessExperiments, threadFolder(turn.threadId) ? cwd : undefined),
       imageInput: metadataFor(turn.model, route)?.inputModalities?.includes("image"),
-      compact: compactNext.delete(turn.threadId),
+      compact: handoff !== undefined,
+      handoff: handoff || undefined,
       continueRecovery: turn.continueRecovery,
     });
     agents!.noteUsage(turn.threadId, usage);

@@ -76,7 +76,8 @@ pub const threads = ToolSpec{
 const context_description =
     "Your own context window: how many tokens the last turn carried, how large the window is, and what share of it is gone. Nothing else in this conversation tells you that — check it before starting something long, and whenever the user asks you to keep an eye on the context.\n" ++
     "compact true folds this thread's earlier turns into one summary. It lands on your next turn, not this one: the turn you are in is already carrying its history. So compact, say in one line what you did, and stop — the next thing you are asked runs with room again.\n" ++
-    "The summary replaces those turns for good. Write anything you still need down first, in the answer or in a file.";
+    "The summary replaces those turns for good. Write anything you still need down first, in the answer or in a file.\n" ++
+    "With Fresh context on in Settings → Harness there is no summary: the next window starts from your handoff alone, so put the goal, progress, decisions and next steps in it. Earlier turns stay readable with the threads and read_trace tools.";
 
 pub const context = ToolSpec{
     .name = "context",
@@ -91,14 +92,17 @@ pub const context = ToolSpec{
                     .json_type = .boolean,
                     .description = "Fold the earlier turns into one summary, from the next turn onward. Omit to only read the window.",
                 },
+                .{
+                    .name = "handoff",
+                    .json_type = .string,
+                    .description = "What the next window must know, in your own words. Used with compact true when Fresh context is on; ignored otherwise.",
+                },
             },
             .required = &.{},
         },
     },
     .advertisement = .on_select,
     .executor_kind = .emma,
-    // Reading the window is the whole tool without arguments; compacting only
-    // schedules the next turn's own history, never the user's thread.
     .activity_kind = .read,
     .requires_approval = false,
     .action_label = "Checking context",

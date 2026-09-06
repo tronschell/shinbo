@@ -9,7 +9,8 @@ const SIGKILL_AFTER_MS = 2000;
 
 type Entry = TerminalTab & {
   child: ChildProcess;
-  chunks: Buffer[];
+  chunks: (Buffer | undefined)[];
+  chunkStart: number;
   bytes: number;
   written: number;
 };
@@ -67,6 +68,7 @@ export class Terminals {
       exitCode: null,
       child,
       chunks: [],
+      chunkStart: 0,
       bytes: 0,
       written: 0,
     };
@@ -112,7 +114,7 @@ export class Terminals {
 
   buffer(id: string): { data: Buffer; at: number } {
     const entry = this.tabs.get(id);
-    return entry ? { data: Buffer.concat(entry.chunks), at: entry.written } : { data: Buffer.alloc(0), at: 0 };
+    return entry ? { data: Buffer.concat(entry.chunks.slice(entry.chunkStart) as Buffer[], entry.bytes), at: entry.written } : { data: Buffer.alloc(0), at: 0 };
   }
 
   stopAll(): Promise<void> {
@@ -156,8 +158,13 @@ export class Terminals {
     entry.chunks.push(chunk);
     entry.bytes += chunk.length;
     entry.written += chunk.length;
-    while (entry.bytes > MAX_TERMINAL_SCROLLBACK && entry.chunks.length > 1) {
-      entry.bytes -= entry.chunks.shift()!.length;
+    while (entry.bytes > MAX_TERMINAL_SCROLLBACK && entry.chunks.length - entry.chunkStart > 1) {
+      entry.bytes -= entry.chunks[entry.chunkStart]!.length;
+      entry.chunks[entry.chunkStart++] = undefined;
+    }
+    if (entry.chunkStart >= 1024 && entry.chunkStart * 2 >= entry.chunks.length) {
+      entry.chunks = entry.chunks.slice(entry.chunkStart);
+      entry.chunkStart = 0;
     }
     this.onData(entry.id, chunk, entry.written);
   }

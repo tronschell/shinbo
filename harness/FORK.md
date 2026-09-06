@@ -32,6 +32,10 @@ and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
   fingerprint is regenerated, because upstream's own comment on that field says
   a fork that keeps it is attempting to take over the original project's
   identity.
+- **Build revision.** The harness reports the most recent commit affecting its
+  own directory. Unrelated desktop commits and promotion merges no longer
+  invalidate the Zig compiler cache. CI fetches full history; the application
+  release manifest separately records the exact application source commit.
 - **Model transport.** Upstream talks to Vercel AI Gateway over the AI SDK
   language-model v3 protocol (`prompt`/`toolChoice` at `/v3/ai/language-model`).
   Emma talks to any OpenAI-compatible Chat Completions endpoint, which is the
@@ -464,3 +468,12 @@ Pending `write_file` and `edit_file` ACP calls carry `_emma_filePath`, parsed
 from their complete arguments before the 4 KiB display preview is truncated.
 Emma retains this path across status updates to capture before/after file
 contents for review and revert; history replay does not create new captures.
+
+### Fresh context handoffs
+
+Emma adds an opt-in fresh-context mode to ACP compaction.
+`core/session/fresh_context.zig` carries an explicit bounded handoff, or a
+bounded recovery record of user inputs when no handoff was supplied, without a
+model-written summary. Context experiments send a checkpoint near the compact
+threshold, and ACP updates identify fresh rollovers and their handoff text.
+Earlier turns remain available through the thread and trace tools.

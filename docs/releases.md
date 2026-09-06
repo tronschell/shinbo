@@ -11,9 +11,18 @@ feature branch → dev → main → published macOS and Windows downloads
 ```
 
 `dev` is the default branch. Anyone opens feature PRs against it, and every PR
-runs the full `ci` workflow on macOS and Windows. `main` holds released code.
+runs `ci` with one required `check` gate. `main` holds released code.
 Only the repository owner can update `main`; a GitHub ruleset blocks everyone
 else from merging into it.
+
+Feature PRs squash into `dev` and keep strict up-to-date checks. Auto-merge can
+finish a feature PR after its checks pass, and merged feature branches are
+deleted automatically; protected `dev` and `main` remain. Release PRs go
+directly from `dev` to `main` with a merge commit. Main requires passing checks
+but does not require dev to contain main's previous promotion merge. This
+avoids temporary promotion branches and main-to-dev synchronization PRs. CI
+requires the promotion's merged tree to equal dev's tree and its version to be
+newer than main's. Resolve any actual main-only changes on dev before releasing.
 
 ```sh
 git fetch origin
@@ -35,8 +44,8 @@ that release; `EMMA_TOOLS_URL` repoints the origin for a local rehearsal.
 
 ## Release a version
 
-1. On `dev`, bump the root `package.json` version in a normal PR, or run
-   `npm version patch --no-git-tag-version` and commit it.
+1. Bump the root `package.json` version in the final feature PR for the release,
+   or a small separate PR to `dev`. Use `npm version patch --no-git-tag-version`.
 2. Open a `dev` → `main` PR and merge it with **Create a merge commit**.
 3. The promotion PR carries the required checks. After it is merged, the push
    to `main` runs `ci` against the exact promoted commit and packages two
@@ -48,9 +57,39 @@ that release; `EMMA_TOOLS_URL` repoints the origin for a local rehearsal.
    publishes macOS only; Windows PE files cannot be produced or signed on the
    macOS release runner.
 
-There is no changelog file, release PR, manifest, or tag to manage. The
+There is no changelog file, generated release PR, manifest, or tag to manage. The
 GitHub Releases page is the changelog. Merging `main` again with an unchanged
-version publishes nothing.
+version skips packaging as well as publication. A failed release lookup stops
+CI rather than treating an API outage as a new version.
+
+## CI cost and coverage
+
+`desktop/scripts/ci-plan.mjs` classifies the actual base-to-merge diff, including
+deleted and renamed paths. Only known narrow changes skip suites; unknown paths
+run the full checks. The `check` gate rejects failures, cancellations, and an
+unexpectedly skipped job.
+
+| Change | Required work |
+| --- | --- |
+| Renderer source, assets, or HTML | macOS and Windows desktop checks and native builds |
+| Documentation or only the root version | Selection tests and the required gate |
+| Harness, host, desktop integration, or unknown paths | Both desktop/Rust and Zig lanes |
+| Workflow, desktop build script, native helper, or dependency changes | Full checks plus both package/install smoke lanes |
+| `dev` to `main` promotion | Full checks, version/tree validation, and both package/install smoke lanes |
+| Manual CI dispatch | Full checks; both package lanes when selected |
+
+Packaging builds the native helpers itself, so the parallel desktop lanes do
+not build them again. Zig reports compilation and test execution durations on
+both platforms. Its build revision is the most recent commit affecting
+`harness/`, using full Git history in CI. A UI-only commit or promotion merge
+therefore does not invalidate the harness compiler cache. The release manifest
+still identifies the exact application source commit, version, and workflow run.
+
+CI and release remain separate. Only push-to-main candidates can feed automatic
+publication; PR artifacts never become releases. GitHub's cache isolation also
+means a promotion PR's cache is not available to its later main push. The main
+build can reuse its own earlier cache when the harness is unchanged, while
+rebuilding the application and retaining the installer smoke checks.
 
 ## Install smoke test
 
