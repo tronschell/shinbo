@@ -89,3 +89,20 @@ test("the zvec-grep card offers a download and the recommendation applies a mode
   advice.find((node) => node.type === "button").props.onClick();
   assert.equal(used, "local/embeddinggemma-300m");
 });
+
+test("fresh context is one boolean beside auto compact and its state line follows it", () => {
+  let saved;
+  const bindings = { MAX_COMMAND_TIMEOUT_MINUTES: 120, MIN_COMMAND_TIMEOUT_MINUTES: 1, CHECKPOINT_BAND_PERCENT: 10, defaultHarnessExperiments: { autoCompactPercent: 70 }, SettingsSection: "section", ExperimentRow: "row" };
+  const experiments = { autoCompactPercent: 70, reinjectPromptSteps: 0, reinjectPromptPercent: 0, pruneToolsSteps: 0, pruneToolsPercent: 0, commandTimeoutMinutes: 10, freshContext: false };
+  const props = { settings: { harnessExperiments: experiments }, onChange: async (next) => { saved = next; }, busy: false };
+  const off = nodes(draw("HarnessExperimentsPanel", bindings, props));
+  const toggle = off.filter((node) => node.type === "input" && node.props.type === "checkbox")[1];
+  assert.equal(toggle.props.checked, false);
+  assert.match(JSON.stringify(off), /Off\. Compaction rewrites earlier turns into one summary\./);
+  toggle.props.onChange({ target: { checked: true } });
+  assert.deepEqual(saved, { ...experiments, freshContext: true });
+  const on = nodes(draw("HarnessExperimentsPanel", bindings, { ...props, settings: { harnessExperiments: saved } }));
+  assert.equal(on.filter((node) => node.type === "input" && node.props.type === "checkbox")[1].props.checked, true);
+  assert.match(JSON.stringify(on), /On\. Earlier turns stay readable/);
+  assert.match(JSON.stringify(on), /within ",10,"% of the compact mark/);
+});

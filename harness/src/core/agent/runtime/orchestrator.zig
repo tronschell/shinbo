@@ -3114,6 +3114,7 @@ fn processQueuedPromptLoop(
     // Sticky for the rest of the turn, because every later step would only
     // overflow the same way.
     var prune_oversized = false;
+    var checkpoint_sent = false;
     var vision_required_downgraded = false;
     var preserved_tool_evidence: model_response_recovery.ToolEvidence = if (job.recovery_checkpoint) |checkpoint|
         restoredRecoveryToolEvidence(checkpoint.tool_state)
@@ -3332,6 +3333,7 @@ fn processQueuedPromptLoop(
             experiment_settings.previous_cache_read_tokens = previous_cache_read_tokens;
             experiment_settings.previous_input_tokens = previous_input_tokens;
             experiment_settings.force_prune = prune_oversized;
+            experiment_settings.checkpoint_sent = checkpoint_sent;
             const experiment = try context_experiments.apply(
                 overlay_arena,
                 &gateway_messages,
@@ -3339,6 +3341,7 @@ fn processQueuedPromptLoop(
                 current_step_index,
                 job.prompt,
             );
+            if (experiment.checkpoint != null) checkpoint_sent = true;
             if (experiment.changedAnything()) {
                 debug_trace.eventf(
                     "agent",

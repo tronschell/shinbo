@@ -127,8 +127,8 @@ and updates once signed publication is authorized.
 
 Settings → Models → paste an OpenRouter key (stored as `OPENROUTER_API_KEY`,
 encrypted with Electron `safeStorage`), then pick a model — or pick **free
-router**, which sends ten free tool-capable OpenRouter ids as one
-comma-separated list and lets OpenRouter fall through them
+router**, a chain of ten free tool-capable OpenRouter ids whose first three
+travel as OpenRouter's fallback array, the most it accepts
 ([settings.ts](../desktop/shared/settings.ts) `FREE_ROUTER_MODELS`).
 
 A key only reaches `emma-cli` through its spawn environment, so it takes effect

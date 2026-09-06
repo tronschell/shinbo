@@ -115,6 +115,9 @@ test("a chained second model asks OpenRouter to fall through for it", async () =
     // One model is one model: nothing extra travels for the common case.
     await chatCompletion(settings, [{ role: "user", content: "hi" }], "", { maxTokens: 10, timeoutMs: 5_000, label: "verifier" });
     assert.equal((sent[1] as { models?: unknown }).models, undefined);
+    const long = { ...settings, model: "a/one:free,b/two:free,c/three:free,d/four:free" };
+    await chatCompletion(long, [{ role: "user", content: "hi" }], "", { maxTokens: 10, timeoutMs: 5_000, label: "verifier" });
+    assert.deepEqual((sent[2] as { models?: unknown }).models, ["a/one:free", "b/two:free", "c/three:free"]);
   } finally { globalThis.fetch = original; }
 });
 

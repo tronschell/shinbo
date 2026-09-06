@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { createPackage } from "@electron/asar";
 import test from "node:test";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { canonicalResetPath, commandShimArguments, pathInside, processTreeCommand, resetDataRoots, samePath, spawnCommand, squirrelEvent, terminateProcessTree, windowsShimTarget, windowsShortcutFiles, WINDOWS_APP_USER_MODEL_ID, WINDOWS_INSTALLER_COMPANY } from "../dist-main/main/platform.js";
 import { commandShimArguments as packageCommandShimArguments, publishStagedBuild, squirrelStagingDirectory, windowsSystemExecutable } from "../scripts/windows-command.mjs";
 import { gitReady } from "../dist-main/main/git.js";
@@ -18,6 +20,36 @@ test("Squirrel lifecycle ignores firstrun and handles install events", () => {
   assert.equal(squirrelEvent(["Emma.exe", "--squirrel-updated"]), "updated");
   assert.equal(squirrelEvent(["Emma.exe", "--squirrel-uninstall"]), "uninstall");
   assert.equal(squirrelEvent(["Emma.exe", "--squirrel-obsolete"]), "obsolete");
+});
+
+test("Windows package locale trimming retains English and refuses unidentified packages", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "emma-locales-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const app = path.join(root, "Emma-win32-x64");
+  const source = path.join(root, "source");
+  const locales = path.join(app, "locales");
+  await mkdir(source);
+  await mkdir(path.join(app, "resources"), { recursive: true });
+  await mkdir(locales);
+  for (const name of ["en-US.pak", "en-GB.pak", "de.pak", "ja.pak", "other.txt"]) await writeFile(path.join(locales, name), name);
+  const run = async () => {
+    const child = spawn(process.execPath, [fileURLToPath(new URL("../scripts/trim-packaged-locales.mjs", import.meta.url)), app], { stdio: "ignore" });
+    return (await once(child, "exit"))[0];
+  };
+  await writeFile(path.join(source, "package.json"), JSON.stringify({ productName: "Another app" }));
+  await createPackage(source, path.join(app, "resources/app.asar"));
+  assert.notEqual(await run(), 0);
+  assert.ok(existsSync(path.join(locales, "de.pak")));
+  await writeFile(path.join(source, "package.json"), JSON.stringify({ productName: "Emma" }));
+  await createPackage(source, path.join(app, "resources/app.asar"));
+  assert.equal(await run(), 0);
+  assert.deepEqual((await readdir(locales)).sort(), ["en-GB.pak", "en-US.pak", "other.txt"]);
+  assert.equal(await readFile(path.join(locales, "en-US.pak"), "utf8"), "en-US.pak");
+  assert.equal(await run(), 0);
+  await rm(path.join(locales, "en-US.pak"));
+  await writeFile(path.join(locales, "fr.pak"), "fr");
+  assert.notEqual(await run(), 0);
+  assert.ok(existsSync(path.join(locales, "fr.pak")));
 });
 
 test("Squirrel shortcut and Electron use the same app identity", () => {

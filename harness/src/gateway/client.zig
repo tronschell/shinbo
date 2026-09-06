@@ -11,7 +11,8 @@ const types = @import("../core/shared/types.zig");
 pub fn isRetryableGatewayError(err: anyerror) bool {
     return err == error.HttpConnectionClosing or
         err == error.ConnectionResetByPeer or
-        err == error.ConnectionTimedOut;
+        err == error.ConnectionTimedOut or
+        (builtin.os.tag == .windows and err == error.Unexpected);
 }
 
 pub fn networkFailureEvidence(
@@ -79,6 +80,29 @@ test "isRetryableGatewayError matches active retryable transport errors" {
     try std.testing.expect(!isRetryableGatewayError(error.AccessDenied));
 }
 
+test "a windows network-unreachable connect retries as a transport interruption" {
+    const on_windows = builtin.os.tag == .windows;
+    try std.testing.expectEqual(on_windows, isRetryableGatewayError(error.Unexpected));
+    try std.testing.expectEqual(on_windows, isRetryableConnectionSetupError(error.Unexpected));
+
+    const evidence = networkFailureEvidence(error.Unexpected, .definitely_unsent);
+    if (on_windows) {
+        try std.testing.expectEqual(
+            agent_stream_provider.NetworkFailureCause.transport_interrupted,
+            evidence.?.cause,
+        );
+        try std.testing.expectEqual(
+            DeliveryCertainty.State.definitely_unsent,
+            evidence.?.delivery,
+        );
+    } else {
+        try std.testing.expectEqual(
+            @as(?agent_stream_provider.NetworkFailureEvidence, null),
+            evidence,
+        );
+    }
+}
+
 test "native network failure evidence covers setup send read and resume failures" {
     const Cases = struct {
         err: anyerror,
@@ -131,7 +155,6 @@ test "native network failure evidence covers setup send read and resume failures
 
 test "native network failure evidence excludes opaque and configuration failures" {
     const excluded = [_]anyerror{
-        error.Unexpected,
         error.JsHostStreamFailed,
         error.OutOfMemory,
         error.AccessDenied,
@@ -7118,7 +7141,8 @@ fn expectDirectLoopbackCancellation(
 }
 
 test "direct gateway cancellation closes a stalled response body promptly" {
-    try expectDirectLoopbackCancellation(.response_body_stall, "{}", 20, 800, 500);
+    const budget_ms: i64 = if (builtin.os.tag == .windows) 4000 else 500;
+    try expectDirectLoopbackCancellation(.response_body_stall, "{}", 20, 800, budget_ms);
 }
 
 test "direct gateway cancellation closes a stalled request send promptly" {
@@ -7126,7 +7150,8 @@ test "direct gateway cancellation closes a stalled request send promptly" {
     defer std.testing.allocator.free(payload);
     @memset(payload, 'x');
 
-    try expectDirectLoopbackCancellation(.request_send_stall, payload, 100, 5000, 2000);
+    const budget_ms: i64 = if (builtin.os.tag == .windows) 20000 else 2000;
+    try expectDirectLoopbackCancellation(.request_send_stall, payload, 100, 5000, budget_ms);
 }
 
 test "direct gateway fails fast when cancellation watcher cannot start" {

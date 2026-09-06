@@ -7,6 +7,66 @@ use std::{
 };
 
 #[test]
+fn compiled_host_rejects_invalid_goal_numbers_and_thread_kinds_without_mutating() {
+    let root = std::env::temp_dir().join(format!("emma-host-validation-{}", std::process::id()));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_emma-host"))
+        .env("EMMA_DATA_DIR", &root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let mut output = BufReader::new(child.stdout.take().unwrap());
+    let mut request = |method: &str, params: Value| {
+        writeln!(
+            input,
+            "{}",
+            json!({"id":"validation", "method":method, "params":params})
+        )
+        .unwrap();
+        input.flush().unwrap();
+        let mut line = String::new();
+        assert!(output.read_line(&mut line).unwrap() > 0);
+        serde_json::from_str::<Value>(&line).unwrap()
+    };
+    let created = request("createThread", json!({"title":"Validation", "kind":"main"}));
+    assert_eq!(created["ok"], true);
+    let id = created["result"]["id"].as_str().unwrap();
+    let goal = request(
+        "setGoal",
+        json!({"threadId":id, "objective":"Keep budget", "tokenBudget":"1000"}),
+    );
+    assert_eq!(goal["ok"], true);
+    let mut rejected = Vec::new();
+    for invalid in ["-1", "not-a-number", "18446744073709551616", ""] {
+        rejected.push(request(
+            "setGoal",
+            json!({"threadId":id, "objective":"Invalid replacement", "tokenBudget":invalid}),
+        ));
+        rejected.push(request(
+            "updateGoal",
+            json!({"threadId":id, "status":"paused", "extraTokens":invalid}),
+        ));
+    }
+    for invalid in ["invalid", "", "Subagent"] {
+        rejected.push(request(
+            "createThread",
+            json!({"title":"Invalid kind", "kind":invalid}),
+        ));
+    }
+    let loaded = request("thread", json!({"threadId":id}));
+    let snapshot = request("snapshot", json!({}));
+    drop(input);
+    assert!(child.wait().unwrap().success());
+    std::fs::remove_dir_all(&root).unwrap();
+    for response in rejected {
+        assert_eq!(response["ok"], false, "{response}");
+    }
+    assert_eq!(loaded["result"]["goal"], goal["result"]["goal"]);
+    assert_eq!(snapshot["result"]["threads"].as_array().unwrap().len(), 1);
+}
+
+#[test]
 fn compiled_host_preserves_large_snapshots_and_accepts_the_next_request() {
     let root = std::env::temp_dir().join(format!("emma-host-snapshot-{}", std::process::id()));
     let store = ThreadStore::new(root.join("threads"));

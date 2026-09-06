@@ -332,7 +332,7 @@ export function trustedSender(value: string, appRoot: string, devServer?: string
     const url = new URL(value);
     if (devServer && url.origin === new URL(devServer).origin) return true;
     const sent = decodeURIComponent(url.pathname).replace(/^\/(?=[a-zA-Z]:)/, "");
-    return url.protocol === "file:" && samePath(sent, path.join(appRoot, "dist-renderer", "index.html"));
+    return url.protocol === "file:" && !url.hostname && samePath(sent, path.join(appRoot, "dist-renderer", "index.html"));
   } catch {
     return false;
   }

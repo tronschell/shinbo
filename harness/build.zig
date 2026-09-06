@@ -421,7 +421,7 @@ fn discoverNodeIncludeDir(b: *std.Build) []const u8 {
 fn readGitCommit(b: *std.Build) []const u8 {
     var code: u8 = 0;
     const out = b.runAllowFail(
-        &.{ "git", "rev-parse", "--short=12", "HEAD" },
+        &.{ "git", "log", "-1", "--format=%h", "--abbrev=12", "--", "." },
         &code,
         .ignore,
     ) catch return "unknown";

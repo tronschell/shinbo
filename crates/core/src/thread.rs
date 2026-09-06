@@ -14,7 +14,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::{ScheduledJobId, Timestamp, ValidationError, quote, unquote, validate_text};
+use crate::{ScheduledJobId, Timestamp, ValidationError, append_quoted, unquote, validate_text};
 use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
@@ -534,11 +534,13 @@ impl Thread {
                 goal.status = GoalStatus::Complete;
             }
             GoalStatus::Blocked => {
-                if goal.blocked_streak == 0 || goal.blocked_at_turn != goal.turns {
-                    goal.blocked_streak = match same_blocker(&goal.blocked_reason, &reason) {
-                        true => goal.blocked_streak + 1,
-                        false => 1,
-                    };
+                let same = same_blocker(&goal.blocked_reason, &reason);
+                if !same || goal.blocked_streak == 0 || goal.blocked_at_turn != goal.turns {
+                    goal.blocked_streak =
+                        match same && goal.blocked_at_turn.checked_add(1) == Some(goal.turns) {
+                            true => goal.blocked_streak + 1,
+                            false => 1,
+                        };
                     goal.blocked_at_turn = goal.turns;
                 }
                 goal.blocked_reason = reason;
@@ -731,13 +733,13 @@ impl Thread {
                 output.push_str("Generation: none\n");
             }
             output.push('\n');
-            output.push_str(&quote(&message.content));
+            append_quoted(&mut output, &message.content);
             output.push('\n');
         }
         for (index, trace) in self.traces.iter().enumerate() {
             output.push_str(&format!("\n## Trace {}\n\n", index + 1));
             output.push_str(&format!("Time: {}\n\n", trace.timestamp));
-            output.push_str(&quote(&trace.text));
+            append_quoted(&mut output, &trace.text);
             output.push('\n');
         }
         output
@@ -1216,7 +1218,7 @@ impl From<io::Error> for ThreadStoreError {
 fn field(output: &mut String, name: &str, value: &str) {
     output.push_str(name);
     output.push_str(": ");
-    output.push_str(&quote(value));
+    append_quoted(output, value);
     output.push('\n');
 }
 

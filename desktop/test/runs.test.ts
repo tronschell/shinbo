@@ -545,6 +545,8 @@ test("a trace lands on the turn it was recorded with, not on an earlier answer t
 
 test("a compaction says how much history became a summary, and whether the model wrote it", () => {
   assert.equal(compactionNotice(12, true), "Context compacted — 12 turns became a summary");
+  assert.equal(compactionNotice(14, true, true), "Fresh context — 14 turns dropped, handoff written by the model");
+  assert.equal(compactionNotice(1, false, true), "Fresh context — 1 turn dropped, handoff recorded automatically");
   assert.equal(compactionNotice(1, false), "Context compacted — 1 turn became a rough summary the model did not write");
 });
 
@@ -584,6 +586,13 @@ test("a compaction is rebuilt from the trace as a plain notice, not as a steer",
   ].join("\n");
   const [block] = restoreBlocks("dither", decodeSpans(text));
   assert.deepEqual(block, { kind: "notice", text: "Context compacted — 3 turns became a summary", plain: true, compact: true });
+  const fresh = [
+    JSON.stringify({ v: 1, thread: "dither", model: "z-ai/glm-5.3-flash" }),
+    JSON.stringify({ id: "agent:dither", name: "This thread", kind: "agent", startedAt: 1787865075384, endedAt: 1787865075884, status: "ok" }),
+    JSON.stringify({ id: "compact:dither:1", parentId: "agent:dither", name: "compact", kind: "compact", startedAt: 1787865075385, endedAt: 1787865075385, status: "ok", input: compactionNotice(3, true, true), output: "Goal: ship" }),
+  ].join("\n");
+  const [rolled] = restoreBlocks("dither", decodeSpans(fresh));
+  assert.deepEqual(rolled, { kind: "notice", text: "Fresh context — 3 turns dropped, handoff written by the model", plain: true, compact: true, handoff: "Goal: ship" });
 });
 
 test("a turn that ends refetches the thread, so the answer it wrote is drawn", async () => {

@@ -255,11 +255,13 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
     description:
       "Your own context window: how many tokens the last turn carried, how large the window is, and what share of it is gone. Nothing else in this conversation tells you that — check it before starting something long, and whenever the user asks you to keep an eye on the context.\n" +
       "compact true folds this thread's earlier turns into one summary. It lands on your next turn, not this one: the turn you are in is already carrying its history. So compact, say in one line what you did, and stop — the next thing you are asked runs with room again.\n" +
-      "The summary replaces those turns for good. Write anything you still need down first, in the answer or in a file.",
+      "The summary replaces those turns for good. Write anything you still need down first, in the answer or in a file.\n" +
+      "With Fresh context on in Settings → Harness there is no summary: the next window starts from your handoff alone, so put the goal, progress, decisions and next steps in it. Earlier turns stay readable with the threads and read_trace tools.",
     inputSchema: {
       type: "object",
       properties: {
         compact: { type: "boolean", description: "Fold the earlier turns into one summary, from the next turn onward. Omit to only read the window." },
+        handoff: { type: "string", description: "What the next window must know, in your own words. Used with compact true when Fresh context is on; ignored otherwise." },
       },
       required: [],
     },
@@ -627,7 +629,7 @@ export type ToolArgs =
   | { name: "task_list"; action: TaskListAction; id?: string; title?: string; goal?: string; tasks?: string; task?: string; status?: TaskListStatus }
   | { name: "plan"; action: PlanAction; id?: string; title?: string; goal?: string; steps?: string; step?: string; status?: PlanStatus; result?: string; check?: number }
   | { name: "goal"; action: GoalAction; objective?: string; tokenBudget?: number; status?: GoalUpdateStatus; evidence?: string; reason?: string; extraTokens?: number }
-  | { name: "context"; compact: boolean }
+  | { name: "context"; compact: boolean; handoff?: string }
   | { name: "keep"; kind: KeepKind; title?: string; text?: string; url?: string }
   | { name: "web_search"; query: string; limit: number }
   | { name: "install_mcp"; server: string; command: string; argv: string[]; env: Record<string, string> }
@@ -659,6 +661,8 @@ export type LoopArgs =
 export type AnyToolArgs = ToolArgs | LoopArgs;
 
 export const MAX_TRACES_READ = 8;
+
+const MAX_HANDOFF_CHARS = 16_000;
 
 export const MAX_MESSAGES_READ = 60;
 
@@ -840,7 +844,7 @@ export function parseToolArgs(name: string, raw: string): AnyToolArgs {
       return parsed;
     }
     case "context":
-      return { name, compact: flag(args.compact, "compact") };
+      return { name, compact: flag(args.compact, "compact"), handoff: optionalText(args.handoff, "handoff", MAX_HANDOFF_CHARS) };
     case "read_trace":
       return { name, thread: optionalText(args.thread, "thread", 96), limit: count(args.limit, 3, MAX_TRACES_READ), offset: budget(args.offset, "offset") ?? 0 };
     case "agents": {

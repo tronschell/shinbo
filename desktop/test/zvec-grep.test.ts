@@ -87,6 +87,20 @@ test("a tar.gz unpacks entries whose names outrun the ustar header", async () =>
   await rm(built.root, { recursive: true, force: true });
 });
 
+test("tar extraction preserves large files across stream and tar boundaries", async (t) => {
+  const built = await fixture();
+  t.after(() => rm(built.root, { recursive: true, force: true }));
+  const bytes = Buffer.alloc(2 * 1024 * 1024 + 137);
+  for (let index = 0; index < bytes.length; index += 1) bytes[index] = index % 251;
+  writeFileSync(path.join(built.root, "tree", "large.bin"), bytes);
+  execFileSync("tar", ["-czf", built.tarball, "-C", path.join(built.root, "tree"), "."]);
+  const into = path.join(built.root, "out");
+  await extractTarGz(createReadStream(built.tarball, { highWaterMark: 7 }), into, () => false);
+  assert.deepEqual(readFileSync(path.join(into, "large.bin")), bytes);
+  assert.equal(readFileSync(path.join(into, ZVEC_GREP_ENTRY), "utf8"), "console.log('zg');\n");
+  assert.equal(readFileSync(path.join(into, DEEP), "utf8"), "deep\n");
+});
+
 test("the tool downloads once, verifies its checksum, and a later launch reuses the install", async () => {
   const built = await fixture();
   const server = await serve(built.tarball, built.digest);

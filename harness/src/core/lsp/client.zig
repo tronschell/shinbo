@@ -700,12 +700,16 @@ pub fn pathToUri(alloc: Allocator, path: []const u8) ![]u8 {
     var out: std.Io.Writer.Allocating = .init(alloc);
     defer out.deinit();
     out.writer.writeAll("file://") catch return error.OutOfMemory;
-    for (path) |byte| {
+    const drive = builtin.os.tag == .windows and path.len >= 2 and std.ascii.isAlphabetic(path[0]) and path[1] == ':';
+    const unc = builtin.os.tag == .windows and path.len >= 2 and std.fs.path.isSep(path[0]) and std.fs.path.isSep(path[1]);
+    if (drive) out.writer.writeByte('/') catch return error.OutOfMemory;
+    for (if (unc) path[2..] else path, 0..) |original, index| {
+        const byte = if (builtin.os.tag == .windows and original == '\\') '/' else original;
         const unreserved = std.ascii.isAlphanumeric(byte) or switch (byte) {
             '-', '_', '.', '~', '/' => true,
             else => false,
         };
-        if (unreserved) {
+        if (unreserved or (drive and index == 1)) {
             out.writer.writeByte(byte) catch return error.OutOfMemory;
         } else {
             out.writer.print("%{X:0>2}", .{byte}) catch return error.OutOfMemory;
@@ -715,7 +719,9 @@ pub fn pathToUri(alloc: Allocator, path: []const u8) ![]u8 {
 }
 
 pub fn uriToPath(alloc: Allocator, uri: []const u8) ![]u8 {
-    const body = if (std.mem.startsWith(u8, uri, "file://")) uri["file://".len..] else uri;
+    const file_uri = std.mem.startsWith(u8, uri, "file://");
+    var body = if (file_uri) uri["file://".len..] else uri;
+    if (builtin.os.tag == .windows and file_uri and std.mem.startsWith(u8, body, "localhost/")) body = body["localhost".len..];
     var out: std.Io.Writer.Allocating = .init(alloc);
     defer out.deinit();
     var index: usize = 0;
@@ -733,7 +739,18 @@ pub fn uriToPath(alloc: Allocator, uri: []const u8) ![]u8 {
         out.writer.writeByte(body[index]) catch return error.OutOfMemory;
         index += 1;
     }
-    return alloc.dupe(u8, out.written());
+    var decoded = out.written();
+    if (builtin.os.tag == .windows) {
+        if (decoded.len >= 3 and decoded[0] == '/' and std.ascii.isAlphabetic(decoded[1]) and decoded[2] == ':') decoded = decoded[1..];
+        const drive = decoded.len >= 2 and std.ascii.isAlphabetic(decoded[0]) and decoded[1] == ':';
+        const unc = file_uri and body.len > 0 and body[0] != '/' and !drive;
+        if (drive or unc) {
+            const path = if (unc) try std.fmt.allocPrint(alloc, "\\\\{s}", .{decoded}) else try alloc.dupe(u8, decoded);
+            std.mem.replaceScalar(u8, path, '/', '\\');
+            return path;
+        }
+    }
+    return alloc.dupe(u8, decoded);
 }
 
 test "uri encoding round-trips paths that need escaping" {
@@ -747,6 +764,41 @@ test "uri encoding round-trips paths that need escaping" {
     try std.testing.expectEqualStrings("/tmp/a b/c#d/main.zig", path);
 }
 
+test "uri encoding preserves Windows drives and network shares" {
+    if (builtin.os.tag != .windows) return error.SkipZigTest;
+    const alloc = std.testing.allocator;
+    const cases = .{
+        .{ "C:\\Users\\a b\\café#%.zig", "file:///C:/Users/a%20b/caf%C3%A9%23%25.zig" },
+        .{ "C:/Users/a b/main.zig", "file:///C:/Users/a%20b/main.zig" },
+        .{ "\\\\server\\share\\a b\\main.zig", "file://server/share/a%20b/main.zig" },
+    };
+    inline for (cases) |case| {
+        const uri = try pathToUri(alloc, case[0]);
+        defer alloc.free(uri);
+        try std.testing.expectEqualStrings(case[1], uri);
+        const path = try uriToPath(alloc, uri);
+        defer alloc.free(path);
+        const normalized = try alloc.dupe(u8, case[0]);
+        defer alloc.free(normalized);
+        std.mem.replaceScalar(u8, normalized, '/', '\\');
+        try std.testing.expectEqualStrings(normalized, path);
+    }
+}
+
+test "uri encoding decodes Windows server locations" {
+    if (builtin.os.tag != .windows) return error.SkipZigTest;
+    const alloc = std.testing.allocator;
+    const cases = .{
+        .{ "file:///c%3A/Users/caf%C3%A9/main.zig", "c:\\Users\\café\\main.zig" },
+        .{ "file://localhost/C:/Users/main.zig", "C:\\Users\\main.zig" },
+        .{ "file://server/share/a%20b/main.zig", "\\\\server\\share\\a b\\main.zig" },
+    };
+    inline for (cases) |case| {
+        const path = try uriToPath(alloc, case[0]);
+        defer alloc.free(path);
+        try std.testing.expectEqualStrings(case[1], path);
+    }
+}
 test "frames are read by content length and reject missing headers" {
     const alloc = std.testing.allocator;
     var reader: std.Io.Reader = .fixed("Content-Length: 7\r\n\r\n{\"a\":1}Content-Length: 2\r\n\r\n{}");

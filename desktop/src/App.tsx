@@ -8,7 +8,7 @@ import { ColorPicker } from "./color-picker";
 import { zoned } from "./dates";
 import { latestRate, latestReply, nested, newest, spawnedAgents, spawnedByTurn, subagentRows, threadAt, threadDepth, threadLabel, threadTitle, type Spawned } from "./threads";
 import { comboKeybind, DEFAULT_HOLD_MS, holdKeybind, HOLD_DURATIONS, HOLD_KEYS, keyboardAccelerator, keybindLabel, keybindProblem, KEYBIND_ACTIONS, normalizeAccelerator, saveShortcut, type Keybind, type KeybindAction, type Keybinds } from "../shared/settings";
-import { ACCENT_CHOICES, CONVERSATION_WIDTHS, type ConversationWidth, MIN_UI_SCALE, MAX_UI_SCALE, canRemoveProvider, thinkingLabel, thinkingStops, type ThinkingLevel, type NotchConcurrency, CURSOR_COMMANDS, balanceLine, outOfCredit, type KeyBalance, OPENROUTER_CREDITS_URL, FREE_ROUTER_ID, FREE_ROUTER_MODELS, forgetRouter, MAX_ROUTERS, MAX_ROUTER_NAME, routerChain, routerIdFor, routerKey, type ModelRouter, MAX_EXPERIMENT_STEPS, MAX_COMMAND_TIMEOUT_MINUTES, MIN_COMMAND_TIMEOUT_MINUTES, MAX_REVIEW_ROUNDS, type HarnessExperiments, LOCAL_EMBEDDING_MODELS, HOSTED_EMBEDDING_MODELS, hostedEmbeddingModel, type EmbeddingModel, type HostedEmbeddingModel, FONT_CHOICES, fontStack, cursorCommandGlyphs, cursorCommandNames, defaultHarnessExperiments, defaultSettings, forgetProvider, isEnvName, MAX_CURSOR_ORBS, MAX_FAVORITE_MODELS, MAX_SECRET_CHARS, MAX_SYSTEM_PROMPT_CHARS, MAX_VERIFIER_SYSTEM_CHARS, defaultAdvisorSystem, defaultVisionSystem, defaultSecretSystem, defaultVerifierSystem, SECOND_MODELS, SECOND_MODEL_IDS, type SecondModelId, verifierFromKey, verifierKey, SETTINGS_KEY, OPENROUTER_CHAT_ENDPOINT, PROVIDER_PRESETS, MODEL_PLANS, CODEX_PREFIX, availableCodexModelKey, codexModelKey, codexSlug, planFor, modelPlanRoute, planForModel, planForProfile, planModelId, planProfileFor, providerChatUrl, providerCredentials, providerReach, toggleFavoriteModel, validateSettings as validateSettingsForPlatform, WEB_SEARCH_PROVIDERS, webSearchCredentials, webSearchProvider, type AccentChoice, type CursorCommand, type FontChoice, type ModelPlan, type ProviderProfile, type ToolSettings, type UserSettings, type VerifierSettings, type WebSearchProvider, type WebSearchSettings } from "../shared/settings";
+import { ACCENT_CHOICES, CONVERSATION_WIDTHS, type ConversationWidth, MIN_UI_SCALE, MAX_UI_SCALE, canRemoveProvider, thinkingLabel, thinkingStops, type ThinkingLevel, type NotchConcurrency, CURSOR_COMMANDS, balanceLine, outOfCredit, type KeyBalance, OPENROUTER_CREDITS_URL, FREE_ROUTER_ID, FREE_ROUTER_MODELS, forgetRouter, MAX_ROUTERS, MAX_ROUTER_NAME, routerChain, routerIdFor, routerKey, type ModelRouter, MAX_EXPERIMENT_STEPS, MAX_COMMAND_TIMEOUT_MINUTES, MIN_COMMAND_TIMEOUT_MINUTES, CHECKPOINT_BAND_PERCENT, MAX_REVIEW_ROUNDS, type HarnessExperiments, LOCAL_EMBEDDING_MODELS, HOSTED_EMBEDDING_MODELS, hostedEmbeddingModel, type EmbeddingModel, type HostedEmbeddingModel, FONT_CHOICES, fontStack, cursorCommandGlyphs, cursorCommandNames, defaultHarnessExperiments, defaultSettings, forgetProvider, isEnvName, MAX_CURSOR_ORBS, MAX_FAVORITE_MODELS, MAX_SECRET_CHARS, MAX_SYSTEM_PROMPT_CHARS, MAX_VERIFIER_SYSTEM_CHARS, defaultAdvisorSystem, defaultVisionSystem, defaultSecretSystem, defaultVerifierSystem, SECOND_MODELS, SECOND_MODEL_IDS, type SecondModelId, verifierFromKey, verifierKey, SETTINGS_KEY, OPENROUTER_CHAT_ENDPOINT, PROVIDER_PRESETS, MODEL_PLANS, CODEX_PREFIX, availableCodexModelKey, codexModelKey, codexSlug, planFor, modelPlanRoute, planForModel, planForProfile, planModelId, planProfileFor, providerChatUrl, providerCredentials, providerReach, toggleFavoriteModel, validateSettings as validateSettingsForPlatform, WEB_SEARCH_PROVIDERS, webSearchCredentials, webSearchProvider, type AccentChoice, type CursorCommand, type FontChoice, type ModelPlan, type ProviderProfile, type ToolSettings, type UserSettings, type VerifierSettings, type WebSearchProvider, type WebSearchSettings } from "../shared/settings";
 import { TOOL_CATALOG } from "../shared/permissions";
 import { validComputerProgress, type ComputerRunProgress } from "../shared/computer";
 import { defaultPaneLayout, fitPaneLayout, MIN_BROWSER_WIDTH, NAV_VIEWS, ordered, validatePaneLayout, WIDE_BROWSER_WIDTH, type PaneLayout } from "./layout";
@@ -258,7 +258,7 @@ function Blocks({ blocks }: { blocks: Block[] }) {
       : block.kind === "notice"
         ? block.steer
           ? <Steered key={index} text={block.text} />
-          : <ContextNotice key={index} text={block.text} plain={block.plain} />
+          : <ContextNotice key={index} text={block.text} plain={block.plain} handoff={block.handoff} />
         : <Body key={index} content={block.text} />)}</>;
 }
 
@@ -272,11 +272,14 @@ function Steered({ text }: { text: string }) {
   return <p className="steered"><span>{"\u2933"} Steered</span>{text}</p>;
 }
 
-function ContextNotice({ text, plain }: { text: string; plain?: boolean }) {
-  return <p className="context-cut context-notice">
-    <span>{keyed(text)}</span>
-    {!plain && <button type="button" onClick={() => openSettingsPage("harness")}>Change in settings</button>}
-  </p>;
+function ContextNotice({ text, plain, handoff }: { text: string; plain?: boolean; handoff?: string }) {
+  return <>
+    <p className="context-cut context-notice">
+      <span>{keyed(text)}</span>
+      {!plain && <button type="button" onClick={() => openSettingsPage("harness")}>Change in settings</button>}
+    </p>
+    {handoff && <details className="context-handoff"><summary>Handoff to this window</summary><pre>{handoff}</pre></details>}
+  </>;
 }
 
 const STALL_MS = 60_000;
@@ -1506,7 +1509,7 @@ function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, comm
   return <div className="task-detail">
     <header>
       <h3>{job ? job.title : "New task"}</h3>
-      <span>{!job ? "Not saved yet" : job.nextRunAt ? `Next run ${date(job.nextRunAt)} · ${time(job.nextRunAt)}` : job.enabled ? "Waits for its trigger" : "Paused"}</span>
+      <span>{!job ? "Not saved yet" : !job.enabled ? "Paused" : job.nextRunAt ? `Next run ${date(job.nextRunAt)} · ${time(job.nextRunAt)}` : "Waits for its trigger"}</span>
     </header>
     <div className="task-fields">
       <label><span>Title</span><input value={title} maxLength={128} disabled={busy} onChange={(event) => setTitle(event.target.value)} placeholder="Weekly reading sweep" /></label>
@@ -4406,6 +4409,16 @@ function HarnessExperimentsPanel({ settings, onChange, busy }: { settings: UserS
           <label>At % of context<input type="number" min={0} max={100} value={experiments.autoCompactPercent} disabled={busy} onChange={(event) => save({ ...experiments, autoCompactPercent: Math.max(0, Math.min(100, Math.trunc(event.currentTarget.valueAsNumber || 0))) })} /></label>
           <small>{compacting ? "Runs /compact once between turns when history reaches this mark." : "Off. /compact remains available manually."}</small>
         </div>}
+        <div className="coding-dependent">
+          <div className="settings-head">
+            <label className="check tool-row">
+              <input type="checkbox" checked={experiments.freshContext} disabled={busy} onChange={(event) => save({ ...experiments, freshContext: event.target.checked })} />
+              <strong>Fresh context instead of a summary</strong>
+            </label>
+            <InfoDot>Drops every earlier turn and hands the model a short record it can verify: your messages, and the handoff it wrote before the rollover. No model writes a summary. Also applies to /compact and to the model's own context tool. With Auto compact on, the model is nudged to save its state and reset itself once the window is within {CHECKPOINT_BAND_PERCENT}% of the compact mark.</InfoDot>
+          </div>
+          <small>{experiments.freshContext ? "On. Earlier turns stay readable with the threads and read_trace tools." : "Off. Compaction rewrites earlier turns into one summary."}</small>
+        </div>
       </div>
       <div className="tool-group">
         <div className="settings-head">

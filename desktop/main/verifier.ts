@@ -1,5 +1,5 @@
 import { type VerifierSettings } from "../shared/settings";
-import { PROHIBITED } from "../shared/settings";
+import { MAX_FALLBACK_MODELS, PROHIBITED } from "../shared/settings";
 import { localDevice } from "../shared/platform-copy";
 
 export { PROHIBITED, defaultVerifierSystem } from "../shared/settings";
@@ -92,7 +92,7 @@ export async function chatCompletion(
   const response = await fetch(settings.endpoint, {
     method: "POST",
     headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
-    body: JSON.stringify({ model: primary ?? settings.model, ...(rest.length ? { models: [primary, ...rest] } : {}), messages, temperature: 0, max_tokens: maxTokens, stream: false }),
+    body: JSON.stringify({ model: primary ?? settings.model, ...(rest.length ? { models: [primary, ...rest].slice(0, MAX_FALLBACK_MODELS) } : {}), messages, temperature: 0, max_tokens: maxTokens, stream: false }),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) throw new Error(`The ${label} endpoint answered ${response.status}.`);

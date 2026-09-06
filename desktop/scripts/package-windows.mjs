@@ -135,6 +135,8 @@ writeFileSync(path.join(notices, "Rust-LICENSES.txt"), metadata.packages.filter(
   return `${pkg.name} ${pkg.version}\n\n${files.map((name) => readFileSync(path.join(cwd, name), "utf8")).join("\n\n")}`;
 }).join("\n\n"));
 writeFileSync(path.join(notices, "Ripgrep-LICENSE.txt"), ["COPYING", "LICENSE-MIT", "UNLICENSE"].map((name) => readFileSync(path.join(desktop, "vendor", name), "utf8")).join("\n\n"));
+const zvecModules = path.join(desktop, "vendor/zvec-grep/node_modules");
+writeFileSync(path.join(notices, "Zvec-grep-LICENSES.txt"), globSync("**/{LICENSE,LICENCE,COPYING,NOTICE}*", { cwd: zvecModules }).filter((name) => statSync(path.join(zvecModules, name)).isFile()).sort().map((name) => `${name}\n\n${readFileSync(path.join(zvecModules, name), "utf8")}`).join("\n\n"));
 
 const loadingGif = path.join(desktop, "assets/installer/emma-setup.gif");
 assert.ok(existsSync(loadingGif), `Missing installer splash: ${loadingGif}`);
@@ -188,6 +190,7 @@ await packager({
 });
 
 const app = path.join(staging, `Emma-win32-${arch}`);
+run(process.execPath, ["scripts/trim-packaged-locales.mjs", app]);
 const executable = path.join(app, "Emma.exe");
 assert.ok(existsSync(executable), `Missing packaged executable: ${executable}`);
 verifyPeArchitecture(executable);

@@ -324,6 +324,14 @@ fn serve(
 
 const RESPONSE_CHUNK_BYTES: usize = 64 * 1024;
 
+#[derive(Serialize)]
+struct ResponseChunk<'a> {
+    chunk: &'a str,
+    end: bool,
+    id: &'a Value,
+    sequence: usize,
+}
+
 fn write_response(writer: &Mutex<impl Write>, response: &Value) -> Result<(), String> {
     let encoded = serde_json::to_string(response)
         .map_err(|error| format!("could not encode response: {error}"))?;
@@ -347,15 +355,14 @@ fn write_response(writer: &Mutex<impl Write>, response: &Value) -> Result<(), St
         while !encoded.is_char_boundary(end) {
             end -= 1;
         }
-        write_line(
-            &json!({
-                "id": response["id"],
-                "chunk": &encoded[offset..end],
-                "sequence": sequence,
-                "end": end == encoded.len(),
-            })
-            .to_string(),
-        )?;
+        let frame = serde_json::to_string(&ResponseChunk {
+            chunk: &encoded[offset..end],
+            end: end == encoded.len(),
+            id: &response["id"],
+            sequence,
+        })
+        .map_err(|error| format!("could not encode response: {error}"))?;
+        write_line(&frame)?;
         offset = end;
         sequence += 1;
     }
@@ -544,10 +551,12 @@ fn dispatch(live: &LiveClient, request: &Request) -> Result<(String, Value), (St
                     .map(ThreadId::parse)
                     .transpose()
                     .map_err(|error| error.to_string())?;
-                let kind = match params.kind.as_deref() {
-                    Some("subagent") => ThreadKind::Subagent,
-                    _ => ThreadKind::Main,
-                };
+                let kind = params
+                    .kind
+                    .map(|value| value.parse::<ThreadKind>())
+                    .transpose()
+                    .map_err(|error| error.to_string())?
+                    .unwrap_or(ThreadKind::Main);
                 encode(call(live.create_thread(params.title, parent, kind))?)
             }
             "setThreadArchived" => {
@@ -602,16 +611,11 @@ fn dispatch(live: &LiveClient, request: &Request) -> Result<(String, Value), (St
             }
             "setGoal" => {
                 let params: SetGoalParams = params(request)?;
-                encode(call(
-                    live.set_goal(
-                        ThreadId::parse(params.thread_id).map_err(|error| error.to_string())?,
-                        params.objective,
-                        params
-                            .token_budget
-                            .and_then(|value| value.parse().ok())
-                            .unwrap_or_default(),
-                    ),
-                )?)
+                encode(call(live.set_goal(
+                    ThreadId::parse(params.thread_id).map_err(|error| error.to_string())?,
+                    params.objective,
+                    optional_u64(params.token_budget, "goal token budget")?.unwrap_or_default(),
+                ))?)
             }
             "updateGoal" => {
                 let params: UpdateGoalParams = params(request)?;
@@ -623,18 +627,13 @@ fn dispatch(live: &LiveClient, request: &Request) -> Result<(String, Value), (St
                             .map_err(|error| error.to_string())?,
                     ),
                 };
-                encode(call(
-                    live.update_goal(
-                        ThreadId::parse(params.thread_id).map_err(|error| error.to_string())?,
-                        status,
-                        params.evidence.unwrap_or_default(),
-                        params.reason.unwrap_or_default(),
-                        params
-                            .extra_tokens
-                            .and_then(|value| value.parse().ok())
-                            .unwrap_or_default(),
-                    ),
-                )?)
+                encode(call(live.update_goal(
+                    ThreadId::parse(params.thread_id).map_err(|error| error.to_string())?,
+                    status,
+                    params.evidence.unwrap_or_default(),
+                    params.reason.unwrap_or_default(),
+                    optional_u64(params.extra_tokens, "goal extra tokens")?.unwrap_or_default(),
+                ))?)
             }
             "clearGoal" => {
                 let params: ThreadParams = params(request)?;
@@ -751,6 +750,44 @@ mod tests {
         let long = "x".repeat(129);
         assert!(parse_request(&format!(r#"{{"id":"{long}","method":"snapshot"}}"#)).is_err());
         assert!(parse_request(r#"{"id":"1","method":"snapshot"}"#).is_ok());
+    }
+
+    #[test]
+    fn response_chunks_preserve_wire_format_and_unicode_boundaries() {
+        for content in [
+            "small".to_owned(),
+            "x".repeat(RESPONSE_CHUNK_BYTES - 40),
+            "🙂漢字\\\"\n".repeat(RESPONSE_CHUNK_BYTES),
+        ] {
+            let response = json!({ "id": "reply", "ok": true, "result": content });
+            let encoded = serde_json::to_string(&response).unwrap();
+            let writer = Mutex::new(Vec::new());
+            write_response(&writer, &response).unwrap();
+            let output = String::from_utf8(writer.into_inner().unwrap()).unwrap();
+            if encoded.len() <= RESPONSE_CHUNK_BYTES {
+                assert_eq!(output, format!("{encoded}\n"));
+                continue;
+            }
+            let mut offset = 0;
+            for (sequence, line) in output.lines().enumerate() {
+                let mut end = (offset + RESPONSE_CHUNK_BYTES).min(encoded.len());
+                while !encoded.is_char_boundary(end) {
+                    end -= 1;
+                }
+                assert_eq!(
+                    line,
+                    json!({
+                        "id": response["id"],
+                        "chunk": &encoded[offset..end],
+                        "sequence": sequence,
+                        "end": end == encoded.len(),
+                    })
+                    .to_string()
+                );
+                offset = end;
+            }
+            assert_eq!(offset, encoded.len());
+        }
     }
 
     #[test]

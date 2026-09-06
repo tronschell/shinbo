@@ -1,16 +1,4 @@
-/* A command Emma printed, run where it was printed.
- *
- * A shell fence in a reply gets a play button. Pressing it starts the command as
- * a background task — main already owns those, with their output buffer and their
- * kill switch — and the transcript grows a terminal under the fence. The click is
- * the permission: the command shown is the command run, verbatim.
- *
- * `RunContext` is what a fence needs from the thread around it: the folder to run
- * in, and where to put the output when the user wants Emma to read it. Without a
- * provider (a knowledge page, an agent tab) a fence is just a fence.
- */
-
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { BackgroundTask } from "../shared/agents";
 import { useTailScroll } from "./cli";
 import { tokenize } from "./highlight";
@@ -18,17 +6,11 @@ import { reasonText } from "./errors";
 
 export const RunContext = createContext<{ folderId?: string; addContext: (text: string) => void } | null>(null);
 
-/** Fences worth a play button: a shell, not a snippet of some other language. */
 const SHELL = /^(bash|sh|shell|zsh|console|terminal|sh-session|shellsession)$/i;
-/** How often a running command's output is re-read while it works. */
 const POLL_MS = 600;
-/** How much of the tail rides into the composer — enough for a stack trace, not a build log. */
 const MAX_CONTEXT_CHARS = 4000;
 
-/** The task's state and its output, pulled while it runs the way the CLI dock pulls a run's. */
 function useTask(id: string | undefined) {
-  // The id it came from is kept beside it, so a new run never shows the previous
-  // one's output for a frame — the same reason the CLI tabs keep theirs.
   const [state, setState] = useState<{ id: string; task: BackgroundTask; output: string } | null>(null);
   useEffect(() => {
     if (!id) return;
@@ -36,7 +18,6 @@ function useTask(id: string | undefined) {
     const read = () => void window.emma.readBackground(id).then((found) => {
       if (!live || !found) return;
       setState({ id, ...found });
-      // Nothing more will arrive once it has exited, so stop asking.
       if (found.task.status === "exited") clearInterval(timer);
     }).catch(() => undefined);
     const timer = setInterval(read, POLL_MS);
@@ -57,6 +38,8 @@ const COPY = "M5.5 5.5h8v8h-8ZM10.5 3.5v-1h-8v8h1";
 const TICK = "M2.5 8.5 6 12l7.5-8";
 
 export function CodeBlock({ text, language }: { text: string; language?: string }) {
+  const highlighted = useMemo(() => tokenize(text, language).map((token, at) =>
+    <span key={at} className={token.kind && `tok-${token.kind}`}>{token.text}</span>), [text, language]);
   const thread = useContext(RunContext);
   const [id, setId] = useState<string>();
   const [error, setError] = useState("");
@@ -98,8 +81,7 @@ export function CodeBlock({ text, language }: { text: string; language?: string 
         <Icon path={copied ? TICK : COPY} />
       </button>
     </div>
-    <pre><code>{tokenize(text, language).map((token, at) =>
-      <span key={at} className={token.kind && `tok-${token.kind}`}>{token.text}</span>)}</code></pre>
+    <pre><code>{highlighted}</code></pre>
     {error && <p className="capability-error" role="alert">{error}</p>}
     {state && <div className="md-run" data-status={state.task.status}>
       <header>

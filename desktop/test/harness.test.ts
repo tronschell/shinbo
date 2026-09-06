@@ -343,7 +343,8 @@ test("a tool call still running keeps its silent turn alive past the idle window
 
 test("a permission ask left open on screen does not kill the agent waiting on it", async () => {
   const { client, asks } = harness(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 550);
     return "allow_once";
   }, 500);
   try {
@@ -716,13 +717,14 @@ test("a session forgotten mid-turn still routes the rest of that turn", async ()
 test("experiment settings survive the round trip from the settings page to the harness option", () => {
 
   const settings = validateHarnessExperiments({ autoCompactPercent: 80, reinjectPromptSteps: 15, reinjectPromptPercent: 0, pruneToolsSteps: 0, pruneToolsPercent: 70 });
-  assert.equal(experimentOption(settings), "compact_percent=80,reinject_steps=15,reinject_percent=0,prune_steps=0,prune_percent=70,command_timeout_minutes=10");
+  assert.equal(experimentOption(settings), "compact_percent=80,reinject_steps=15,reinject_percent=0,prune_steps=0,prune_percent=70,command_timeout_minutes=10,fresh_context=0");
+  assert.equal(experimentOption(validateHarnessExperiments({ freshContext: true })), "compact_percent=70,reinject_steps=0,reinject_percent=0,prune_steps=0,prune_percent=0,command_timeout_minutes=10,fresh_context=1");
+  assert.equal(validateHarnessExperiments({ freshContext: 1 }).freshContext, false);
   assert.equal(validateHarnessExperiments({}).autoCompactPercent, 70);
 
   for (const bad of [{ reinjectPromptSteps: 999 }, { reinjectPromptPercent: -5 }, { pruneToolsSteps: 2.5 }, { pruneToolsPercent: "70" }])
     assert.throws(() => validateHarnessExperiments(bad), /invalid/);
   assert.throws(() => validateHarnessExperiments({ autoCompactPercent: 101 }), /invalid/);
-  // A zero-minute command timeout would terminate every command the instant it started.
   for (const bad of [{ commandTimeoutMinutes: 0 }, { commandTimeoutMinutes: 121 }, { commandTimeoutMinutes: 1.5 }])
     assert.throws(() => validateHarnessExperiments(bad), /invalid/);
   assert.equal(validateHarnessExperiments({}).commandTimeoutMinutes, 10);
@@ -734,7 +736,7 @@ test("experiment settings survive the round trip from the settings page to the h
   assert.equal(validateHarnessExperiments({ embeddingModel: "hosted/openrouter/voyageai/voyage-code-4" }).embeddingModel, "hosted/openrouter/voyageai/voyage-code-4");
   assert.throws(() => validateHarnessExperiments({ embeddingModel: "qwen/text-embedding-v4" }), /invalid/);
   assert.throws(() => validateHarnessExperiments({ embeddingModel: "hosted/openrouter/openai/gpt-4o" }), /invalid/);
-  assert.equal(experimentOption(defaultHarnessExperiments), "compact_percent=70,reinject_steps=0,reinject_percent=0,prune_steps=0,prune_percent=0,command_timeout_minutes=10");
+  assert.equal(experimentOption(defaultHarnessExperiments), "compact_percent=70,reinject_steps=0,reinject_percent=0,prune_steps=0,prune_percent=0,command_timeout_minutes=10,fresh_context=0");
 });
 
 test("the thinking option carries the stop and the list the harness checks it against", () => {
@@ -763,6 +765,11 @@ test("a fired experiment is read off the info channel without swallowing the ret
   );
 
   assert.equal(contextExperimentFired({ _meta: { fx: { contextExperiment: { prunedResults: 0, reinjected: false } } } }), undefined);
+  assert.deepEqual(
+    contextExperimentFired({ _meta: { fx: { contextExperiment: { prunedResults: 0, reinjected: false, savedTokens: 0, addedTokens: 80, checkpoint: "[checkpoint] 61% full" } } } }),
+    { prunedResults: 0, reinjected: false, savedTokens: 0, addedTokens: 80, checkpoint: "[checkpoint] 61% full" },
+  );
+  assert.equal(contextExperimentFired({ _meta: { fx: { contextExperiment: { prunedResults: 0, reinjected: false, checkpoint: "   " } } } }), undefined);
   assert.equal(contextExperimentFired({ _meta: { fx: { modelResponseRecovery: { message: "retrying" } } } }), undefined);
   assert.equal(contextExperimentFired({}), undefined);
 });
@@ -910,7 +917,7 @@ test("a first turn names what it is waiting on, so the wait is never just \u201c
 test("an automatic compaction is read off its own update, and bounded", () => {
   assert.deepEqual(
     compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 12, summaryChars: 2480, modelWritten: true }),
-    { removedTurns: 12, summaryChars: 2480, modelWritten: true },
+    { removedTurns: 12, summaryChars: 2480, modelWritten: true, fresh: false },
   );
   assert.deepEqual(
     compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: "3", summaryChars: -9, modelWritten: "yes" }),
@@ -918,8 +925,17 @@ test("an automatic compaction is read off its own update, and bounded", () => {
   );
   assert.deepEqual(
     compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 4.7, summaryChars: -9, modelWritten: "yes" }),
-    { removedTurns: 4, summaryChars: 0, modelWritten: false },
+    { removedTurns: 4, summaryChars: 0, modelWritten: false, fresh: false },
   );
+  assert.deepEqual(
+    compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 9, summaryChars: 300, modelWritten: true, fresh: true, handoff: "Goal: ship" }),
+    { removedTurns: 9, summaryChars: 300, modelWritten: true, fresh: true, handoff: "Goal: ship" },
+  );
+  assert.deepEqual(
+    compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 9, summaryChars: 300, modelWritten: false, fresh: false, handoff: "ignored without fresh" }),
+    { removedTurns: 9, summaryChars: 300, modelWritten: false, fresh: false },
+  );
+  assert.equal(compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 9, summaryChars: 300, modelWritten: true, fresh: true, handoff: "h".repeat(30_000) })?.handoff?.length, 20_000);
   assert.equal(compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 0, summaryChars: 100, modelWritten: true }), undefined);
   assert.equal(compactionReported({ sessionUpdate: "session_info_update", removedTurns: 12 }), undefined);
 });

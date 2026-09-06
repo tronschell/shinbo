@@ -198,9 +198,7 @@ pub const ActiveSessionState = struct {
     /// Experimental per-step context hooks, off unless the client turns them on
     /// with the `context_experiments` config option.
     context_experiments: context_experiments.Settings = .{},
-    /// How long one `terminal` exec may run before it is terminated. Null leaves
-    /// the built-in default; the client sets it with the `command_timeout_minutes`
-    /// pair inside the `context_experiments` config option.
+    fresh_handoff: ?[]u8 = null,
     command_timeout_ms: ?usize = null,
     semantic_grep: ?mcp_contract.McpServerConfig = null,
     tool_hints: tool_overrides.Hints = .{},
@@ -448,6 +446,7 @@ fn destroyActiveSession(state: *ServerState) void {
     state.alloc.free(active.session_id);
     state.alloc.free(active.model);
     types.freePermissionGrantSlice(state.alloc, active.session_grants);
+    if (active.fresh_handoff) |handoff| state.alloc.free(handoff);
     if (active.semantic_grep) |*config| config.deinit(state.alloc);
     active.tool_hints.deinit(state.alloc);
     active.preselected_tools.deinit(state.alloc);
@@ -1787,6 +1786,8 @@ fn parseContextExperiments(value: []const u8) !context_experiments.Settings {
             settings.prune_tools_steps = number;
         } else if (std.mem.eql(u8, key, "prune_percent")) {
             settings.prune_tools_percent = number;
+        } else if (std.mem.eql(u8, key, "fresh_context")) {
+            settings.fresh_context = number != 0;
         }
     }
     return settings;
@@ -1799,6 +1800,9 @@ test "context experiment options parse into the settings the loop reads" {
     try std.testing.expectEqual(@as(usize, 0), parsed.reinject_prompt_percent);
     try std.testing.expectEqual(@as(usize, 0), parsed.prune_tools_steps);
     try std.testing.expectEqual(@as(usize, 70), parsed.prune_tools_percent);
+    try std.testing.expect(!parsed.fresh_context);
+    try std.testing.expect((try parseContextExperiments("compact_percent=70,fresh_context=1")).fresh_context);
+    try std.testing.expect(!(try parseContextExperiments("fresh_context=0")).fresh_context);
 
     try std.testing.expectEqual(
         @as(?usize, 10 * std.time.ms_per_min),
