@@ -2,25 +2,43 @@ import { useEffect, useRef, useState } from "react";
 import { VISUAL_HEIGHT_MESSAGE, VISUAL_PICK_MESSAGE, VISUAL_PICKED_MESSAGE, visualFrameUrl, visualPage, type Visual as Drawn } from "../shared/visualize";
 import type { ContextPick } from "../shared/folders";
 import { reasonText } from "./errors";
+import { MoreIcon } from "./icons";
 
 const MIN_HEIGHT = 120;
 const MAX_HEIGHT = 760;
 const DEFAULT_WIDTH = 720;
 
-export function Visual({ id, onKept, onPicked }: { id: string; onKept: (artifactId: string) => void; onPicked: (pick: ContextPick) => void }) {
+type VisualProps = { id: string; onKept: (artifactId: string) => void; onPicked: (pick: ContextPick) => void };
+
+export function Visual(props: VisualProps) {
+  return <VisualFrame key={props.id} {...props} />;
+}
+
+function VisualFrame({ id, onKept, onPicked }: VisualProps) {
   const frame = useRef<HTMLIFrameElement>(null);
-  const [drawn, setDrawn] = useState<Drawn | false | null>(null);
+  const [drawn, setDrawn] = useState<Drawn | null>(null);
+  const [renderState, setRenderState] = useState<"loading" | "ready" | "unconfirmed" | "failed">("loading");
+  const [failure, setFailure] = useState("");
   const [height, setHeight] = useState(MIN_HEIGHT);
   const [picking, setPicking] = useState(false);
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState("");
   const [note, setNote] = useState("");
 
   useEffect(() => {
     let alive = true;
+    const timeout = window.setTimeout(() => {
+      if (alive) setRenderState((state) => state === "loading" ? "unconfirmed" : state);
+    }, 15000);
     void window.emma.readVisual(id)
       .then((visual) => { if (alive) setDrawn(visual); })
-      .catch(() => { if (alive) setDrawn(false); });
-    return () => { alive = false; };
+      .catch((error) => {
+        if (!alive) return;
+        setFailure(reasonText(error));
+        setRenderState("failed");
+      });
+    return () => { alive = false; window.clearTimeout(timeout); };
   }, [id]);
 
   useEffect(() => {
@@ -28,7 +46,8 @@ export function Visual({ id, onKept, onPicked }: { id: string; onKept: (artifact
       const page = frame.current?.contentWindow;
       const said = event.data as { emma?: unknown; height?: unknown; label?: unknown; html?: unknown };
       if (!page || event.source !== page) return;
-      if (said?.emma === VISUAL_HEIGHT_MESSAGE && typeof said.height === "number") {
+      if (said?.emma === VISUAL_HEIGHT_MESSAGE && typeof said.height === "number" && Number.isFinite(said.height) && said.height > 0) {
+        setRenderState((state) => state === "failed" ? state : "ready");
         setHeight(Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, Math.ceil(said.height))));
         return;
       }
@@ -45,8 +64,12 @@ export function Visual({ id, onKept, onPicked }: { id: string; onKept: (artifact
     frame.current?.contentWindow?.postMessage({ emma: VISUAL_PICK_MESSAGE, on: picking }, "*");
   }, [picking]);
 
-  if (drawn === false) return <p className="visual-missing">That picture belonged to an earlier run of Emma.</p>;
-  if (!drawn) return null;
+  const loading = renderState === "loading";
+  const status = renderState === "failed" ? `Couldn’t load this picture. ${failure}`
+    : renderState === "unconfirmed" ? "This picture hasn’t confirmed it is ready."
+    : drawn ? "Rendering picture…" : "Loading picture…";
+
+  if (!drawn) return <p className="visual-missing inline-activity" data-running={loading || undefined} role="status">{status}</p>;
 
   const run = async (label: string, work: () => Promise<string>) => {
     setBusy(label);
@@ -67,16 +90,18 @@ export function Visual({ id, onKept, onPicked }: { id: string; onKept: (artifact
     return `Kept as the artifact "${artifact.title}".`;
   });
 
-  return <figure className="visual">
-    <header>
-      <strong title={drawn.title}>{drawn.title}</strong>
-      <span>
-        <button type="button" aria-pressed={picking} disabled={!!busy} onClick={() => { setPicking(!picking); setNote(picking ? "" : "Point at a part of the picture to attach it to your next message."); }} title="Point at a part of this to ask for a change">{picking ? "Done" : "Edit"}</button>
-        <button type="button" disabled={!!busy} onClick={exportPng} title="Save a PNG of the whole thing">{busy === "Exporting" ? "Exporting…" : "Export"}</button>
-        <button type="button" disabled={!!busy} onClick={keep} title="Keep this on the Artifacts page">{busy === "Keeping" ? "Keeping…" : "Keep"}</button>
-      </span>
-    </header>
-    <iframe ref={frame} title={drawn.title} sandbox="allow-scripts" src={visualFrameUrl(id)} style={{ height }} onLoad={() => { if (picking) frame.current?.contentWindow?.postMessage({ emma: VISUAL_PICK_MESSAGE, on: true }, "*"); }} />
-    {note && <figcaption>{note}</figcaption>}
+  return <figure className="visual" aria-label={drawn.title} aria-busy={loading}>
+    <div className="visual-actions" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}
+      onKeyDown={(event) => { if (event.key === "Escape") { setOpen(false); trigger.current?.focus(); } }}>
+      <button ref={trigger} type="button" className="visual-more" aria-label={`More for ${drawn.title}`} aria-expanded={open} title="More" onClick={() => setOpen(!open)}><MoreIcon /></button>
+      {open && <div className="visual-options" aria-label="Visualization actions">
+        <button type="button" aria-pressed={picking} disabled={!!busy} onClick={() => { setOpen(false); trigger.current?.focus(); setPicking(!picking); setNote(picking ? "" : "Point at a part of the picture to attach it to your next message."); }} title="Point at a part of this to ask for a change">{picking ? "Done editing" : "Edit"}</button>
+        <button type="button" disabled={!!busy} onClick={() => { setOpen(false); trigger.current?.focus(); void exportPng(); }} title="Save a PNG of the whole thing">{busy === "Exporting" ? "Exporting…" : "Export"}</button>
+        <button type="button" disabled={!!busy} onClick={() => { setOpen(false); trigger.current?.focus(); void keep(); }} title="Keep this on the Artifacts page">{busy === "Keeping" ? "Keeping…" : "Keep"}</button>
+      </div>}
+    </div>
+    <iframe ref={frame} title={drawn.title} sandbox="allow-scripts" src={visualFrameUrl(id)} style={{ height }} onError={() => { setFailure("The picture frame could not load."); setRenderState("failed"); }} onLoad={() => { if (picking) frame.current?.contentWindow?.postMessage({ emma: VISUAL_PICK_MESSAGE, on: true }, "*"); }} />
+    {renderState !== "ready" && <figcaption className="inline-activity" data-running={loading || undefined} role="status">{status}</figcaption>}
+    {(busy || note) && <figcaption className="inline-activity" data-running={!!busy || undefined} role="status">{busy ? `${busy}…` : note}</figcaption>}
   </figure>;
 }

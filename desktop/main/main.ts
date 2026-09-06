@@ -1214,7 +1214,8 @@ function threadContextRequest(value: unknown) {
   const candidate = value as Record<string, unknown>;
   const threadId = boundedCapabilityId(candidate.threadId, "Thread context thread");
   const raw = Array.isArray(candidate.folderIds) ? candidate.folderIds.slice(0, 1) : [];
-  const model = typeof candidate.model === "string" ? candidate.model.slice(0, 128) : "";
+  if (candidate.model !== undefined && typeof candidate.model !== "string") throw new Error("Thread context request is invalid");
+  const model = typeof candidate.model === "string" ? candidate.model.slice(0, 128) : threadModel(threadId);
   if (candidate.effort !== undefined && !isThinkingLevel(candidate.effort)) throw new Error("Thread context request is invalid");
   const stepLimit = Math.round(Number(candidate.stepLimit) || 0);
   return { threadId, folderIds: raw.map((id) => boundedCapabilityId(id, "Thread folder")), mode: asPermissionMode(candidate.mode), model, effort: candidate.effort, subagent: subagentRoute(candidate), review: typeof candidate.review === "boolean" ? candidate.review : undefined, stepLimit: stepLimit > 0 ? Math.min(stepLimit, MAX_AGENT_STEP_LIMIT) : undefined };
@@ -2096,6 +2097,10 @@ function harnessClient(cwd: string, key = cwd, route?: ProviderRoute): Harness {
     chatUrl: route?.chatUrl,
     vision: visionRoute(),
     promptFile: harnessPromptFile(home, key),
+    onActivity: (threadId) => {
+      if (agents && !agents.acceptsActivity(threadId)) return;
+      broadcast("emma:activity", { threadId });
+    },
     onDelta: (threadId, delta) => {
       if (agents && !agents.noteDelta(threadId, delta)) return;
       harnessText.set(threadId, (harnessText.get(threadId) ?? "") + delta);
@@ -2469,9 +2474,17 @@ async function selectModel(method: string, params: Record<string, string>): Prom
   if (method === "setThreadModel") {
 
     const picked = params.modelId ?? "";
+    let model = "fallback";
+    if (picked.startsWith(CODEX_PREFIX)) {
+      if (!CODEX_MODEL_ID.test(picked.slice(CODEX_PREFIX.length))) throw new Error("That is not a Codex model.");
+      await chatgptAuth();
+      model = picked;
+    } else if (picked && picked !== "fallback") {
+      model = picked.startsWith("provider:") || picked.startsWith("router:") ? routedModelKey(picked) : `openrouter:${catalogued(picked.replace(/^openrouter:/, ""))}`;
+    }
     rememberThreadContext(params.threadId, {
       ...threadContext(params.threadId),
-      model: !picked ? "" : picked.startsWith("provider:") || picked.startsWith("router:") ? routedModelKey(picked) : `openrouter:${catalogued(picked)}`,
+      model,
       effort: thinkingLevel(params.effort),
     });
     return { set: true };
@@ -2523,12 +2536,18 @@ function answerRequest(method: string, params: Record<string, string> = {}): Pro
       return listModelCatalog(!!params.force);
     case "selectOpenRouterModel": case "selectProviderModel": case "selectCodexModel": case "selectFallbackModel": case "setThreadModel":
       return Promise.resolve().then(() => selectModel(method, params));
-    case "createThread":
+    case "createThread": {
+      const context = params.parentThreadId ? threadContexts.get(params.parentThreadId) : undefined;
+      const selection = { model: selectedModel || "fallback", effort: selectedEffort, ...context };
       return host!.request({ method, params }).then((created) => {
         const id = (created as { id?: unknown } | null)?.id;
-        if (typeof id === "string" && params.parentThreadId && inheritBench(id, params.parentThreadId)) stopThread(id);
+        if (typeof id === "string") {
+          rememberThreadContext(id, { ...threadContext(id), ...selection });
+          if (params.parentThreadId && inheritBench(id, params.parentThreadId)) stopThread(id);
+        }
         return created;
       });
+    }
     case "saveScheduledJob":
       return Promise.resolve().then(async () => {
         const graph = parseWorkflow(params.nodes ?? "", params.prompt ?? "");
@@ -2766,7 +2785,10 @@ async function runTurn(turn: TurnRequest) {
   if (harnessRuns.has(turn.threadId)) throw new Error("This thread is still running or finishing its current turn. Wait for it to finish before starting another.");
   agents!.forget(turn.threadId);
   turn.subagent ??= threadSubagent(turn.threadId);
-  turn.effort ??= threadEffort(turn.threadId) || (harnessModel(turn.model) === harnessModel(selectedModel) ? selectedEffort : "");
+  turn.model = (turn.model ?? threadModel(turn.threadId)) || "fallback";
+  const context = threadContext(turn.threadId);
+  turn.effort ??= context.model === turn.model ? context.effort ?? "" : turn.model === selectedModel ? selectedEffort : "";
+  rememberThreadContext(turn.threadId, { ...context, model: turn.model, effort: turn.effort });
   turn.stepLimit ??= threadStepLimit(turn.threadId);
   void recordUse(app.getPath("userData"), modelKey(modelName(turn.model) || "auto"));
   turn.objective ??= activeGoal(turn.threadId)?.objective;
@@ -3874,13 +3896,16 @@ async function runScheduledWorkflow(job: HostDueJob["dueJob"]) {
     return;
   }
   const mode = asPermissionMode(job.permissionMode);
+  const model = job.model || selectedModel || "fallback";
+  const effort = model === selectedModel ? selectedEffort : "";
+  rememberThreadContext(job.threadId, { ...threadContext(job.threadId), mode, model, effort });
   const run = await runWorkflow(nodes, parseVariables(job.variables), async (prompt, node, input) => {
     if (node.kind === "script") {
       try { return await runWorkflowScript(prompt, input, workflowScriptRoots()); }
       catch (error) { return `[script could not run: ${error instanceof Error ? error.message : String(error)}]`; }
     }
     const { content, skillContext } = await resolveMentions(prompt);
-    const outcome = await driveTurn({ threadId: job.threadId, content, mode, title: job.title, model: job.model || selectedModel, ...(skillContext ? { params: { skillContext } } : {}) });
+    const outcome = await driveTurn({ threadId: job.threadId, content, mode, title: job.title, model, effort, ...(skillContext ? { params: { skillContext } } : {}) });
     return lastAssistantMessage(outcome) ?? "";
   });
   await host!.request({ method: "finishScheduledJob", params: { jobId: job.jobId, outputs: packVariables(run.variables), depth: String(job.depth) } });
@@ -4350,6 +4375,12 @@ if (primaryInstance) app.whenReady().then(() => {
       if (screenClaimed && !delivered) annotationAttachment.finish(screenContextId!, false);
       if (skillClaimed && !delivered) skillAttachment.finish(skillAttachmentId!, false);
     }
+  });
+  ipcMain.handle("emma:get-thread-context", (event, value: unknown) => {
+    if (event.senderFrame !== event.sender.mainFrame || event.sender !== overlay?.webContents) mainWindowSender(event);
+    const threadId = boundedCapabilityId((value as { threadId?: unknown } | null)?.threadId, "Thread context thread");
+    if (!threadModel(threadId)) rememberThreadContext(threadId, { ...threadContext(threadId), model: selectedModel || "fallback", effort: selectedEffort });
+    return { model: threadModel(threadId), effort: threadEffort(threadId) };
   });
   ipcMain.handle("emma:set-thread-context", (event, value: unknown) => {
     if (event.senderFrame !== event.sender.mainFrame || event.sender !== overlay?.webContents) mainWindowSender(event);

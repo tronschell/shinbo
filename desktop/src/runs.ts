@@ -5,7 +5,7 @@ import { visualDrawn } from "../shared/visualize";
 import { charLabel } from "../shared/usage";
 import { splitThinking } from "../shared/thinking";
 import type { Message } from "./types";
-import { recordBreakdown, recordExperiment } from "./context";
+import { recordBreakdown, recordCompaction, recordExperiment } from "./context";
 import { reasonText } from "./errors";
 
 export type QueuedTurn = {
@@ -291,6 +291,9 @@ export function wire() {
   wired = true;
   window.emma.onAgents(reconcile);
   void window.emma.listAgents().then(reconcile).catch(() => undefined);
+  window.emma.onActivity(({ threadId }) => {
+    write(threadId, { activeAt: Date.now() });
+  });
   window.emma.onDelta(({ threadId, delta, thinking, recovery }) => {
     if (!read(threadId).sending) adoptForeign(threadId);
 
@@ -299,7 +302,7 @@ export function wire() {
       write(threadId, (run) => {
         const last = run.blocks.at(-1);
         const repeated = last?.kind === "notice" && last.text === text;
-        return { blocks: repeated ? run.blocks : [...run.blocks, { kind: "notice" as const, text, plain: true }], recovery: text };
+        return { blocks: repeated ? run.blocks : [...run.blocks, { kind: "notice" as const, text, plain: true }], recovery: text, activeAt: Date.now() };
       });
       return;
     }
@@ -313,9 +316,10 @@ export function wire() {
     if (!read(step.threadId).sending) adoptForeign(step.threadId);
     write(step.threadId, (run) => ({ blocks: mergeStep(run.blocks, step), activeAt: Date.now() }));
   });
-  window.emma.onCompacted(({ threadId, removedTurns, modelWritten, fresh, handoff }) => {
+  window.emma.onCompacted(({ threadId, removedTurns, modelWritten, fresh, handoff, historyChars }) => {
     if (!read(threadId).sending) adoptForeign(threadId);
-    write(threadId, (run) => ({ blocks: [...run.blocks, { kind: "notice" as const, text: compactionNotice(removedTurns, modelWritten, fresh), plain: true, compact: true, ...(handoff ? { handoff } : {}) }] }));
+    if (historyChars !== undefined) recordCompaction(threadId, historyChars);
+    write(threadId, (run) => ({ blocks: [...run.blocks, { kind: "notice" as const, text: compactionNotice(removedTurns, modelWritten, fresh), plain: true, compact: true, ...(handoff ? { handoff } : {}) }], activeAt: Date.now() }));
   });
   window.emma.onContextExperiment((fired) => {
     const { threadId, prunedResults, reinjected, savedTokens, addedTokens, checkpoint } = fired;
@@ -326,16 +330,20 @@ export function wire() {
       ...(prunedResults || reinjected ? [{ kind: "notice" as const, text: experimentNotice(prunedResults, reinjected, savedTokens, addedTokens) }] : []),
       ...(checkpoint ? [{ kind: "notice" as const, text: checkpoint, plain: true, steer: true }] : []),
     ];
-    write(threadId, (run) => ({ blocks: [...run.blocks, ...notices] }));
+    write(threadId, (run) => ({ blocks: [...run.blocks, ...notices], activeAt: Date.now() }));
   });
   window.emma.onRoutedModel(({ threadId, model, fellBack }) => {
     if (!read(threadId).sending) adoptForeign(threadId);
-    write(threadId, (run) => run.routed === model ? { routed: model } : {
+    write(threadId, (run) => run.routed === model ? { routed: model, activeAt: Date.now() } : {
       routed: model,
+      activeAt: Date.now(),
       blocks: fellBack ? [...run.blocks, { kind: "notice" as const, text: `Fell back to ${model} — the model above it stopped answering`, plain: true }] : run.blocks,
     });
   });
-  window.emma.onContextBreakdown(({ threadId, ...parts }) => recordBreakdown(threadId, parts));
+  window.emma.onContextBreakdown(({ threadId, ...parts }) => {
+    recordBreakdown(threadId, parts);
+    write(threadId, { activeAt: Date.now() });
+  });
 }
 
 export function experimentNotice(prunedResults: number, reinjected: boolean, savedTokens = 0, addedTokens = 0): string {

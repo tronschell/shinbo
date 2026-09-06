@@ -120,6 +120,22 @@ test("the total is the provider's count for the newest request, not the sum of t
   assert.equal(running.rows.find((row) => row.source === "turn")?.chars, 9_000 * 4 - 9_000, "this turn's row is what the provider read beyond the measured segments");
 });
 
+test("deterministic compaction refreshes context before provider usage without changing tool counts", () => {
+  const compacted = { at: Date.parse("2026-08-23T10:02:00.000Z"), historyChars: 800 };
+  const breakdown = { ...BREAKDOWN, compacted };
+  const history = thread(4);
+  const running = { ...working(0), inputTokens: 0, outputTokens: 0 };
+  const ledger = buildLedger(history, [{ kind: "messages", label: "old attachment", chars: 50_000, turns: 1 }], 200_000, [running], NO_EXPERIMENTS, 7, breakdown);
+  assert.equal(ledger.carriedTokens, 2_200);
+  assert.equal(ledger.calls, 7);
+  assert.equal(ledger.rows.find((row) => row.label === "Compacted history · estimated")?.chars, 800);
+  assert.ok(!ledger.rows.some((row) => row.label === "old attachment"));
+  assert.equal(buildLedger(history, [], 200_000, [{ ...running, inputTokens: 1_500 }], NO_EXPERIMENTS, 7, breakdown).carriedTokens, 1_500);
+  history.messages.push({ role: "assistant", content: "new answer", timestamp: "2026-08-23T10:03:00.000Z", generation: { inputTokens: 1_800, outputTokens: 2, durationMilliseconds: 100, model: "test" } });
+  assert.equal(buildLedger(history, [], 200_000, [], NO_EXPERIMENTS, 7, breakdown).carriedTokens, 1_800);
+  assert.equal(buildLedger(history, [], 200_000, [{ ...running, inputTokens: 1_000 }], NO_EXPERIMENTS, 7, breakdown).carriedTokens, 1_000);
+});
+
 test("measured segments never claim more than the provider read", () => {
   const pruned: Thread = { ...thread(4), messages: thread(4).messages.map((message) => ({ ...message, content: "x".repeat(40_000) })) };
   const ledger = buildLedger(pruned, [], 200_000, [], NO_EXPERIMENTS, 0, BREAKDOWN);

@@ -10,7 +10,7 @@ import { zoned } from "../src/dates";
 type Element = ReactElement<Record<string, unknown>>;
 const source = readFileSync(path.resolve(__dirname, "../../src/schedule.tsx"), "utf8");
 const prefix = source.slice(source.indexOf("const KIND_LABELS"), source.indexOf("export function useTaskCommands"));
-const code = ts.transpileModule(prefix.replace("export function TriggerPicker", "function TriggerPicker"), {
+const code = ts.transpileModule(prefix.replaceAll("export function ", "function "), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React },
 }).outputText;
 
@@ -82,6 +82,22 @@ test("existing custom cron starts raw and disabled controls stay disabled", () =
   change(raw(editor.render())!, { target: { value: "0 9 * * 1" } });
   assert.ok(raw(editor.render()));
   assert.equal(raw(mount("0 9 * * 1").render()), undefined);
+});
+
+test("compact schedules keep advanced controls and validation available without rewriting the trigger", () => {
+  const env = { React, ...workflow, zoned };
+  const ScheduleField = Function(...Object.keys(env), `${code}\nreturn ScheduleField;`)(...Object.values(env));
+  for (const value of ["0 14 * * *", "0 9 * * 1", "manual", "0 9,17 * * 1-5", "invalid"]) {
+    const onChange = () => undefined;
+    const nodes = elements(ScheduleField({ value, onChange, disabled: true }));
+    const picker = nodes.find((node) => typeof node.type === "function" && node.type.name === "TriggerPicker")!;
+    assert.equal(picker.props.value, value);
+    assert.equal(picker.props.onChange, onChange);
+    assert.equal(picker.props.disabled, true);
+    assert.ok(nodes.some((node) => node.type === "summary"));
+    assert.equal(nodes.some((node) => node.props.role === "alert"), Boolean(workflow.triggerProblem(value)));
+    assert.equal(nodes.some((node) => node.props.className === "schedule-hint"), ["daily", "weekly", "monthly", "yearly"].includes(workflow.parseTrigger(value).kind));
+  }
 });
 
 test("the scheduled parent keys each task editor by job so raw mode resets on navigation", () => {

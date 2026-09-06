@@ -282,7 +282,53 @@
 .task-detail > header h3 { color: var(--text); font: var(--fs-md)/1.25 var(--font-mono); font-weight: 400; letter-spacing: var(--ls-caps); text-transform: uppercase; }
 .task-detail > header span { color: var(--text-3); font: var(--fs-2xs)/1.4 var(--font-mono); white-space: nowrap; }
 
-.task-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3) var(--s-4); }
+.task-fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-5); }
+.task-composer { container-type: inline-size; padding-top: var(--s-4); }
+.task-composer > header { margin-top: calc(var(--s-4) * -1); padding-block: var(--s-3); flex-wrap: wrap; }
+.task-editor-body { max-width: 740px; margin: var(--s-5) auto; padding-inline: var(--s-4); }
+.task-editor-body[hidden] { display: none; }
+.task-composer .task-fields > label > input { min-height: 38px; }
+.task-composer .task-prompt textarea { min-height: 180px; padding: var(--s-4); background: var(--bg); font: var(--fs-sm)/1.8 var(--font); }
+.task-run-settings { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-4); }
+.task-run-settings .task-model { max-width: 320px; min-width: 0; }
+.task-run-settings .verifier-pick-trigger { border-color: transparent; background: transparent; font-size: var(--fs-xs); }
+.task-permissions { display: flex; align-items: center; gap: var(--s-2); color: var(--text-3); font: var(--fs-2xs)/1.4 var(--font-mono); }
+.schedule-disclosure { border: 1px solid var(--border); background: var(--bg); }
+.schedule-disclosure > summary { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-3); min-height: 46px; padding: var(--s-3); cursor: pointer; list-style: none; font: var(--fs-xs)/1.5 var(--font-mono); }
+.schedule-disclosure > summary::-webkit-details-marker { display: none; }
+.schedule-disclosure > summary > span:first-child { color: var(--violet); }
+.schedule-disclosure > summary b { font-weight: 400; }
+.schedule-edit { margin-left: auto; color: var(--text-3); font-size: var(--fs-2xs); }
+.schedule-edit::after { content: " ▾"; }
+.schedule-disclosure[open] .schedule-edit::after { content: " ▴"; }
+.schedule-disclosure > summary:focus-visible, .task-advanced > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.schedule-disclosure > .trigger-picker { padding: var(--s-4); border-top: 1px solid var(--border); }
+.schedule-hint { margin-top: var(--s-2); color: var(--text-3); font: var(--fs-2xs)/1.5 var(--font-mono); }
+.task-advanced > summary { color: var(--text-3); cursor: pointer; font: var(--fs-2xs)/1.5 var(--font-mono); }
+.task-advanced > ol { margin-top: var(--s-3); }
+.task-composer > .task-actions { align-items: center; padding-top: var(--s-4); border-top: 1px solid var(--border); }
+.task-save-summary { margin-right: auto; color: var(--text-3); font: var(--fs-2xs)/1.5 var(--font-mono); }
+.task-composer > .task-actions > button:first-of-type { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.task-composer > .task-actions > button:disabled { opacity: .45; }
+.workflow-canvas-layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; border: 1px solid var(--border); }
+.workflow-canvas-main { min-width: 0; background: radial-gradient(var(--border) .7px, transparent .7px) 0 0 / 18px 18px; }
+.workflow-trigger { padding: var(--s-3); color: var(--violet); border-bottom: 1px solid var(--border); font: var(--fs-xs)/1.5 var(--font-mono); text-align: center; }
+.workflow-canvas-main .task-canvas { min-height: 340px; max-height: 65vh; margin: 0; border: 0; background: transparent; }
+.workflow-inspector { min-width: 0; padding: var(--s-4); border-left: 1px solid var(--border); background: var(--surface); }
+.workflow-inspector > .task-node { color: var(--blue); font: var(--fs-2xs)/1.4 var(--font-mono); text-transform: uppercase; }
+.workflow-inspector > .task-node.if { color: var(--orange); }
+.workflow-inspector > h4 { margin-top: var(--s-3); overflow-wrap: anywhere; font: var(--fs-md)/1.5 var(--font-mono); }
+.workflow-inspector .graph-detail { grid-template-columns: minmax(0, 1fr); gap: var(--s-2); }
+.workflow-inspector .graph-detail dd { margin-bottom: var(--s-4); white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font); }
+.workflow-inspector > p { color: var(--text-3); font: var(--fs-xs)/1.6 var(--font); }
+@container (max-width: 650px) {
+  .workflow-canvas-layout { grid-template-columns: minmax(0, 1fr); }
+  .workflow-inspector { border-left: 0; border-top: 1px solid var(--border); }
+  .task-editor-body { padding-inline: 0; }
+  .task-save-summary { flex-basis: 100%; }
+  .task-advanced li { grid-template-columns: 70px minmax(0, 1fr); }
+  .task-advanced .task-node-text, .task-advanced li > small { grid-column: 1 / -1; white-space: normal; }
+}
 .task-fields label { display: grid; align-content: start; gap: var(--s-1); min-width: 0; }
 .task-fields label > span { color: var(--text-3); font-size: var(--fs-2xs); line-height: 1.4; }
 .task-wide { grid-column: 1 / -1; }
@@ -411,15 +457,7 @@
 
 .modal-backdrop { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; padding: var(--s-7); border: 0; color: inherit; background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: blur(8px); }
 .modal-backdrop::backdrop { background: transparent; }
-/* backdrop-filter paints its blurred copy *over* the backdrop, never in place of
-   it, so wherever the page is see-through — the sidebar, which is 65% window
-   vibrancy — the crisp original still reads straight through the blur. Fill the
-   shell while a modal is up: the scrim was hiding the vibrancy anyway, and the
-   blur finally has something opaque to eat. */
 .app-shell:has(.modal-backdrop[open]) { background: var(--bg); }
-/* Shared modal chrome. Every `.agent-dialog` variant below only sets its own
-   width and body layout, so the panel itself — surround, border, header row —
-   has to live here or the variant renders as bare text on the backdrop. */
 .agent-dialog { width: min(460px, 100%); max-height: 85vh; overflow-y: auto; padding: 0; border: 1px solid var(--border-strong); background: var(--bg); box-shadow: var(--shadow-lg); }
 .agent-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-2) var(--s-4); border-bottom: 1px solid var(--border); }
 .agent-dialog > header > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s-2) var(--s-3); min-width: 0; }

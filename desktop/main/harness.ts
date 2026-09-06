@@ -116,7 +116,7 @@ export function contextBreakdownReported(update: Record<string, unknown>): Conte
   };
 }
 
-export type Compaction = { removedTurns: number; summaryChars: number; modelWritten: boolean; fresh: boolean; handoff?: string };
+export type Compaction = { removedTurns: number; summaryChars: number; modelWritten: boolean; fresh: boolean; handoff?: string; historyChars?: number };
 
 const MAX_HANDOFF_TEXT = 20_000;
 
@@ -125,8 +125,8 @@ export function compactionReported(update: Record<string, unknown>): Compaction 
   const removedTurns = count(update.removedTurns);
   if (!removedTurns) return undefined;
   const fresh = update.fresh === true;
-  const handoff = fresh && typeof update.handoff === "string" && update.handoff.trim() ? update.handoff.slice(0, MAX_HANDOFF_TEXT) : undefined;
-  return { removedTurns, summaryChars: count(update.summaryChars), modelWritten: update.modelWritten === true, fresh, ...(handoff ? { handoff } : {}) };
+  const handoff = typeof update.handoff === "string" && update.handoff.trim() ? update.handoff.slice(0, MAX_HANDOFF_TEXT) : undefined;
+  return { removedTurns, summaryChars: count(update.summaryChars), modelWritten: update.modelWritten === true, fresh, ...(handoff ? { handoff } : {}), ...(typeof update.historyChars === "number" && Number.isSafeInteger(update.historyChars) && update.historyChars >= 0 ? { historyChars: update.historyChars } : {}) };
 }
 
 export function turnUsageReported(update: Record<string, unknown>): TurnUsage | undefined {
@@ -162,6 +162,7 @@ export type HarnessDeps = {
   idleMs?: number;
 
   mcpServers: (threadId: string) => Promise<HarnessMcpServer[]>;
+  onActivity?: (threadId: string) => void;
   onDelta: (threadId: string, delta: string) => void;
 
   onThought: (threadId: string, delta: string, recovery?: boolean) => void;
@@ -489,7 +490,7 @@ export class Harness {
     const route = this.deps.chatUrl ? { EMMA_PROVIDER_CHAT_URL: this.deps.chatUrl } : {};
     const vision = this.deps.vision
       ? { EMMA_VISION_MODEL: this.deps.vision.model, EMMA_VISION_CHAT_URL: this.deps.vision.chatUrl, EMMA_VISION_API_KEY: this.deps.vision.apiKey }
-      : {};
+      : { EMMA_VISION_MODEL: undefined, EMMA_VISION_CHAT_URL: undefined, EMMA_VISION_API_KEY: undefined };
     const prompt = this.deps.promptFile ? { EMMA_SYSTEM_PROMPT: this.deps.promptFile } : {};
     const child = spawn(this.deps.binaryPath, this.deps.args ?? ["acp"], {
       cwd: this.deps.cwd,
@@ -894,7 +895,9 @@ export class Harness {
 
   private applyUpdate(threadId: string, update: Record<string, unknown>) {
     switch (update.sessionUpdate) {
-
+      case "_emma_activity":
+        this.deps.onActivity?.(threadId);
+        return;
       case "agent_message_chunk":
       case "agent_thought_chunk": {
         const content = (update.content ?? {}) as { text?: unknown };
