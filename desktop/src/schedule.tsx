@@ -129,6 +129,20 @@ export function TriggerPicker({ value, onChange, disabled }: { value: string; on
   </div>;
 }
 
+export function ScheduleField({ value, onChange, disabled }: { value: string; onChange: (value: string) => void; disabled: boolean }) {
+  const trigger = parseTrigger(value);
+  const timed = ["daily", "weekly", "monthly", "yearly"].includes(trigger.kind);
+  return <div className="schedule-field">
+    <span className="task-label">Schedule</span>
+    <details className="schedule-disclosure">
+      <summary><span aria-hidden="true">◷</span><b>{describeTrigger(value)}</b><span className="schedule-edit">Edit schedule</span></summary>
+      <TriggerPicker value={value} onChange={onChange} disabled={disabled} />
+    </details>
+    {timed && <p className="schedule-hint">{localHint(trigger.hour, trigger.minute)} your time</p>}
+    {triggerProblem(value) && <p className="task-problem" role="alert">{triggerProblem(value)}</p>}
+  </div>;
+}
+
 export function useTaskCommands(disabledTools: readonly string[] = []) {
   const [skills, setSkills] = useState<SlashCommand[]>([]);
   const [notes, setNotes] = useState<KeptNote[]>([]);

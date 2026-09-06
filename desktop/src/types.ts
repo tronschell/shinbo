@@ -1,3 +1,4 @@
+import type { ThinkingLevel } from "../shared/settings";
 import type { MachineFacts } from "../shared/embedding-recommendation";
 import type { SemanticGrepStatus } from "../shared/semantic-grep";
 import type { ZvecGrepStatus } from "../shared/zvec-grep";
@@ -241,9 +242,10 @@ declare global {
       updateReady(): Promise<string>;
       installUpdate(): Promise<void>;
       onUpdateReady(listener: (value: string) => void): () => void;
+      onActivity(listener: (value: { threadId: string }) => void): () => void;
       onDelta(listener: (value: { threadId: string; delta: string; thinking?: boolean; recovery?: boolean }) => void): () => void;
       onStep(listener: (value: ThreadStep) => void): () => void;
-      onCompacted(listener: (value: { threadId: string; removedTurns: number; summaryChars: number; modelWritten: boolean; fresh: boolean; handoff?: string }) => void): () => void;
+      onCompacted(listener: (value: { threadId: string; removedTurns: number; summaryChars: number; modelWritten: boolean; fresh: boolean; handoff?: string; historyChars?: number }) => void): () => void;
       onContextExperiment(listener: (value: { threadId: string; prunedResults: number; reinjected: boolean; savedTokens: number; addedTokens: number; checkpoint?: string }) => void): () => void;
       onRoutedModel(listener: (value: { threadId: string; model: string; fellBack: boolean }) => void): () => void;
       onContextBreakdown(listener: (value: { threadId: string; systemPromptBytes: number; systemToolsBytes: number; mcpToolsBytes: number; skillsBytes: number; memoryBytes: number }) => void): () => void;
@@ -365,7 +367,8 @@ declare global {
       closeCouncil(threadId: string): Promise<void>;
       councilState(threadId: string): Promise<CouncilState | null>;
       onCouncil(listener: (state: CouncilState) => void): () => void;
-      setThreadContext(value: { threadId: string; folderIds: string[]; mode: PermissionMode; model: string; effort?: string; subagentModel?: string; subagentEffort?: string; review?: boolean; stepLimit?: number }): Promise<PermissionMode>;
+      getThreadContext(threadId: string): Promise<{ model: string; effort: ThinkingLevel }>;
+      setThreadContext(value: { threadId: string; folderIds: string[]; mode: PermissionMode; model?: string; effort?: string; subagentModel?: string; subagentEffort?: string; review?: boolean; stepLimit?: number }): Promise<PermissionMode>;
       runCommand(value: { command: string; folderId?: string }): Promise<BackgroundTask>;
       listBackground(): Promise<BackgroundTask[]>;
       readBackground(id: string): Promise<{ task: BackgroundTask; output: string } | null>;

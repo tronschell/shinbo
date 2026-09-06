@@ -68,6 +68,14 @@ contextBridge.exposeInMainWorld("emma", {
     ipcRenderer.on("emma:update-ready", wrapped);
     return () => ipcRenderer.removeListener("emma:update-ready", wrapped);
   },
+  onActivity: (listener: (value: { threadId: string }) => void) => {
+    const wrapped = (_event: unknown, value: unknown) => {
+      const activity = value as { threadId?: unknown } | null;
+      if (typeof activity?.threadId === "string" && activity.threadId) listener({ threadId: activity.threadId });
+    };
+    ipcRenderer.on("emma:activity", wrapped);
+    return () => ipcRenderer.removeListener("emma:activity", wrapped);
+  },
   onDelta: (listener: (value: { threadId: string; delta: string; thinking?: boolean; recovery?: boolean }) => void) => {
     const wrapped = (_event: unknown, value: unknown) => {
       const chunk = value as { threadId?: unknown; delta?: unknown; thinking?: unknown; recovery?: unknown };
@@ -84,10 +92,10 @@ contextBridge.exposeInMainWorld("emma", {
     ipcRenderer.on("emma:step", wrapped);
     return () => ipcRenderer.removeListener("emma:step", wrapped);
   },
-  onCompacted: (listener: (value: { threadId: string; removedTurns: number; summaryChars: number; modelWritten: boolean; fresh: boolean; handoff?: string }) => void) => {
+  onCompacted: (listener: (value: { threadId: string; removedTurns: number; summaryChars: number; modelWritten: boolean; fresh: boolean; handoff?: string; historyChars?: number }) => void) => {
     const wrapped = (_event: unknown, value: unknown) => {
-      const compacted = value as { threadId?: unknown; removedTurns?: unknown; summaryChars?: unknown; modelWritten?: unknown; fresh?: unknown; handoff?: unknown };
-      if (typeof compacted?.threadId === "string") listener({ threadId: compacted.threadId, removedTurns: Number(compacted.removedTurns) || 0, summaryChars: Number(compacted.summaryChars) || 0, modelWritten: compacted.modelWritten === true, fresh: compacted.fresh === true, ...(typeof compacted.handoff === "string" ? { handoff: compacted.handoff } : {}) });
+      const compacted = value as { threadId?: unknown; removedTurns?: unknown; summaryChars?: unknown; modelWritten?: unknown; fresh?: unknown; handoff?: unknown; historyChars?: unknown };
+      if (typeof compacted?.threadId === "string") listener({ threadId: compacted.threadId, removedTurns: Number(compacted.removedTurns) || 0, summaryChars: Number(compacted.summaryChars) || 0, modelWritten: compacted.modelWritten === true, fresh: compacted.fresh === true, ...(typeof compacted.handoff === "string" ? { handoff: compacted.handoff } : {}), ...(typeof compacted.historyChars === "number" && Number.isSafeInteger(compacted.historyChars) && compacted.historyChars >= 0 ? { historyChars: compacted.historyChars } : {}) });
     };
     ipcRenderer.on("emma:compacted", wrapped);
     return () => ipcRenderer.removeListener("emma:compacted", wrapped);
@@ -281,7 +289,8 @@ contextBridge.exposeInMainWorld("emma", {
     ipcRenderer.on("emma:council", wrapped);
     return () => ipcRenderer.removeListener("emma:council", wrapped);
   },
-  setThreadContext: (value: { threadId: string; folderIds: string[]; mode: string; model: string; effort?: string; subagentModel?: string; subagentEffort?: string; review?: boolean; stepLimit?: number }) => ipcRenderer.invoke("emma:set-thread-context", value),
+  getThreadContext: (threadId: string) => ipcRenderer.invoke("emma:get-thread-context", { threadId }),
+  setThreadContext: (value: { threadId: string; folderIds: string[]; mode: string; model?: string; effort?: string; subagentModel?: string; subagentEffort?: string; review?: boolean; stepLimit?: number }) => ipcRenderer.invoke("emma:set-thread-context", value),
   runCommand: (value: { command: string; folderId?: string }) => ipcRenderer.invoke("emma:run-command", value),
   listBackground: () => ipcRenderer.invoke("emma:list-background"),
   readBackground: (id: string) => ipcRenderer.invoke("emma:read-background", id),

@@ -10,6 +10,7 @@ import { Harness } from "../main/harness";
 import type { HarnessLogLine } from "../shared/harness-log";
 import { describeToolCall, parseToolArgs } from "../main/tools";
 import { toolGate } from "../shared/permissions";
+import { CODEX_PREFIX } from "../shared/settings";
 import type { PermissionAsk } from "../shared/agents";
 import type { VerifierReview } from "../main/verifier";
 
@@ -315,9 +316,6 @@ test("mode changes reach descendants and newly adopted children without changing
 function lifted(name: string, globals: Record<string, unknown>) {
   const found = source.statements.find((node): node is ts.FunctionDeclaration => ts.isFunctionDeclaration(node) && node.name?.text === name)!;
   assert.ok(found, `${name} is no longer a function declaration in main.ts`);
-  /* main.ts routes every threadContexts write through rememberThreadContext, so the file beside
-     the map stays the map. What these tests are about is which record gets written, not where it
-     lands, so the persisting half is stubbed down to the Map a caller already passed in. */
   return runInNewContext(ts.transpileModule(`(${found.getText(source)})`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, {
     rememberThreadContext: (threadId: string, record: unknown) => (globals.threadContexts as Map<string, unknown> | undefined)?.set(threadId, record),
     ...globals,
@@ -327,7 +325,7 @@ function lifted(name: string, globals: Record<string, unknown>) {
 test("setThreadModel puts the phone's pick on the thread, keyed the way the harness reads it", async () => {
   const threadContexts = new Map<string, Record<string, unknown>>();
   const selectModel = lifted("selectModel", {
-    threadContexts,
+    threadContexts, CODEX_PREFIX,
     catalogued: (modelId: string) => modelId,
     threadContext: (threadId: string) => threadContexts.get(threadId) ?? { folderIds: [], mode: "auto", model: "" },
     thinkingLevel: (value: unknown) => typeof value === "string" ? value : "",
@@ -343,7 +341,7 @@ test("setThreadModel puts the phone's pick on the thread, keyed the way the harn
 
   threadContexts.set("t", { ...threadContexts.get("t")!, folderIds: ["f"] });
   await selectModel("setThreadModel", { threadId: "t", modelId: "" });
-  assert.equal(threadContexts.get("t")?.model, "", "an empty pick falls the thread back to whatever the Mac has selected");
+  assert.equal(threadContexts.get("t")?.model, "fallback", "an empty pick explicitly selects fallback rather than inheriting the Mac's selection");
   assert.deepEqual(threadContexts.get("t")?.folderIds, ["f"], "changing the model does not detach the folder");
 });
 

@@ -4,21 +4,17 @@ import test from "node:test";
 import { appendText, arrived, dropQueued, groupBlocks, joinPartial, mergeStep, pairBlocks, releaseHeld, restoreBlocks, runOf, sendTurn, turnToRetry, stopTurn, takeDraft, thinkingOf, tracedBlocks, wire, withoutThinking, wrote, type Block } from "../src/runs";
 import type { LiveAgent, ThreadStep } from "../shared/agents";
 import { compactionNotice, decodeSpans, type TraceSpan } from "../shared/trace";
-import { cachedBlocks, rememberBlocks, setThreadFolders, threadFolders } from "../src/context";
+import { cachedBlocks, rememberBlocks, setThreadFolders, threadFolders, threadBreakdown, recordBreakdown } from "../src/context";
 import type { Message } from "../src/types";
 
-/* Node has no web storage, and the block cache only ever asks it for three things. */
 const stored = new Map<string, string>();
 (globalThis as unknown as { localStorage: unknown }).localStorage = {
   getItem: (key: string) => stored.get(key) ?? null,
   setItem: (key: string, value: string) => { stored.set(key, value); },
   removeItem: (key: string) => { stored.delete(key); },
 };
-/* The sidebar listens for a folder change on the window; nothing here does. */
 (globalThis as unknown as { dispatchEvent: unknown }).dispatchEvent = () => true;
 
-/* A fake host that answers when this test says so, which is the whole point: the
-   queue only means anything while a turn is still open. */
 const sent: string[] = [];
 let release: (() => void) | null = null;
 let request: (method: string, params: { content: string }) => Promise<unknown> = (_method, params) => {
@@ -26,18 +22,18 @@ let request: (method: string, params: { content: string }) => Promise<unknown> =
   return new Promise<void>((resolve) => { release = resolve; });
 };
 const stopped: string[] = [];
-/* What main still holds of a turn in flight, which is all a reloaded window has. */
 let liveSpans: Record<string, TraceSpan[]> = {};
 let livePartials: Record<string, { text: string; thinking: string }> = {};
-/* Main broadcasts to every window, so the store is driven from outside here too. */
 let pushDelta: (value: { threadId: string; delta: string; thinking?: boolean; recovery?: boolean }) => void = () => undefined;
+let pushCompacted: Parameters<Window["emma"]["onCompacted"]>[0] = () => undefined;
 let pushAgents: (value: LiveAgent[]) => void = () => undefined;
 (globalThis as unknown as { window: unknown }).window = {
   emma: {
     request: (method: string, params: { content: string }) => request(method, params),
     onDelta: (listener: typeof pushDelta) => { pushDelta = listener; return () => undefined; },
+    onActivity: () => () => undefined,
     onStep: () => () => undefined,
-    onCompacted: () => () => undefined,
+    onCompacted: (listener: typeof pushCompacted) => { pushCompacted = listener; return () => undefined; },
     onContextExperiment: () => () => undefined,
     onRoutedModel: () => () => undefined,
     onContextBreakdown: () => () => undefined,
@@ -56,7 +52,6 @@ test("a turn typed while one is running waits for it, in order", async () => {
   sendTurn("thread", turn("first"), () => undefined);
   sendTurn("thread", turn("second"), () => undefined);
   sendTurn("thread", turn("third"), () => undefined);
-  // Queueing never opens a second turn on the same thread.
   assert.deepEqual(sent, ["first"]);
   release!();
   await settle();
@@ -101,7 +96,6 @@ test("swapping the model mid-turn stops it and sends the same prompt again", asy
     prepare: async () => { marked.push("switched"); return { params: {} }; },
   }, () => undefined);
   assert.deepEqual(stopped, ["stalled"]);
-  // Not before the stopped turn has ended: one thread runs one turn.
   assert.deepEqual(sent, ["render the map"]);
   assert.deepEqual(marked, []);
   release!();
@@ -134,8 +128,6 @@ test("a turn is blocks in arrival order, not one buffer with the calls under it"
   blocks = appendText(blocks, "text", " files:");
   blocks = mergeStep(blocks, step("a", "in_progress"));
   blocks = appendText(blocks, "text", "One write hiccuped");
-  // A finished call updates its own row rather than landing after the text that
-  // came while it ran.
   blocks = mergeStep(blocks, step("a", "completed"));
   assert.deepEqual(blocks.map((block) => block.kind), ["text", "step", "text"]);
   assert.equal(blocks[0].kind === "text" && blocks[0].text, "Scaffold files:");
@@ -148,8 +140,6 @@ test("reasoning keeps its own block instead of merging into the answer", () => {
 });
 
 test("a turn's reasoning is one train of thought, and the calls either side of it are one list", () => {
-  // Both shapes at once: the reasoning channel's own blocks, and a provider that
-  // inlined its scratchpad in the text.
   const blocks: Block[] = [
     { kind: "thinking", text: "first " },
     { kind: "step", step: step("a", "completed") },
@@ -158,13 +148,10 @@ test("a turn's reasoning is one train of thought, and the calls either side of i
     { kind: "text", text: "<think>third</think>the answer" },
   ];
   assert.equal(thinkingOf(blocks), "first\n\nsecond\n\nthird");
-  // The scratchpad is gone, the answer keeps only its answer, and the two calls
-  // it used to sit between are now adjacent — so they fold into a single list.
   assert.deepEqual(groupBlocks(withoutThinking(blocks), 0), [
     { kind: "steps", steps: [step("a", "completed"), step("b", "completed")], keep: 0 },
     { kind: "text", text: "the answer" },
   ]);
-  // A turn that only thought leaves nothing to draw, not an empty paragraph.
   assert.deepEqual(withoutThinking([{ kind: "text", text: "<think>all of it</think>" }]), []);
 });
 
@@ -175,11 +162,9 @@ test("a turn the notch started owns its thread here too, and hands it back when 
   sent.length = 0;
   request = (_method, params) => { sent.push(params.content); return new Promise<void>((resolve) => { release = resolve; }); };
   wire();
-  // Nothing in this window sent it, so the first delta is what opens the run.
   pushDelta({ threadId: "notch", delta: "working" });
   sendTurn("notch", turn("typed in the workspace"), () => undefined);
   assert.deepEqual(sent, []);
-  // Main stops reporting the agent: the thread is free, so the wait drains.
   pushAgents([liveAgent("elsewhere")]);
   await settle();
   assert.deepEqual(sent, ["typed in the workspace"]);
@@ -226,7 +211,6 @@ test("a reloaded window puts the running turn's calls and answer back", async ()
   const blocks = runOf("recovered-blocks").blocks;
   assert.deepEqual(blocks.map((block) => block.kind === "step" ? block.step.title : block.text),
     ["where does the state live", "grep adoptForeign", "read runs.ts", "Found it: "]);
-  // The stream carries on into the restored answer rather than opening a second one.
   pushDelta({ threadId: "recovered-blocks", delta: "here" });
   await settle();
   const text = runOf("recovered-blocks").blocks.filter((block) => block.kind === "text");
@@ -295,13 +279,11 @@ test("overlapping text keeps whichever stream ran longer", () => {
 });
 
 test("a turn's tool calls are drawn where they happened, and a burst of them is one list", () => {
-  // A call, a line about it, a call: four lists, each under the line it followed.
   const alternating: Block[] = [{ kind: "text", text: "reading" }];
   for (const id of ["a", "b", "c", "d"]) alternating.push({ kind: "step", step: step(id, "completed") }, { kind: "text", text: `did ${id}` });
   assert.deepEqual(groupBlocks(alternating, 0).map((block) => block.kind),
     ["text", "steps", "text", "steps", "text", "steps", "text", "steps", "text"]);
 
-  // A burst with no prose in it still folds to one list, so it costs one caret.
   const burst: Block[] = [
     { kind: "text", text: "reading" },
     ...["a", "b", "c"].map((id): Block => ({ kind: "step", step: step(id, "completed") })),
@@ -316,9 +298,6 @@ const said = (role: Message["role"], content: string, timestamp: string): Messag
   ({ role, content, timestamp, generation: null });
 
 test("landed turns are kept against the message each one wrote, and read back after a restart", () => {
-  /* A thread with three replies, of which this session ran the last two — and one
-     of those it never heard, because the notch answered it while the workspace was
-     closed. That is what makes position alone unsafe to key on. */
   const messages = [
     said("user", "one", "2026-08-22T10:00:00Z"), said("assistant", "the first answer", "2026-08-22T10:00:01Z"),
     said("user", "two", "2026-08-22T10:01:00Z"), said("assistant", "answered in the notch", "2026-08-22T10:01:01Z"),
@@ -328,20 +307,14 @@ test("landed turns are kept against the message each one wrote, and read back af
   rememberBlocks("kept", Object.fromEntries(pairBlocks(messages, [third], {})
     .flatMap((blocks, index) => blocks && wrote(messages[index].content, blocks) ? [[messages[index].timestamp, blocks]] : [])));
 
-  // Next launch: nothing in the run store, everything from storage.
   const paired = pairBlocks(messages, [], cachedBlocks("kept"));
   assert.deepEqual(paired[5], third);
-  // …and on the reply this window never saw, rather than one message earlier.
   assert.equal(paired[3], undefined);
 });
 
 test("a thread keeps one folder, and one stored before that was true collapses onto its project", () => {
-  // The whole point of the clamp: this id is `emma-cli`'s working directory, and a
-  // second folder beside it would be reachable by Emma's tools and by nothing the
-  // CLI runs itself.
   setThreadFolders("bound", ["project", "beside-it", "and-another"]);
   assert.deepEqual(threadFolders("bound"), ["project"]);
-  // Written by an older build, straight past the setter.
   stored.set("emma.threadFolders.v1", JSON.stringify({ legacy: ["first", "second"] }));
   assert.deepEqual(threadFolders("legacy"), ["first"]);
   assert.deepEqual(threadFolders("never-opened"), []);
@@ -578,14 +551,31 @@ test("a steer is rebuilt from the trace at the point it cut into the answer", ()
   assert.equal(blocks.every((block) => block.kind !== "notice" || block.steer), true);
 });
 
+test("both compaction modes publish content and refresh context without a tool event", async () => {
+  wire();
+  for (const fresh of [false, true]) {
+    const threadId = `compacted-${fresh}`;
+    sendTurn(threadId, turn("continue"), () => undefined);
+    await settle();
+    pushCompacted({ threadId, removedTurns: 3, summaryChars: 14, modelWritten: false, fresh, handoff: "Actual content", historyChars: 800 });
+    assert.deepEqual(runOf(threadId).blocks.at(-1), { kind: "notice", text: compactionNotice(3, false, fresh), plain: true, compact: true, handoff: "Actual content" });
+    assert.ok(runOf(threadId).blocks.every((block) => block.kind !== "step"));
+    assert.equal(threadBreakdown(threadId).compacted?.historyChars, 800);
+    recordBreakdown(threadId, { systemPromptBytes: 400, systemToolsBytes: 0, mcpToolsBytes: 0, skillsBytes: 0, memoryBytes: 0 });
+    assert.equal(threadBreakdown(threadId).compacted?.historyChars, 800);
+    release!();
+    await settle();
+  }
+});
+
 test("a compaction is rebuilt from the trace as a plain notice, not as a steer", () => {
   const text = [
     JSON.stringify({ v: 1, thread: "dither", model: "z-ai/glm-5.3-flash" }),
     JSON.stringify({ id: "agent:dither", name: "This thread", kind: "agent", startedAt: 1787865075384, endedAt: 1787865075884, status: "ok" }),
-    JSON.stringify({ id: "compact:dither:1", parentId: "agent:dither", name: "compact", kind: "compact", startedAt: 1787865075385, endedAt: 1787865075385, status: "ok", input: compactionNotice(3, true) }),
+    JSON.stringify({ id: "compact:dither:1", parentId: "agent:dither", name: "compact", kind: "compact", startedAt: 1787865075385, endedAt: 1787865075385, status: "ok", input: compactionNotice(3, true), output: "Actual summary" }),
   ].join("\n");
   const [block] = restoreBlocks("dither", decodeSpans(text));
-  assert.deepEqual(block, { kind: "notice", text: "Context compacted — 3 turns became a summary", plain: true, compact: true });
+  assert.deepEqual(block, { kind: "notice", text: "Context compacted — 3 turns became a summary", plain: true, compact: true, handoff: "Actual summary" });
   const fresh = [
     JSON.stringify({ v: 1, thread: "dither", model: "z-ai/glm-5.3-flash" }),
     JSON.stringify({ id: "agent:dither", name: "This thread", kind: "agent", startedAt: 1787865075384, endedAt: 1787865075884, status: "ok" }),
@@ -608,22 +598,25 @@ test("a turn that ends refetches the thread, so the answer it wrote is drawn", a
   assert.equal(reloads, 1);
 });
 
-test("a retry notice is not the model answering, so the stall clock keeps running", async () => {
+test("a retry notice refreshes activity without becoming the model's answer", async (t) => {
+  let now = 1000;
+  t.mock.method(Date, "now", () => now);
   sent.length = 0;
   request = (_method, params) => { sent.push(params.content); return new Promise<void>((resolve) => { release = resolve; }); };
   wire();
   sendTurn("retrying", turn("summarise the log"), () => undefined);
   await settle();
-  const startedAt = runOf("retrying").activeAt;
+  assert.equal(runOf("retrying").activeAt, 1000);
+  now = 2000;
   pushDelta({ threadId: "retrying", delta: "The model sent nothing (attempt 2 of 5), retrying in 4s\n", thinking: true, recovery: true });
-  assert.equal(runOf("retrying").activeAt, startedAt);
+  assert.equal(runOf("retrying").activeAt, 2000);
   assert.match(runOf("retrying").recovery, /attempt 2 of 5/);
   assert.deepEqual(runOf("retrying").blocks.at(-1), { kind: "notice", text: "The model sent nothing (attempt 2 of 5), retrying in 4s", plain: true });
   pushDelta({ threadId: "retrying", delta: "The model sent nothing (attempt 2 of 5), retrying in 4s\n", thinking: true, recovery: true });
   assert.equal(runOf("retrying").blocks.filter((block) => block.kind === "notice").length, 1);
   pushDelta({ threadId: "retrying", delta: "here it is" });
   assert.equal(runOf("retrying").recovery, "");
-  assert.ok(runOf("retrying").activeAt >= startedAt);
+  assert.equal(runOf("retrying").activeAt, 2000);
   release!();
   await settle();
 });

@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, typ
 import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, closestCenter, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { cacheHitRate, cacheWriteTokens, CONTEXT_METRICS, CONTEXT_WIDGETS, costLabel, costPerTask, DEFAULT_METRICS, MAX_CONTEXT_PAGES, MAX_PAGE_NAME, nextPageId, widgetDefinition, type ContextMetric, type ContextPage, type ContextWidget, type ContextWidgetType, type WidgetOrientation } from "../shared/context-bar";
+import { cacheHitRate, cacheWriteTokens, CONTEXT_METRICS, CONTEXT_WIDGETS, costLabel, costPerTask, DEFAULT_METRICS, WIDGET_COLORS, MAX_CONTEXT_PAGES, MAX_PAGE_NAME, nextPageId, widgetDefinition, type ContextMetric, type ContextPage, type ContextWidget, type ContextWidgetType, type WidgetOrientation } from "../shared/context-bar";
 import { charLabel, CHARS_PER_TOKEN, shareLabel, usageKey, type ContextUse } from "../shared/usage";
 import { agentColor, type AgentRow, type LiveAgent } from "../shared/agents";
 import type { Plan } from "../shared/plan";
@@ -21,6 +21,7 @@ import { MachineGraph, MachineMeters, MachineStats } from "./machine";
 import { PlanRail } from "./plan";
 import { TaskListRail } from "./task-list";
 import { Timeline } from "./timeline";
+import { ColorPicker } from "./color-picker";
 
 const tokenLabel = (chars: number): string => charLabel(Math.round(chars / CHARS_PER_TOKEN));
 const LEGEND_COLLAPSED = 3;
@@ -302,6 +303,17 @@ export interface WidgetContext {
 }
 
 function Widget({ widget, context }: { widget: ContextWidget; context: WidgetContext }): ReactNode {
+  const colors = Object.fromEntries(WIDGET_COLORS.map(({ id, value }) => [id, widget.colors?.[id] ?? value]));
+  const style = {
+    ...Object.fromEntries(Object.entries(colors).filter(([id]) => id !== "muted").map(([id, value]) => [`--${id}`, value])),
+    "--text-2": colors.muted,
+    "--text-3": colors.muted,
+    "--accent-soft": `color-mix(in srgb, ${colors.accent} 12%, transparent)`,
+  } as CSSProperties;
+  return <div className="context-widget" style={style}><WidgetContent widget={widget} context={context} /></div>;
+}
+
+function WidgetContent({ widget, context }: { widget: ContextWidget; context: WidgetContext }): ReactNode {
   const { orientation } = widget;
   if (widget.type === "stats") return <ContextStats widget={widget} context={context} />;
   if (widget.type === "context") return <ContextLedger ledger={context.ledger} messages={context.messages} threadId={context.threadId} orientation={orientation} />;
@@ -527,16 +539,22 @@ function MetricPicker({ metrics, onChange }: { metrics: ContextMetric[]; onChang
 function PlacedWidget({ widget, context, onRemove, onEdit }: { widget: ContextWidget; context: WidgetContext; onRemove: () => void; onEdit: (changes: Partial<ContextWidget>) => void }) {
   const definition = widgetDefinition(widget.type);
   const [picking, setPicking] = useState(false);
+  const [coloring, setColoring] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: widget.type });
   const metrics = widget.metrics ?? DEFAULT_METRICS;
   return <div ref={setNodeRef} className="bar-widget" data-dragging={isDragging || undefined} style={{ transform: CSS.Transform.toString(transform), transition }}>
     <header>
       <button type="button" className="bar-grip" aria-label={`Reorder ${definition.label}`} {...attributes} {...listeners}><GripIcon /></button>
       <span>{definition.label}</span>
+      <button type="button" className="bar-flip" aria-expanded={coloring} aria-label={`Colors for ${definition.label}`} title="Widget colors" onClick={() => setColoring((open) => !open)}>◐</button>
       {widget.type === "stats" && <button type="button" className="bar-flip" aria-expanded={picking} aria-label="Choose which metrics this component shows" title={`Choose the metrics — ${metrics.length} of ${CONTEXT_METRICS.length}`} onClick={() => setPicking((open) => !open)}>▦</button>}
       {definition.orientable && <button type="button" className="bar-flip" aria-pressed={widget.orientation === "horizontal"} title={widget.orientation === "horizontal" ? "Laid across — press for one item a line" : "One item a line — press to lay it across"} onClick={() => onEdit({ orientation: widget.orientation === "horizontal" ? "vertical" : "horizontal" })}>{widget.orientation === "horizontal" ? "⇄" : "⇅"}</button>}
       <button type="button" className="bar-drop" aria-label={`Remove ${definition.label} from this page`} onClick={onRemove}>×</button>
     </header>
+    {coloring && <div className="bar-widget-colors">
+      {WIDGET_COLORS.map(({ id, label, value }) => <ColorPicker key={id} label={`${definition.label} · ${label}`} value={widget.colors?.[id] ?? value} onChange={(color) => onEdit({ colors: { ...widget.colors, [id]: color } })}><i /><span>{label}</span></ColorPicker>)}
+      <button type="button" className="bar-edit" onClick={() => onEdit({ colors: undefined })}>Reset colors</button>
+    </div>}
     {picking && <MetricPicker metrics={metrics} onChange={(next) => onEdit({ metrics: next })} />}
     <div className="bar-widget-body" inert>
       <Widget widget={widget} context={context} />

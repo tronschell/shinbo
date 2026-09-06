@@ -87,10 +87,23 @@ const isMetric = (value: unknown): value is ContextMetric => CONTEXT_METRICS.som
 
 export type WidgetOrientation = "vertical" | "horizontal";
 
+export const WIDGET_COLORS = [
+  { id: "accent", label: "Numbers & highlights", value: "#ffffff" },
+  { id: "text", label: "Text", value: "#e8e6df" },
+  { id: "muted", label: "Labels", value: "#969591" },
+  { id: "orange", label: "Chart · primary", value: "#ffffff" },
+  { id: "teal", label: "Chart · teal", value: "#3fd8c0" },
+  { id: "blue", label: "Chart · blue", value: "#6faee6" },
+  { id: "violet", label: "Chart · violet", value: "#ae78f0" },
+] as const;
+
+export type WidgetColor = (typeof WIDGET_COLORS)[number]["id"];
+
 export interface ContextWidget {
   type: ContextWidgetType;
   orientation: WidgetOrientation;
   metrics?: ContextMetric[];
+  colors?: Partial<Record<WidgetColor, string>>;
 }
 
 export interface ContextPage {
@@ -159,10 +172,21 @@ export function validateContextPages(value: unknown): ContextPage[] {
       if (!widget || !isWidgetType(widget.type)) throw new Error("A context bar component is invalid");
       const orientation = widget.orientation === "horizontal" ? "horizontal" : "vertical";
       const picked = Array.isArray(widget.metrics) ? [...new Set(widget.metrics.filter(isMetric))] : [];
+      const colors: Partial<Record<WidgetColor, string>> = {};
+      if (widget.colors !== undefined) {
+        if (!widget.colors || typeof widget.colors !== "object" || Array.isArray(widget.colors)) throw new Error("Widget colors are invalid");
+        for (const { id } of WIDGET_COLORS) {
+          const color = widget.colors[id];
+          if (color === undefined) continue;
+          if (typeof color !== "string" || !/^#[\da-f]{6}$/i.test(color)) throw new Error("Use six-digit hex widget colors");
+          colors[id] = color.toLowerCase();
+        }
+      }
       return {
         type: widget.type,
         orientation: widgetDefinition(widget.type).orientable ? orientation : "vertical",
         ...(widget.type === "stats" && picked.length ? { metrics: picked } : {}),
+        ...(Object.keys(colors).length ? { colors } : {}),
       } as ContextWidget;
     });
     if (new Set(widgets.map((widget) => widget.type)).size !== widgets.length) throw new Error("A component can only appear once on a page");

@@ -15,11 +15,15 @@ test("turn admission preserves active same-thread ownership until its cleanup fi
   const grants = new Map<string, unknown>([["active", grant]]);
   const forgotten: string[] = [];
   const started: string[] = [];
+  const context = { folderIds: ["folder"], model: "retained-model", effort: "high" };
+  const threadContexts = new Map<string, typeof context>([["active", context]]);
   const runTurn = runInNewContext(`${runTurnSource}\nrunTurn`, {
     harnessRuns,
     agents: { forget: (threadId: string) => forgotten.push(threadId) },
     threadSubagent: () => undefined,
-    threadEffort: () => "",
+    threadModel: (threadId: string) => threadContexts.get(threadId)?.model ?? "model",
+    threadContext: (threadId: string) => threadContexts.get(threadId) ?? { folderIds: [], model: "model", effort: "" },
+    rememberThreadContext: (threadId: string, next: typeof context) => threadContexts.set(threadId, next),
     threadStepLimit: () => undefined,
     harnessModel: (model: string) => model,
     modelName: (model?: string) => model ?? "",
@@ -53,6 +57,7 @@ test("turn admission preserves active same-thread ownership until its cleanup fi
   const blocked = { threadId: "active", content: "new request", mode: "full" as const, title: "Active thread" };
   await assert.rejects(runTurn(blocked), /still running or finishing/);
   assert.deepEqual(forgotten, []);
+  assert.equal(threadContexts.get("active"), context);
   assert.deepEqual(started, []);
   assert.equal(harnessRuns.get("active"), owner);
   assert.equal(grants.get("active"), grant);
@@ -67,6 +72,10 @@ test("turn admission preserves active same-thread ownership until its cleanup fi
   assert.equal(await runTurn(blocked), "active");
   assert.deepEqual(forgotten, ["other", "active"]);
   assert.deepEqual(started, ["other", "active"]);
+  assert.equal((blocked as TurnRequest).model, "retained-model");
+  assert.equal((blocked as TurnRequest).effort, "high");
+  assert.deepEqual({ ...threadContexts.get("active") }, context);
+  assert.deepEqual({ ...threadContexts.get("other"), folderIds: [...threadContexts.get("other")!.folderIds] }, { folderIds: [], model: "model", effort: "" });
 });
 
 test("sendMessage keeps explicit context without automatically loading a learned skill", () => {
