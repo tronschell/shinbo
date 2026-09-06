@@ -155,7 +155,6 @@ test("a mentioned skill comes back to its caller instead of being left in the co
       selectSkill: async (id: string) => ({ instructions: `instructions for ${id}` }),
     },
     toolSettings: { disabledSkills: ["skill-off"] },
-    // Present so the test fails loudly if the single-slot store is ever written to again.
     skillAttachment: { put: (...args: unknown[]) => put.push(args) },
     app: { getPath: () => "/tmp" },
     recordUse: async () => {}, skillKey: (id: string) => id,
@@ -184,8 +183,11 @@ test("scheduled workflows use Emma's selected model unless the job pins a model"
     for (const model of keys) {
       const turns: TurnRequest[] = [];
       const requests: unknown[] = [];
+      const threadContexts = new Map<string, Record<string, unknown>>();
       const scope = {
-        selectedModel, threadModel: () => "",
+        selectedModel, selectedEffort: "high",
+        threadContext: (threadId: string) => threadContexts.get(threadId) ?? { folderIds: ["folder"], model: "old-model", effort: "low" },
+        rememberThreadContext: (threadId: string, context: Record<string, unknown>) => threadContexts.set(threadId, context),
         providers: [{ id: "local", modelId: "local-model", baseUrl: "http://127.0.0.1:1234/v1", credentialEnv: "" }],
         routers: [{ id: "chosen", models: ["vendor/model", "vendor/other"] }],
         modelCatalog: { ids: () => ["vendor/model", "vendor/other"] },
@@ -199,11 +201,13 @@ test("scheduled workflows use Emma's selected model unless the job pins a model"
       };
       const runtime = Function(...Object.keys(scope), ts.transpile(`${functions}\nreturn { runScheduledWorkflow, providerRoute, harnessModel };`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(scope));
       await runtime.runScheduledWorkflow({ jobId: "job", threadId: "fresh-thread", title: "Scheduled task", prompt: "hello", nodes: "", variables: "", permissionMode: "ask", model, depth: 0 });
-      const expected = model || selectedModel;
+      const expected = model || selectedModel || "fallback";
       assert.equal(turns.length, 1);
       assert.equal(turns[0].model, expected);
+      assert.equal(turns[0].effort, expected === selectedModel ? "high" : "");
+      assert.deepEqual(threadContexts.get("fresh-thread"), { folderIds: ["folder"], mode: "ask", model: expected, effort: turns[0].effort });
       assert.equal(runtime.harnessModel(turns[0].model), {
-        "": undefined, "provider:local": "local-model", "openrouter:vendor/model": "vendor/model", "router:chosen": "vendor/model,vendor/other",
+        "fallback": undefined, "provider:local": "local-model", "openrouter:vendor/model": "vendor/model", "router:chosen": "vendor/model,vendor/other",
       }[expected]);
       assert.deepEqual(runtime.providerRoute(turns[0].model), expected === "provider:local"
         ? { id: "local", chatUrl: "http://127.0.0.1:1234/v1/chat/completions", apiKey: "no-key" }

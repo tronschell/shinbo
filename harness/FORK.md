@@ -85,6 +85,9 @@ and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
   with a `regex` route beside `query` so vector, BM25 and ripgrep are one tool,
   promotes it to `.always` as the default search, and clears back to upstream's
   lexical ranker on an empty value.
+- **Generation activity.** ACP forwards real token-progress and tool-payload-start
+  events as a payload-free `_emma_activity` session update. Desktop refreshes run
+  activity without changing answer text or exposing partial tool arguments.
 - **Tool call titles.** Upstream titles an ACP tool call with the tool's bare
   action label, so every shell call reads `Using terminal` and every read reads
   `Reading` with no path — a column of identical rows that hides what the turn

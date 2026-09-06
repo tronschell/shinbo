@@ -186,6 +186,10 @@ export class AgentRuntime {
     return trees;
   }
 
+  acceptsActivity(threadId: string): boolean {
+    return this.runs.get(threadId)?.stopped !== true;
+  }
+
   noteDelta(threadId: string, text: string, thinking = false): boolean {
     const run = this.runs.get(threadId);
     if (run?.stopped) return false;

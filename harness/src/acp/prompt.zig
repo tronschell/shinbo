@@ -118,6 +118,7 @@ const AcpContext = struct {
     cost_usage_complete: bool = true,
     context_breakdown: acp_types.ContextBreakdown = .{},
     context_breakdown_sent: bool = false,
+    pending_compaction: ?session_runtime.CompactionEvent = null,
 
     fn sendContextBreakdown(self: *AcpContext) void {
         if (self.context_breakdown_sent) return;
@@ -174,20 +175,23 @@ const AcpContext = struct {
         try self.sendRawUpdate(tagged.writer.buffered());
     }
 
-    fn sendCompacted(self: *AcpContext, event: session_runtime.CompactionEvent) void {
+    fn sendCompacted(self: *AcpContext, history: []const HistoryTurn) void {
+        const event = self.pending_compaction orelse return;
+        self.pending_compaction = null;
+        if (history.len == 0 or history[0] != .compacted_summary) return;
+        const summary = history[0].compacted_summary.summary;
         const session = if (self.state.active_session) |*active| active else return;
         const fresh = session.context_experiments.fresh_context;
         const model_written = if (fresh) session.fresh_handoff != null else event.model_written;
+        const retained = session_runtime.flattenTurnsForSummary(self.alloc, history[1..]) catch return;
+        defer self.alloc.free(retained);
         var out: std.Io.Writer.Allocating = .init(self.alloc);
         defer out.deinit();
         out.writer.print(
-            "{{\"sessionUpdate\":\"_emma_compacted\",\"removedTurns\":{d},\"summaryChars\":{d},\"modelWritten\":{s},\"fresh\":{s}",
-            .{ event.removed_turns, event.summary_chars, if (model_written) "true" else "false", if (fresh) "true" else "false" },
+            "{{\"sessionUpdate\":\"_emma_compacted\",\"removedTurns\":{d},\"summaryChars\":{d},\"historyChars\":{d},\"modelWritten\":{s},\"fresh\":{s},\"handoff\":",
+            .{ event.removed_turns, summary.len, summary.len + retained.len, if (model_written) "true" else "false", if (fresh) "true" else "false" },
         ) catch return;
-        if (fresh) {
-            out.writer.writeAll(",\"handoff\":") catch return;
-            jsonrpc.writeJsonStr(event.summary, &out.writer) catch return;
-        }
+        jsonrpc.writeJsonStr(summary, &out.writer) catch return;
         out.writer.writeByte('}') catch return;
         self.sendRawUpdate(out.writer.buffered()) catch {};
     }
@@ -874,6 +878,7 @@ pub fn handlePrompt(
     }
     const context_history = try session.session_rt.snapshotContextHistory(alloc);
     defer types.freeHistoryTurnSlice(alloc, context_history);
+    ctx.sendCompacted(context_history);
     if (session.fresh_handoff) |handoff| {
         state.alloc.free(handoff);
         session.fresh_handoff = null;
@@ -2505,11 +2510,12 @@ fn retainAcpGrant(raw_ctx: *anyopaque, tool_name: []const u8, target_path: []con
 
 fn pushEvent(raw_ctx: *anyopaque, event: worker_runtime.WorkerEvent) !void {
     const ctx: *AcpContext = @ptrCast(@alignCast(raw_ctx));
+    defer worker_runtime.freeWorkerEvent(std.heap.c_allocator, event);
     switch (event) {
+        .turn_token_update, .tool_payload_started => try ctx.sendUpdate("{\"sessionUpdate\":\"_emma_activity\"}"),
         .clear_route_recovery_status => try ctx.clearModelRecoveryStatus(),
         else => {},
     }
-    worker_runtime.freeWorkerEvent(std.heap.c_allocator, event);
 }
 
 fn pushRouteRecoveryStatus(
@@ -2606,7 +2612,7 @@ fn pushSystemNotice(raw_ctx: *anyopaque, text: []const u8) !void {
 
 fn notifyCompacted(context: *anyopaque, event: session_runtime.CompactionEvent) void {
     const ctx: *AcpContext = @ptrCast(@alignCast(context));
-    ctx.sendCompacted(event);
+    ctx.pending_compaction = .{ .removed_turns = event.removed_turns, .summary_chars = event.summary_chars, .model_written = event.model_written };
 }
 
 fn pushContextNotice(raw_ctx: *anyopaque, text: []const u8) !void {
@@ -2638,6 +2644,52 @@ fn parseCompactHandoff(owner: Allocator, params_raw: ?[]const u8) !?[]u8 {
     if (trimmed.len == 0) return null;
     if (trimmed.len > max_compact_handoff_chars) return error.InvalidParams;
     return try owner.dupe(u8, trimmed);
+}
+
+test "ACP compaction publishes the resulting summary and retained history without tool calls" {
+    const alloc = std.testing.allocator;
+    for ([_]bool{ false, true }) |fresh| {
+        var tmp = std.testing.tmpDir(.{});
+        defer tmp.cleanup();
+        var capture = try tmp.dir.createFile(io_mod.getIo(), "compaction.jsonl", .{ .read = true });
+        defer capture.close(io_mod.getIo());
+        var state = try initTestAcpState(alloc, "/tmp/workspace", .ask);
+        defer state.deinit();
+        state.writer = .{ .stdout = capture };
+        const session = &state.active_session.?;
+        session.context_experiments.fresh_context = fresh;
+        var ctx = AcpContext{ .alloc = alloc, .state = &state, .session_id = "session_1" };
+        var fresh_config = fresh_context.Config{};
+        session.session_rt.summarizer = if (fresh) fresh_context.summarizer(&fresh_config) else null;
+        session.session_rt.compaction_observer = .{ .context = &ctx, .notify_fn = notifyCompacted };
+        try session.session_rt.appendAssistantHistoryTurn(alloc, "Build the \"notice\"\nthen test", "Earlier answer");
+        try session.session_rt.appendAssistantHistoryTurn(alloc, "Keep this turn", "Latest answer");
+        try std.testing.expect(try compactAcpSession(alloc, session));
+        const projected = try session.session_rt.snapshotContextHistory(alloc);
+        defer types.freeHistoryTurnSlice(alloc, projected);
+        ctx.sendCompacted(projected);
+        const cached = try session.session_rt.snapshotContextHistory(alloc);
+        defer types.freeHistoryTurnSlice(alloc, cached);
+        ctx.sendCompacted(cached);
+        const summary = projected[0].compacted_summary.summary;
+        const retained = try session_runtime.flattenTurnsForSummary(alloc, projected[1..]);
+        defer alloc.free(retained);
+        try capture.sync(io_mod.getIo());
+        var file = try tmp.dir.openFile(io_mod.getIo(), "compaction.jsonl", .{});
+        defer file.close(io_mod.getIo());
+        const captured = try io_mod.readFileToEnd(alloc, &file, 64 * 1024);
+        defer alloc.free(captured);
+        var lines = std.mem.splitScalar(u8, std.mem.trim(u8, captured, "\n"), '\n');
+        var parsed = try std.json.parseFromSlice(std.json.Value, alloc, lines.next().?, .{});
+        defer parsed.deinit();
+        const update = parsed.value.object.get("params").?.object.get("update").?.object;
+        try std.testing.expectEqualStrings("_emma_compacted", update.get("sessionUpdate").?.string);
+        try std.testing.expectEqualStrings(summary, update.get("handoff").?.string);
+        try std.testing.expectEqual(fresh, update.get("fresh").?.bool);
+        try std.testing.expectEqual(@as(i64, @intCast(summary.len + retained.len)), update.get("historyChars").?.integer);
+        try std.testing.expectEqualStrings(summary, cached[0].compacted_summary.summary);
+        try std.testing.expect(lines.next() == null);
+    }
 }
 
 test "a compact request carries an optional bounded handoff" {
@@ -4016,6 +4068,40 @@ test "an ACP system notice always ends its own line" {
         notification_count += 1;
     }
     try std.testing.expectEqual(expected_texts.len, notification_count);
+}
+
+test "ACP generation events emit activity without text or arguments" {
+    const alloc = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var capture = try tmp.dir.createFile(io_mod.getIo(), "activity.jsonl", .{ .read = true });
+    defer capture.close(io_mod.getIo());
+    var state = try initTestAcpState(alloc, "/tmp/workspace", .ask);
+    defer state.deinit();
+    state.writer = .{ .stdout = capture };
+    var ctx = AcpContext{ .alloc = alloc, .state = &state, .session_id = "session_1" };
+    const deps = agentRuntimeDeps(&ctx);
+    try deps.push_event(deps.ctx, .tool_payload_started);
+    try deps.push_event(deps.ctx, .{ .turn_token_update = .{ .output_tokens = 42 } });
+    try capture.sync(io_mod.getIo());
+    var file = try tmp.dir.openFile(io_mod.getIo(), "activity.jsonl", .{});
+    defer file.close(io_mod.getIo());
+    const captured = try io_mod.readFileToEnd(alloc, &file, 16 * 1024);
+    defer alloc.free(captured);
+    var lines = std.mem.splitScalar(u8, captured, '\n');
+    var count: usize = 0;
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        var parsed = try std.json.parseFromSlice(std.json.Value, alloc, line, .{});
+        defer parsed.deinit();
+        const params = parsed.value.object.get("params").?.object;
+        try std.testing.expectEqualStrings("session_1", params.get("sessionId").?.string);
+        const update = params.get("update").?.object;
+        try std.testing.expectEqualStrings("_emma_activity", update.get("sessionUpdate").?.string);
+        try std.testing.expectEqual(@as(usize, 1), update.count());
+        count += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 2), count);
 }
 
 test "ACP auth failure emits a valid detail-free JSON-RPC notification" {

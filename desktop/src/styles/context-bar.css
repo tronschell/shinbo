@@ -1,3 +1,8 @@
+.context-widget { display: contents; }
+.bar-widget-colors { display: grid; gap: var(--s-2); padding: var(--s-3) var(--s-4); }
+.bar-widget-colors .color-well > button { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-1); color: var(--text); background: transparent; font: var(--fs-xs)/1.4 var(--font-mono); }
+.bar-widget-colors .color-well > button > i { width: 16px; height: 16px; background: var(--swatch); border: 1px solid var(--border-strong); }
+.bar-widget:has(.color-menu) { z-index: 3; }
 .context-stats[data-orientation="horizontal"] { padding-block: 0; }
 .context-stats[data-orientation="horizontal"] .agent-metrics { margin-inline: calc(var(--s-4) * -1); }
 .context-stats[data-orientation="horizontal"] .rate-curve { padding-bottom: var(--s-3); }
@@ -85,7 +90,7 @@
 
 .bar-widget { position: relative; z-index: 0; margin: 0 calc(var(--s-4) * -1); border-bottom: 1px solid var(--border); background: var(--chrome); }
 .bar-widget[data-dragging] { z-index: 2; opacity: .9; box-shadow: inset 0 0 0 1px var(--accent), var(--shadow-md); }
-.bar-widget > header { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto auto; align-items: center; gap: var(--s-1); min-height: 26px; padding-right: var(--s-2); background: var(--surface-2); }
+.bar-widget > header { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto auto auto; align-items: center; gap: var(--s-1); min-height: 26px; padding-right: var(--s-2); background: var(--surface-2); }
 .bar-widget > header > span { min-width: 0; overflow: hidden; color: var(--text-2); font: var(--fs-2xs)/1 var(--font-mono); letter-spacing: var(--ls-caps); text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .bar-widget:hover > header { background: var(--surface-3); }
 :is(.bar-editor, .inspector-body) .bar-flip, :is(.bar-editor, .inspector-body) .bar-drop { display: grid; place-items: center; width: 22px; height: 22px; min-height: 0; padding: 0; color: var(--text-3); border: 0; background: transparent; font: var(--fs-sm)/1 var(--font-mono); transition: color var(--t); }
@@ -99,8 +104,8 @@
 
 .bar-widget-body { padding: 0 var(--s-4); }
 .bar-widget-body button { min-height: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; letter-spacing: 0; text-transform: none; }
-.bar-widget-body > section:last-child, .bar-widget-body > .git-panel:last-child { border-bottom: 0; }
-.bar-widget-body > section, .bar-widget-body > .git-panel { padding-block: var(--s-3); }
+.bar-widget-body > .context-widget > section:last-child, .bar-widget-body > .context-widget > .git-panel:last-child { border-bottom: 0; }
+.bar-widget-body > .context-widget > section, .bar-widget-body > .context-widget > .git-panel { padding-block: var(--s-3); }
 .bar-widget-body .context-title, .bar-widget-body .trace-title, .bar-widget-body .subagents > span, .bar-widget-body .subthreads > span, .bar-widget-body .plan-widget > span, .bar-widget-body .machine-title, .bar-widget-body .machine-graph > span, .bar-widget-body .machine-meters > span { display: none; }
 
 .bar-empty { padding: var(--s-5) 0; color: var(--text-3); font: var(--fs-sm)/1.5 var(--font); text-wrap: pretty; }
@@ -118,7 +123,7 @@
   .bar-page-options > summary > svg { margin-left: auto; }
 }
 
-.inspector-body > :is(section, .git-panel, .bar-widget):has(+ .inspector-arrange) { border-bottom: 0; }
+.inspector-body > .context-widget:has(+ .inspector-arrange) > :is(section, .git-panel), .inspector-body > .bar-widget:has(+ .inspector-arrange) { border-bottom: 0; }
 .inspector-arrange { display: flex; align-items: center; justify-content: center; gap: var(--s-2); margin: 0 calc(var(--s-4) * -1); padding: var(--s-3) var(--s-4) var(--s-4); border-top: 1px solid var(--border); }
 .inspector-body .bar-edit { min-height: 26px; padding: 0 var(--s-3); color: var(--text-3); border: 1px solid var(--border); background: transparent; font: var(--fs-2xs)/1 var(--font-mono); letter-spacing: var(--ls-caps); text-transform: uppercase; transition: color var(--t), border-color var(--t), background-color var(--t); }
 .inspector-body .bar-edit:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); }

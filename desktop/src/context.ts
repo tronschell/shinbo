@@ -139,9 +139,6 @@ export function turnAttachments(threadId: string, messages: Message[]): Record<n
 
 const DRAFT_KEY = "emma.threadDraft.v1.";
 
-/** What the composer is holding but has not sent: the typed prompt and its picks.
-    A thread's view is torn down every time you switch thread or leave for another
-    page, so without this an unsent prompt dies with the unmount. */
 export type ComposerDraft = { text: string; picks: ContextPick[] };
 
 export function threadDraft(threadId: string): ComposerDraft {
@@ -296,11 +293,12 @@ export interface ContextBreakdown {
   mcpToolsBytes: number;
   skillsBytes: number;
   memoryBytes: number;
+  compacted?: { at: number; historyChars: number };
 }
 
 export const NO_BREAKDOWN: ContextBreakdown = { systemPromptBytes: 0, systemToolsBytes: 0, mcpToolsBytes: 0, skillsBytes: 0, memoryBytes: 0 };
 
-const PREFIX_ROWS:{ kind: ContextUse["kind"]; label: string; of: keyof ContextBreakdown; source: SegmentSource }[] = [
+const PREFIX_ROWS:{ kind: ContextUse["kind"]; label: string; of: keyof Omit<ContextBreakdown, "compacted">; source: SegmentSource }[] = [
   { kind: "system", label: "System prompt", of: "systemPromptBytes", source: "prompt" },
   { kind: "tools", label: "System tools", of: "systemToolsBytes", source: "tools" },
   { kind: "mcp", label: "MCP tools", of: "mcpToolsBytes", source: "mcp" },
@@ -317,6 +315,7 @@ function allBreakdowns(): Record<string, ContextBreakdown> {
       mcpToolsBytes: number(parts?.mcpToolsBytes),
       skillsBytes: number(parts?.skillsBytes),
       memoryBytes: number(parts?.memoryBytes),
+      ...(parts?.compacted && number(parts.compacted.at) > 0 ? { compacted: { at: number(parts.compacted.at), historyChars: number(parts.compacted.historyChars) } } : {}),
     }]));
   } catch { return {}; }
 }
@@ -326,7 +325,11 @@ export function threadBreakdown(threadId: string): ContextBreakdown {
 }
 
 export function recordBreakdown(threadId: string, parts: ContextBreakdown): void {
-  localStorage.setItem(BREAKDOWN_KEY, JSON.stringify({ ...allBreakdowns(), [threadId]: parts }));
+  localStorage.setItem(BREAKDOWN_KEY, JSON.stringify({ ...allBreakdowns(), [threadId]: { ...threadBreakdown(threadId), ...parts } }));
+}
+
+export function recordCompaction(threadId: string, historyChars: number): void {
+  recordBreakdown(threadId, { ...threadBreakdown(threadId), compacted: { at: Date.now(), historyChars } });
 }
 
 export function prefixUses(breakdown: ContextBreakdown, turns: number): LedgerRow[] {
@@ -434,28 +437,20 @@ export interface Ledger {
 export function buildLedger(thread: Thread | undefined, uses: ContextUse[], contextTokens: number, inFlight: LiveAgent[], experiments: ExperimentTally, landedCalls = 0, breakdown: ContextBreakdown = NO_BREAKDOWN): Ledger {
   const messages: Message[] = thread?.messages ?? [];
   const replies = messages.filter((message) => message.role === "assistant").length;
-  /* Only this thread's own agent. A subagent is delegated work that never lands
-     in the manager's window — its tokens and calls belong to its own ledger. */
   const liveTurns = inFlight.filter((agent) => agent.threadId === thread?.id);
   const liveCalls = liveTurns.reduce((sum, agent) => sum + agent.toolCalls, 0);
-  /* The one number here that is not an estimate: what the provider says it read
-     for the most recent request. A turn in flight has already sent the whole
-     window, so its count replaces the last landed one rather than adding to it —
-     summing the two counted the history twice and doubled the bar for as long as
-     a run lasted. */
-  const anchor = thread ? Math.max(lastInputTokens(thread), ...liveTurns.map((agent) => agent.inputTokens)) : 0;
+  const compacted = breakdown.compacted;
+  const carried = compacted ? messages.filter((message) => Date.parse(message.timestamp) > compacted.at) : messages;
+  const anchor = liveTurns.find((agent) => agent.inputTokens > 0)?.inputTokens ?? (thread ? lastInputTokens({ ...thread, messages: carried }) : 0);
   const anchorChars = anchor * CHARS_PER_TOKEN;
   const measured: LedgerRow[] = thread ? [
-    { ...historyUse(thread), turns: messages.filter((message) => message.role === "user").length, source: "messages" },
-    ...uses.map((use) => ({ ...use, source: "attachment" as const })),
+    ...(compacted
+      ? [{ kind: "messages" as const, label: "Compacted history · estimated", chars: compacted.historyChars + carried.reduce((sum, message) => sum + message.content.length, 0), turns: carried.filter((message) => message.role === "user").length, source: "messages" as const }]
+      : [{ ...historyUse(thread), turns: messages.filter((message) => message.role === "user").length, source: "messages" as const }, ...uses.map((use) => ({ ...use, source: "attachment" as const }))]),
   ] : [];
   const prefix = thread ? prefixUses(breakdown, replies) : [];
   const counted = [...measured, ...prefix];
   const named = counted.reduce((sum, row) => sum + row.chars, 0);
-  /* Characters over-count what a request actually carried once history is pruned
-     or compacted — this side still holds every message the harness dropped. Scale
-     the rows onto the provider's count rather than claiming the model was sent
-     more than it was. */
   const scale = anchorChars && named > anchorChars ? anchorChars / named : 1;
   const scaled = scale === 1 ? counted : counted.map((row) => ({ ...row, chars: Math.round(row.chars * scale) }));
   const residual = anchorChars - scaled.reduce((sum, row) => sum + row.chars, 0);
@@ -696,15 +691,11 @@ export async function buildAttachedContext(folders: FolderGrant[], folderIds: st
   };
 }
 
-/* Anything that can be picked outside the composer — a diff excerpt, a bit of a
-   picture — reaches it on this event rather than through a prop threaded down
-   every panel that draws one. */
 export const PICK_CONTEXT_EVENT = "emma:pick-context";
 export const pickIntoComposer = (pick: ContextPick) => dispatchEvent(new CustomEvent(PICK_CONTEXT_EVENT, { detail: pick }));
 
 const MODEL_SWITCH_KEY = "emma.threadModelSwitches.v1";
 
-/** A model or thinking level the user picked mid-thread, marked at the turn it takes effect from. */
 export interface ModelSwitch {
   at: number;
   label: string;
@@ -728,7 +719,6 @@ export function modelSwitches(threadId: string): ModelSwitch[] {
   return allModelSwitches()[threadId] ?? [];
 }
 
-/** Switching twice before sending leaves one mark: the model and level that actually answer. */
 export function recordModelSwitch(threadId: string, mark: ModelSwitch): void {
   const marks = modelSwitches(threadId);
   const held = marks.find((item) => item.at === mark.at);

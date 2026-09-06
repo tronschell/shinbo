@@ -4,6 +4,23 @@ import { cacheHitRate, cacheWriteTokens, costLabel, costPerTask, validateContext
 
 const page = (widgets: unknown[]) => [{ id: "p1", name: "Context", widgets }];
 
+test("widget colors persist independently and reset to defaults", () => {
+  const pages = validateContextPages(page([
+    { type: "stats", colors: { accent: "#ABCDEF", unknown: "bad" } },
+    { type: "timeline", colors: { teal: "#123456" } },
+    { type: "plan" },
+  ]));
+  assert.deepEqual(pages[0].widgets.map((widget) => widget.colors), [{ accent: "#abcdef" }, { teal: "#123456" }, undefined]);
+  assert.deepEqual(validateContextPages(JSON.parse(JSON.stringify(pages))), pages);
+  assert.equal(validateContextPages(page([{ type: "stats", colors: {} }]))[0].widgets[0].colors, undefined);
+});
+
+test("widget colors reject malformed palettes and CSS injection", () => {
+  for (const colors of [null, [], "red", { accent: "red" }, { text: "#fff" }, { teal: 123 }, { accent: "url(example.com)" }]) {
+    assert.throws(() => validateContextPages(page([{ type: "stats", colors }])));
+  }
+});
+
 test("a stats component keeps the metrics it knows, deduped, and drops the rest", () => {
   const [kept] = validateContextPages(page([{ type: "stats", orientation: "horizontal", metrics: ["calls", "calls", "share", "nonsense"] }]));
   assert.deepEqual(kept.widgets[0].metrics, ["calls", "share"]);

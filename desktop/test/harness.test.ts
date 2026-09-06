@@ -24,6 +24,7 @@ function harness(
 ) {
   const deltas: { threadId: string; delta: string }[] = [];
   const thoughts: string[] = [];
+  const activities: string[] = [];
   const calls: HarnessToolCall[] = [];
   const asks: PermissionAsk[] = [];
   const contexts: PermissionContext[] = [];
@@ -41,6 +42,7 @@ function harness(
     cwd: workspace,
     idleMs,
     mcpServers: async () => [],
+    onActivity: (threadId) => activities.push(threadId),
     onDelta: (threadId, delta) => deltas.push({ threadId, delta }),
     onThought: (_threadId, delta) => thoughts.push(delta),
     onToolCall: (call) => calls.push(call),
@@ -64,8 +66,20 @@ function harness(
     onPhase: (_threadId, phase) => phases.push(phase),
     onLog: (line) => logs.push(line),
   });
-  return { client, logs, phases, deltas, text: () => deltas.map((entry) => entry.delta), thoughts, calls, asks, contexts, children, ended, usages, toolRequests, compactions };
+  return { client, activities, logs, phases, deltas, text: () => deltas.map((entry) => entry.delta), thoughts, calls, asks, contexts, children, ended, usages, toolRequests, compactions };
 }
+
+test("activity updates never become answer or thought deltas", () => {
+  const { client, activities, deltas, thoughts, calls } = harness(async () => null);
+  const inner = client as unknown as { threadsBySession: Map<string, string>; handleUpdate: (params: Record<string, unknown>) => void };
+  inner.threadsBySession.set("session", "thread");
+  inner.handleUpdate({ sessionId: "unknown", update: { sessionUpdate: "_emma_activity" } });
+  inner.handleUpdate({ sessionId: "session", update: { sessionUpdate: "_emma_activity" } });
+  assert.deepEqual(activities, ["thread"]);
+  assert.deepEqual(deltas, []);
+  assert.deepEqual(thoughts, []);
+  assert.deepEqual(calls, []);
+});
 
 test("every mode routes its decision back to Emma", () => {
 
@@ -932,10 +946,13 @@ test("an automatic compaction is read off its own update, and bounded", () => {
     { removedTurns: 9, summaryChars: 300, modelWritten: true, fresh: true, handoff: "Goal: ship" },
   );
   assert.deepEqual(
-    compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 9, summaryChars: 300, modelWritten: false, fresh: false, handoff: "ignored without fresh" }),
-    { removedTurns: 9, summaryChars: 300, modelWritten: false, fresh: false },
+    compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 9, summaryChars: 300, modelWritten: false, fresh: false, handoff: "Actual resulting summary", historyChars: 440 }),
+    { removedTurns: 9, summaryChars: 300, modelWritten: false, fresh: false, handoff: "Actual resulting summary", historyChars: 440 },
   );
   assert.equal(compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 9, summaryChars: 300, modelWritten: true, fresh: true, handoff: "h".repeat(30_000) })?.handoff?.length, 20_000);
+  for (const historyChars of [-1, 1.5, "100", Infinity]) {
+    assert.equal(compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 2, historyChars })?.historyChars, undefined);
+  }
   assert.equal(compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 0, summaryChars: 100, modelWritten: true }), undefined);
   assert.equal(compactionReported({ sessionUpdate: "session_info_update", removedTurns: 12 }), undefined);
 });
@@ -1064,8 +1081,19 @@ test("a run whose project folder was deleted names the folder, not the agent bin
   assert.doesNotMatch(client.state.failure, /ENOENT/);
 });
 
-test("the configured vision route reaches the child, and no vision route leaves the session route alone", async () => {
+test("the configured vision route reaches the child, and no vision route leaves the session route alone", async (t) => {
+  const inherited = Object.fromEntries(["EMMA_VISION_MODEL", "EMMA_VISION_CHAT_URL", "EMMA_VISION_API_KEY", "EMMA_TEST_ENV_DUMP"].map((key) => [key, process.env[key]]));
+  t.after(() => {
+    for (const [key, value] of Object.entries(inherited)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  process.env.EMMA_VISION_MODEL = "inherited/eyes";
+  process.env.EMMA_VISION_CHAT_URL = "https://inherited.example/v1/chat/completions";
+  process.env.EMMA_VISION_API_KEY = "inherited-key";
   const scratch = mkdtempSync(path.join(tmpdir(), "emma-vision-env-"));
+  t.after(() => rmSync(scratch, { recursive: true, force: true }));
   const dump = path.join(scratch, "env.json");
   const agent = path.join(scratch, "agent.mjs");
   writeFileSync(agent, [
@@ -1098,10 +1126,12 @@ test("the configured vision route reaches the child, and no vision route leaves 
       onPermission: async () => null,
       onToolRequest: async () => "",
     });
-    await client.start();
-    const env = JSON.parse(readFileSync(dump, "utf8")) as Record<string, string>;
-    client.close();
-    return env;
+    try {
+      await client.start();
+      return JSON.parse(readFileSync(dump, "utf8")) as Record<string, string>;
+    } finally {
+      client.close();
+    }
   };
 
   const configured = await start({ model: "vendor/eyes:free", chatUrl: "https://vision.example/v1/chat/completions", apiKey: "vision-key" });
@@ -1117,6 +1147,4 @@ test("the configured vision route reaches the child, and no vision route leaves 
   assert.equal(bare.EMMA_VISION_CHAT_URL, undefined);
   assert.equal(bare.EMMA_VISION_API_KEY, undefined);
 
-  delete process.env.EMMA_TEST_ENV_DUMP;
-  rmSync(scratch, { recursive: true, force: true });
 });

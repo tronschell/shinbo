@@ -17,6 +17,7 @@ const emma = {
     if (hold) await new Promise<void>((resolve) => { release = resolve; });
   },
   onDelta: (listener: (value: Delta) => void) => { onDelta = listener; return () => undefined; },
+  onActivity: () => () => undefined,
   onStep: () => () => undefined,
   onCompacted: () => () => undefined,
   onContextExperiment: () => () => undefined,
