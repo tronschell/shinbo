@@ -16,6 +16,7 @@
     "dev": "node scripts/dev.mjs",
     "seed:catalog": "npm run build:main && node scripts/seed-catalog.mjs",
     "start": "npm run build:host && npm run build:native && npm run vendor:ripgrep && npm run build && electron .",
+    "pretest": "node -e \"require('electron')\"",
     "test": "npm run build:main && node --test --test-timeout=60000 dist-main/test/*.test.js test/*.test.mjs",
     "typecheck": "tsc -p tsconfig.renderer.json --noEmit",
     "lint": "eslint . --max-warnings 0",
