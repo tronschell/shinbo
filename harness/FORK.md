@@ -32,6 +32,10 @@ and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
   fingerprint is regenerated, because upstream's own comment on that field says
   a fork that keeps it is attempting to take over the original project's
   identity.
+- **Build revision.** The harness reports the most recent commit affecting its
+  own directory. Unrelated desktop commits and promotion merges no longer
+  invalidate the Zig compiler cache. CI fetches full history; the application
+  release manifest separately records the exact application source commit.
 - **Model transport.** Upstream talks to Vercel AI Gateway over the AI SDK
   language-model v3 protocol (`prompt`/`toolChoice` at `/v3/ai/language-model`).
   Emma talks to any OpenAI-compatible Chat Completions endpoint, which is the

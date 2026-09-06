@@ -2,6 +2,7 @@ name: ci
 
 on:
   pull_request:
+    branches: [dev, main]
   push:
     branches:
       - main
@@ -17,11 +18,39 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      desktop: ${{ steps.plan.outputs.desktop }}
+      rust: ${{ steps.plan.outputs.rust }}
+      harness: ${{ steps.plan.outputs.harness }}
+      package: ${{ steps.plan.outputs.package }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - run: node --test --test-timeout=60000 desktop/test/ci-plan.test.mjs
+
+      - name: select checks and validate promotion
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node desktop/scripts/ci-plan.mjs
+
   macos:
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true' || needs.changes.outputs.rust == 'true'
     runs-on: macos-15
     timeout-minutes: 45
     env:
@@ -32,12 +61,14 @@ jobs:
           persist-credentials: false
 
       - uses: actions/setup-node@v5
+        if: needs.changes.outputs.desktop == 'true'
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
       - uses: actions/cache@v5
+        if: needs.changes.outputs.rust == 'true'
         with:
           path: |
             ~/.cargo/registry
@@ -47,28 +78,36 @@ jobs:
           restore-keys: cargo-check-${{ runner.os }}-${{ runner.arch }}-
 
       - run: npm ci
+        if: needs.changes.outputs.desktop == 'true'
         working-directory: desktop
 
       - run: npm run check
+        if: needs.changes.outputs.desktop == 'true'
         working-directory: desktop
 
       - name: build native helpers
-        if: github.event_name == 'pull_request' && github.base_ref != 'main'
+        if: needs.changes.outputs.desktop == 'true' && needs.changes.outputs.package != 'true'
         run: npm run build:native
         working-directory: desktop
 
       - run: cargo fmt --all -- --check
+        if: needs.changes.outputs.rust == 'true'
       - run: cargo check --workspace --locked --all-targets
+        if: needs.changes.outputs.rust == 'true'
       - run: cargo test --workspace --locked
+        if: needs.changes.outputs.rust == 'true'
       - run: cargo clippy --workspace --locked --all-targets -- -D warnings
+        if: needs.changes.outputs.rust == 'true'
 
   zig:
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: needs.changes.outputs.harness == 'true'
     runs-on: macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: setup-zig v2.2.1
@@ -76,12 +115,13 @@ jobs:
         with:
           version: 0.16.0
 
-      - run: zig build test
+      - run: zig build test --test-timeout 2m --summary all
         working-directory: harness
 
   package_mac:
     name: package-mac
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.base_ref == 'main') || (github.event_name == 'workflow_dispatch' && inputs.package)
+    needs: changes
+    if: needs.changes.outputs.package == 'true'
     runs-on: macos-15
     timeout-minutes: 45
     env:
@@ -89,6 +129,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          fetch-depth: 0
           ref: ${{ github.sha }}
           persist-credentials: false
 
@@ -174,39 +215,39 @@ jobs:
           if-no-files-found: error
 
   check:
-    if: github.event_name == 'pull_request' && always()
-    needs:
-      - macos
-      - zig
-      - package_mac
-      - package_win
-      - check-windows
+    if: always()
+    needs: [changes, macos, windows, zig, zig_windows, package_mac, package_win]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: require all PR checks
+      - name: require every selected check
+        env:
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          test "${{ needs.macos.result }}" = success
-          test "${{ needs.zig.result }}" = success
-          test "${{ needs.check-windows.result }}" = success
-          test "${{ needs.package_mac.result }}" = "${{ github.base_ref == 'main' && 'success' || 'skipped' }}"
-          test "${{ needs.package_win.result }}" = "${{ github.base_ref == 'main' && 'success' || 'skipped' }}"
-
-  check-windows:
-    if: github.event_name == 'pull_request' && always()
-    needs:
-      - windows
-      - zig_windows
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: require all Windows checks
-        run: |
-          test "${{ needs.windows.result }}" = success
-          test "${{ needs.zig_windows.result }}" = success
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          const needs = JSON.parse(process.env.NEEDS);
+          assert.equal(needs.changes.result, 'success', 'Check selection failed');
+          const plan = needs.changes.outputs;
+          for (const key of ['desktop', 'rust', 'harness', 'package']) {
+            assert.ok(['true', 'false'].includes(plan[key]), key);
+          }
+          const expected = {
+            macos: plan.desktop === 'true' || plan.rust === 'true',
+            windows: plan.desktop === 'true' || plan.rust === 'true',
+            zig: plan.harness === 'true',
+            zig_windows: plan.harness === 'true',
+            package_mac: plan.package === 'true',
+            package_win: plan.package === 'true',
+          };
+          for (const [job, required] of Object.entries(expected)) {
+            assert.equal(needs[job].result, required ? 'success' : 'skipped', job);
+          }
+          JS
 
   windows:
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true' || needs.changes.outputs.rust == 'true'
     runs-on: windows-2025
     timeout-minutes: 45
     steps:
@@ -215,12 +256,14 @@ jobs:
           persist-credentials: false
 
       - uses: actions/setup-node@v5
+        if: needs.changes.outputs.desktop == 'true'
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
       - uses: actions/cache@v5
+        if: needs.changes.outputs.rust == 'true'
         with:
           path: |
             ~\.cargo\registry
@@ -230,30 +273,38 @@ jobs:
           restore-keys: cargo-${{ runner.os }}-${{ runner.arch }}-
 
       - run: npm ci
+        if: needs.changes.outputs.desktop == 'true'
         working-directory: desktop
 
       - run: npm run test
+        if: needs.changes.outputs.desktop == 'true'
         working-directory: desktop
 
       - name: msvc-dev-cmd v1.13.0
+        if: needs.changes.outputs.desktop == 'true' && needs.changes.outputs.package != 'true'
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
         with:
           arch: amd64
 
       - run: npm run build:native
+        if: needs.changes.outputs.desktop == 'true' && needs.changes.outputs.package != 'true'
         working-directory: desktop
 
       - run: cargo test --workspace --locked
+        if: needs.changes.outputs.rust == 'true'
       - run: cargo clippy --workspace --locked --all-targets -- -D warnings
+        if: needs.changes.outputs.rust == 'true'
 
   zig_windows:
     name: zig-windows
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: needs.changes.outputs.harness == 'true'
     runs-on: windows-2025
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: setup-zig v2.2.1
@@ -266,12 +317,14 @@ jobs:
 
   package_win:
     name: package-win
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.base_ref == 'main') || (github.event_name == 'workflow_dispatch' && inputs.package)
+    needs: changes
+    if: needs.changes.outputs.package == 'true'
     runs-on: windows-2025
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
         with:
+          fetch-depth: 0
           ref: ${{ github.sha }}
           persist-credentials: false
 
