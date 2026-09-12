@@ -10,6 +10,15 @@ import { Terminals } from "../main/terminal";
 
 const PATCH_LIMIT = 512 * 1024;
 
+async function writeWhenReleased(file: string, text: string) {
+  for (let attempt = 0; ; attempt++) {
+    try { return writeFileSync(file, text); } catch (error) {
+      if (attempt >= 40 || process.platform !== "win32") throw error;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+}
+
 test("Git patch collection bounds bytes and stops scheduling files after the visible patch fills", async (t) => {
   const repo = mkdtempSync(path.join(tmpdir(), "shinbo-patch-budget-"));
   t.after(() => rmSync(repo, { recursive: true, force: true }));
@@ -43,7 +52,7 @@ test("Git patch collection bounds bytes and stops scheduling files after the vis
   assert.ok(patchBytes <= 4 * (PATCH_LIMIT + 1));
   assert.equal(calls.mock.calls.filter((call) => (call.arguments[1] as string[]).includes("--no-index")).length, 4);
 
-  writeFileSync(path.join(repo, "tracked.txt"), large);
+  await writeWhenReleased(path.join(repo, "tracked.txt"), large);
   calls.mock.resetCalls();
   patchBytes = 0;
   const tracked = await gitSnapshot(repo);
@@ -55,7 +64,7 @@ test("Git patch collection bounds bytes and stops scheduling files after the vis
   assert.equal(calls.mock.calls.filter((call) => (call.arguments[1] as string[]).includes("--no-index")).length, 0);
 
   for (let index = 0; index < 20; index++) rmSync(path.join(repo, `generated-${String(index).padStart(2, "0")}.txt`));
-  writeFileSync(path.join(repo, "tracked.txt"), "after\n");
+  await writeWhenReleased(path.join(repo, "tracked.txt"), "after\n");
   writeFileSync(path.join(repo, "a.txt"), "small 🦄 patch\n");
   writeFileSync(path.join(repo, "b.txt"), "second patch\n");
   const expected = [run("diff", "--no-color", "HEAD").toString(), ...["a.txt", "b.txt"].map((file) =>
@@ -64,7 +73,7 @@ test("Git patch collection bounds bytes and stops scheduling files after the vis
   assert.equal(small!.diff, expected);
   assert.equal(small!.truncated, false);
 
-  writeFileSync(path.join(repo, "tracked.txt"), `readable prefix\n${"🦄".repeat(200_000)}\n`);
+  await writeWhenReleased(path.join(repo, "tracked.txt"), `readable prefix\n${"🦄".repeat(200_000)}\n`);
   const unicode = await gitSnapshot(repo);
   assert.equal(unicode!.truncated, true);
   assert.match(unicode!.diff, /\+readable prefix/);

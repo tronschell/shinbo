@@ -242,7 +242,7 @@ test("a folder is a directory, and a save filed into it keeps its picture and co
   const made = createNoteFolder(vault, "  Design  ");
   assert.equal(made.name, "Design");
   assert.deepEqual(listNoteFolders(vault).map((folder) => folder.name), ["Design"]);
-  assert.equal(moveNote(vault, shot.relative, "Design"), path.join("Design", shot.relative));
+  assert.equal(moveNote(vault, shot.relative, "Design"), `Design/${shot.relative}`);
   const notes = await listNotes(vault);
   assert.equal(notes.length, 1);
   assert.equal(notes[0].folder, "Design");
