@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
-import { open } from "node:fs/promises";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, renameSync } from "node:fs";
+import { open, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { createGunzip } from "node:zlib";
 import { updateOrigin } from "../shared/update";
@@ -113,10 +113,10 @@ export async function extractTarGz(source: NodeJS.ReadableStream, into: string, 
 }
 
 export function toolsOrigin(): string {
-  if (!process.env.EMMA_TOOLS_URL) return DEFAULT_TOOLS_ORIGIN;
-  const origin = updateOrigin(process.env.EMMA_TOOLS_URL);
+  if (!process.env.SHINBO_TOOLS_URL) return DEFAULT_TOOLS_ORIGIN;
+  const origin = updateOrigin(process.env.SHINBO_TOOLS_URL);
   if (origin) return origin;
-  console.error("Emma: EMMA_TOOLS_URL is not an https origin; falling back to GitHub");
+  console.error("Shinbo: SHINBO_TOOLS_URL is not an https origin; falling back to GitHub");
   return DEFAULT_TOOLS_ORIGIN;
 }
 
@@ -127,10 +127,11 @@ export class ZvecGrepTool {
   private detail = "";
   private notified = 0;
   private controller?: AbortController;
+  private readonly sweeping: Promise<void>;
 
   constructor(private readonly root: string, private readonly origin: string, private readonly onChange: () => void) {
     this.phase = this.entry() ? "ready" : "missing";
-    this.sweep();
+    this.sweeping = this.sweep();
   }
 
   entry(): string {
@@ -185,11 +186,11 @@ export class ZvecGrepTool {
     this.onChange();
   }
 
-  private sweep() {
+  private async sweep() {
     try {
-      for (const name of readdirSync(this.root)) {
+      for (const name of await readdir(this.root)) {
         if (name === ZVEC_GREP_VERSION && this.entry()) continue;
-        rmSync(path.join(this.root, name), { recursive: true, force: true });
+        await rm(path.join(this.root, name), { recursive: true, force: true });
       }
     } catch {
       return;
@@ -228,6 +229,8 @@ export class ZvecGrepTool {
   }
 
   private async run(controller: AbortController) {
+    await this.sweeping;
+    if (this.stopped(controller)) return;
     mkdirSync(this.root, { recursive: true });
     const stamp = `${Date.now().toString(36)}`;
     const tarball = path.join(this.root, `download-${stamp}.tar.gz`);
@@ -241,14 +244,15 @@ export class ZvecGrepTool {
       this.settle("extracting", "");
       await extractTarGz(createReadStream(tarball), staging, () => this.stopped(controller));
       if (!existsSync(path.join(staging, ZVEC_GREP_ENTRY))) throw new Error("The zvec-grep archive is missing its entry point.");
-      rmSync(path.join(this.root, ZVEC_GREP_VERSION), { recursive: true, force: true });
+      await rm(path.join(this.root, ZVEC_GREP_VERSION), { recursive: true, force: true });
+      if (this.stopped(controller)) throw new Error("The zvec-grep download was cancelled.");
       renameSync(staging, path.join(this.root, ZVEC_GREP_VERSION));
       this.controller = undefined;
-      this.sweep();
+      await this.sweep();
       this.settle("ready", "");
     } finally {
-      rmSync(tarball, { force: true });
-      rmSync(staging, { recursive: true, force: true });
+      await rm(tarball, { force: true });
+      await rm(staging, { recursive: true, force: true });
     }
   }
 }

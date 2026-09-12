@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import fs from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { AttachmentStore } from "../main/attachments";
 
-const userData = () => mkdtempSync(path.join(tmpdir(), "emma-attachments-"));
+const userData = () => mkdtempSync(path.join(tmpdir(), "shinbo-attachments-"));
 
 test("a picked text file comes back whole, and only what was attached is readable", () => {
   const root = userData();
@@ -14,8 +15,8 @@ test("a picked text file comes back whole, and only what was attached is readabl
   const store = new AttachmentStore(root);
   const held = store.hold(file);
   assert.equal(store.read(held.id).text, "name,count\nzig,2\n");
-  // The vision tool is given `held.path` and nothing else opens: `hold` keeps the
-  // real path, so the spelling the model was handed is the spelling that passes.
+
+
   assert.equal(store.holds(held.path), true);
   assert.equal(store.holds(path.join(root, "elsewhere.csv")), false);
   assert.throws(() => store.read("not-an-attachment"));
@@ -49,8 +50,8 @@ test("what was attached is still attached after a relaunch, unless the file is g
   const dropped = first.save("notes.md", new TextEncoder().encode("# notes"));
   const picked = first.hold(moved);
 
-  // A new store is a new launch: the preview and the editor doors both ask `holds`
-  // before they open a bare path, so this is what keeps an old turn's tiles working.
+
+
   const relaunched = new AttachmentStore(root);
   assert.equal(relaunched.holds(dropped.path), true);
   assert.equal(relaunched.holds(picked.path), true);
@@ -59,3 +60,40 @@ test("what was attached is still attached after a relaunch, unless the file is g
   rmSync(moved);
   assert.equal(new AttachmentStore(root).holds(picked.path), false);
 });
+
+test("new uploads preserve held attachments older than seven days", () => {
+  const root = userData();
+  const store = new AttachmentStore(root);
+  const first = store.save("old.md", new TextEncoder().encode("permanent conversation context"));
+  const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+  utimesSync(first.path, old, old);
+  store.save("new.md", new TextEncoder().encode("another conversation"));
+  assert.equal(store.read(first.id).text, "permanent conversation context");
+  assert.equal(new AttachmentStore(root).read(first.id).text, "permanent conversation context");
+});
+
+for (const operation of ["save", "hold"] as const) {
+  test(`a failed attachment index write rejects ${operation} and preserves already saved attachments`, (t) => {
+    const root = userData();
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const store = new AttachmentStore(root);
+    const original = store.save("original.md", Buffer.from("previous user work"));
+    const index = path.join(root, "attachments", "held.json");
+    const before = fs.readFileSync(index);
+    const picked = path.join(root, "picked.md");
+    writeFileSync(picked, "new user work");
+    const write = fs.writeFileSync;
+    const failure = t.mock.method(fs, "writeFileSync", (...args: Parameters<typeof write>) => {
+      if (String(args[0]).includes("held.json") && String(args[0]).endsWith(".tmp")) throw Object.assign(new Error("no space left on device"), { code: "ENOSPC" });
+      return write(...args);
+    });
+    assert.throws(() => operation === "save" ? store.save("next.md", Buffer.from("new user work")) : store.hold(picked), /no space left/);
+    assert.deepEqual(fs.readFileSync(index), before);
+    assert.equal(store.holds(picked), false);
+    assert.equal(new AttachmentStore(root).read(original.id).text, "previous user work");
+    assert.deepEqual(readdirSync(path.dirname(index)).sort(), [path.basename(original.path), "held.json"].sort());
+    failure.mock.restore();
+    const retried = operation === "save" ? store.save("next.md", Buffer.from("new user work")) : store.hold(picked);
+    assert.equal(new AttachmentStore(root).read(retried.id).text, "new user work");
+  });
+}

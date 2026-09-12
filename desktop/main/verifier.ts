@@ -86,14 +86,14 @@ export async function chatCompletion(
   settings: VerifierSettings,
   messages: ChatMessage[],
   key: string,
-  { maxTokens, timeoutMs, label, thinking, onUsage }: { maxTokens: number; timeoutMs: number; label: string; thinking?: boolean; onUsage?: (usage: { inputTokens: number; outputTokens: number }) => void },
+  { maxTokens, timeoutMs, label, thinking, onUsage, signal }: { maxTokens: number; timeoutMs: number; label: string; thinking?: boolean; onUsage?: (usage: { inputTokens: number; outputTokens: number }) => void; signal?: AbortSignal },
 ): Promise<string> {
   const [primary, ...rest] = settings.model.split(",").map((id) => id.trim()).filter(Boolean);
   const response = await fetch(settings.endpoint, {
     method: "POST",
     headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
     body: JSON.stringify({ model: primary ?? settings.model, ...(rest.length ? { models: [primary, ...rest].slice(0, MAX_FALLBACK_MODELS) } : {}), messages, temperature: 0, max_tokens: maxTokens, stream: false }),
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) throw new Error(`The ${label} endpoint answered ${response.status}.`);
   const body = await response.json() as { choices?: { message?: { content?: unknown; reasoning?: unknown; reasoning_content?: unknown } }[]; usage?: { prompt_tokens?: unknown; completion_tokens?: unknown } };

@@ -106,14 +106,14 @@ static int self_test(void) {
   int status = 0;
   waitpid(child, &status, 0);
   if (strstr(seen, "10 40")) return 0;
-  fprintf(stderr, "emma-pty self-test: expected \"10 40\", saw %s", seen);
+  fprintf(stderr, "shinbo-pty self-test: expected \"10 40\", saw %s", seen);
   return 1;
 }
 
 int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "--self-test") == 0) return self_test();
   if (argc < 4) {
-    fprintf(stderr, "usage: emma-pty <columns> <rows> <command> [argument...]\n");
+    fprintf(stderr, "usage: shinbo-pty <columns> <rows> <command> [argument...]\n");
     return 2;
   }
   struct winsize size = { .ws_col = 80, .ws_row = 24 };

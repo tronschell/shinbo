@@ -1,28 +1,12 @@
-//! Experimental context-window hooks, applied to the message list of one model
-//! step just before it is sent.
-//!
-//! Two levers, both off by default and both driven from Emma's Harness settings
-//! page over `session/set_config_option`:
-//!
-//!   * reinject — append the turn's original prompt again, so a long tool run
-//!     does not push the request itself out of the model's attention.
-//!   * prune — replace older tool results with a placeholder, so the transcript
-//!     the model re-reads every step stops growing without a summarization pass.
-//!
-//! Both act on the per-step projection only. Nothing here touches durable
-//! history or execution memory: the next step rebuilds the projection from the
-//! untouched originals, and the trigger is evaluated again against it.
-
 const std = @import("std");
 const types = @import("../../shared/types.zig");
 
 const ChatMessage = types.ChatMessage;
 
-/// The same estimate the rest of the stack uses when no provider count is in hand.
 const chars_per_token: usize = 4;
 
 pub const pruned_notice =
-    "[pruned] This tool result was removed from the context window by an Emma context experiment. Run the tool again if you still need what it said.";
+    "[pruned] This tool result was removed from the context window by a Shinbo context experiment. Run the tool again if you still need what it said.";
 
 pub const reinject_prefix =
     "[reminder] This is the request you are working on, repeated unchanged so it stays in view:\n\n";
@@ -76,11 +60,6 @@ pub fn checkpointMessage(alloc: std.mem.Allocator, percent_used: usize, compact_
     );
 }
 
-/// Runs both levers against one step's messages, newest-first ordering assumed
-/// (the list ends with the current step's tool results).
-///
-/// `step_index` is 1-based, so `reinject_prompt_steps = 15` fires on steps 15,
-/// 30, and so on rather than on the first step of every turn.
 pub fn apply(
     alloc: std.mem.Allocator,
     messages: *std.ArrayList(ChatMessage),
@@ -93,22 +72,12 @@ pub fn apply(
     var outcome: Outcome = .{ .estimated_tokens = estimateTokens(messages.items) };
     outcome.percent_used = percentUsed(outcome.estimated_tokens, settings.context_window_tokens);
 
-    // Pruning first: the reminder is appended after it, so it is never the thing
-    // that gets pruned, and both triggers are judged against the same estimate.
-    //
-    // The two prune triggers part company on a warm cache. Window pressure is a
-    // resource limit, so it fires whatever the cache is doing — cache economics
-    // must never be the reason a turn overflows its window. The periodic trigger
-    // is only ever a cost optimization, and on a warm cache it is a losing one,
-    // so it stands down and waits for the cache to cool.
     const prune_pressure = settings.force_prune or firesOnPercent(settings.prune_tools_percent, outcome.percent_used);
     const prune_hygiene = firesOnStep(settings.prune_tools_steps, step_index) and !cacheWasWarm(settings);
     if (prune_pressure or prune_hygiene) {
         const pruned = pruneToolResults(messages.items);
         outcome.pruned_results = pruned.results;
-        // Net of the notices that replaced the bodies, and saturating: a tool
-        // result shorter than the notice costs rather than saves, and a step that
-        // saved nothing must not report a saving.
+
         outcome.saved_tokens = (pruned.characters -| pruned.results * pruned_notice.len) / chars_per_token;
     }
     if (original_prompt.len > 0 and
@@ -140,18 +109,8 @@ fn firesOnPercent(at_percent: usize, percent_used: usize) bool {
     return at_percent != 0 and percent_used >= at_percent;
 }
 
-/// Cache reads are a subset of the input tokens they are reported beside, so a
-/// warm cache is one where the read covered at least this much of the input.
-/// Half, because the trade only has to beat a coin flip: below half the prefix
-/// is being re-processed at full price anyway, and pruning it is free money.
 const warm_cache_input_share: u64 = 2;
 
-/// Whether the previous step's prefix came back out of the provider's cache.
-///
-/// Prompt caching is prefix-based: rewriting a tool result in the middle of the
-/// transcript invalidates every cached byte after it. On a warm cache that
-/// trades a tenth-price cache read for a full-price re-processing of everything
-/// downstream, which usually costs more than the pruned tokens save.
 fn cacheWasWarm(settings: Settings) bool {
     if (settings.previous_input_tokens == 0) return false;
     return settings.previous_cache_read_tokens * warm_cache_input_share >= settings.previous_input_tokens;
@@ -171,13 +130,6 @@ fn percentUsed(estimated_tokens: usize, context_window_tokens: usize) usize {
     return estimated_tokens * 100 / context_window_tokens;
 }
 
-/// Blanks every tool result except the newest block of them.
-///
-/// The newest block is the answer to the calls the model made on the step
-/// before this one. Taking that away does not save context, it just makes the
-/// model run the same calls again. The messages stay in place with their ids
-/// intact, so the assistant call and its result are still paired — a provider
-/// rejects a tool call whose result went missing.
 fn pruneToolResults(messages: []ChatMessage) struct { results: usize, characters: usize } {
     var keep_from = messages.len;
     while (keep_from > 0 and messages[keep_from - 1].cache_policy == .no_cache) keep_from -= 1;
@@ -244,7 +196,6 @@ test "the percent trigger fires off the estimated projection size" {
     defer messages.deinit(alloc);
     try messages.append(alloc, .{ .role = .user, .content = body });
 
-    // 4000 characters is ~1000 tokens, half of a 2000-token window.
     const outcome = try apply(alloc, &messages, .{
         .reinject_prompt_percent = 50,
         .context_window_tokens = 2_000,
@@ -290,16 +241,15 @@ test "pruning blanks older tool results and keeps the newest block" {
 
     const outcome = try apply(alloc, &messages, .{ .prune_tools_steps = 2 }, 4, "build the thing");
     try std.testing.expectEqual(@as(usize, 1), outcome.pruned_results);
-    // 4000 characters out, one 143-character notice back in, at ~4 chars a token.
+
     try std.testing.expectEqual(@as(usize, 964), outcome.saved_tokens);
     try std.testing.expectEqual(@as(usize, 0), outcome.added_tokens);
     try std.testing.expectEqualStrings(pruned_notice, messages.items[2].content.?);
     try std.testing.expectEqualStrings("the newest file, in full", messages.items[4].content.?);
-    // The pairing a provider validates survives: id, name and a non-null body.
+
     try std.testing.expectEqualStrings("call_1", messages.items[2].tool_call_id.?);
     try std.testing.expectEqualStrings("read_file", messages.items[2].tool_name.?);
 
-    // Pruning twice does not count the same result again.
     const second = try apply(alloc, &messages, .{ .prune_tools_steps = 2 }, 6, "build the thing");
     try std.testing.expectEqual(@as(usize, 0), second.pruned_results);
     try std.testing.expectEqual(@as(usize, 0), second.saved_tokens);
@@ -338,8 +288,6 @@ test "a tool result smaller than the notice reports no saving" {
     try std.testing.expectEqual(@as(usize, 0), outcome.saved_tokens);
 }
 
-/// Two tool results, the older one prunable, in the ordering `pruneToolResults`
-/// expects. Every cache-temperature test needs the same shape.
 fn appendPrunableTranscript(alloc: std.mem.Allocator, messages: *std.ArrayList(ChatMessage), old_file: []const u8) !void {
     const calls = &[_]types.ToolCall{.{ .id = "call_1", .name = "read_file", .arguments_json = "{}" }};
     try messages.append(alloc, .{ .role = .assistant, .content = "reading", .tool_calls = calls });
@@ -358,7 +306,6 @@ test "a warm cache stands the periodic prune down" {
     defer messages.deinit(alloc);
     try appendPrunableTranscript(alloc, &messages, old_file);
 
-    // Half the input read back out of the cache is warm enough to wait.
     const outcome = try apply(alloc, &messages, .{
         .prune_tools_steps = 2,
         .previous_cache_read_tokens = 5_000,
@@ -369,7 +316,6 @@ test "a warm cache stands the periodic prune down" {
     try std.testing.expect(!outcome.changedAnything());
     try std.testing.expectEqualStrings(old_file, messages.items[1].content.?);
 
-    // One token short of half is cold, and prunes as it always did.
     var cooled: std.ArrayList(ChatMessage) = .empty;
     defer cooled.deinit(alloc);
     try appendPrunableTranscript(alloc, &cooled, old_file);
@@ -391,8 +337,6 @@ test "a warm cache never stands the window-pressure prune down" {
     defer messages.deinit(alloc);
     try appendPrunableTranscript(alloc, &messages, old_file);
 
-    // The same warm cache as above, and the step trigger firing alongside the
-    // percent one: an overflow is not a price the cache gets to negotiate.
     const outcome = try apply(alloc, &messages, .{
         .prune_tools_steps = 2,
         .prune_tools_percent = 50,
@@ -411,8 +355,6 @@ test "unknown billing prunes exactly as it did before the cache gate" {
     defer alloc.free(old_file);
     @memset(old_file, 'x');
 
-    // Nothing observed, a cache read with no input to be a share of, and a step
-    // that read nothing back: every one of them is cold.
     const unknown = [_]Settings{
         .{ .prune_tools_steps = 2 },
         .{ .prune_tools_steps = 2, .previous_cache_read_tokens = 9_000 },
@@ -436,7 +378,7 @@ test "the reminder reports what it put back in" {
 
     const outcome = try apply(alloc, &messages, .{ .reinject_prompt_steps = 1 }, 1, "build the thing");
     defer alloc.free(messages.items[messages.items.len - 1].content.?);
-    // The 92-character prefix plus the prompt itself, at ~4 chars a token.
+
     try std.testing.expectEqual(@as(usize, 26), outcome.added_tokens);
     try std.testing.expectEqual(@as(usize, 0), outcome.saved_tokens);
 }

@@ -31,7 +31,7 @@ function VisualFrame({ id, onKept, onPicked }: VisualProps) {
     const timeout = window.setTimeout(() => {
       if (alive) setRenderState((state) => state === "loading" ? "unconfirmed" : state);
     }, 15000);
-    void window.emma.readVisual(id)
+    void window.shinbo.readVisual(id)
       .then((visual) => { if (alive) setDrawn(visual); })
       .catch((error) => {
         if (!alive) return;
@@ -44,14 +44,14 @@ function VisualFrame({ id, onKept, onPicked }: VisualProps) {
   useEffect(() => {
     const heard = (event: MessageEvent) => {
       const page = frame.current?.contentWindow;
-      const said = event.data as { emma?: unknown; height?: unknown; label?: unknown; html?: unknown };
+      const said = event.data as { shinbo?: unknown; height?: unknown; label?: unknown; html?: unknown };
       if (!page || event.source !== page) return;
-      if (said?.emma === VISUAL_HEIGHT_MESSAGE && typeof said.height === "number" && Number.isFinite(said.height) && said.height > 0) {
+      if (said?.shinbo === VISUAL_HEIGHT_MESSAGE && typeof said.height === "number" && Number.isFinite(said.height) && said.height > 0) {
         setRenderState((state) => state === "failed" ? state : "ready");
         setHeight(Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, Math.ceil(said.height))));
         return;
       }
-      if (said?.emma !== VISUAL_PICKED_MESSAGE || typeof said.label !== "string" || typeof said.html !== "string") return;
+      if (said?.shinbo !== VISUAL_PICKED_MESSAGE || typeof said.label !== "string" || typeof said.html !== "string") return;
       const title = typeof drawn === "object" && drawn ? drawn.title : "Picture";
       onPicked({ kind: "visual", id: `${id}:${said.label}`, title, label: said.label, html: said.html });
       setNote(`${said.label} is attached to your next message.`);
@@ -61,7 +61,7 @@ function VisualFrame({ id, onKept, onPicked }: VisualProps) {
   }, [id, drawn, onPicked]);
 
   useEffect(() => {
-    frame.current?.contentWindow?.postMessage({ emma: VISUAL_PICK_MESSAGE, on: picking }, "*");
+    frame.current?.contentWindow?.postMessage({ shinbo: VISUAL_PICK_MESSAGE, on: picking }, "*");
   }, [picking]);
 
   const loading = renderState === "loading";
@@ -80,12 +80,12 @@ function VisualFrame({ id, onKept, onPicked }: VisualProps) {
   };
 
   const exportPng = () => run("Exporting", async () => {
-    const saved = await window.emma.exportVisual(id, frame.current?.clientWidth || DEFAULT_WIDTH);
+    const saved = await window.shinbo.exportVisual(id, frame.current?.clientWidth || DEFAULT_WIDTH);
     return saved ? `Saved to ${saved}` : "";
   });
 
   const keep = () => run("Keeping", async () => {
-    const artifact = await window.emma.saveArtifact({ title: drawn.title, kind: "html", content: visualPage(drawn.html) });
+    const artifact = await window.shinbo.saveArtifact({ title: drawn.title, kind: "html", content: visualPage(drawn.html) });
     onKept(artifact.id);
     return `Kept as the artifact "${artifact.title}".`;
   });
@@ -100,7 +100,7 @@ function VisualFrame({ id, onKept, onPicked }: VisualProps) {
         <button type="button" disabled={!!busy} onClick={() => { setOpen(false); trigger.current?.focus(); void keep(); }} title="Keep this on the Artifacts page">{busy === "Keeping" ? "Keeping…" : "Keep"}</button>
       </div>}
     </div>
-    <iframe ref={frame} title={drawn.title} sandbox="allow-scripts" src={visualFrameUrl(id)} style={{ height }} onError={() => { setFailure("The picture frame could not load."); setRenderState("failed"); }} onLoad={() => { if (picking) frame.current?.contentWindow?.postMessage({ emma: VISUAL_PICK_MESSAGE, on: true }, "*"); }} />
+    <iframe ref={frame} title={drawn.title} sandbox="allow-scripts" src={visualFrameUrl(id)} style={{ height }} onError={() => { setFailure("The picture frame could not load."); setRenderState("failed"); }} onLoad={() => { if (picking) frame.current?.contentWindow?.postMessage({ shinbo: VISUAL_PICK_MESSAGE, on: true }, "*"); }} />
     {renderState !== "ready" && <figcaption className="inline-activity" data-running={loading || undefined} role="status">{status}</figcaption>}
     {(busy || note) && <figcaption className="inline-activity" data-running={!!busy || undefined} role="status">{busy ? `${busy}…` : note}</figcaption>}
   </figure>;

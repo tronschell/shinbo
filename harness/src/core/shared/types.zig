@@ -25,7 +25,7 @@ pub const NoticeTone = enum {
     warning,
     @"error",
     cancelled,
-    // Renders in the neutral body color so the line reads like a normal response.
+
     neutral,
 };
 
@@ -41,8 +41,6 @@ pub const SemanticNotice = struct {
     visibility: NoticeVisibility = .compact_and_full,
 };
 
-/// Returns a duplicate with owned topic and body bytes. The caller frees it
-/// with `freeSemanticNotice` using the same allocator.
 pub fn dupeSemanticNotice(alloc: std.mem.Allocator, notice: SemanticNotice) std.mem.Allocator.Error!SemanticNotice {
     const topic = try alloc.dupe(u8, notice.topic);
     errdefer alloc.free(topic);
@@ -59,8 +57,6 @@ pub fn freeSemanticNotice(alloc: std.mem.Allocator, notice: SemanticNotice) void
     alloc.free(notice.body);
 }
 
-/// Converts legacy context-notice text into a semantic notice body while
-/// preserving line structure. The caller owns the returned bytes.
 pub fn renderContextNoticeBody(alloc: std.mem.Allocator, text: []const u8) ![]u8 {
     var body: std.Io.Writer.Allocating = .init(alloc);
     defer body.deinit();
@@ -87,10 +83,8 @@ test "context notice body drops legacy markers from every line" {
     try std.testing.expectEqualStrings("first\nsecond\nalready semantic\n\n", body);
 }
 
-/// Emma supplies the provider credential through the environment; there is no
-/// vendor sign-in surface, so one source is the whole set.
 pub const CredentialSource = enum {
-    emma_provider_api_key,
+    shinbo_provider_api_key,
 };
 
 pub fn parseCredentialSource(text: []const u8) ?CredentialSource {
@@ -181,21 +175,13 @@ pub const StreamState = struct {
     subagent_count: usize = 0,
     token_progress: TurnTokenProgress = .{},
     last_activity_kind: ?ToolActivityKind = null,
-    /// When the turn started; 0 hides the Thinking elapsed counter and its
-    /// wall-clock blink. Monotonic for the whole turn: tool boundaries never
-    /// reset it.
+
     turn_started_ms: i64 = 0,
-    /// When fx started waiting on user input (approval or question); 0 means
-    /// not waiting. While set, the Thinking clock freezes at this instant;
-    /// on resume the wait is excluded by shifting turn_started_ms forward.
+
     waiting_since_ms: i64 = 0,
-    /// Assistant text reached the transcript in the current stretch: the
-    /// status row stays with the response instead of flipping back to Thinking
-    /// whenever the pacer catches up. A tool start opens the next stretch.
+
     assistant_text_started: bool = false,
-    /// The model is streaming tool arguments that open no status row of their
-    /// own, so the turn is producing output the transcript cannot show yet.
-    /// Cleared as soon as assistant text resumes or the tool itself starts.
+
     composing_tool_payload: bool = false,
 };
 
@@ -846,6 +832,7 @@ pub const ToolResultMemory = struct {
 pub const ToolExecutionStep = struct {
     assistant: ?[]u8 = null,
     reasoning: ?[]u8 = null,
+    reasoning_details_json: ?[]u8 = null,
     tool_calls: []ToolCall = &.{},
     tool_results: []PersistedToolResult = &.{},
 };
@@ -881,16 +868,15 @@ pub const ImageAttachment = struct {
 pub const UserTurn = struct {
     text: []u8,
     images: []ImageAttachment = &.{},
-    /// Durable join key for manager-owned child work. This is metadata only;
-    /// model projections continue to use `text` and `images` exclusively.
+
     work_id: ?[]u8 = null,
 };
 
 pub const ChatCachePolicy = enum {
     default,
-    /// Never part of a cached prefix; the request builder keeps it after every cacheable message.
+
     no_cache,
-    /// Session-stable runtime context: hoisted into the cached prefix ahead of history.
+
     prefix,
 };
 
@@ -903,8 +889,7 @@ pub const ChatMessage = struct {
     tool_call_id: ?[]const u8 = null,
     tool_name: ?[]const u8 = null,
     tool_calls: []const ToolCall = &.{},
-    /// Provider-owned opaque response items needed only for stateless within-turn continuation.
-    /// The value is a validated JSON array and is never sent across provider routes.
+
     provider_state_json: ?[]const u8 = null,
     tool_result_status: ?PersistedToolStatus = null,
     tool_result_memory: ?ToolResultMemory = null,
@@ -1016,8 +1001,6 @@ test "parseMicroDollars rejects unavailable or inexact costs" {
     try std.testing.expectEqual(@as(?u64, null), parseMicroDollars("NaN"));
 }
 
-/// Exact usage metadata returned by a completed Gateway stream. `model` is
-/// owned by the completion carrying this value.
 pub const GatewayBilling = struct {
     created_at_ms: i64,
     model: []const u8,
@@ -1031,8 +1014,6 @@ pub const GatewayBilling = struct {
     billable_web_search_calls: u64,
 };
 
-/// Absolute per-turn token totals. Input covers only user-submitted prompt text
-/// and stays estimated; output may become exact from provider usage.
 pub const TurnTokenProgress = struct {
     input_tokens: u64 = 0,
     output_tokens: u64 = 0,
@@ -1090,22 +1071,20 @@ pub const ProviderFinishReason = enum {
 
 pub const GatewayCompletion = struct {
     content: ?[]const u8 = null,
-    /// A reasoning model's scratchpad, which OpenAI-compatible providers return
-    /// beside the answer rather than inside it. Kept apart all the way to the
-    /// transcript so the answer is never buried in the working-out.
+
     reasoning: ?[]const u8 = null,
     reasoning_details_json: ?[]const u8 = null,
     tool_calls: []const ToolCall = &.{},
     routed_model: ?[]const u8 = null,
     generation_id: ?[]const u8 = null,
     billing: ?GatewayBilling = null,
-    /// Gateway generation or resolved-model metadata was malformed or conflicting.
+
     generation_metadata_invalid: bool = false,
-    /// An earlier delivery may have billed outside this generation identity.
+
     delivery_ambiguous: bool = false,
     provider_result_identity_failure: ?ProviderResultIdentityFailure = null,
     provider_failure_detail: ?[]const u8 = null,
-    /// Provider-owned opaque response items for the next stateless request in this turn.
+
     provider_state_json: ?[]const u8 = null,
     finish_reason: ?ProviderFinishReason = null,
     usage: Usage = .{},
@@ -1585,15 +1564,13 @@ pub const CompactedSummaryHistoryTurn = struct {
     summary: []u8,
     removed_turn_count: usize,
     compaction_count: usize,
-    /// Legacy compacted root text retained for storage compatibility. It is
-    /// model context only and never permission authority.
+
     root_user_messages: [][]u8 = &.{},
-    /// Legacy completeness marker retained for storage compatibility.
+
     root_user_messages_complete: bool = true,
-    /// Legacy compacted feedback retained for storage compatibility. It is not
-    /// permission authority.
+
     permission_feedback: [][]u8 = &.{},
-    /// Legacy completeness marker retained for storage compatibility.
+
     permission_feedback_complete: bool = true,
 };
 
@@ -1857,8 +1834,6 @@ pub const QuestionBatchEntry = struct {
     options: []const QuestionOption,
 };
 
-/// One persisted answer from an interactive question batch. The strings are
-/// borrowed from the short-lived arena that decodes the completed tool result.
 pub const QuestionAnswer = struct {
     question: []const u8,
     answer: []const u8,
@@ -2121,6 +2096,8 @@ fn dupeToolExecutionStep(alloc: std.mem.Allocator, step: ToolExecutionStep) !Too
     errdefer if (assistant) |text| alloc.free(text);
     const reasoning = if (step.reasoning) |text| try alloc.dupe(u8, text) else null;
     errdefer if (reasoning) |text| alloc.free(text);
+    const reasoning_details_json = if (step.reasoning_details_json) |text| try alloc.dupe(u8, text) else null;
+    errdefer if (reasoning_details_json) |text| alloc.free(text);
     const tool_calls = try dupeToolCallSlice(alloc, step.tool_calls);
     errdefer freeToolCallSlice(alloc, tool_calls);
     const tool_results = try dupePersistedToolResults(alloc, step.tool_results);
@@ -2129,6 +2106,7 @@ fn dupeToolExecutionStep(alloc: std.mem.Allocator, step: ToolExecutionStep) !Too
     return .{
         .assistant = assistant,
         .reasoning = reasoning,
+        .reasoning_details_json = reasoning_details_json,
         .tool_calls = tool_calls,
         .tool_results = tool_results,
     };
@@ -2137,6 +2115,7 @@ fn dupeToolExecutionStep(alloc: std.mem.Allocator, step: ToolExecutionStep) !Too
 fn freeToolExecutionStep(alloc: std.mem.Allocator, step: ToolExecutionStep) void {
     if (step.assistant) |assistant| alloc.free(assistant);
     if (step.reasoning) |reasoning| alloc.free(reasoning);
+    if (step.reasoning_details_json) |details| alloc.free(details);
     freeToolCallSlice(alloc, step.tool_calls);
     freePersistedToolResults(alloc, step.tool_results);
 }
@@ -2555,7 +2534,6 @@ pub fn dupeImageAttachmentSlice(alloc: std.mem.Allocator, attachments: []const I
     return copy;
 }
 
-/// Frees the owned fields in one attachment; caller owns any containing storage.
 pub fn freeImageAttachment(alloc: std.mem.Allocator, attachment: ImageAttachment) void {
     alloc.free(attachment.path);
     alloc.free(attachment.media_type);

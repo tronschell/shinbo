@@ -1,13 +1,13 @@
 # Voice and drawing
 
 Dictation: speak, and the words land in the composer. Everything happens on this
-computer — the audio never reaches a network Emma does not control, and that is
+computer — the audio never reaches a network Shinbo does not control, and that is
 enforced, not promised.
 
 ## Off until you turn it on
 
 **Settings → Voice**. Until `transcriptionEnabled` is on there is no microphone
-access, no helper, and no orb. Turning it on lets Emma request the platform's
+access, no helper, and no orb. Turning it on lets Shinbo request the platform's
 microphone permission where applicable.
 
 ## Recording
@@ -30,12 +30,12 @@ anything touches it.
 
 | | Built-in recognizer | Local server |
 |---|---|---|
-| Engine | macOS Speech.framework through `emma-transcribe`; Windows SAPI through `emma-transcribe.exe` | [llama.cpp](https://github.com/ggml-org/llama.cpp) at `http://127.0.0.1:8080/v1/audio/transcriptions` |
+| Engine | macOS Speech.framework through `shinbo-transcribe`; Windows SAPI through `shinbo-transcribe.exe` | [llama.cpp](https://github.com/ggml-org/llama.cpp) at `http://127.0.0.1:8080/v1/audio/transcriptions` |
 | Model | The operating system's on-device speech model for the configured locale or language | `ggml-org/Qwen3-ASR-0.6B-GGUF` |
 | Install | Nothing beyond the platform speech setup | Install `llama.cpp`, then run `llama-server -hf ggml-org/Qwen3-ASR-0.6B-GGUF --port 8080` |
-| Needs | macOS Speech Recognition and the **packaged** Emma.app; Windows speech recognition is provided by SAPI | Nothing from the operating system |
+| Needs | macOS Speech Recognition and the **packaged** Shinbo.app; Windows speech recognition is provided by SAPI | Nothing from the operating system |
 
-`emma-transcribe` ([`desktop/native/transcribe.m`](../desktop/native/transcribe.m)
+`shinbo-transcribe` ([`desktop/native/transcribe.m`](../desktop/native/transcribe.m)
 on macOS and [`desktop/native/transcribe_win.cpp`](../desktop/native/transcribe_win.cpp)
 on Windows, built with the platform toolchain) is a two-line contract:
 `--check [locale]` prints `ready` or the reason it cannot, and `<wav> [locale]`
@@ -110,7 +110,7 @@ in **Settings → Shortcuts** to open the island already listening.
 The ✎ orb hides the island and puts a transparent window over the whole display.
 Draw on it with a 5px `#ffe84f` stroke; **Escape** cancels.
 
-`SETTLE_MS` (700 ms) after the last stroke, Emma captures the display behind the
+`SETTLE_MS` (700 ms) after the last stroke, Shinbo captures the display behind the
 canvas, composites the drawing over it, and encodes it as JPEG:
 
 | Step | Detail |
@@ -121,7 +121,7 @@ canvas, composites the drawing over it, and encodes it as JPEG:
 | Ceiling | `MAX_SCREEN_CONTEXT_CHARS` — 96 KiB of data URL |
 
 The result is held in main's `ScreenContextStore` — one attachment, claimed for
-one turn and dropped once it lands. **The frame stays in Emma's process**: what
+one turn and dropped once it lands. **The frame stays in Shinbo's process**: what
 travels with the turn is a line of text naming the app that was in front. The
 `vision` tool is the only deliberate way an image reaches a model.
 

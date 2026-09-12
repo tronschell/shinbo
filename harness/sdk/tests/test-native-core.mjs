@@ -11,7 +11,7 @@ const events = [];
 const agent = await createFxAgent({
   nativeAddon: addon,
   backend: "native",
-  env: { EMMA_PROVIDER_API_KEY: "native-core-test-key" },
+  env: { SHINBO_PROVIDER_API_KEY: "native-core-test-key" },
   onEvent(event) { events.push(event); },
 });
 const session = await agent.createSession();

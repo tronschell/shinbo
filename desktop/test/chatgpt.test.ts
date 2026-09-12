@@ -4,7 +4,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { chatChunks, chunkState, readChatgptAuth, relayHeaders, responsesRequest, retainsPromptCache, sessionIdFor, upstreamFailure } from "../main/chatgpt";
 import { codexCachedSlugs } from "../main/cli-models";
 import { CODEX_MODEL_ID, availableCodexModelKey, codexModelKey, codexSlug, planFor, planForGeneration, planProfile } from "../shared/settings";
@@ -79,7 +79,7 @@ test("a chat completion becomes a stored-free responses call", () => {
 test("a runtime overlay after the conversation stays out of the instructions head", () => {
   const request = responsesRequest({
     model: "gpt-5.6-sol",
-    prompt_cache_key: "emma-openrouter-session-v1:abc",
+    prompt_cache_key: "shinbo-openrouter-session-v1:abc",
     messages: [
       { role: "system", content: "Be terse." },
       { role: "developer", content: "Prefer tables." },
@@ -89,7 +89,7 @@ test("a runtime overlay after the conversation stays out of the instructions hea
     ],
   });
   assert.equal(request.instructions, "Be terse.\n\nPrefer tables.");
-  assert.equal(request.prompt_cache_key, "emma-openrouter-session-v1:abc");
+  assert.equal(request.prompt_cache_key, "shinbo-openrouter-session-v1:abc");
   assert.deepEqual(request.input, [
     { type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] },
     { type: "message", role: "assistant", content: [{ type: "output_text", text: "hello" }] },
@@ -139,7 +139,7 @@ test("a run that ran out of output ends as a length finish, and every other fail
 });
 
 test("the proxy forwards upstream liveness even when no event translates into a chunk", () => {
-  const home = mkdtempSync(path.join(tmpdir(), "emma-chatgpt-relay-"));
+  const home = mkdtempSync(path.join(tmpdir(), "shinbo-chatgpt-relay-"));
   mkdirSync(path.join(home, ".codex"), { recursive: true });
   writeFileSync(path.join(home, ".codex", "auth.json"), JSON.stringify({ tokens: { access_token: "a.b.c", account_id: "acct-1" } }));
   const script = path.join(home, "relay.mjs");
@@ -152,14 +152,14 @@ test("the proxy forwards upstream liveness even when no event translates into a 
     'const answer = await real(route.chatUrl, { method: "POST", headers: { authorization: `Bearer ${route.apiKey}`, "content-type": "application/json" }, body: JSON.stringify({ model: "gpt-5.6-sol", messages: [{ role: "user", content: "hi" }] }) });',
     "process.stdout.write(await answer.text());",
   ].join("\n"));
-  const proxied = spawnSync(process.execPath, [script], { env: { ...process.env, HOME: home, USERPROFILE: home }, encoding: "utf8" });
+  const proxied = spawnSync(process.execPath, [script], { env: { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: path.join(home, ".codex") }, encoding: "utf8" });
   assert.equal(proxied.status, 0, proxied.stderr);
   assert.match(proxied.stdout, /^:$/m);
   assert.match(proxied.stdout, /"finish_reason":"stop"/);
 });
 
 test("a buffered request is answered with one chat completion", () => {
-  const home = mkdtempSync(path.join(tmpdir(), "emma-chatgpt-buffered-"));
+  const home = mkdtempSync(path.join(tmpdir(), "shinbo-chatgpt-buffered-"));
   mkdirSync(path.join(home, ".codex"), { recursive: true });
   writeFileSync(path.join(home, ".codex", "auth.json"), JSON.stringify({ tokens: { access_token: "a.b.c", account_id: "acct-1" } }));
   const script = path.join(home, "buffered.mjs");
@@ -172,7 +172,7 @@ test("a buffered request is answered with one chat completion", () => {
     'const answer = await real(route.chatUrl, { method: "POST", headers: { authorization: `Bearer ${route.apiKey}`, "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ model: "gpt-5.6-sol", max_tokens: 4000, stream: false, messages: [{ role: "user", content: "hi" }] }) });',
     'process.stdout.write(JSON.stringify({ type: answer.headers.get("content-type"), body: await answer.json() }));',
   ].join("\n"));
-  const proxied = spawnSync(process.execPath, [script], { env: { ...process.env, HOME: home, USERPROFILE: home }, encoding: "utf8" });
+  const proxied = spawnSync(process.execPath, [script], { env: { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: path.join(home, ".codex") }, encoding: "utf8" });
   assert.equal(proxied.status, 0, proxied.stderr);
   const answered = JSON.parse(proxied.stdout) as { type: string; body: Record<string, unknown> };
   assert.equal(answered.type, "application/json");
@@ -238,8 +238,8 @@ test("only the gpt-5 models below 5.6 are asked to retain a cached prefix", () =
 
 test("a cache key names the session, the thread, and the legacy header alike", () => {
   const auth = { accessToken: "a.b.c", accountId: "acct-1" };
-  const keyed = relayHeaders(auth, { prompt_cache_key: "emma:abc" });
-  assert.equal(keyed.session_id, sessionIdFor({ prompt_cache_key: "emma:abc" }));
+  const keyed = relayHeaders(auth, { prompt_cache_key: "shinbo:abc" });
+  assert.equal(keyed.session_id, sessionIdFor({ prompt_cache_key: "shinbo:abc" }));
   assert.equal(keyed["session-id"], keyed.session_id);
   assert.equal(keyed["thread-id"], keyed.session_id);
   assert.equal(keyed["chatgpt-account-id"], "acct-1");
@@ -264,4 +264,52 @@ test("reasoning output items reach the harness before the calls they explain", (
   const finished = chatChunks({ type: "response.completed", response: {} }, state);
   assert.deepEqual((finished[0].choices as { delta: unknown }[])[0].delta, { reasoning_details: [item] });
   assert.equal((finished[1].choices as { finish_reason: string }[])[0].finish_reason, "tool_calls");
+});
+
+test("R7-3 ChatGPT uses the account in the same configured Codex home as login and model discovery", (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), "shinbo-chatgpt-account-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const configured = path.join(home, "work-account");
+  mkdirSync(path.join(home, ".codex"), { recursive: true });
+  mkdirSync(configured);
+  writeFileSync(path.join(home, ".codex", "auth.json"), JSON.stringify({ tokens: { access_token: "default-token", account_id: "personal-account" } }));
+  writeFileSync(path.join(configured, "auth.json"), JSON.stringify({ tokens: { access_token: "configured-token", account_id: "work-account" } }));
+  const script = `require(${JSON.stringify(path.join(__dirname, "../main/chatgpt.js"))}).chatgptAuth().then((auth) => process.stdout.write(auth.accountId));`;
+  const selected = spawnSync(process.execPath, ["-e", script], { env: { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: configured }, encoding: "utf8" });
+  assert.equal(selected.status, 0, selected.stderr);
+  t.diagnostic(`chosenAccount=work-account; actualAccount=${selected.stdout}`);
+  assert.equal(selected.stdout, "work-account");
+});
+
+test("R8-1 an upstream EOF cannot become a successful buffered completion", (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), "shinbo-chatgpt-eof-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  mkdirSync(path.join(home, ".codex"));
+  writeFileSync(path.join(home, ".codex", "auth.json"), JSON.stringify({ tokens: { access_token: "fixture", account_id: "fixture" } }));
+  const script = `
+    const { chatgptRoute } = require(${JSON.stringify(path.join(__dirname, "../main/chatgpt.js"))});
+    const real = globalThis.fetch;
+    let ending = "";
+    globalThis.fetch = async () => new Response('data: {"type":"response.output_text.delta","delta":"Partial summary"}\\n\\n' + ending);
+    (async () => {
+      const route = await chatgptRoute();
+      const results = [];
+      for (const finish of ["missing", "completed", "length"]) {
+        ending = finish === "missing" ? "" : "data: " + JSON.stringify(finish === "completed" ? { type: "response.completed", response: {} } : { type: "response.incomplete", response: { incomplete_details: { reason: "max_output_tokens" } } }) + "\\n\\n";
+        const answer = await real(route.chatUrl, { method: "POST", headers: { authorization: "Bearer " + route.apiKey }, body: JSON.stringify({ model: "fixture", stream: false, messages: [] }) });
+        results.push({ finish, status: answer.status, body: await answer.json() });
+      }
+      process.stdout.write(JSON.stringify(results));
+    })().catch((error) => { console.error(error); process.exitCode = 1; });
+  `;
+  const result = spawnSync(process.execPath, ["-e", script], { env: { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: path.join(home, ".codex") }, encoding: "utf8", timeout: 5000 });
+  assert.equal(result.status, 0, result.stderr);
+  const [missing, completed, length] = JSON.parse(result.stdout);
+  t.diagnostic(`unterminatedStatus=${missing.status}; manufacturedFinish=${missing.body.choices?.[0]?.finish_reason ?? "none"}`);
+  assert.equal(missing.status, 502);
+  assert.match(missing.body.error.message, /before.*completed/i);
+  assert.equal(completed.status, 200);
+  assert.equal(completed.body.choices[0].finish_reason, "stop");
+  assert.equal(length.status, 200);
+  assert.equal(length.body.choices[0].finish_reason, "length");
 });

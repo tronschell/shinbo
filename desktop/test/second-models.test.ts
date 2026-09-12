@@ -18,9 +18,9 @@ async function withGateway(run: (base: string, calls: Call[]) => Promise<void>) 
     "/advisor": "Read the failing test first, then the fixture it loads.",
     "/secret": "OPENROUTER_API_KEY is set, 73 characters, prefix sk-o.",
     "/vision": "A dialog reading Save changes?, with two buttons.",
-    "/screen": "A pull request page for emma, the Files changed tab open.",
+    "/screen": "A pull request page for shinbo, the Files changed tab open.",
     "/namer": '{"title":"Vision route"}',
-    "/tagger": '{"title":"Release notes","tags":["release","emma"]}',
+    "/tagger": '{"title":"Release notes","tags":["release","shinbo"]}',
   };
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     let body = "";
@@ -47,30 +47,30 @@ const route = (base: string, path: string, model: string, credentialEnv: string,
 
 test("every second model reaches its own endpoint with its own key and its own model", async () => {
   await withGateway(async (base, calls) => {
-    process.env.EMMA_TEST_ADVISOR_KEY = "advisor-key";
-    process.env.EMMA_TEST_SECRET_KEY = "secret-key";
-    process.env.EMMA_TEST_VISION_KEY = "vision-key";
-    process.env.EMMA_TEST_TAGGER_KEY = "tagger-key";
+    process.env.SHINBO_TEST_ADVISOR_KEY = "advisor-key";
+    process.env.SHINBO_TEST_SECRET_KEY = "secret-key";
+    process.env.SHINBO_TEST_VISION_KEY = "vision-key";
+    process.env.SHINBO_TEST_TAGGER_KEY = "tagger-key";
     try {
-      const advice = await advise(route(base, "/advisor", "vendor/advisor", "EMMA_TEST_ADVISOR_KEY", defaultAdvisorSystem), "the transcript so far");
+      const advice = await advise(route(base, "/advisor", "vendor/advisor", "SHINBO_TEST_ADVISOR_KEY", defaultAdvisorSystem), "the transcript so far");
       assert.match(advice.text, /failing test/);
       assert.equal(advice.error, undefined);
 
-      const secret = await readSecret(route(base, "/secret", "vendor/secret", "EMMA_TEST_SECRET_KEY", defaultSecretSystem), "env | grep KEY", "OPENROUTER_API_KEY=sk-or-v1-abc", "is the key set?");
+      const secret = await readSecret(route(base, "/secret", "vendor/secret", "SHINBO_TEST_SECRET_KEY", defaultSecretSystem), "env | grep KEY", "OPENROUTER_API_KEY=sk-or-v1-abc", "is the key set?");
       assert.match(secret, /73 characters/);
 
-      const vision = route(base, "/vision", "vendor/eyes:free,vendor/spare-eyes:free", "EMMA_TEST_VISION_KEY", defaultVisionSystem);
+      const vision = route(base, "/vision", "vendor/eyes:free,vendor/spare-eyes:free", "SHINBO_TEST_VISION_KEY", defaultVisionSystem);
       const seen = await look(vision, "data:image/png;base64,iVBOR", "What does this dialog say?");
       assert.match(seen, /Save changes\?/);
 
-      const screen = await describeScreen({ ...vision, endpoint: `${base}/screen` }, "data:image/png;base64,iVBOR", { application: "Safari", window: "emma" });
+      const screen = await describeScreen({ ...vision, endpoint: `${base}/screen` }, "data:image/png;base64,iVBOR", { application: "Safari", window: "shinbo" });
       assert.match(screen, /Files changed/);
 
       const named = await nameThread("why does vision never answer?", route(base, "/namer", "vendor/namer", "", defaultVerifierSystem));
       assert.equal(named, "Vision route");
 
-      const tagged = await tagNote({ id: "n1", title: "", tags: [], at: 0 } as never, "the release notes", route(base, "/tagger", "vendor/tagger", "EMMA_TEST_TAGGER_KEY", defaultVerifierSystem));
-      assert.deepEqual(tagged, { title: "Release notes", tags: ["release", "emma"] });
+      const tagged = await tagNote({ id: "n1", title: "", tags: [], at: 0 } as never, "the release notes", route(base, "/tagger", "vendor/tagger", "SHINBO_TEST_TAGGER_KEY", defaultVerifierSystem));
+      assert.deepEqual(tagged, { title: "Release notes", tags: ["release", "shinbo"] });
 
       assert.deepEqual(calls.map((call) => call.path), ["/advisor", "/secret", "/vision", "/screen", "/namer", "/tagger"]);
       assert.deepEqual(calls.map((call) => call.authorization), [
@@ -95,10 +95,10 @@ test("every second model reaches its own endpoint with its own key and its own m
         { type: "image_url", image_url: { url: "data:image/png;base64,iVBOR" } },
       ]);
     } finally {
-      delete process.env.EMMA_TEST_ADVISOR_KEY;
-      delete process.env.EMMA_TEST_SECRET_KEY;
-      delete process.env.EMMA_TEST_VISION_KEY;
-      delete process.env.EMMA_TEST_TAGGER_KEY;
+      delete process.env.SHINBO_TEST_ADVISOR_KEY;
+      delete process.env.SHINBO_TEST_SECRET_KEY;
+      delete process.env.SHINBO_TEST_VISION_KEY;
+      delete process.env.SHINBO_TEST_TAGGER_KEY;
     }
   });
 });

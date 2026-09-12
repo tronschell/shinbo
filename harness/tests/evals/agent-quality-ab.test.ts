@@ -34,7 +34,7 @@ describe("agent quality A/B harness helpers", () => {
   });
 
   test("redacts credential-looking values", () => {
-    expect(redactSensitiveValue("EMMA_PROVIDER_API_KEY", "secret-value")).toBe("[redacted]");
+    expect(redactSensitiveValue("SHINBO_PROVIDER_API_KEY", "secret-value")).toBe("[redacted]");
     expect(redactSensitiveValue("FX_MODEL", "provider/test-model")).toBe("provider/test-model");
   });
 
@@ -129,7 +129,7 @@ const hasLiveAbConfig = Boolean(
   process.env.FX_AB_BASELINE_BIN &&
     process.env.FX_AB_CANDIDATE_BIN &&
     process.env.FX_AB_MODEL &&
-    (process.env.EMMA_PROVIDER_API_KEY),
+    (process.env.SHINBO_PROVIDER_API_KEY),
 );
 
 const liveAbTest = hasLiveAbConfig ? test : test.skip;

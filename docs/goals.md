@@ -1,6 +1,6 @@
 # Goals
 
-One objective a thread keeps working at on its own. Set a goal and Emma drives
+One objective a thread keeps working at on its own. Set a goal and Shinbo drives
 turn after turn without being asked again, stopping only when the objective is
 met with evidence, the same blocker has stood three turns running, or the
 allowance runs out. The thread grows a **Goal** tab; every goal tool call leaves
@@ -23,7 +23,7 @@ travels with the thread rather than sitting in a side table. Front matter carrie
 `goal-blocked-streak`, `goal-blocked-at-turn`, `goal-token-budget`,
 `goal-tokens-used`, `goal-time-used-seconds`, `goal-turns`, `goal-created-at` and
 `goal-updated-at`, written only when the thread has a goal.
-`emma-thread-format` is **13**. The format number gates nothing on read: a file
+`shinbo-thread-format` is **13**. The format number gates nothing on read: a file
 without the goal keys loads with no goal, and one carrying them loads the goal
 whatever number it claims.
 
@@ -34,8 +34,8 @@ default allowance 200,000 tokens and 40 turns.
 
 | | |
 | --- | --- |
-| `active` — *Pursuing* | Emma re-drives the thread each time a turn ends. Resume restarts one left stranded by a quit. |
-| `paused` — *Paused* | The record stands; nothing drives. Resume puts Emma back to work. |
+| `active` — *Pursuing* | Shinbo re-drives the thread each time a turn ends. Resume restarts one left stranded by a quit. |
+| `paused` — *Paused* | The record stands; nothing drives. Resume puts Shinbo back to work. |
 | `complete` — *Achieved* | Evidence is on the record. Settled. |
 | `blocked` — *Blocked* | The same blocker stopped three consecutive goal turns. Settled. |
 | `budgetLimited` — *Budget reached* | The token allowance or the 40-turn ceiling was reached. Continue grants more. |
@@ -49,17 +49,21 @@ The invariants live in Rust, not in prompt text, so no caller can skip them:
   A different blocker restarts the count; the status only turns `blocked` at
   three, and stays `active` until then. Resuming a goal clears the count, so a
   goal picked back up starts a fresh audit.
-- **The allowance is accounted for you.** `record_turn` folds every turn's
+- **The allowance is accounted for you.** `record_turn` folds participating turns'
   tokens and duration into the goal — including the turn that settles it, and a
-  turn stopped part-way, which is billed spend either way. Only a paused goal
-  stops counting. The status flips to `budgetLimited` when the tokens are spent
+  turn stopped part-way, which is billed spend either way. Later conversation
+  after settlement does not change the goal ledger. A paused goal stops counting. The status flips to `budgetLimited` when the tokens are spent
   or the 40th turn lands. A grant resets the turn count along with the tokens, so
   Continue always hands back a working allowance.
-- **A second `set` cannot buy an allowance.** Setting a goal over one that is
-  still running carries the spend across: same tokens used, same turn count, same
-  creation time, new objective and budget. Otherwise a model out of budget could
-  re-`set` its way past the ceiling instead of asking. A settled goal is replaced
-  outright — that thread's next goal starts clean.
+- **Resume cannot bypass an exhausted allowance.** An `active` update is rejected
+  once the token allowance or 40-turn ceiling is reached. The view offers Continue
+  to grant more tokens, including when a blocked or provider-limited goal reached
+  the ceiling on its final turn.
+- **A second `set` cannot buy an allowance.** Setting a goal over an unfinished
+  one is rejected, preserving its objective, budget, spend and stopped state.
+  Use `update` to change its state and `extend` to grant more allowance, or clear
+  it before setting a different goal. A settled goal can be replaced outright —
+  that thread's next goal starts clean.
 - **Settled means settled.** A `complete` goal cannot be reopened by an update,
   and the reason on any stop — including the provider's own refusal text on
   `usageLimited` — is kept on the record rather than dropped.
@@ -78,29 +82,36 @@ whose goal is still `active`, `continueGoal` starts another with
 `goalDrivesAgain` holds — not a subagent, not halted, `active`, under 40 turns,
 tokens left. Stop halts it; so does anything that leaves the goal settled. A
 thread the user archived is never driven at on its own: archiving is the user
-saying they are done with it, so the goal stays on record but Emma stops
+saying they are done with it, so the goal stays on record but Shinbo stops
 continuing it.
 
 The allowance is also enforced **inside** a turn. The harness runs its agent
 steps unbounded, so one turn could otherwise spend without limit while the ledger
-still read zero. Emma accumulates what each mid-turn usage report adds — the
+still read zero. Shinbo accumulates what each mid-turn usage report adds — the
 step's prompt plus the output it grew by — and stops the turn where it stands once
 that running total passes what the goal has left.
 
-Stopping is not enough on its own. The ledger is coarser than the guard: a turn is
-recorded with the harness's own figures, whose input side is the *last* step's
-prompt rather than the sum of every step's, so a long many-step turn is written
-down for less than it cost — and a goal stopped for overspending would settle back
-as `active` with budget apparently left, halted by a stop the card never mentions,
-reading *Pursuing* forever. So the guard writes the status itself: it stops the
-thread and records `budgetLimited` with a reason saying the allowance ran out
-part-way through a turn. The 40-turn ceiling is the backstop that a token budget
-alone does not give.
+The same accumulated total is persisted through the host's optional internal
+`recordTurn.goalTokens` field. This counts every reported step's input and the
+cumulative output once, including usage reported after a goal settles. Recovery
+attempts reset the output baseline while retaining spend from the prior attempt.
+Transcript telemetry keeps the last step's input count for context-size displays;
+the goal ledger uses the accumulated spend. The optional `recordTurn.goalTurn`
+flag marks participation: a goal active when a turn begins, or created during it,
+keeps its settling turn; later conversation on a settled goal is excluded. Legacy
+callers omitting this flag retain their previous accounting.
+Callers without per-step reports keep
+the input-plus-output fallback, which also provides a floor for the supplied total.
+
+The guard stops the thread and records `budgetLimited` with a reason when the
+allowance runs out mid-turn. A provider request already in flight can still spend
+past the ceiling before its usage report arrives. The 40-turn ceiling remains a
+separate backstop.
 
 Pause, Resume, Continue and Clear reach the record over two bridge methods —
 `updateGoal` and `clearGoal`; `setGoal` is how a goal is first put on a thread.
 Resume and Continue do not merely rewrite the record: they clear the halt from the
-last stopped run and drive a turn, so a goal put back to `active` is one Emma is
+last stopped run and drive a turn, so a goal put back to `active` is one Shinbo is
 actually working on again. That is also the way back for a goal left `active` by a
 quit, which no longer has a turn driving it.
 
@@ -110,7 +121,7 @@ The model reaches its goal through one tool with five actions — `set`, `get`,
 `update`, `extend`, `clear`. A subagent's call acts on its parent's goal: a
 subagent lives inside a turn and cannot hold a goal of its own, which is why the
 goal block tells the model to write the objective into every brief it hands out.
-Emma's own sub-threads are given it automatically (`towardGoal`); a harness-native
+Shinbo's own sub-threads are given it automatically (`towardGoal`); a harness-native
 subagent gets it only from the brief.
 
 While a goal is active — and only then — every turn carries a `GOAL:` block: the
@@ -137,11 +148,5 @@ says now rather than what it said then.
   second; a fixture that answers instantly makes it certain.
 - A goal only drives the thread it is set on. Sub-threads inherit the objective
   as text, never the record, and their spend never reaches the parent's ledger.
-- A turn's recorded input tokens are the last agent step's prompt, not the sum
-  over every step, so a long turn is under-billed against the allowance. The
-  mid-turn guard accumulates properly; the record does not.
-- A goal that stays `complete` while the user keeps talking on the thread keeps
-  counting those turns against it. The cost it reports is the thread's, not
-  strictly the objective's.
 - A provider rate limit reaches `usageLimited` only after the harness has
   finished its own retries, which can take minutes.

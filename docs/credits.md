@@ -1,6 +1,6 @@
 # Credits
 
-Emma stands on other people's work. This is the whole list, assembled from
+Shinbo stands on other people's work. This is the whole list, assembled from
 `desktop/package.json`, `Cargo.toml`, `Cargo.lock`, `harness/build.zig.zon`,
 [`harness/FORK.md`](../harness/FORK.md),
 [`harness/THIRD_PARTY_NOTICES.md`](../harness/THIRD_PARTY_NOTICES.md),
@@ -8,7 +8,7 @@ Emma stands on other people's work. This is the whole list, assembled from
 
 ## The fork
 
-Emma's agent harness is not Emma's work. `emma-cli` is a fork of **fx**, a
+Shinbo's agent harness is not Shinbo's work. `shinbo-cli` is a fork of **fx**, a
 coding agent harness written in Zig by Vercel.
 
 | | |
@@ -25,7 +25,7 @@ The agent loop, permission model, hooks, skills, subagents, tool registry, MCP
 client, and ACP server are fx's. Apache-2.0 §4 obligations survive the rename:
 the license text, the notices file, and every copyright header stay.
 
-Two projects reach Emma through the fork, listed in
+Two projects reach Shinbo through the fork, listed in
 [`harness/THIRD_PARTY_NOTICES.md`](../harness/THIRD_PARTY_NOTICES.md):
 
 | Project | Used for | License |
@@ -78,18 +78,18 @@ is their transitive closure.
 
 | Project | Used for | License | Link |
 | --- | --- | --- | --- |
-| Rust 1.97.1 (`rust-toolchain.toml`) | Builds `emma-host` | MIT OR Apache-2.0 | [rust-lang/rust](https://github.com/rust-lang/rust) |
-| Zig 0.16.0 (`harness/build.zig.zon` `minimum_zig_version`) | Builds `emma-cli`. The harness declares no Zig package dependencies | MIT | [ziglang/zig](https://github.com/ziglang/zig) |
-| clang (Xcode) | `emma-option-tap`, `emma-transcribe`, `emma-pty` | Apache-2.0 with LLVM exception | [llvm/llvm-project](https://github.com/llvm/llvm-project) |
+| Rust 1.97.1 (`rust-toolchain.toml`) | Builds `shinbo-host` | MIT OR Apache-2.0 | [rust-lang/rust](https://github.com/rust-lang/rust) |
+| Zig 0.16.0 (`harness/build.zig.zon` `minimum_zig_version`) | Builds `shinbo-cli`. The harness declares no Zig package dependencies | MIT | [ziglang/zig](https://github.com/ziglang/zig) |
+| clang (Xcode) | `shinbo-option-tap`, `shinbo-transcribe`, `shinbo-pty` | Apache-2.0 with LLVM exception | [llvm/llvm-project](https://github.com/llvm/llvm-project) |
 
 ## Protocols
 
-No code vendored; Emma speaks these.
+No code vendored; Shinbo speaks these.
 
 | Protocol | Used for | Link |
 | --- | --- | --- |
-| Agent Client Protocol | Newline-delimited JSON-RPC over stdio between `desktop/main/harness.ts` and `emma-cli`. The server side is fx's own `harness/src/acp/` | [agentclientprotocol.com](https://agentclientprotocol.com) |
-| Model Context Protocol | Emma speaks no MCP herself; configured servers are handed to the harness, whose client is fx's `harness/src/core/mcp/` | [modelcontextprotocol.io](https://modelcontextprotocol.io) |
+| Agent Client Protocol | Newline-delimited JSON-RPC over stdio between `desktop/main/harness.ts` and `shinbo-cli`. The server side is fx's own `harness/src/acp/` | [agentclientprotocol.com](https://agentclientprotocol.com) |
+| Model Context Protocol | Shinbo speaks no MCP herself; configured servers are handed to the harness, whose client is fx's `harness/src/core/mcp/` | [modelcontextprotocol.io](https://modelcontextprotocol.io) |
 | OpenAI Chat Completions | Every remote model route, OpenRouter by default | [OpenAI API](https://platform.openai.com/docs/api-reference/chat) |
 
 ## Fonts
@@ -116,10 +116,10 @@ packaging, never the trademark.
 
 ## Prior art
 
-| Project | What Emma took | Link |
+| Project | What Shinbo took | Link |
 | --- | --- | --- |
 
-## Emma's own licensing
+## Shinbo's own licensing
 
 The root [`LICENSE`](../LICENSE) records the MIT terms stated in the README.
 The harness retains its Apache-2.0 license and notices, and the Rust workspace

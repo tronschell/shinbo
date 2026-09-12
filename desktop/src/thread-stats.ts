@@ -4,7 +4,7 @@ import { decodeSpans, traceHeader, type TraceSpan } from "../shared/trace";
 import { tokensPerSecond, type LiveAgent } from "../shared/agents";
 import { planProgress, type Plan } from "../shared/plan";
 import { buildLedger, threadBreakdown, threadExperiments, threadFolders, threadMode, threadTags, threadUses, type ContextBreakdown, type Ledger } from "./context";
-import type { Message, Snapshot, Thread } from "./types";
+import type { CompactSnapshot, Message, Thread } from "./types";
 
 export interface Sheet {
   name: string;
@@ -350,13 +350,17 @@ export function statsFiles(sources: StatsSources): { name: string; text: string 
 
 export async function collectStats(threadId: string, contextTokens: number): Promise<StatsSources | undefined> {
   const [snapshot, traces, agents, plans] = await Promise.all([
-    window.emma.request<Snapshot>("snapshot"),
-    window.emma.threadTraces(threadId).catch(() => []),
-    window.emma.listAgents().catch(() => []),
-    window.emma.listPlans().catch(() => []),
+    window.shinbo.request<CompactSnapshot>("threadSummaries"),
+    window.shinbo.threadTraces(threadId).catch(() => []),
+    window.shinbo.listAgents().catch(() => []),
+    window.shinbo.listPlans().catch(() => []),
   ]);
-  const thread = snapshot.threads.find((one) => one.id === threadId);
-  if (!thread) return undefined;
+  if (!snapshot.threads.some((one) => one.id === threadId)) return undefined;
+  const thread = await window.shinbo.request<Thread>("thread", { threadId });
+  const subthreads: Thread[] = [];
+  for (const summary of snapshot.threads) {
+    if (summary.parentThreadId === threadId) subthreads.push(await window.shinbo.request<Thread>("thread", { threadId: summary.id }));
+  }
   const uses = threadUses(threadId);
   const breakdown = threadBreakdown(threadId);
   const experiments = threadExperiments(threadId);
@@ -366,7 +370,7 @@ export async function collectStats(threadId: string, contextTokens: number): Pro
     traces,
     ledger: buildLedger(thread, uses, contextTokens, mine.filter((agent) => agent.threadId === threadId), experiments, 0, breakdown),
     agents: mine,
-    subthreads: snapshot.threads.filter((one) => one.parentThreadId === threadId),
+    subthreads,
     uses,
     breakdown,
     plans: plans.filter((plan) => plan.threadId === threadId),

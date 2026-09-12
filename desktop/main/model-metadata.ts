@@ -1,4 +1,5 @@
-import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { CODEX_MODEL_ID, CODEX_PREFIX, planForProfile, type ProviderProfile } from "../shared/settings";
@@ -200,11 +201,6 @@ export class ModelMetadataCatalog {
     return { ...found, source: "manual", contextWindow: profile.contextWindow };
   }
 
-  /**
-   * Which models.dev provider a profile is talking to. A plan knows its own; anything else —
-   * a preset, a custom endpoint — is matched on the base URL models.dev publishes, so direct
-   * providers state their windows without a per-provider table to keep up to date.
-   */
   private providerId(profile: ProviderProfile): string | undefined {
     const plan = planForProfile(profile);
     if (plan) return PLAN_PROVIDER[plan.id] ?? plan.id;
@@ -247,7 +243,7 @@ export class ModelMetadataCatalog {
       const catalog = validCatalog(await load());
       this.catalog = catalog;
       this.fetchedAt = new Date().toISOString();
-      try { writeFileSync(this.file, JSON.stringify({ fetchedAt: this.fetchedAt, catalog }), { mode: 0o600 }); } catch (error) { void error; }
+      try { await writeFile(this.file, JSON.stringify({ fetchedAt: this.fetchedAt, catalog }), { mode: 0o600 }); } catch (error) { void error; }
       return { fetchedAt: this.fetchedAt, stale: false };
     } catch (reason) {
       return { fetchedAt: this.fetchedAt, stale: true, error: reason instanceof Error ? reason.message : String(reason) };

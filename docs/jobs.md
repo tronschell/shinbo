@@ -38,7 +38,7 @@ previous `agent` answer. Every stored value is cut at `MAX_VARIABLE_CHARS`
 (8192).
 
 **Scripts.** A script path cannot contain a template and must resolve inside a
-folder connected to Emma. Python, JavaScript, sh and zsh files run through their
+folder connected to Shinbo. Python, JavaScript, sh and zsh files run through their
 matching interpreter without a shell command; any other file runs directly and
 therefore needs an executable bit and shebang. Stdout is the result, stderr is
 labelled alongside it, and non-zero exits or the 120-second timeout are appended
@@ -73,7 +73,7 @@ the cron fields mean anything.
 | `0 9 * * 1` | Five cron fields, **UTC** |
 | `manual` | Run now, or `workflow` with `action: "run"` |
 | `after <job-id>` | When that job finishes, starting from its saved variables |
-| `on <event>` | When Emma raises that app event |
+| `on <event>` | When Shinbo raises that app event |
 
 ### Cron
 
@@ -93,7 +93,7 @@ your local equivalent underneath.
 ### App events
 
 `on <event>` matches the whole trigger string, so `on launch` fires only for
-`launch`. Emma raises exactly two, both from [main.ts](../desktop/main/main.ts):
+`launch`. Shinbo raises exactly two, both from [main.ts](../desktop/main/main.ts):
 
 | Event | Raised when | Starting variables |
 | --- | --- | --- |
@@ -158,10 +158,10 @@ an ordinary turn. At the end,
 `finishScheduledJob` stores the packed variables and fires anything triggered
 `after` this job.
 
-**Jobs run only while Emma is open.** The tick is a thread inside the running
+**Jobs run only while Shinbo is open.** The tick is a thread inside the running
 app: nothing is installed in the operating system scheduler, nothing wakes the
 computer. Miss four Mondays
-and you get **one** run when Emma next starts — a past-due `nextRunAt` fires once
+and you get **one** run when Shinbo next starts — a past-due `nextRunAt` fires once
 and is rebooked from now.
 
 **Runs are ordinary threads.** Each is a real thread in the sidebar under
@@ -240,7 +240,7 @@ is chosen for the app as a whole, not for a single unattended run.
 only ever saves back what the job already had.
 
 On disk each job is one Markdown file with front matter
-(`emma-scheduled-job-format: 4`) under `scheduled/` in Emma's data dir, carrying
+(`shinbo-scheduled-job-format: 4`) under `scheduled/` in Shinbo's data dir, carrying
 `next-run-at`, `last-run-at`, `last-thread-id`, `model` and `outputs`. See
 [data.md](data.md).
 

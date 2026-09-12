@@ -357,7 +357,7 @@ function fakeGatewayEnv(
 ) {
   return {
     HOME: root.home,
-    EMMA_PROVIDER_API_KEY: "fake-vision-route-key",
+    SHINBO_PROVIDER_API_KEY: "fake-vision-route-key",
     FX_GATEWAY_BASE_URL: gateway.baseUrl,
     FX_GATEWAY_CHAT_URL: gateway.chatUrl,
     FX_MODEL: model,
@@ -1784,8 +1784,8 @@ describe("Vision route fake Gateway", () => {
     "empty successful Vision provider output is invalid and permits one recovery request",
     async () => {
       const root = createIsolatedRoot();
-      // The empty response is served twice because a structurally invalid successful
-      // response earns one internal retry before Vision reports the failure.
+
+
       const gateway = startImageGateway([
         sseToolCall("vision", { image_ids: [1], focus: "inspect" }, "vision_empty"),
         sseText(JSON.stringify({ images: [] })),
@@ -1934,7 +1934,7 @@ describe("Vision route fake Gateway", () => {
         expect(gateway.chatRequests[1].body).not.toContain("Do not wrap the JSON");
         expect(JSON.parse(gateway.chatRequests[0].body).responseFormat).toBeUndefined();
         expect(JSON.parse(gateway.chatRequests[3].body).responseFormat).toBeUndefined();
-        // Byte-identical retry payload: same verified snapshot, ids, focus, and batch.
+
         expect(gateway.chatRequests[2].body).toBe(gateway.chatRequests[1].body);
         expect(gateway.chatRequests[3].body).toContain("FX LOGO");
         expect(gateway.chatRequests[3].body).not.toContain("provider_response_invalid");

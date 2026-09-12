@@ -8,7 +8,7 @@ export type CredentialSummary = { env: string; masked: string; readable: boolean
 
 export function secureStoreWorks(): boolean {
   if (!safeStorage.isEncryptionAvailable()) return false;
-  try { return safeStorage.decryptString(safeStorage.encryptString("emma")) === "emma"; }
+  try { return safeStorage.decryptString(safeStorage.encryptString("shinbo")) === "shinbo"; }
   catch { return false; }
 }
 
@@ -34,13 +34,19 @@ export class CredentialStore {
     if (!isEnvName(env)) throw new Error("An environment variable name must start with a letter or underscore and hold only letters, digits, and underscores.");
     if (!value || value.length > MAX_SECRET_CHARS) throw new Error(`Paste a key of 1 to ${MAX_SECRET_CHARS} characters.`);
     if (!printableSecret(value)) throw new Error("A key holds printable ASCII only; check for a stray space or newline.");
-    this.unreadable.delete(env);
-    this.secrets.set(env, value);
-    this.save();
+    const secrets = new Map(this.secrets).set(env, value);
+    const unreadable = new Map(this.unreadable);
+    unreadable.delete(env);
+    this.save(secrets, unreadable);
   }
 
   remove(env: string): void {
-    if (this.secrets.delete(env) || this.unreadable.delete(env)) this.save();
+    if (!this.secrets.has(env) && !this.unreadable.has(env)) return;
+    const secrets = new Map(this.secrets);
+    const unreadable = new Map(this.unreadable);
+    secrets.delete(env);
+    unreadable.delete(env);
+    this.save(secrets, unreadable);
   }
 
   applyToEnv(env: NodeJS.ProcessEnv): void {
@@ -58,27 +64,29 @@ export class CredentialStore {
     let stored: Record<string, unknown>;
     try { stored = JSON.parse(raw) as Record<string, unknown>; }
     catch (error) {
-      console.error("Emma: the stored provider keys are not readable JSON, so they are left on disk untouched", error);
+      console.error("Shinbo: the stored provider keys are not readable JSON, so they are left on disk untouched", error);
       return;
     }
     const working = secureStoreWorks();
-    if (!working) console.error(`Emma: ${SECURE_STORE_BROKEN}`);
+    if (!working) console.error(`Shinbo: ${SECURE_STORE_BROKEN}`);
     for (const [env, value] of Object.entries(stored)) {
       if (!isEnvName(env) || typeof value !== "string") continue;
       if (!working) { this.unreadable.set(env, value); continue; }
       try { this.secrets.set(env, safeStorage.decryptString(Buffer.from(value, "base64"))); }
       catch { this.unreadable.set(env, value); }
     }
-    if (this.unreadable.size) console.error(`Emma: these stored provider keys could not be read on this computer and are kept on disk until you replace or remove them: ${[...this.unreadable.keys()].join(", ")}`);
+    if (this.unreadable.size) console.error(`Shinbo: these stored provider keys could not be read on this computer and are kept on disk until you replace or remove them: ${[...this.unreadable.keys()].join(", ")}`);
   }
 
-  private save() {
+  private save(secrets: Map<string, string>, unreadable: Map<string, string>) {
     if (!secureStoreWorks()) throw new Error(SECURE_STORE_BROKEN);
-    const kept = [...this.unreadable];
-    const fresh = [...this.secrets].map(([env, secret]) => [env, safeStorage.encryptString(secret).toString("base64")] as [string, string]);
+    const kept = [...unreadable];
+    const fresh = [...secrets].map(([env, secret]) => [env, safeStorage.encryptString(secret).toString("base64")] as [string, string]);
     mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 });
     const temporary = `${this.file}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(Object.fromEntries([...kept, ...fresh]), null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
     renameSync(temporary, this.file);
+    this.secrets = secrets;
+    this.unreadable = unreadable;
   }
 }

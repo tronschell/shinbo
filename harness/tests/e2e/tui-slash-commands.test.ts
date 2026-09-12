@@ -51,7 +51,7 @@ async function launchNoKeyAndWait(): Promise<{
     stderrPath,
     env: {
       HOME: home,
-      EMMA_PROVIDER_API_KEY: undefined,
+      SHINBO_PROVIDER_API_KEY: undefined,
       FX_AUTO_UPGRADE: "0",
       FX_DISABLE_KEYCHAIN: "1",
       FX_PERMISSION_MODE: undefined,
@@ -119,7 +119,7 @@ describe.skipIf(TMUX_SKIP)("tui: no-key slash commands", () => {
         minimumHistoryLines: 2000,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "status-compact-key",
+          SHINBO_PROVIDER_API_KEY: "status-compact-key",
           FX_AUTO_UPGRADE: "0",
           FX_DISABLE_KEYCHAIN: "1",
           FX_PERMISSION_MODE: "auto",

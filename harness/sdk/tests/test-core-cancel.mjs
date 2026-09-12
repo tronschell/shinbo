@@ -39,7 +39,7 @@ const agent = await Promise.race([
   backend: "wasm",
     wasm: await readFile(wasmPath),
     fetch: stalledFetch,
-    env: { EMMA_PROVIDER_API_KEY: "sdk-test-key" },
+    env: { SHINBO_PROVIDER_API_KEY: "sdk-test-key" },
   }),
   timeout("fx-core initialize"),
 ]);

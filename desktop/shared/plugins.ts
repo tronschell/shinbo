@@ -172,7 +172,7 @@ export function parseMarketplaceSource(raw: unknown, ref: unknown = "", sparse: 
   }
   if (/^https?:\/\//.test(value) || /^ssh:\/\//.test(value) || /^git@[^\s:]+:.+/.test(value)) return { kind: "git", url: value, ref: pinned, sparse: paths };
   const shorthand = /^([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)\/([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)(?:@(.+))?$/.exec(value);
-  if (!shorthand) throw new Error(`Emma cannot read "${value}" as a repo, a Git URL, or a folder.`);
+  if (!shorthand) throw new Error(`Shinbo cannot read "${value}" as a repo, a Git URL, or a folder.`);
   const branch = text(shorthand[3], 128);
   if (branch && (branch.startsWith("-") || /[\s~^:?*[\\]/.test(branch))) throw new Error(`"${branch}" is not a Git ref.`);
   return { kind: "git", url: `https://github.com/${shorthand[1]}/${shorthand[2]}.git`, ref: pinned || branch, sparse: paths };

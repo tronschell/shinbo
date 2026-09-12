@@ -1,7 +1,7 @@
-/**
- * Resize cases deliver SIGWINCH through tmux and locate the inline footer by
- * structure, not by absolute terminal row.
- */
+
+
+
+
 import { afterEach, describe, expect, test } from "bun:test";
 import { execFileSync, execSync } from "node:child_process";
 import {
@@ -127,7 +127,7 @@ async function launchRecordedSurfaceSession(
     cwd: workspace,
     env: {
       HOME: home,
-      EMMA_PROVIDER_API_KEY: undefined,
+      SHINBO_PROVIDER_API_KEY: undefined,
       FX_AUTO_UPGRADE: "0",
       FX_RECORD: join(root, "session.fxtape"),
       FX_RECORD_INPUT: "1",
@@ -1029,25 +1029,25 @@ async function recoverActiveInput(
   expect(findFooter(await s.capturePaneGrid())).not.toBeNull();
 }
 
-/**
- * Match fx's input row. tmux trims trailing spaces, so the `❯ ` prefix
- * becomes `❯`. The multi-line prefix `[n/m] ❯ ` is also recognized.
- */
+
+
+
+
 function isInputRow(line: string): boolean {
   return /^❯(\s|$)/.test(line) || /^\[\d+\/\d+\]\s❯(\s|$)/.test(line);
 }
 
-/** A line that is mostly box-drawing characters — a footer divider. */
+
 function isDividerRow(line: string): boolean {
   if (line.length < 8) return false;
   const dividerChars = (line.match(/[\u2500\u2501\u2550\u2574-\u257f]/g) ?? []).length;
   return dividerChars >= Math.floor(line.length * 0.6);
 }
 
-/**
- * Locate fx's footer block: a top divider, one or more input rows, bottom
- * divider, then a hint row. Returns the 0-indexed row of the prompt input.
- */
+
+
+
+
 function isFooterHintRow(line: string): boolean {
   const text = line.trim();
   return text.length > 0 && !isDividerRow(line) && !isInputRow(text);
@@ -1155,7 +1155,7 @@ async function runLargeSkillResizeAttempt(attempt: number): Promise<string> {
       cwd: fixture.workspace,
       env: {
         HOME: fixture.home,
-        EMMA_PROVIDER_API_KEY: undefined,
+        SHINBO_PROVIDER_API_KEY: undefined,
         FX_AUTO_UPGRADE: "0",
         FX_RECORD: tapePath,
         FX_RECORD_INPUT: "1",
@@ -1347,7 +1347,7 @@ async function runRapidSkillResizeAttempt(
       cwd: fixture.workspace,
       env: {
         HOME: fixture.home,
-        EMMA_PROVIDER_API_KEY: undefined,
+        SHINBO_PROVIDER_API_KEY: undefined,
         FX_AUTO_UPGRADE: "0",
         FX_RECORD: tapePath,
         FX_RECORD_INPUT: "1",
@@ -1569,7 +1569,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-long-resize-key",
+          SHINBO_PROVIDER_API_KEY: "fake-long-resize-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -1648,7 +1648,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-resize-command-key",
+          SHINBO_PROVIDER_API_KEY: "fake-resize-command-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -1785,7 +1785,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-retention-scrollback-key",
+          SHINBO_PROVIDER_API_KEY: "fake-retention-scrollback-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_E2E_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -1887,7 +1887,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-approval-cancel-resize-key",
+          SHINBO_PROVIDER_API_KEY: "fake-approval-cancel-resize-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -2041,7 +2041,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-thematic-rule-key",
+          SHINBO_PROVIDER_API_KEY: "fake-thematic-rule-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -2128,7 +2128,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-nested-blockquote-key",
+          SHINBO_PROVIDER_API_KEY: "fake-nested-blockquote-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -2273,7 +2273,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-gated-resize-key",
+          SHINBO_PROVIDER_API_KEY: "fake-gated-resize-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -2402,7 +2402,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
           FX_RECORD: tapePath,
           FX_RECORD_INPUT: "1",
@@ -2532,7 +2532,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
           NO_COLOR: "1",
         },
@@ -2847,7 +2847,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-wide-user-key",
+          SHINBO_PROVIDER_API_KEY: "fake-wide-user-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3070,7 +3070,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         cwd: root.workspace,
         env: {
           HOME: root.home,
-          EMMA_PROVIDER_API_KEY: "fake-resize-file-approval-key",
+          SHINBO_PROVIDER_API_KEY: "fake-resize-file-approval-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3210,7 +3210,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         cwd: root.workspace,
         env: {
           HOME: root.home,
-          EMMA_PROVIDER_API_KEY: "fake-resize-gate-key",
+          SHINBO_PROVIDER_API_KEY: "fake-resize-gate-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3295,7 +3295,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         cwd: root.workspace,
         env: {
           HOME: root.home,
-          EMMA_PROVIDER_API_KEY: "fake-post-approval-resize-key",
+          SHINBO_PROVIDER_API_KEY: "fake-post-approval-resize-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3354,7 +3354,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         120,
         40,
         {
-          EMMA_PROVIDER_API_KEY: "fake-resize-activity-key",
+          SHINBO_PROVIDER_API_KEY: "fake-resize-activity-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_E2E_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -3546,7 +3546,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "test-key",
+          SHINBO_PROVIDER_API_KEY: "test-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_RECORD: tapePath,
@@ -3703,7 +3703,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         height: 40,
         stderrPath,
         env: {
-          EMMA_PROVIDER_API_KEY: "test-key",
+          SHINBO_PROVIDER_API_KEY: "test-key",
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_TRACE_LOG: tracePath,
           FX_TRACE_SCOPES: "input,worker,resize",
@@ -3762,7 +3762,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         height: 40,
         stderrPath,
         env: {
-          EMMA_PROVIDER_API_KEY: "test-key",
+          SHINBO_PROVIDER_API_KEY: "test-key",
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_TRACE_LOG: tracePath,
           FX_TRACE_SCOPES: "input,worker,resize",
@@ -3843,7 +3843,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         height: 40,
         stderrPath,
         env: {
-          EMMA_PROVIDER_API_KEY: "test-key",
+          SHINBO_PROVIDER_API_KEY: "test-key",
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_TRACE_LOG: tracePath,
           FX_TRACE_SCOPES: "input,worker,resize",
@@ -3953,7 +3953,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         height: 40,
         stderrPath,
         env: {
-          EMMA_PROVIDER_API_KEY: "test-key",
+          SHINBO_PROVIDER_API_KEY: "test-key",
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_TRACE_LOG: tracePath,
           FX_TRACE_SCOPES: "input,worker,resize",
@@ -4068,7 +4068,7 @@ describe.skipIf(SKIP)("tui: resize", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-theme-reset-key",
+          SHINBO_PROVIDER_API_KEY: "fake-theme-reset-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: FAKE_GATEWAY_MODEL,

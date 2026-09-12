@@ -668,7 +668,7 @@ fn makeStartupState(alloc: Allocator) !app_lifecycle.StartupState {
         errdefer alloc.free(credential_token);
         state.credential = .{
             .token = credential_token,
-            .source = .emma_provider_api_key,
+            .source = .shinbo_provider_api_key,
         };
     }
     state.selected_model = try alloc.dupe(u8, "model-x");
@@ -899,7 +899,7 @@ test "app_bootstrap_runtime transfers startup state and starts a fresh session" 
 
     try std.testing.expectEqualStrings("/workspace", app.workspace_root);
     try std.testing.expectEqualStrings("api-key", app.auth.apiKey().?);
-    try std.testing.expectEqual(types.CredentialSource.emma_provider_api_key, app.auth.credentialSource().?);
+    try std.testing.expectEqual(types.CredentialSource.shinbo_provider_api_key, app.auth.credentialSource().?);
     try std.testing.expectEqualStrings("model-x", app.selected_model.items);
     try std.testing.expectEqual(types.PermissionMode.auto, app.permission_engine.mode);
     try std.testing.expectEqual(@as(usize, 19), app.agent_step_limit);

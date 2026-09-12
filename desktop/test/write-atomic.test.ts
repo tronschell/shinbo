@@ -6,7 +6,7 @@ import path from "node:path";
 import { writeAtomic } from "../main/write-atomic";
 
 test("a failed atomic replacement preserves the original and removes its temporary file", async (t) => {
-  const directory = await fs.mkdtemp(path.join(tmpdir(), "emma-write-atomic-"));
+  const directory = await fs.mkdtemp(path.join(tmpdir(), "shinbo-write-atomic-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const file = path.join(directory, "record.md");
   await fs.writeFile(file, "original");

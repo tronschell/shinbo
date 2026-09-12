@@ -16,7 +16,7 @@ const agent = await createFxAgent({
     throw error;
   },
   env: {
-    EMMA_PROVIDER_API_KEY: "native-core-fetch-failure-key",
+    SHINBO_PROVIDER_API_KEY: "native-core-fetch-failure-key",
     FX_MODEL: "native/test-model",
   },
 });

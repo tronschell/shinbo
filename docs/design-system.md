@@ -38,7 +38,7 @@ use `--text-2`.
 
 | Token | Hex | Meaning |
 | --- | --- | --- |
-| `--orange` | `#ff6a3d` | The default accent |
+| `--pink` | `#ff5c94` | The default accent — the logo pink `#f4156b` lifted to 6.6:1 on `--bg`; the logo keeps its own |
 | `--blue` | `#6faee6` | Links and references |
 | `--rose` | `#ed7a9b` | Danger, destructive confirmation |
 | `--teal` | `#3fd8c0` | Categorical |
@@ -46,7 +46,7 @@ use `--text-2`.
 | `--violet` | `#ae78f0` | Categorical |
 | `--yellow` | `#e8c34a` | A state that is neither good nor bad yet |
 
-`--accent` aliases `--orange` and `--danger` aliases `--rose`; Settings →
+`--accent` aliases `--pink` and `--danger` aliases `--rose`; Settings →
 Appearance repoints `--accent` at another palette hue and everything derived
 follows. `--accent-soft` is the accent at 14%. `--danger-surface` is `#2a1620`.
 `--accent-2` is `oklch(from var(--accent) l c calc(h + 150))` — the accent's
@@ -110,7 +110,7 @@ The app is drawn with sharp 1px lines on a grid.
 
 ## No walls of text
 
-Emma's UI does not explain itself in paragraphs. A view shows the thing; it
+Shinbo's UI does not explain itself in paragraphs. A view shows the thing; it
 does not narrate it. Where prose is genuinely unavoidable it goes behind the
 `(i)` `InfoDot` (`desktop/src/icons.tsx`) — a `<details>` whose summary is a
 single `i` — beside the heading it belongs to, not inline in the view.
@@ -126,26 +126,20 @@ The shell is a two-column grid: `--sidebar-width` then content.
 | Messages | User turns right-aligned on `--surface-2`; assistant turns plain text flush left at `--fs-md`, no avatar, no card. Metadata is `--text-3` |
 | Composer | Floats above the transcript bottom on `--surface-2` with `--shadow-lg` and a hairline that brightens on focus-within |
 | Context bar | Floating card inset from the window edge, not a flush column |
-| Settings | Full-content takeover with its own sub-nav grouped `Personal` / `Coding` / `Integrations` / `Emma` |
+| Settings | Full-content takeover with its own sub-nav grouped `Personal` / `Coding` / `Integrations` / `Shinbo` |
 
 ## The mark
 
-`desktop/assets/emma.webp` (eyes open) and `emma-blink.webp` (shut), both
-1800×1253 and trimmed to the ink — set a width and let the height follow.
-`EmmaMark` in `desktop/src/icons.tsx` stacks both frames and crosses their
-opacities on the same keyframe; fading the shut frame in is not enough, because
-the open eyes show through its transparent pixels.
-
-She appears in the setup flow, the quick-ask island and the settings header at
-28px — the sidebar shows no wordmark, its first row is the search field. The
-`blinks` class opens the cycle: `emma-open` / `emma-shut`, 7s, which is a human blink rate.
-`prefers-reduced-motion` stops it through the global rule in `index.css` and
-leaves her eyes open.
+The logo is the pixel bow, a 16×16 grid rendered as inline SVG by `ShinboMark`
+in `desktop/src/icons.tsx` in the brand pink `#f4156b` — set a width and let the
+height follow. `Mark` draws the same grid in `currentColor` for tinted states.
+The bow appears in the quick-ask island at 22px — the sidebar shows no wordmark,
+its first row is the search field.
 
 The app icon source is the Icon Composer document at
-`desktop/assets/emma.icon`. `desktop/scripts/make-icons.mjs` rebuilds its bow
-from the same pixel grid as `Mark`, flattens `emma.icns` for the supported
-macOS 12 baseline and extracts `emma-dock.png` for unpackaged development runs.
+`desktop/assets/shinbo.icon`. `desktop/scripts/make-icons.mjs` rebuilds its bow
+from the same pixel grid as `Mark`, flattens `shinbo.icns` for the supported
+macOS 12 baseline and extracts `shinbo-dock.png` for unpackaged development runs.
 Packaged releases intentionally ship the flattened ICNS instead of compiling
 the macOS 26-only source document on the release runner. Rebuild all three after
 editing the grid:
@@ -157,7 +151,7 @@ node desktop/scripts/make-icons.mjs
 Windows takes the bare pink bow rather than the macOS tile, because the taskbar,
 Alt-Tab and Explorer draw it at 16 to 48 pixels where a rounded dark square is a
 smudge. `desktop/scripts/windows-icon.mjs` draws the same grid into
-`desktop/assets/emma.ico` at 16, 24, 32, 48, 64 and 128 as 32-bit bitmaps with
+`desktop/assets/shinbo.ico` at 16, 24, 32, 48, 64 and 128 as 32-bit bitmaps with
 an AND mask, plus a 256 PNG. `package-windows.mjs` gives that file to rcedit
 and to Squirrel, and `secureWindow` hands it to every unpackaged window so a
 development run matches the installed app:
@@ -168,9 +162,9 @@ node desktop/scripts/windows-icon.mjs
 
 `Mark` in `desktop/src/icons.tsx` is the other one: a bow on a 16x16 pixel grid,
 `#` for ribbon and `o` for the knot, which is the same colour at half opacity. It
-is the empty-state glyph and the quick-ask pill, not the logo — Emma is the logo.
+is the empty-state glyph and the quick-ask pill, not the logo — Shinbo is the logo.
 It draws in `currentColor`, so a context tints it rather than swapping the art:
-`--lime` for a good state, `--orange` for a bad one, `--yellow` for one still in
+`--lime` for a good state, `--pink` for a bad one, `--yellow` for one still in
 the air. `mark-wiggle` tilts it 4 degrees off the knot and is opt-in per context;
 a mark at rest holds still.
 
@@ -187,7 +181,7 @@ a mark at rest holds still.
 
 ## Density
 
-Emma is a dense tool people keep open all day. Reach for the next step **down**
+Shinbo is a dense tool people keep open all day. Reach for the next step **down**
 before the next step up, and prefer removing a wrapper to padding it. If a
 screen feels cramped, the fix is fewer elements — cut a label, drop a wrapper,
 merge two rows — not more padding.

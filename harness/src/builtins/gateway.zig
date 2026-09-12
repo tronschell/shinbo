@@ -16,7 +16,7 @@ const gateway_json = @import("../core/gateway/gateway_json.zig");
 const io_mod = @import("../core/shared/io.zig");
 const gateway_generation_usage = @import("../gateway/generation_usage.zig");
 const gateway_provider = @import("../core/gateway/gateway_provider.zig");
-const emma_openai = @import("../gateway/emma_openai.zig");
+const shinbo_openai = @import("../gateway/shinbo_openai.zig");
 const model_capabilities = @import("../core/config/model_capabilities.zig");
 const model_catalog = @import("../core/gateway/model_catalog.zig");
 const output_contracts = @import("../core/output/output_contracts.zig");
@@ -38,10 +38,10 @@ const Response = web_search_contract.ProviderResponse;
 const ProgressFn = web_search_contract.ProgressFn;
 
 pub const default_model = "nvidia/nemotron-3-super-120b-a12b:free";
-pub const default_chat_url = emma_openai.default_chat_url;
+pub const default_chat_url = shinbo_openai.default_chat_url;
 pub const models_path = "/models";
 pub const retry_count: usize = 3;
-pub const chat_url_env = emma_openai.chat_url_env;
+pub const chat_url_env = shinbo_openai.chat_url_env;
 pub const default_model_catalog_base_url = "https://openrouter.ai/api/v1";
 const base_url_env = "FX_GATEWAY_BASE_URL";
 const e2e_gateway_models_url_env = "FX_E2E_GATEWAY_MODELS_URL";
@@ -108,7 +108,7 @@ pub const cli_model_catalog_provider = gateway_provider.CliModelCatalogProvider{
 
 pub const generation_usage_provider = gateway_generation_usage.provider;
 
-pub const agent_stream_provider = emma_openai.provider;
+pub const agent_stream_provider = shinbo_openai.provider;
 
 pub const provider = gateway_provider.Provider{
     .agent_stream = agent_stream_provider,
@@ -1328,7 +1328,7 @@ test "built-in gateway defaults preserve active provider policy" {
     try std.testing.expectEqualStrings("https://openrouter.ai/api/v1/chat/completions", default_chat_url);
     try std.testing.expectEqualStrings("/models", models_path);
     try std.testing.expectEqual(@as(usize, 3), retry_count);
-    try std.testing.expectEqualStrings("EMMA_PROVIDER_CHAT_URL", chat_url_env);
+    try std.testing.expectEqualStrings("SHINBO_PROVIDER_CHAT_URL", chat_url_env);
 }
 
 fn stubFetchCreditsError(
@@ -1669,7 +1669,7 @@ fn installLoopbackModelsEnv(alloc: std.mem.Allocator, port: u16) !*ModelsUrlTest
     return ModelsUrlTestEnv.install(alloc, models_url);
 }
 
-test "model catalog GET sends emma-cli user agent without attribution headers" {
+test "model catalog GET sends shinbo-cli user agent without attribution headers" {
     var fixture = try gateway_client.TestModelCatalogFixture.init();
     defer fixture.deinit();
     try fixture.start();
@@ -1679,7 +1679,7 @@ test "model catalog GET sends emma-cli user agent without attribution headers" {
     defer env.deinit();
 
     const result = try model_catalog_provider.fetch(std.testing.allocator, .{
-        .access = credentials.catalogAccessForCredential(.emma_provider_api_key, "test-key"),
+        .access = credentials.catalogAccessForCredential(.shinbo_provider_api_key, "test-key"),
         .endpoint = models_path,
     });
     var catalog = switch (result) {

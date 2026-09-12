@@ -35,7 +35,7 @@ const runtime = await createFxTerminal({
   backend: "wasm",
   wasm: await readFile(wasmPath),
   terminal: xtermAdapter(terminal),
-  env: { EMMA_PROVIDER_API_KEY: "table-stream-key" },
+  env: { SHINBO_PROVIDER_API_KEY: "table-stream-key" },
   fetch,
   configStore: { get(id) { return id === "model" ? "test/table-model" : null; }, set() {} },
 });

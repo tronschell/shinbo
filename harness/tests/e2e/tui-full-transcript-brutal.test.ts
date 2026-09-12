@@ -194,7 +194,7 @@ function gatewayEnv(
 ) {
   return {
     HOME: home,
-    EMMA_PROVIDER_API_KEY: "fake-full-transcript-brutal-key",
+    SHINBO_PROVIDER_API_KEY: "fake-full-transcript-brutal-key",
     FX_GATEWAY_BASE_URL: gateway.baseUrl,
     FX_GATEWAY_CHAT_URL: gateway.chatUrl,
     FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -780,8 +780,8 @@ async function verifyResumedTranscriptNavigation(
   const newest = await waitForMode(session, "review", draft);
   expect(newest).toContain(LIVE_DONE);
 
-  // Resume reconstructs the compact transcript under the product's 256 KiB
-  // retention cap, so the original first line is not expected to survive.
+
+
   await sendRepeatedKey(session, "PPage", 64, 64, 500);
   const older = await session.waitForPane(
     (pane) =>
@@ -865,9 +865,9 @@ async function runStress(config: StressConfig): Promise<StressRoot> {
       HISTORY_DONE,
       config.historyTimeoutMs ?? TIMEOUT * 4,
     );
-    // Held transcript rows settle into native scrollback on the frames
-    // right after the answer completes; wait for the settled markers
-    // instead of asserting one racy snapshot.
+
+
+
     await waitForScrollback(session, compactToolMarker(0), TIMEOUT);
     const history = await waitForScrollback(
       session,
@@ -1012,7 +1012,7 @@ async function runStress(config: StressConfig): Promise<StressRoot> {
     writeMetrics();
     const finalScrollback = await waitForScrollback(session, LIVE_DONE, TIMEOUT * 2);
     expect(finalScrollback).toContain(LIVE_DONE);
-    // Terminal reset may duplicate a visible line in tmux; durable state must not.
+
     expect(committedAssistantOccurrences(paths.home, LIVE_DONE)).toBe(1);
     if ((config.settledCycles ?? 0) > 0) {
       await thrashViewer(
@@ -1051,16 +1051,16 @@ async function runStress(config: StressConfig): Promise<StressRoot> {
     const budgetTransitions = (config.settledCycles ?? 0) > 0
       ? summary.settledTransitions
       : summary.transitions;
-    // The budget includes terminal backpressure and host jitter.
+
     expect(budgetTransitions.review.p95Ms).toBeLessThan(3_500);
     expect(budgetTransitions.full.p95Ms).toBeLessThan(3_000);
     expect(budgetTransitions.close.p95Ms).toBeLessThan(1_500);
     expect(budgetTransitions.resize.p95Ms).toBeLessThan(3_000);
     if ((config.settledCycles ?? 0) > 0) {
-      // A resized close may emit the repair frame and next Review viewport only.
+
       expect(summary.settledTerminalBytes.review.maxBytes).toBeLessThan(64 * 1024);
     }
-    // Review-open cost must remain independent of total chat size.
+
     expect(summary.terminalBytes.review.maxBytes).toBeLessThan(128 * 1024);
     expect(summary.terminalBytes.close.maxBytes).toBeLessThan(256 * 1024);
     expect(summary.memory.growthRssKib).toBeLessThan(256 * 1024);

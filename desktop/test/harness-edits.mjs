@@ -10,8 +10,8 @@ import { FolderStore } from '../dist-main/main/folders.js';
 
 const source = ts.createSourceFile('main.ts', fs.readFileSync(new URL('../main/main.ts', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true);
 const node = source.statements.find(node => ts.isFunctionDeclaration(node) && node.name.text === 'noteHarnessChange');
-const cwd = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'emma-edit-capture-')));
-const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'emma-edit-outside-'));
+const cwd = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'shinbo-edit-capture-')));
+const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'shinbo-edit-outside-'));
 try {
   const captured = [], reads = [], snapshots = new Map();
   const folders = new FolderStore(path.join(cwd, 'profile'));
@@ -29,7 +29,7 @@ try {
   fs.writeFileSync(file, 'before');
   const input = JSON.stringify({ content: 'x'.repeat(6000), path: relative }).slice(0, 4096);
   assert.throws(() => JSON.parse(input));
-  h.applyUpdate('t', { sessionUpdate: 'tool_call', toolCallId: 'edit', kind: 'edit', status: 'pending', rawInput: input, _emma_filePath: relative });
+  h.applyUpdate('t', { sessionUpdate: 'tool_call', toolCallId: 'edit', kind: 'edit', status: 'pending', rawInput: input, _shinbo_filePath: relative });
   fs.writeFileSync(file, 'after');
   h.applyUpdate('t', { sessionUpdate: 'tool_call_update', toolCallId: 'edit', status: 'completed' });
   assert.equal(captured.length, 1);
@@ -41,7 +41,7 @@ try {
   const capability = source.statements.find(node => ts.isFunctionDeclaration(node) && node.name.text === 'boundedCapabilityId');
   let revertNode;
   function findRevert(node) {
-    if (ts.isCallExpression(node) && node.expression.getText(source) === 'ipcMain.handle' && node.arguments[0]?.text === 'emma:revert-change') revertNode = node.arguments[1];
+    if (ts.isCallExpression(node) && node.expression.getText(source) === 'ipcMain.handle' && node.arguments[0]?.text === 'shinbo:revert-change') revertNode = node.arguments[1];
     ts.forEachChild(node, findRevert);
   }
   findRevert(source);
@@ -68,13 +68,13 @@ try {
   assert.equal(fs.readFileSync(outsideFile, 'utf8'), 'outside');
   const readCount = reads.length;
   for (const [index, bad] of [undefined, '', 42, {}, 'bad\0file', '../outside', outside, 'escape/file.txt'].entries()) {
-    for (const status of ['pending', 'completed']) h.applyUpdate('t', { sessionUpdate: 'tool_call', toolCallId: 'bad' + index, kind: 'edit', status, _emma_filePath: bad });
+    for (const status of ['pending', 'completed']) h.applyUpdate('t', { sessionUpdate: 'tool_call', toolCallId: 'bad' + index, kind: 'edit', status, _shinbo_filePath: bad });
   }
-  h.applyUpdate('t', { sessionUpdate: 'tool_call', toolCallId: 'history', kind: 'edit', status: 'completed', _emma_filePath: relative });
+  h.applyUpdate('t', { sessionUpdate: 'tool_call', toolCallId: 'history', kind: 'edit', status: 'completed', _shinbo_filePath: relative });
   assert.equal(reads.length, readCount);
   assert.equal(captured.length, 1);
   for (const thread of ['parent', 'child']) {
-    h.applyUpdate(thread, { sessionUpdate: 'tool_call', toolCallId: 'same', kind: 'edit', status: 'pending', _emma_filePath: relative });
+    h.applyUpdate(thread, { sessionUpdate: 'tool_call', toolCallId: 'same', kind: 'edit', status: 'pending', _shinbo_filePath: relative });
     fs.writeFileSync(file, thread);
   }
   h.applyUpdate('parent', { sessionUpdate: 'tool_call_update', toolCallId: 'same', status: 'failed' });

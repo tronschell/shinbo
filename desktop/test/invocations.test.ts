@@ -9,7 +9,7 @@ import { byUse, recentDays, rowSeries, rowTotal, usageDay, usageSeries, type Usa
 test("keys name a skill by source and an MCP call by its tool", () => {
   assert.equal(skillKey("skill:codex:0:review"), "skill/codex/review");
   assert.equal(skillKey("skill:codex:1:review"), "skill/codex/review");
-  assert.equal(skillKey("mcp:emma:0:linear"), "");
+  assert.equal(skillKey("mcp:shinbo:0:linear"), "");
   assert.equal(skillKey("not a skill id"), "");
   assert.equal(mcpToolKey("mcp__linear__create_issue"), "mcp/mcp__linear__create_issue");
   assert.equal(mcpToolKey("read_file"), "");
@@ -17,7 +17,7 @@ test("keys name a skill by source and an MCP call by its tool", () => {
 });
 
 test("uses are counted once per call, summed per server, and dropped after ninety days", async () => {
-  const userData = await mkdtemp(path.join(tmpdir(), "emma-usage-"));
+  const userData = await mkdtemp(path.join(tmpdir(), "shinbo-usage-"));
   try {
     const today = usageDay(new Date());
     const stale = usageDay(new Date(Date.now() - 120 * 86_400_000));
@@ -42,7 +42,7 @@ test("uses are counted once per call, summed per server, and dropped after ninet
 });
 
 test("a corrupt or missing usage file reads as no usage at all", async () => {
-  const userData = await mkdtemp(path.join(tmpdir(), "emma-usage-"));
+  const userData = await mkdtemp(path.join(tmpdir(), "shinbo-usage-"));
   try {
     assert.deepEqual(await readUsage(userData), {});
     await writeFile(path.join(userData, "usage.json"), "{ not json");
@@ -66,7 +66,7 @@ test("the chart series follows the day window, oldest first", () => {
 });
 
 test("a model key survives a round trip through the store", async () => {
-  const home = await mkdtemp(path.join(tmpdir(), "emma-model-usage-"));
+  const home = await mkdtemp(path.join(tmpdir(), "shinbo-model-usage-"));
   try {
     assert.equal(modelKey("z-ai/glm-5.2:free"), "model/z-ai/glm-5.2:free");
     assert.equal(modelKey("auto"), "model/auto");

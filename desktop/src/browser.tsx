@@ -82,11 +82,11 @@ export function BrowserPane({ threadId, onHide, onClose, wide, onToggleWide, onF
   useEffect(() => {
     showing.current = threadId;
     let alive = true;
-    const read = () => void window.emma.browserStatus(threadId)
+    const read = () => void window.shinbo.browserStatus(threadId)
       .then((status) => { if (alive) setKnown({ threadId, status }); })
       .catch(() => { if (alive) setKnown({ threadId, status: BLANK }); });
     read();
-    const stop = window.emma.onBrowser(read);
+    const stop = window.shinbo.onBrowser(read);
     return () => { alive = false; stop(); };
   }, [threadId]);
 
@@ -101,7 +101,7 @@ export function BrowserPane({ threadId, onHide, onClose, wide, onToggleWide, onF
     const key = bounds ? `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}` : "";
     if (key === sent.current) return;
     sent.current = key;
-    void window.emma.browserPlace({ threadId, bounds }).catch(() => undefined);
+    void window.shinbo.browserPlace({ threadId, bounds }).catch(() => undefined);
   }, [threadId]);
 
   useEffect(() => {
@@ -172,14 +172,14 @@ export function BrowserPane({ threadId, onHide, onClose, wide, onToggleWide, onF
       transitions.clear();
       if (transitionFrame !== undefined) cancelAnimationFrame(transitionFrame);
       scheduler.stop();
-      void window.emma.browserPlace({ threadId, bounds: null }).catch(() => undefined);
+      void window.shinbo.browserPlace({ threadId, bounds: null }).catch(() => undefined);
     };
   }, [threadId, place]);
 
   const status = known?.threadId === threadId ? known.status : BLANK;
   const apply = (next: BrowserStatus) => { if (showing.current === threadId) setKnown({ threadId, status: next }); };
   const nav = (action: "back" | "forward" | "reload") =>
-    void window.emma.browserNav({ threadId, action }).then(apply).catch(() => undefined);
+    void window.shinbo.browserNav({ threadId, action }).then(apply).catch(() => undefined);
 
   const draft = typed?.threadId === threadId ? typed.url : undefined;
   const go = () => {
@@ -187,16 +187,16 @@ export function BrowserPane({ threadId, onHide, onClose, wide, onToggleWide, onF
     setTyped(undefined);
     if (!wanted) return;
     const url = /^[a-z][a-z0-9+.-]*:/i.test(wanted) ? wanted : `https://${wanted}`;
-    void window.emma.browserOpen({ threadId, url }).then(apply).catch(() => undefined);
+    void window.shinbo.browserOpen({ threadId, url }).then(apply).catch(() => undefined);
   };
 
   const showClips = () => {
     if (clips) return setClips(undefined);
-    void window.emma.browserClips().then(setClips).catch(() => setClips([]));
+    void window.shinbo.browserClips().then(setClips).catch(() => setClips([]));
   };
   const reuseClip = (index: number) => {
     setClips(undefined);
-    void window.emma.browserClipUse({ threadId, index }).catch(() => undefined);
+    void window.shinbo.browserClipUse({ threadId, index }).catch(() => undefined);
   };
 
   return <section className="browser-pane" aria-label="Browser">
@@ -204,15 +204,15 @@ export function BrowserPane({ threadId, onHide, onClose, wide, onToggleWide, onF
       <div className="browser-tab-strip" role="tablist" aria-label="Browser tabs">
         {status.tabs.map((tab) => <div key={tab.id} className="browser-tab" data-active={tab.id === status.activeTab}>
           <button type="button" role="tab" aria-selected={tab.id === status.activeTab} title={tab.url || tabName(tab)}
-            onClick={() => void window.emma.browserSelectTab({ threadId, tabId: tab.id }).then(apply).catch(() => undefined)}>
+            onClick={() => void window.shinbo.browserSelectTab({ threadId, tabId: tab.id }).then(apply).catch(() => undefined)}>
             {tab.favicon ? <img className="browser-favicon" src={tab.favicon} alt="" /> : <i className="browser-favicon browser-favicon-blank" aria-hidden="true" />}
             <span>{tabName(tab)}</span>
           </button>
           <button type="button" className="browser-tab-close" aria-label={`Close ${tabName(tab)}`}
-            onClick={() => void window.emma.browserCloseTab({ threadId, tabId: tab.id }).then(apply).catch(() => undefined)}><NavIcon path={CLOSE} size={11} /></button>
+            onClick={() => void window.shinbo.browserCloseTab({ threadId, tabId: tab.id }).then(apply).catch(() => undefined)}><NavIcon path={CLOSE} size={11} /></button>
         </div>)}
         <button type="button" className="browser-icon browser-new-tab" aria-label="New tab" title="New tab"
-          onClick={() => void window.emma.browserNewTab({ threadId }).then(apply).catch(() => undefined)}><NavIcon path={PLUS} size={13} /></button>
+          onClick={() => void window.shinbo.browserNewTab({ threadId }).then(apply).catch(() => undefined)}><NavIcon path={PLUS} size={13} /></button>
       </div>
       <div className="browser-window-controls">
         {onFloat && <button type="button" className="browser-icon" aria-label={floating ? "Dock the browser" : "Float the browser"} aria-pressed={floating} title={floating ? "Dock" : "Float"} onClick={onFloat}><NavIcon path={FLOAT} size={12} /></button>}
@@ -239,9 +239,9 @@ export function BrowserPane({ threadId, onHide, onClose, wide, onToggleWide, onF
             }} />}
       <button type="button" className="browser-icon" aria-label="Clipboard history" title="Clipboard history" aria-expanded={!!clips} onClick={showClips}><NavIcon path={CLIPS} size={13} /></button>
       <button type="button" className="browser-icon" aria-label="Open in a new tab" title="New tab"
-        onClick={() => void window.emma.browserNewTab({ threadId }).then(apply).catch(() => undefined)}><NavIcon path={PLUS} size={13} /></button>
+        onClick={() => void window.shinbo.browserNewTab({ threadId }).then(apply).catch(() => undefined)}><NavIcon path={PLUS} size={13} /></button>
       <button type="button" className="browser-icon" aria-label="Open this page in your default browser" title="Open in your browser" disabled={!status.url}
-        onClick={() => { if (status.url) void window.emma.openLink(status.url).catch(() => undefined); }}><NavIcon path={MORE} size={14} /></button>
+        onClick={() => { if (status.url) void window.shinbo.openLink(status.url).catch(() => undefined); }}><NavIcon path={MORE} size={14} /></button>
     </nav>
     {clips && <ul className="browser-clips" aria-label="Clipboard history">
       {clips.length === 0
@@ -253,7 +253,7 @@ export function BrowserPane({ threadId, onHide, onClose, wide, onToggleWide, onF
     <div className="browser-stage" ref={stage} data-idle={!status.running}>
       {!status.running && <div className="browser-empty">
         <p>Nothing open</p>
-        <button type="button" onClick={() => void window.emma.browserNewTab({ threadId }).then(apply).catch(() => undefined)}>New tab</button>
+        <button type="button" onClick={() => void window.shinbo.browserNewTab({ threadId }).then(apply).catch(() => undefined)}>New tab</button>
       </div>}
     </div>
   </section>;

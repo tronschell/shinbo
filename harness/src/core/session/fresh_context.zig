@@ -21,6 +21,7 @@ const record_label_overhead: usize = 24;
 
 pub const Config = struct {
     handoff: ?[]const u8 = null,
+    handoff_prefix: ?[]const HistoryTurn = null,
 };
 
 pub fn summarizer(config: *Config) session_runtime.Summarizer {
@@ -29,7 +30,13 @@ pub fn summarizer(config: *Config) session_runtime.Summarizer {
 
 fn summarize(raw_ctx: *anyopaque, alloc: Allocator, request: session_runtime.SummaryRequest) anyerror![]u8 {
     const config: *Config = @ptrCast(@alignCast(raw_ctx));
-    if (config.handoff) |handoff| return explicitHandoff(alloc, handoff, request.max_chars);
+    if (config.handoff) |handoff| {
+        const applies = if (config.handoff_prefix) |prefix|
+            prefix.ptr == request.removed.ptr and prefix.len == request.removed.len
+        else
+            true;
+        if (applies) return explicitHandoff(alloc, handoff, request.max_chars);
+    }
     return autoRecord(alloc, request.removed, request.previous_summary, request.max_chars);
 }
 
@@ -191,4 +198,18 @@ test "elision keeps both ends and never splits a character" {
     try std.testing.expect(std.mem.startsWith(u8, cut, "héllo"));
     try std.testing.expect(std.mem.endsWith(u8, cut, "middle"));
     try std.testing.expect(std.mem.indexOf(u8, cut, elision) != null);
+}
+
+test "an explicit handoff applies only to its original compacted prefix" {
+    const alloc = std.testing.allocator;
+    const original = [_]HistoryTurn{userTurn("Original task")};
+    const later = [_]HistoryTurn{userTurn("Later instructions")};
+    var config = Config{ .handoff = "Completed the original work", .handoff_prefix = &original };
+    const first = try summarize(&config, alloc, .{ .conversation = "original", .removed = &original });
+    defer alloc.free(first);
+    try std.testing.expect(std.mem.indexOf(u8, first, "Completed the original work") != null);
+    const second = try summarize(&config, alloc, .{ .conversation = "later", .removed = &later });
+    defer alloc.free(second);
+    try std.testing.expect(std.mem.indexOf(u8, second, "Later instructions") != null);
+    try std.testing.expect(std.mem.indexOf(u8, second, "Completed the original work") == null);
 }

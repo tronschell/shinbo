@@ -1,4 +1,4 @@
-# Emma repository guide
+# Shinbo repository guide
 
 This file is the source of truth for every agent working in this repository.
 
@@ -20,7 +20,7 @@ license, and directives like `// @ts-expect-error`, `#![allow(...)]`, or
 
 ## Layout
 
-Emma is a macOS-first Electron application. Electron owns windows and the
+Shinbo is a macOS-first Electron application. Electron owns windows and the
 sandboxed presentation, Rust owns durable data and the host boundary, and Zig
 owns the agent harness. Keep those boundaries visible.
 
@@ -35,7 +35,7 @@ owns the agent harness. Keep those boundaries visible.
   requests only — the app process drives every provider call.
 - `crates/core`: thread and scheduled records, validation, and atomic
   Markdown persistence.
-- `harness`: `emma-cli`, the fork of vercel-labs/fx driven over ACP from
+- `harness`: `shinbo-cli`, the fork of vercel-labs/fx driven over ACP from
   `desktop/main/harness.ts`. Apache-2.0; keep `harness/FORK.md` honest.
 
 Do not add a crate, trait, service locator, or plugin framework until a second
@@ -60,9 +60,9 @@ permissions, VoiceOver behavior, display geometry, signing, and non-macOS paths.
 
 ## Sibling repositories
 
-Emma ships as three repos: `emma` (this one, the desktop app), `emma-mobile`
-(`~/Documents/emma-mobile`, the iPhone client that acts as a remote for this app
-and as a local agent), and `emma-website` (`~/Documents/emma-website`, the public
+Shinbo ships as three repos: `shinbo` (this one, the desktop app), `shinbo-mobile`
+(`~/Documents/shinbo-mobile`, the iPhone client that acts as a remote for this app
+and as a local agent), and `shinbo-website` (`~/Documents/shinbo-website`, the public
 site, docs, and roadmap). A change here usually needs a change there.
 
 - A new feature lands on the website: the page or tile that covers it, its

@@ -89,7 +89,7 @@ test("every built-in tool is a / command, and Settings can switch one out of the
   assert.equal(toolCommands(["keep"]).some((item) => item.name === "keep"), false);
 });
 
-test("@ lists what Emma made and saved before the files on disk", () => {
+test("@ lists what Shinbo made and saved before the files on disk", () => {
   const artifacts = [{ id: "a1", title: "Q3 plan", kind: "markdown", language: "", createdAt: "", updatedAt: "", version: 1 }] as ArtifactMeta[];
   const notes: KeptNote[] = [{ path: "/Users/me/Vault/knowledge-base/ceramics-primer.md", relative: "ceramics-primer.md", title: "Ceramics primer", tags: ["materials"], savedAt: "2026-08-20T00:00:00Z", kind: "page" }];
   const items = atCommands(artifacts, notes, [{ id: "f1", path: "/Users/me/Docs", name: "Docs" }], ["f1"], { f1: [{ path: "notes/plan.md", bytes: 10 }] });
@@ -112,8 +112,8 @@ test("a saved message still names its skills and files, for a run to resolve lat
 });
 
 test("a pasted link paints blue, and a sentence keeps its punctuation", () => {
-  const segments = highlightSegments("see https://emma.dev/a_b?q=1, and me@host", []);
-  assert.deepEqual(segments.filter((item) => item.hue !== undefined), [{ text: "https://emma.dev/a_b?q=1", hue: LINK_HUE }]);
-  assert.equal(segments.map((item) => item.text).join(""), "see https://emma.dev/a_b?q=1, and me@host");
+  const segments = highlightSegments("see https://shinbo.dev/a_b?q=1, and me@host", []);
+  assert.deepEqual(segments.filter((item) => item.hue !== undefined), [{ text: "https://shinbo.dev/a_b?q=1", hue: LINK_HUE }]);
+  assert.equal(segments.map((item) => item.text).join(""), "see https://shinbo.dev/a_b?q=1, and me@host");
   assert.deepEqual(mentions("https://a.dev/x and /skill", "/"), ["skill"]);
 });

@@ -1,6 +1,6 @@
 # App-scoped computer use
 
-Emma can read and operate a running macOS or Windows app in the background after
+Shinbo can read and operate a running macOS or Windows app in the background after
 you approve that specific app. It uses macOS accessibility controls or Windows
 UI Automation, not the global pointer, screen coordinates, or the clipboard.
 Apps with no usable accessibility interface are unsupported; there is no
@@ -11,12 +11,12 @@ screenshot or canvas fallback.
 `computer` starts with `list_apps`, which returns running-app names, bundle IDs,
 PIDs and paths without an app approval. It does not read window contents. An app
 that is not listed is opened with `launch_app` rather than by asking the user.
-Emma's own executables are excluded, by name and by directory, never by process
+Shinbo's own executables are excluded, by name and by directory, never by process
 ancestry: an app the harness shell or `launch_app` started is listed and can be
 controlled like any other.
 
-Before `get_app_state` reads an app, Emma shows its name, bundle ID, resolved path
-and PID. Before `launch_app` starts one, Emma shows the resolved application it
+Before `get_app_state` reads an app, Shinbo shows its name, bundle ID, resolved path
+and PID. Before `launch_app` starts one, Shinbo shows the resolved application it
 would open; allowing that both starts the app and grants control of it, so
 `get_app_state` on the app it returns does not ask a second time. **Allow for this turn** approves that running instance for the active
 parent turn only. Delegated harness agents cannot use `computer`; the parent must
@@ -38,7 +38,7 @@ controlled while a prompt is unanswered.
 The grant lives only in memory. The helper checks the bundle identity, path, PID
 and kernel process birth timestamp before acting; quitting or relaunching an app
 requires a new turn and approval. Stop, the run banner's Escape shortcut, screen
-lock, suspend, turn completion and Emma quitting revoke access and stop helpers.
+lock, suspend, turn completion and Shinbo quitting revoke access and stop helpers.
 After a stop, further calls cannot restart computer use in the same turn. A stop
 does not undo actions already dispatched.
 
@@ -67,11 +67,11 @@ There are eight actions. Except for `list_apps` and `launch_app`, pass the exact
 `launch_app` takes `name`, the app as a person would name it — `Notepad`,
 `Calculator`, `Google Chrome` — or the `name` `list_apps` prints. It is never a
 file path, and it resolves only against installed applications, so the model
-cannot ask Emma to run an arbitrary executable. Resolution is done twice: once to
+cannot ask Shinbo to run an arbitrary executable. Resolution is done twice: once to
 show the user what would be opened, and again to start it, and a launch whose
 second resolution differs from the approved one fails. The action returns the
 started app's identity and PID after waiting up to twelve seconds for a window,
-and adds that instance to the turn's approved apps. Emma refuses to start itself.
+and adds that instance to the turn's approved apps. Shinbo refuses to start itself.
 Unlike every other action, launching brings the app forward; that is what
 starting an app does.
 
@@ -81,7 +81,7 @@ On macOS a name is resolved as a bundle identifier through
 `/System/Applications/Utilities` and `~/Applications`, exactly first and then by
 unique prefix. The app is started with
 `NSWorkspace.openApplicationAtURL:configuration:completionHandler:`, which is not
-subject to any job or process group of Emma's. The Windows resolution order is
+subject to any job or process group of Shinbo's. The Windows resolution order is
 below.
 
 A snapshot authorizes at most one mutation. Once an action is sent to the helper,
@@ -118,16 +118,16 @@ top level window, up to 128. The name is the executable's file stem
 the full path and PID. Identity is rechecked against the path, PID and process
 creation time. The taskbar, the desktop and menu window classes are excluded.
 
-So are Emma's own binaries, and only those: the helper process itself, the
-process named by `--blocked-pid`, any executable whose file stem is `emma`,
-`emma-host`, `emma-cli`, `emma-pty`, `emma-computer`, `emma-option-tap` or
-`emma-transcribe`, and anything inside the directory holding the helper or the
-directory holding Emma's own executable. Process ancestry is not consulted at
-all, which is what makes an app started from Emma's shell or by `launch_app`
+So are Shinbo's own binaries, and only those: the helper process itself, the
+process named by `--blocked-pid`, any executable whose file stem is `shinbo`,
+`shinbo-host`, `shinbo-cli`, `shinbo-pty`, `shinbo-computer`, `shinbo-option-tap` or
+`shinbo-transcribe`, and anything inside the directory holding the helper or the
+directory holding Shinbo's own executable. Process ancestry is not consulted at
+all, which is what makes an app started from Shinbo's shell or by `launch_app`
 visible and controllable. The shells the harness spawns are hidden for a
 different reason: they have no visible top level window, so they never reach the
 list. Until this change the helper walked parents instead, and a process whose
-recorded parent had already exited counted as Emma's descendant, which on
+recorded parent had already exited counted as Shinbo's descendant, which on
 Windows is nearly every process.
 
 `launch_app` resolves a name against installed apps in a fixed order: an exact
@@ -169,7 +169,7 @@ single Text-pattern selection. Both verify the value they wrote, so an app that
 normalizes what it stores reports that the change was accepted but could not be
 verified: Notepad rewrites `\n` as `\r`, so any multi-line `set_value` there
 lands correctly and still reports unverified. `key` posts `WM_KEYDOWN` and
-`WM_KEYUP` to the focused control's own window; Emma never calls
+`WM_KEYUP` to the focused control's own window; Shinbo never calls
 `SetForegroundWindow`, `AllowSetForegroundWindow` or `AttachThreadInput`, and
 never uses `SendInput`, so a key reaches a background app without taking the
 foreground and cannot leak to another app. `scroll` sets the Scroll pattern's
@@ -182,10 +182,10 @@ consent. Setup status therefore reports `accessibility` as not applicable and
 `screen` as granted on Windows.
 
 The limits are the platform's own. A window belonging to a process running
-elevated is unreadable and unactionable from a non-elevated Emma, and Windows
+elevated is unreadable and unactionable from a non-elevated Shinbo, and Windows
 reports no error the helper can distinguish from an empty app. The secure
 desktop — the UAC prompt, Ctrl+Alt+Del and the lock screen — is a separate
-desktop that Emma cannot see or reach at all. A packaged app that Windows has
+desktop that Shinbo cannot see or reach at all. A packaged app that Windows has
 suspended because it is not on screen exposes an empty accessibility tree; the
 Settings app in the background is the common case. Cursor geometry is reported in
 physical pixels, so on a display scaled above 100% the activity cursor is
@@ -202,7 +202,7 @@ image channel. The separate yellow-pen annotation capture and image attachment
 paths are unchanged; see [privacy.md](privacy.md).
 
 On macOS, Accessibility permission is required to read or act on controls. Enable
-Emma in System Settings → Privacy & Security → Accessibility, then relaunch. On
+Shinbo in System Settings → Privacy & Security → Accessibility, then relaunch. On
 Windows, the helper uses UI Automation and has no equivalent macOS TCC grant.
 Screen Recording is not needed for this tool; it remains separate for screen
 annotation.
@@ -216,7 +216,7 @@ stops the turn. Calls also appear in the thread's execution trace.
 
 ## Activity cursor
 
-A grey Emma cursor haloed in the secondary accent, with an action label, marks
+A grey Shinbo cursor haloed in the secondary accent, with an action label, marks
 the control being edited, typed into, pressed or scrolled. The cursor glides between controls in the same window over
 280 ms and pulses on arrival. Read-state steps do not interrupt that movement.
 The operating system's Reduce Motion preference disables the glide and pulse.
@@ -225,7 +225,7 @@ The transparent overlay is click-through, cannot take focus and never moves the
 real pointer. It is ordered immediately above the approved target window, not
 always on top of unrelated apps. Accessibility geometry and public window metadata
 identify the window and control; no screenshot is taken. These coordinates stay
-inside Emma and are not added to model tool results. Missing, ambiguous,
+inside Shinbo and are not added to model tool results. Missing, ambiguous,
 minimized or off-display geometry suppresses the cue without changing the action.
 
 The cue expires after 1.4 seconds and disappears immediately on Stop or turn end.
@@ -247,24 +247,24 @@ tool in every mode.
 ## Relationship to Codex
 
 Inspection of Codex CLI 0.147.0 and the installed Computer Use plugin found no
-supported embedding interface for its app-private runtime. Emma uses its own
+supported embedding interface for its app-private runtime. Shinbo uses its own
 native helper, without copying proprietary plugin code. OpenAI documents Computer
 Use as a [desktop app plugin with app approvals](https://learn.chatgpt.com/docs/computer-use),
 and separately describes [custom computer-use harnesses](https://developers.openai.com/api/docs/guides/tools-computer-use).
-Emma follows the custom-tool approach, not a dependency on Codex's private runtime.
+Shinbo follows the custom-tool approach, not a dependency on Codex's private runtime.
 
 ## Verification
 
-The macOS development build was exercised on 2026-08-28 with isolated Emma data,
+The macOS development build was exercised on 2026-08-28 with isolated Shinbo data,
 a localhost model fixture and two disposable native apps. The real approval dialog
 appeared in Auto and Full access. Approval allowed background value replacement,
-Unicode text insertion and a button press while Emma remained frontmost. Denial
+Unicode text insertion and a button press while Shinbo remained frontmost. Denial
 blocked retries, a second app required separate consent, and Stop cancelled a
 pending turn before its next action. Secure fields and menu bars were absent from
 the returned state. The final build repeated the approved interaction successfully.
 
 `launch_app` was exercised on 2026-09-05 on Windows 11 x64 by driving
-`dist-native/emma-computer.exe` directly. `--resolve` returned the packaged
+`dist-native/shinbo-computer.exe` directly. `--resolve` returned the packaged
 Notepad executable, the Calculator package AUMID and Chrome's Start Menu target,
 and refused a name no installed app matches. `--launch Notepad` started Notepad
 and returned its identity and PID; the process outlived the helper's exit,
@@ -283,7 +283,7 @@ nobody has resolved, launched or listed a real app with it; that needs a Mac.
 The Windows helper was exercised on 2026-09-04 on Windows 11 x64 with two 100%
 displays, against Notepad and Chrome. Until that day `list_apps` had always
 returned nothing, because the ancestry walk treated a process whose recorded
-parent had already exited as a descendant of Emma and excluded it, which on
+parent had already exited as a descendant of Shinbo and excluded it, which on
 Windows is nearly every process; the shipped 0.5.1 helper still behaves that way.
 That walk is now gone on both platforms. With the earlier fix, listing, state, click, set_value, type_text, key and scroll were
 each driven directly over NDJSON: Unicode including accents and emoji round-tripped

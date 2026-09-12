@@ -26,11 +26,11 @@ require.cache[electronPath] = { id: electronPath, filename: electronPath, loaded
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { checkPin, clearPeers, loadPeers, MAX_PEERS, mintPeer, pairingPayload, savePeers, sealPin }: typeof import("../main/pairing") = require("../main/pairing");
 
-const userData = () => mkdtempSync(path.join(tmpdir(), "emma-pairing-"));
+const userData = () => mkdtempSync(path.join(tmpdir(), "shinbo-pairing-"));
 const ADDR = `ws://100.101.102.103:${BRIDGE_PORT}`;
 const PIN = "482913";
 const peerOf = (name: string) => mintPeer(name, ADDR, PIN);
-/** What a pairing looks like once the phone has proved the PIN — the only kind that is ever saved. */
+
 const provenPeer = (name: string): Peer => ({ ...peerOf(name), verified: true });
 
 test("a minted peer carries a fresh key of the protocol's size, and a PIN nobody can read back", () => {
@@ -162,12 +162,12 @@ test("without a keychain the pairing is refused rather than written in plain tex
   assert.equal(existsSync(path.join(root, "mobile-peers.json")), false);
 });
 
-test("the one phone an older Emma paired is read back, and the old file is retired", () => {
+test("the one phone an older Shinbo paired is read back, and the old file is retired", () => {
   const root = userData();
   const peer = provenPeer("Tron's MacBook Pro");
   savePeers(root, [peer]);
   const written: unknown[] = JSON.parse(readFileSync(path.join(root, "mobile-peers.json"), "utf8"));
-  // What the Emma before this one wrote: a lone object, not a list.
+
   writeFileSync(path.join(root, "mobile-peer.json"), JSON.stringify(written[0], null, 2));
   rmSync(path.join(root, "mobile-peers.json"));
 
@@ -177,9 +177,9 @@ test("the one phone an older Emma paired is read back, and the old file is retir
   assert.deepEqual(loadPeers(root), [peer]);
 });
 
-test("a file holding more phones than Emma pairs is trimmed to the limit", () => {
+test("a file holding more phones than Shinbo pairs is trimmed to the limit", () => {
   const root = userData();
-  // Distinct pairing times: that is what tells two phones apart on disk.
+
   const peers = [0, 1, 2, 3].map((step) => ({ ...provenPeer(`phone ${step}`), pairedAt: Date.now() + step }));
   savePeers(root, peers);
   assert.equal(loadPeers(root).length, MAX_PEERS);

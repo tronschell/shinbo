@@ -422,7 +422,7 @@ function fakeGatewayEnv(
 ) {
   return {
     HOME: root.home,
-    EMMA_PROVIDER_API_KEY: "fake-e2e-key",
+    SHINBO_PROVIDER_API_KEY: "fake-e2e-key",
     FX_GATEWAY_BASE_URL: gateway.baseUrl,
     FX_GATEWAY_CHAT_URL: gateway.chatUrl,
     FX_MODEL: OUTER_MODEL,
@@ -448,7 +448,7 @@ async function launchScenario(
   writeFileSync(stderrPath, "");
 
   session = await TmuxSession.create({
-    cmd: `env -u EMMA_PROVIDER_API_KEY ${FX_BIN} 2>${stderrPath}`,
+    cmd: `env -u SHINBO_PROVIDER_API_KEY ${FX_BIN} 2>${stderrPath}`,
     cwd: root.workspace,
     env: definedStringEnv(fakeGatewayEnv(root, gateway, {
       FX_TRACE_LOG: tracePath,
@@ -646,8 +646,8 @@ async function expectQuestionSelection(
   expect(hasQuestionSelection(pane, ordinal, selectedLabel)).toBe(true);
 }
 
-// Polls with color so question selection (now signalled purely by the white
-// style, no caret) is observable — plain capture drops SGR.
+
+
 async function waitForQuestionPane(
   activeSession: TmuxSession,
   label: string,
@@ -688,8 +688,8 @@ function hasSelection(pane: string, ordinal: number, selectedLabel: string) {
   return visibleText(pane).includes(visibleText(`› ${ordinal}. ${selectedLabel}`));
 }
 
-// The selected option is the only row carrying the white (255) style; match
-// the ordinal/label on that row after stripping the interleaved escapes.
+
+
 function hasQuestionSelection(paneEscapes: string, ordinal: number, selectedLabel: string) {
   const needle = visibleText(`${ordinal}) ${selectedLabel}`);
   return paneEscapes.split(/\r?\n/).some((line) =>

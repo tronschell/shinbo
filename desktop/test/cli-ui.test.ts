@@ -22,7 +22,7 @@ test("harness cards preserve destination scope, selection, and source navigation
     const state = [[{ id: "pi", label: "Pi" }], true, target, "Review this", false, "", undefined, { target: "cli:pi", options: { model: "anthropic/claude-sonnet-5", effort: "high" } }];
     const render = Function("React", "useState", "useEffect", "useRef", "useCliRuns", "cliHarness", "cliLabel", "cliBrand", "brandForImporter", "BrandIcon", "CloseIcon", "CliOptionFields", "window", code)(
       { createElement: (type: string, props: Record<string, unknown> | null, ...children: unknown[]) => ({ type, props: props ?? {}, children }) },
-      () => [state.shift(), () => undefined], () => undefined, () => ({ current: null }), () => runs, cliHarness, (item: CliRun) => cliHarness(item.cli)?.label, () => undefined, () => undefined, "brand", "close", "options", { emma: { handoffCliRun: async (request: unknown) => { requests.push(request); return run; } } },
+      () => [state.shift(), () => undefined], () => undefined, () => ({ current: null }), () => runs, cliHarness, (item: CliRun) => cliHarness(item.cli)?.label, () => undefined, () => undefined, "brand", "close", "options", { shinbo: { handoffCliRun: async (request: unknown) => { requests.push(request); return run; } } },
     );
     return elements(render({ run, onOpenRun: (id: string) => opened.push(id) }));
   };

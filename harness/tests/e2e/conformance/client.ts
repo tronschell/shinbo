@@ -153,7 +153,7 @@ try {
       env: {
         ...process.env,
         HOME: home,
-        EMMA_PROVIDER_API_KEY: "mcp-conformance-placeholder",
+        SHINBO_PROVIDER_API_KEY: "mcp-conformance-placeholder",
         FX_AUTO_UPGRADE: "0",
         FX_DISABLE_KEYCHAIN: "1",
         FX_E2E_MCP_AUTH_AUTOMATE: "1",
@@ -241,7 +241,7 @@ async function startLegacyProbeProxy(
             return;
           }
         } catch {
-          // Let the conformance server report malformed payloads.
+
         }
       }
 

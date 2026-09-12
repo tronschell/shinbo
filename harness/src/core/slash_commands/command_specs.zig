@@ -269,7 +269,7 @@ pub fn renderTopLevelHelpWithStyle(alloc: Allocator, registry: TopLevelRegistry,
     var out: std.Io.Writer.Allocating = .init(alloc);
     defer out.deinit();
 
-    try writeStyled(&out.writer, style, .brand, "emma");
+    try writeStyled(&out.writer, style, .brand, "shinbo");
     try out.writer.writeByte(' ');
     try writeStyleStart(&out.writer, style, .muted);
     try out.writer.writeByte('v');
@@ -281,8 +281,8 @@ pub fn renderTopLevelHelpWithStyle(alloc: Allocator, registry: TopLevelRegistry,
     try writeWrappedStyledLine(&out.writer, "", "", registry.interactive_hint, width, style, .muted);
 
     try writeSectionHeading(&out.writer, style, "Usage:");
-    try writeWrappedStyledLine(&out.writer, "  ", "  ", "emma-cli [flags]", width, style, .syntax);
-    try writeWrappedStyledLine(&out.writer, "  ", "  ", "emma-cli <command> [...flags] [...args]", width, style, .syntax);
+    try writeWrappedStyledLine(&out.writer, "  ", "  ", "shinbo-cli [flags]", width, style, .syntax);
+    try writeWrappedStyledLine(&out.writer, "  ", "  ", "shinbo-cli <command> [...flags] [...args]", width, style, .syntax);
 
     try writeSectionHeading(&out.writer, style, "Commands:");
     for (registry.help_groups, 0..) |group, group_index| {
@@ -321,12 +321,12 @@ pub fn renderTopLevelCommandHelp(alloc: Allocator, registry: TopLevelRegistry, k
     var out: std.Io.Writer.Allocating = .init(alloc);
     defer out.deinit();
 
-    try out.writer.writeAll("emma-cli ");
+    try out.writer.writeAll("shinbo-cli ");
     try out.writer.writeAll(spec.token);
     try out.writer.writeAll("\n\n");
     try out.writer.writeAll(spec.summary);
     try out.writer.writeAll("\n\nUsage:\n");
-    try out.writer.writeAll("  emma-cli ");
+    try out.writer.writeAll("  shinbo-cli ");
     try out.writer.writeAll(spec.usage);
     try out.writer.writeByte('\n');
 
@@ -589,9 +589,6 @@ pub fn nthSlashCompletion(registry: SlashRegistry, prefix: []const u8, n: usize)
     return (nthSlashCommandCompletionMatch(registry, prefix, n) orelse return null).command;
 }
 
-/// Returns the byte offset where the argument portion begins for
-/// arg-completion commands such as `/sandbox `. Returns 0 when
-/// the prefix is not an arg-completion command.
 pub fn argCompletionAnchor(prefix: []const u8) usize {
     if (sandboxArgCompletionPrefix(prefix) != null) return "/sandbox ".len;
     if (statuslineArgCompletionPrefix(prefix) != null) return "/statusline ".len;
@@ -605,10 +602,6 @@ pub fn argCompletionAnchor(prefix: []const u8) usize {
     return 0;
 }
 
-/// Like `nthSlashCompletion` but returns the display label only.
-/// For argument completions the command prefix is stripped so the bar
-/// shows only the argument. For everything else the
-/// full command string is returned unchanged.
 pub fn nthSlashCompletionLabel(registry: SlashRegistry, prefix: []const u8, n: usize) ?[]const u8 {
     if (allowlistArgCompletionPrefix(prefix)) |query| {
         return nthAllowlistArgLabel(query, n);
@@ -1062,8 +1055,6 @@ fn nthAllowlistArgLabel(query: []const u8, n: usize) ?[]const u8 {
     return full[state.label_offset..];
 }
 
-/// Returns the index of `label` among the matching arg completions for
-/// the given prefix, or null if the label is not in the filtered set.
 pub fn argCompletionIndexForLabel(prefix: []const u8, label: []const u8) ?usize {
     if (allowlistArgCompletionPrefix(prefix)) |query| {
         const state = allowlistArgCompletionState(query);
@@ -1684,9 +1675,9 @@ test "rendered top-level help is a complete CLI navigation page" {
     const text = try testTopLevelHelpText(std.testing.allocator);
     defer std.testing.allocator.free(text);
 
-    try std.testing.expect(std.mem.startsWith(u8, text, "emma v9.8.7\nFast, native coding agent for the terminal."));
-    try std.testing.expect(std.mem.find(u8, text, "emma-cli starts an interactive session by default.") != null);
-    try std.testing.expect(std.mem.find(u8, text, "emma-cli <command> [...flags] [...args]") != null);
+    try std.testing.expect(std.mem.startsWith(u8, text, "shinbo v9.8.7\nFast, native coding agent for the terminal."));
+    try std.testing.expect(std.mem.find(u8, text, "shinbo-cli starts an interactive session by default.") != null);
+    try std.testing.expect(std.mem.find(u8, text, "shinbo-cli <command> [...flags] [...args]") != null);
     try std.testing.expect(std.mem.find(u8, text, "Commands:") != null);
     try std.testing.expect(std.mem.find(u8, text, "ask <prompt>") != null);
     try std.testing.expect(std.mem.find(u8, text, "Run one noninteractive request") != null);
@@ -1706,12 +1697,12 @@ test "rendered top-level help is a complete CLI navigation page" {
     try std.testing.expect(std.mem.find(u8, text, "FX_EXPERIMENTAL_WORKSPACE_ACCESS=1") == null);
     try std.testing.expect(std.mem.find(u8, text, "Supported for interactive, resume, ask, ACP, PR, and issue launches") == null);
     try std.testing.expect(std.mem.find(u8, text, "Examples:") != null);
-    try std.testing.expect(std.mem.find(u8, text, "emma-cli ask \"Explain the changes in this repository\"") != null);
-    try std.testing.expect(std.mem.find(u8, text, "emma-cli session resume last") != null);
+    try std.testing.expect(std.mem.find(u8, text, "shinbo-cli ask \"Explain the changes in this repository\"") != null);
+    try std.testing.expect(std.mem.find(u8, text, "shinbo-cli session resume last") != null);
     try std.testing.expect(std.mem.find(u8, text, "session resume [last|id]") != null);
-    try std.testing.expect(std.mem.find(u8, text, "emma-cli status --json") != null);
+    try std.testing.expect(std.mem.find(u8, text, "shinbo-cli status --json") != null);
     try std.testing.expect(std.mem.find(u8, text, "Run `/help` inside an interactive session for slash commands.") != null);
-    try std.testing.expect(std.mem.find(u8, text, "\n\n\nRun `emma-cli <command> --help`") == null);
+    try std.testing.expect(std.mem.find(u8, text, "\n\n\nRun `shinbo-cli <command> --help`") == null);
     try std.testing.expect(std.mem.find(u8, text, "Start:") == null);
     try std.testing.expect(std.mem.find(u8, text, "  Work      ") == null);
     try std.testing.expect(std.mem.find(u8, text, "More:") == null);
@@ -1728,7 +1719,7 @@ test "terminal top-level help adds styling without changing visible content" {
     defer std.testing.allocator.free(stripped);
 
     try std.testing.expect(std.mem.find(u8, plain, "\x1b[") == null);
-    try std.testing.expect(std.mem.startsWith(u8, terminal, "\x1b[1memma\x1b[0m"));
+    try std.testing.expect(std.mem.startsWith(u8, terminal, "\x1b[1mshinbo\x1b[0m"));
     try std.testing.expect(std.mem.find(u8, terminal, "\x1b[1mUsage:\x1b[0m") != null);
     try std.testing.expect(std.mem.find(u8, terminal, "\x1b[39mask <prompt>\x1b[0m") != null);
     try std.testing.expect(std.mem.find(u8, terminal, "\x1b[38;5;243mFast, native coding agent") != null);
@@ -1751,7 +1742,7 @@ test "top-level help renders flags as compact aligned rows" {
     try std.testing.expect(lineContainsBoth(wide, "--resume [last|<id>]", "Resume the latest workspace session or an exact ID"));
     try std.testing.expect(lineContainsBoth(wide, "--resume-last", "Resume the latest workspace session"));
     try std.testing.expect(std.mem.find(u8, wide, "Record terminal output\n\n  --context-limit") == null);
-    try std.testing.expect(std.mem.find(u8, wide, "Print the emma-cli version and exit\n\nExamples:") != null);
+    try std.testing.expect(std.mem.find(u8, wide, "Print the shinbo-cli version and exit\n\nExamples:") != null);
     try expectAllLinesFit(narrow, 60);
 
     var lines = std.mem.splitScalar(u8, wide, '\n');
@@ -1778,8 +1769,8 @@ test "per-command help renders header usage options and details" {
     const text = try renderTopLevelCommandHelp(std.testing.allocator, testTopLevelRegistry(), .permissions);
     defer std.testing.allocator.free(text);
 
-    try std.testing.expect(std.mem.find(u8, text, "emma-cli permissions\n") != null);
-    try std.testing.expect(std.mem.find(u8, text, "Usage:\n  emma-cli permissions [--json]") != null);
+    try std.testing.expect(std.mem.find(u8, text, "shinbo-cli permissions\n") != null);
+    try std.testing.expect(std.mem.find(u8, text, "Usage:\n  shinbo-cli permissions [--json]") != null);
     try std.testing.expect(std.mem.find(u8, text, "Options:") != null);
     try std.testing.expect(std.mem.find(u8, text, "--json") != null);
     try std.testing.expect(std.mem.find(u8, text, "Modes:") != null);
@@ -1789,7 +1780,7 @@ test "per-command help preserves long resume usage outside top-level index" {
     const text = try renderTopLevelCommandHelp(std.testing.allocator, testTopLevelRegistry(), .@"resume");
     defer std.testing.allocator.free(text);
 
-    try std.testing.expect(std.mem.find(u8, text, "Usage:\n  emma-cli session resume [last|<id>] [--record] | session resume --id <id> [--record] | --resume [last|<id>] [--record] | resume [last|<id>] [--record] | resume --id <id> [--record] | --resume-last | --continue | -c | -r | --resume-<id>") != null);
+    try std.testing.expect(std.mem.find(u8, text, "Usage:\n  shinbo-cli session resume [last|<id>] [--record] | session resume --id <id> [--record] | --resume [last|<id>] [--record] | resume [last|<id>] [--record] | resume --id <id> [--record] | --resume-last | --continue | -c | -r | --resume-<id>") != null);
     try std.testing.expect(std.mem.find(u8, text, "Options:") != null);
     try std.testing.expect(std.mem.find(u8, text, "--record") != null);
 }
@@ -1798,8 +1789,8 @@ test "ACP help documents accepted options" {
     const text = try renderTopLevelCommandHelp(std.testing.allocator, testTopLevelRegistry(), .acp);
     defer std.testing.allocator.free(text);
 
-    try std.testing.expect(std.mem.find(u8, text, "emma-cli acp\n") != null);
-    try std.testing.expect(std.mem.find(u8, text, "Usage:\n  emma-cli acp [--model <id>] [--log-file <path>]") != null);
+    try std.testing.expect(std.mem.find(u8, text, "shinbo-cli acp\n") != null);
+    try std.testing.expect(std.mem.find(u8, text, "Usage:\n  shinbo-cli acp [--model <id>] [--log-file <path>]") != null);
     try std.testing.expect(std.mem.find(u8, text, "--model <id>") != null);
     try std.testing.expect(std.mem.find(u8, text, "--log-file <path>") != null);
 }

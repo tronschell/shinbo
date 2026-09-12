@@ -53,13 +53,19 @@ type Recording = { stop: () => Promise<{ audio: ArrayBuffer; mimeType: string }>
 
 async function record(): Promise<Recording> {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-  const recorder = new MediaRecorder(stream);
-  const chunks: Blob[] = [];
-  recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-  recorder.start();
   const release = () => stream.getTracks().forEach((track) => track.stop());
+  let recorder: MediaRecorder;
+  const chunks: Blob[] = [];
+  try {
+    recorder = new MediaRecorder(stream);
+    recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+    recorder.start();
+  } catch (error) {
+    release();
+    throw error;
+  }
   return {
-    cancel: () => { if (recorder.state !== "inactive") recorder.stop(); release(); },
+    cancel: () => { try { if (recorder.state !== "inactive") recorder.stop(); } finally { release(); } },
     stop: () => new Promise((resolve, reject) => {
       recorder.onerror = () => { release(); reject(new Error("The microphone stopped unexpectedly.")); };
       recorder.onstop = () => {
@@ -67,10 +73,13 @@ async function record(): Promise<Recording> {
         new Blob(chunks).arrayBuffer()
           .then(toWav)
           .then((audio) => resolve({ audio, mimeType: "audio/wav" }))
-          .catch(() => reject(new Error("Emma could not read the recording.")));
+          .catch(() => reject(new Error("Shinbo could not read the recording.")));
       };
       if (recorder.state === "inactive") recorder.onstop?.(new Event("stop"));
-      else recorder.stop();
+      else {
+        try { recorder.stop(); }
+        catch (error) { release(); reject(error); }
+      }
     }),
   };
 }
@@ -83,47 +92,62 @@ export function useDictation(settings: UserSettings, onText: (text: string) => v
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const recording = useRef<Recording | null>(null);
-  const refresh = useCallback(() => window.emma.voiceStatus(voiceSettings(settings))
+  const starting = useRef<object | null>(null);
+  const processing = useRef<AbortController | null>(null);
+  const refresh = useCallback(() => window.shinbo.voiceStatus(voiceSettings(settings))
     .catch(() => unknownVoiceStatus)
     .then((next) => { setStatus(next); return next; }), [settings]);
   useEffect(() => { void refresh(); }, [refresh]);
-  useEffect(() => () => recording.current?.cancel(), []);
+  useEffect(() => () => { processing.current?.abort(); starting.current = null; recording.current?.cancel(); recording.current = null; }, []);
   const start = useCallback(async () => {
-    if (recording.current || working) return false;
+    if (starting.current || recording.current || processing.current || working) return false;
+    const attempt = {};
+    starting.current = attempt;
     setError("");
     try {
-      recording.current = await record();
+      const active = await record();
+      if (starting.current !== attempt) { active.cancel(); return false; }
+      starting.current = null;
+      recording.current = active;
       setListening(true);
       return true;
     } catch {
+      if (starting.current !== attempt) return false;
+      starting.current = null;
       recording.current = null;
-      setError("Emma could not open the microphone. Grant it in Settings → Voice.");
+      setError("Shinbo could not open the microphone. Grant it in Settings → Voice.");
       void refresh();
       return false;
     }
   }, [refresh, working]);
   const stop = useCallback(async () => {
+    starting.current = null;
     const active = recording.current;
     if (!active) return;
     recording.current = null;
+    const attempt = new AbortController();
+    processing.current = attempt;
     setListening(false);
     setWorking(true);
     try {
       const utterance = await active.stop();
-      const { text } = await window.emma.transcribe({ ...utterance, settings: voiceSettings(settings) });
+      if (attempt.signal.aborted) return;
+      const { text } = await window.shinbo.transcribe({ ...utterance, settings: voiceSettings(settings) });
+      if (attempt.signal.aborted) return;
       if (text) onText(text);
       else setError("Nothing was heard.");
     } catch (reason) {
-      setError(reasonText(reason));
+      if (!attempt.signal.aborted) setError(reasonText(reason));
     } finally {
+      processing.current = null;
       setWorking(false);
     }
   }, [onText, settings]);
-  const cancel = useCallback(() => { recording.current?.cancel(); recording.current = null; setListening(false); }, []);
+  const cancel = useCallback(() => { processing.current?.abort(); starting.current = null; recording.current?.cancel(); recording.current = null; setListening(false); }, []);
   return {
     status, listening, working, error, setError, refresh, start, stop, cancel,
     ready: voiceReady(status, settings),
-    blocker: voiceBlocker(status, settings, window.emma.platform),
+    blocker: voiceBlocker(status, settings, window.shinbo.platform),
   };
 }
 
@@ -140,9 +164,10 @@ export function useSpaceHold(holdMs: number, armed: boolean, dictation: Pick<Dic
     const up = (event: KeyboardEvent) => {
       if (event.code !== "Space") return;
       if (held.current !== null) { clearTimeout(held.current); held.current = null; return; }
-      if (listening) { event.preventDefault(); void stop(); }
+      if (listening) event.preventDefault();
+      void stop();
     };
-    const blur = () => { if (held.current !== null) { clearTimeout(held.current); held.current = null; } if (listening) cancel(); };
+    const blur = () => { if (held.current !== null) { clearTimeout(held.current); held.current = null; } cancel(); };
     addEventListener("keydown", down);
     addEventListener("keyup", up);
     addEventListener("blur", blur);

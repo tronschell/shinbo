@@ -1,12 +1,14 @@
 <div align="center">
 
-<img src="desktop/assets/emma.webp" alt="Emma: a hand-drawn window with two eyes and a pink bow" width="200">
+<img src="desktop/assets/shinbo.icon/Assets/bow.svg" alt="Shinbo: a pink pixel bow" width="200">
 
-# Emma
+# Shinbo
 
 **A self-learning, self-building metaharness.**
 
 It runs its own agent loop, drives the coding CLIs you already have, writes parts of its own interface, and benches its own changes before keeping them.
+
+The name draws on two Japanese words pronounced **shinbō (しんぼう)**: **[辛抱](https://kotobank.jp/word/辛抱-538951)** means patience and perseverance through hardship; **[心棒](https://kotobank.jp/word/心棒-538949)** means an axle or central shaft, and figuratively the core that supports an activity. For Shinbo, they express persistence in the work and a common center for its agents and tools.
 
 [![Platform](https://img.shields.io/badge/platform-macOS%20·%20Apple%20silicon%20%7C%20Windows%20x64-1c1c1c?style=flat-square&logo=apple&logoColor=white)](#requirements)
 [![Electron](https://img.shields.io/badge/Electron-43.4.0-2b2e3a?style=flat-square&logo=electron&logoColor=9feaf9)](desktop/package.json)
@@ -15,7 +17,7 @@ It runs its own agent loop, drives the coding CLIs you already have, writes part
 [![Node](https://img.shields.io/badge/Node-24%2B-1f2a1f?style=flat-square&logo=nodedotjs&logoColor=5fa04e)](desktop/package.json)
 [![Docs](https://img.shields.io/badge/docs-docs%2F-1c1c1c?style=flat-square)](docs/README.md)
 
-<img src="desktop/screenshots/workspace-thread.png" alt="Emma running the Splitleaf release plan: threads and projects down the left, the answer in the middle with four finished subagents under it, and the context bar on the right" width="900">
+<img src="marketing/video/shinbo.gif" alt="Sixty seconds of Shinbo: a launch-briefing prompt becomes a plan, two subagents work in parallel, a browser opens beside the thread, a dashboard is built, models and workflows are picked, and the pink bow signs off" width="900">
 
 </div>
 
@@ -27,12 +29,14 @@ It runs its own agent loop, drives the coding CLIs you already have, writes part
 - **Every turn is instrumented.** A span tree per run — model requests, tool calls, wall clock, token deltas — appended to the thread's Markdown.
 - **Plain Markdown records.** Threads, task lists, and plans stay on disk; kept notes go into the vault folder you picked.
 
+<img src="desktop/screenshots/workspace-thread.png" alt="Shinbo with a thread open: projects on the left, the Markdown conversation and composer in the middle, and the context bar on the right" width="900">
+
 ## Quickstart
 
-Published macOS and Windows builds are distributed through [GitHub Releases](https://github.com/tronschell/emma/releases).
-On macOS, open `Emma-vX.Y.Z-darwin-arm64.dmg` and drag `Emma.app` onto
+Published macOS and Windows builds are distributed through [GitHub Releases](https://github.com/tronschell/shinbo/releases).
+On macOS, open `Shinbo-vX.Y.Z-darwin-arm64.dmg` and drag `Shinbo.app` onto
 Applications. On Windows 10 version 1809 or later on x64, run
-`Emma-vX.Y.Z-win32-x64-Setup.exe`; it installs per user and needs no
+`Shinbo-vX.Y.Z-win32-x64-Setup.exe`; it installs per user and needs no
 administrator prompt. Windows builds are not code signed yet, so SmartScreen
 warns once — click **More info**, then **Run anyway**. Both platforms
 auto-update from the published release. Windows ARM64 packages from source but
@@ -40,8 +44,8 @@ is not a published target. The toolchains below are only needed to build from
 source:
 
 ```bash
-git clone https://github.com/tronschell/emma.git
-cd emma
+git clone https://github.com/tronschell/shinbo.git
+cd shinbo
 npm install --prefix desktop
 npm run dev
 ```
@@ -69,7 +73,7 @@ New to the repo? **[docs/getting-started.md](docs/getting-started.md)**
 
 ## Plans and subagents
 
-<img src="desktop/screenshots/plan-subagents.png" alt="A plan open fullscreen: the dependency graph on the left with 24 numbered nodes coloured by state, and the step list on the right" width="900">
+<img src="desktop/screenshots/plan-subagents.png" alt="A thread with the Run tab open in the context bar: a four-step plan drawn as a dependency graph, the current step with its checklist, and empty subagent and sub-thread slots waiting to fill" width="900">
 
 `plan` breaks a job into steps, runs the independent ones as parallel subagents, and keeps the whole graph as one Markdown file it edits as it goes. A step it can't finish stays red and holds everything downstream. → **[docs/concepts.md](docs/concepts.md)**
 
@@ -92,7 +96,7 @@ Ten components you arrange across up to four pages: thread stats, the context-wi
 
 ## Self-improvement
 
-<img src="desktop/screenshots/agent-dashboard.png" alt="The Agent page: live threads, turns asked, subagents spawned and a day streak across the top, then activity strips and the thread tree" width="900">
+<img src="desktop/screenshots/agent-dashboard.png" alt="The Agent page: live threads, turns asked, subagents spawned and a day streak across the top, then the daily activity strip, threads started, projects over time, and the thread tree" width="900">
 
 The Agent page mines its own traces for repeat failures, drafts one change to the standing instructions or the verifier rules, A/Bs it live, and keeps it only if a replay bench clears both a paired t-test and a sign test. **Revert** never needs evidence. → **[docs/agents.md](docs/agents.md)**
 
@@ -110,13 +114,13 @@ surface can be switched off. → **[docs/notch.md](docs/notch.md)**
 
 ## Knowledge base
 
-<img src="desktop/screenshots/knowledge-base.png" alt="The knowledge view: one row per saved note — kind, title, when it was saved, tags, source, and the Markdown file it was written to" width="900">
+<img src="desktop/screenshots/knowledge-base.png" alt="The knowledge view before a vault is chosen: zero saves and a single button to pick the Obsidian vault or folder Shinbo saves into" width="900">
 
 Point `keep` at an Obsidian vault or any plain folder: one Markdown note per save, attachments alongside, YAML front matter, titled and tagged by a small model. No mirror, no second copy. → **[docs/knowledge.md](docs/knowledge.md)**
 
 ## Jobs
 
-<img src="desktop/screenshots/scheduled-jobs.png" alt="The Scheduled view: an overnight TestFlight report — its cron trigger, prompt, mode, six steps including an if-branch, and past runs" width="900">
+<img src="desktop/screenshots/scheduled-jobs.png" alt="The Workflows editor: a new workflow with its prompt, schedule, model, permissions, and advanced steps" width="900">
 
 A job is one validated trigger (cron, `manual`, `after <job-id>`, or an app event) plus a graph of `agent` / `set` / `if` nodes. → **[docs/jobs.md](docs/jobs.md)**
 
@@ -129,12 +133,12 @@ Any OpenAI-compatible local or hosted endpoint. Keys are encrypted with the OS s
 ## In a terminal
 
 ```bash
-/Applications/Emma.app/Contents/Resources/emma-cli ask "explain this repository"
+/Applications/Shinbo.app/Contents/Resources/shinbo-cli ask "explain this repository"
 ```
 
-On Windows, run `resources/emma-cli.exe` from the installed app directory.
+On Windows, run `resources/shinbo-cli.exe` from the installed app directory.
 
-The same agent, headless. Bare `emma-cli` is a REPL in the current directory; `sessions`, `tasks`, and `permissions` are its other subcommands, gated on the tty under the same modes.
+The same agent, headless. Bare `shinbo-cli` is a REPL in the current directory; `sessions`, `tasks`, and `permissions` are its other subcommands, gated on the tty under the same modes.
 
 ## Architecture
 
@@ -143,7 +147,7 @@ The same agent, headless. Bare `emma-cli` is a REPL in the current directory; `s
              │  allowlisted IPC
      Electron main / preload
              ├─ newline-delimited JSON over stdio
-             │      Rust host ──► emma-core ──► Markdown stores
+             │      Rust host ──► shinbo-core ──► Markdown stores
              └─ Agent Client Protocol over stdio
                     Zig harness ──► OpenAI-compatible providers and MCP tools
 ```
@@ -152,7 +156,7 @@ The same agent, headless. Bare `emma-cli` is a REPL in the current directory; `s
 desktop/        Electron main/preload and React 19 workspace
 crates/core/    Markdown thread and scheduled records
 crates/host/    NDJSON host bridge
-harness/        emma-cli, Emma's fork of vercel-labs/fx, Apache-2.0
+harness/        shinbo-cli, Shinbo's fork of vercel-labs/fx, Apache-2.0
 docs/           Product and architecture contracts
 ```
 

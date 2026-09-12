@@ -26,7 +26,7 @@ permissions:
   contents: read
 
 env:
-  EMMA_PROVIDER_API_KEY: ""
+  SHINBO_PROVIDER_API_KEY: ""
   FX_SOUND: "0"
 
 jobs:

@@ -24,7 +24,8 @@ export function secretPrompt(command: string, output: string, question: string):
   ].join("\n");
 }
 
-export async function readSecret(settings: SecretSettings, command: string, output: string, question: string, ask = chatCompletion): Promise<string> {
+export async function readSecret(settings: SecretSettings, command: string, output: string, question: string, ask = chatCompletion, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
   if (!settings.model.trim()) return SECRET_UNSET;
   const key = settings.credentialEnv ? process.env[settings.credentialEnv] : "";
   if (settings.credentialEnv && !key) throw new Error(`${settings.credentialEnv} is not stored, so the secrets model cannot be reached. Ask the user to add it in Settings → Models.`);
@@ -32,7 +33,8 @@ export async function readSecret(settings: SecretSettings, command: string, outp
     { role: "system", content: settings.system },
     { role: "user", content: secretPrompt(command, output.slice(0, MAX_SECRET_OUTPUT), question) },
   ];
-  const reply = (await ask(settings, messages, key ?? "", { maxTokens: SECRET_MAX_TOKENS, timeoutMs: SECRET_TIMEOUT, label: "secrets" })).trim();
+  const reply = (await ask(settings, messages, key ?? "", { maxTokens: SECRET_MAX_TOKENS, timeoutMs: SECRET_TIMEOUT, label: "secrets", signal })).trim();
+  signal?.throwIfAborted();
   if (!reply) throw new Error(`${settings.model} returned nothing about that output.`);
   return `${settings.model} read the output of \`${command}\` and says:\n\n${reply}\n\nThe output itself never entered this conversation and must not: ask again through secret rather than running that command yourself. That is a second model's reading, so check anything you are about to act on.`;
 }

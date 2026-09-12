@@ -29,6 +29,7 @@ export const methods = [
   "selectProviderModel",
   "selectCodexModel",
   "selectFallbackModel",
+  "selectRouterModel",
   "setRouters",
 ] as const;
 
@@ -53,6 +54,7 @@ const fields: Record<Method, readonly string[]> = {
   selectProviderModel: ["providerId"],
   selectCodexModel: ["modelId"],
   selectFallbackModel: [],
+  selectRouterModel: ["routerId"],
   setRouters: ["routers"],
 };
 
@@ -89,7 +91,7 @@ export function validateRequest(value: unknown): Request {
     const optionalCredential = key === "effort" || (method === "setThreadModel" && key === "modelId") || (method === "saveScheduledJob" && key === "model");
     const maxLength = ["screenContextId", "skillAttachmentId"].includes(key) ? 256 : key === "attachedContext" ? MAX_ATTACHED_CONTEXT_CHARS : 65_536;
     if (key === "content" && text.length > maxLength) {
-      throw new Error(`This message is ${text.length.toLocaleString("en-US")} characters; Emma sends at most ${maxLength.toLocaleString("en-US")}. Trim it, or attach the text as a file.`);
+      throw new Error(`This message is ${text.length.toLocaleString("en-US")} characters; Shinbo sends at most ${maxLength.toLocaleString("en-US")}. Trim it, or attach the text as a file.`);
     }
     if (text.length > maxLength || (key !== "content" && !optionalCredential && !text.trim())) throw new Error("Invalid parameters");
   }

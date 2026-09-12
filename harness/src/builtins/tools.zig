@@ -1,7 +1,7 @@
 const std = @import("std");
 const std_builtin = @import("builtin");
 const builtin_gateway = @import("gateway.zig");
-const emma_tools = @import("emma_tools.zig");
+const shinbo_tools = @import("shinbo_tools.zig");
 const terminal_contracts = @import("../core/terminal/contracts.zig");
 const terminal_monitor = @import("../core/terminal/monitor.zig");
 const gateway_schema = @import("../core/tooling/gateway_schema.zig");
@@ -1502,7 +1502,7 @@ pub const all = [_]tool_dispatch.Tool{
     search_tools,
     select_tool,
     vision,
-} ++ emma_tools.all;
+} ++ shinbo_tools.all;
 
 pub const registry = tool_dispatch.Registry{ .tools = all[0..] };
 
@@ -2085,11 +2085,11 @@ test "built-in tools register exact active local order" {
         "vision",
     };
 
-    try std.testing.expectEqual(expected_names.len + emma_tools.all.len, all.len);
+    try std.testing.expectEqual(expected_names.len + shinbo_tools.all.len, all.len);
     for (expected_names, all[0..expected_names.len]) |expected, tool| {
         try std.testing.expectEqualStrings(expected, tool.name);
     }
-    for (emma_tools.all, all[expected_names.len..]) |expected, tool| {
+    for (shinbo_tools.all, all[expected_names.len..]) |expected, tool| {
         try std.testing.expectEqualStrings(expected.name, tool.name);
     }
 }
@@ -2581,10 +2581,10 @@ test "built-in web_search is registered in default production tools" {
     try std.testing.expect(lookup("web_search") != null);
 }
 
-test "the names Emma took resolve to Emma's tool, and the one it left alone does not" {
+test "the names Shinbo took resolve to Shinbo's tool, and the one it left alone does not" {
     inline for (.{ "memory", "web_search", "look_at_image" }) |name| {
         const found = registry.lookup(name) orelse return error.TestExpectedEqual;
-        try std.testing.expectEqual(tool_dispatch.ExecutorKind.emma, found.executor_kind);
+        try std.testing.expectEqual(tool_dispatch.ExecutorKind.shinbo, found.executor_kind);
     }
     const forced = registry.lookup("vision") orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(tool_dispatch.ExecutorKind.vision, forced.executor_kind);
@@ -3130,7 +3130,7 @@ test "production registry keeps vision route-filtered from ordinary projections"
     }
 }
 
-test "preselect advertises an Emma tool the model would otherwise have to search for" {
+test "preselect advertises a Shinbo tool the model would otherwise have to search for" {
     const alloc = std.testing.allocator;
     const preselect = [_][]const u8{ "threads", "vision" };
     const hints = [_]tool_overrides.Hint{.{ .name = "threads", .description = "Hinted threads." }};

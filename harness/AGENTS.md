@@ -220,7 +220,7 @@ Two test suites live under `tests/`, both using Bun:
 
 ### `tests/evals/` — LLM Evals
 
-Eval scenarios that exercise the agent through `fx ask --json`. Require `EMMA_PROVIDER_API_KEY`.
+Eval scenarios that exercise the agent through `fx ask --json`. Require `SHINBO_PROVIDER_API_KEY`.
 
 ```bash
 cd tests/evals && bun install && bun test           # run all evals
@@ -365,7 +365,7 @@ Do not document intended behavior as if it already exists.
 
 ## Releasing
 
-`emma-cli` is built from source and shipped inside the Emma desktop app. There is
+`shinbo-cli` is built from source and shipped inside the Shinbo desktop app. There is
 no release pipeline, tag, CDN, or upgrade channel in this fork.
 
 ### Writing the changelog
@@ -405,7 +405,7 @@ Do not create version tags manually. Do not change `build.zig.zon` version (it i
 
 ## Repository and License
 
-`emma-cli` is Emma's fork of [`vercel-labs/fx`](https://github.com/vercel-labs/fx); see `FORK.md`. Licensed under Apache-2.0; the `LICENSE` and `THIRD_PARTY_NOTICES.md` attribution must be retained.
+`shinbo-cli` is Shinbo's fork of [`vercel-labs/fx`](https://github.com/vercel-labs/fx); see `FORK.md`. Licensed under Apache-2.0; the `LICENSE` and `THIRD_PARTY_NOTICES.md` attribution must be retained.
 
 ## What Not To Do
 

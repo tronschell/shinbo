@@ -56,7 +56,7 @@ async function launch(
   const tracePath = join(workDir, "trace.log");
 
   const s = await TmuxSession.create({
-    cmd: `env -u EMMA_PROVIDER_API_KEY FX_DISABLE_KEYCHAIN=1 FX_SKIP_ONBOARDING=1 ${FX_BIN}`,
+    cmd: `env -u SHINBO_PROVIDER_API_KEY FX_DISABLE_KEYCHAIN=1 FX_SKIP_ONBOARDING=1 ${FX_BIN}`,
     cwd: workDir,
     width,
     height,
@@ -99,7 +99,7 @@ describe.skipIf(SKIP)("tui: render stress", () => {
 
         const firstPrompt = `visible_user_prompt_${run}`;
         await session.sendText(firstPrompt);
-        await session.waitForText("emma-cli has no provider credential", 5_000);
+        await session.waitForText("shinbo-cli has no provider credential", 5_000);
 
         const tailToken = `tail_${run}_visibl`;
         await session.sendKeys(`-l '${longInput(run)}'`);

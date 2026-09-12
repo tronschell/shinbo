@@ -484,7 +484,7 @@ fn testSchemaTool(
             .input_schema = input_schema,
         },
         .advertisement = advertisement,
-        .executor_kind = .emma,
+        .executor_kind = .shinbo,
         .decode = decodeSelect,
         .call = callSelect,
         .reads_only_fn = readsOnly,
@@ -588,22 +588,22 @@ fn selectResult(
 }
 
 const test_tools = [_]tool_dispatch.Tool{
-    testTool("emma_threads", "Work with conversation threads.", .on_select),
-    testTool("emma_knowledge", "Save a page into the knowledge base.", .on_select),
-    testTool("emma_screen", "Read the authorized screen context.", .on_select),
+    testTool("shinbo_threads", "Work with conversation threads.", .on_select),
+    testTool("shinbo_knowledge", "Save a page into the knowledge base.", .on_select),
+    testTool("shinbo_screen", "Read the authorized screen context.", .on_select),
 };
 
 test "native tool search matches tokens across name and description, case-insensitively" {
     const alloc = std.testing.allocator;
 
-    const both = try searchOutput(alloc, test_tools[0..], .{}, "{\"query\":\"EMMA conversation\"}");
+    const both = try searchOutput(alloc, test_tools[0..], .{}, "{\"query\":\"SHINBO conversation\"}");
     defer alloc.free(both);
-    try std.testing.expect(std.mem.startsWith(u8, both, "{\"tools\":[{\"name\":\"emma_threads\""));
+    try std.testing.expect(std.mem.startsWith(u8, both, "{\"tools\":[{\"name\":\"shinbo_threads\""));
     try std.testing.expect(std.mem.find(u8, both, "\"count\":3") != null);
 
     const partial = try searchOutput(alloc, test_tools[0..], .{}, "{\"query\":\"threads sasquatch\"}");
     defer alloc.free(partial);
-    try std.testing.expect(std.mem.startsWith(u8, partial, "{\"tools\":[{\"name\":\"emma_threads\""));
+    try std.testing.expect(std.mem.startsWith(u8, partial, "{\"tools\":[{\"name\":\"shinbo_threads\""));
     try std.testing.expect(std.mem.find(u8, partial, "\"count\":1") != null);
 
     const nothing = try searchOutput(alloc, test_tools[0..], .{}, "{\"query\":\"sasquatch\"}");
@@ -630,10 +630,10 @@ test "native tool search ranks the tool a written-out question is asking for" {
 
 test "native tool search returns names and descriptions but never input schemas" {
     const alloc = std.testing.allocator;
-    const body = try searchOutput(alloc, test_tools[0..], .{}, "{\"query\":\"emma\"}");
+    const body = try searchOutput(alloc, test_tools[0..], .{}, "{\"query\":\"shinbo\"}");
     defer alloc.free(body);
 
-    try std.testing.expect(std.mem.find(u8, body, "\"name\":\"emma_threads\"") != null);
+    try std.testing.expect(std.mem.find(u8, body, "\"name\":\"shinbo_threads\"") != null);
     try std.testing.expect(std.mem.find(u8, body, "Work with conversation threads.") != null);
     try std.testing.expect(std.mem.find(u8, body, "inputSchema") == null);
     try std.testing.expect(std.mem.find(u8, body, "properties") == null);
@@ -644,22 +644,22 @@ test "native tool search caps at the default limit and reports more_available" {
     var many: [12]tool_dispatch.Tool = undefined;
     var names: [12][16]u8 = undefined;
     for (&many, 0..) |*tool, index| {
-        const name = try std.fmt.bufPrint(&names[index], "emma_tool_{d:0>2}", .{index});
+        const name = try std.fmt.bufPrint(&names[index], "shinbo_tool_{d:0>2}", .{index});
         tool.* = testTool(name, "Bulk searchable tool.", .on_select);
     }
 
-    const capped = try searchOutput(alloc, many[0..], .{}, "{\"query\":\"emma\"}");
+    const capped = try searchOutput(alloc, many[0..], .{}, "{\"query\":\"shinbo\"}");
     defer alloc.free(capped);
     try std.testing.expect(std.mem.find(u8, capped, "\"count\":8") != null);
     try std.testing.expect(std.mem.find(u8, capped, "\"more_available\":true") != null);
-    try std.testing.expect(std.mem.find(u8, capped, "emma_tool_08") == null);
+    try std.testing.expect(std.mem.find(u8, capped, "shinbo_tool_08") == null);
 
-    const explicit = try searchOutput(alloc, many[0..], .{}, "{\"query\":\"emma\",\"limit\":2}");
+    const explicit = try searchOutput(alloc, many[0..], .{}, "{\"query\":\"shinbo\",\"limit\":2}");
     defer alloc.free(explicit);
     try std.testing.expect(std.mem.find(u8, explicit, "\"count\":2") != null);
     try std.testing.expect(std.mem.find(u8, explicit, "\"more_available\":true") != null);
 
-    const over_cap = try searchOutput(alloc, many[0..], .{}, "{\"query\":\"emma\",\"limit\":500}");
+    const over_cap = try searchOutput(alloc, many[0..], .{}, "{\"query\":\"shinbo\",\"limit\":500}");
     defer alloc.free(over_cap);
     try std.testing.expect(std.mem.find(u8, over_cap, "\"count\":12") != null);
     try std.testing.expect(std.mem.find(u8, over_cap, "more_available") == null);
@@ -669,7 +669,7 @@ test "native tool search omits a tool denied by a global deny rule" {
     const alloc = std.testing.allocator;
     var rules = [_]types.PermissionRule{
         .{
-            .permission = @constCast("emma_knowledge"),
+            .permission = @constCast("shinbo_knowledge"),
             .pattern = @constCast("*"),
             .action = .deny,
         },
@@ -679,26 +679,26 @@ test "native tool search omits a tool denied by a global deny rule" {
         alloc,
         test_tools[0..],
         .{ .rules = &rules },
-        "{\"query\":\"emma\"}",
+        "{\"query\":\"shinbo\"}",
     );
     defer alloc.free(body);
-    try std.testing.expect(std.mem.find(u8, body, "emma_knowledge") == null);
-    try std.testing.expect(std.mem.find(u8, body, "emma_threads") != null);
+    try std.testing.expect(std.mem.find(u8, body, "shinbo_knowledge") == null);
+    try std.testing.expect(std.mem.find(u8, body, "shinbo_threads") != null);
     try std.testing.expect(std.mem.find(u8, body, "\"count\":2") != null);
 }
 
 test "native tool search never returns an already advertised tool" {
     const alloc = std.testing.allocator;
     const tools = [_]tool_dispatch.Tool{
-        testTool("emma_threads", "Work with conversation threads.", .on_select),
-        testTool("read_file", "Read one emma file from disk.", .always),
-        testTool("emma_hidden", "Reachable by emma name only.", .never),
+        testTool("shinbo_threads", "Work with conversation threads.", .on_select),
+        testTool("read_file", "Read one shinbo file from disk.", .always),
+        testTool("shinbo_hidden", "Reachable by shinbo name only.", .never),
     };
 
-    const body = try searchOutput(alloc, tools[0..], .{}, "{\"query\":\"emma\"}");
+    const body = try searchOutput(alloc, tools[0..], .{}, "{\"query\":\"shinbo\"}");
     defer alloc.free(body);
     try std.testing.expect(std.mem.find(u8, body, "read_file") == null);
-    try std.testing.expect(std.mem.find(u8, body, "emma_hidden") == null);
+    try std.testing.expect(std.mem.find(u8, body, "shinbo_hidden") == null);
     try std.testing.expect(std.mem.find(u8, body, "\"count\":1") != null);
 }
 
@@ -718,21 +718,21 @@ test "native tool search with an empty query returns the whole searchable set in
 test "native tool search scores whole words, not substrings inside another word" {
     const alloc = std.testing.allocator;
     const tools = [_]tool_dispatch.Tool{
-        testTool("emma_threads", "Work with conversation threads.", .on_select),
+        testTool("shinbo_threads", "Work with conversation threads.", .on_select),
         testTool("read_file", "Return the contents of one file.", .on_select),
     };
 
     const body = try searchOutput(alloc, tools[0..], .{}, "{\"query\":\"read a file\"}");
     defer alloc.free(body);
     try std.testing.expect(std.mem.startsWith(u8, body, "{\"tools\":[{\"name\":\"read_file\""));
-    try std.testing.expect(std.mem.find(u8, body, "emma_threads") == null);
+    try std.testing.expect(std.mem.find(u8, body, "shinbo_threads") == null);
     try std.testing.expect(std.mem.find(u8, body, "\"count\":1") != null);
 }
 
 test "native tool search splits compound names into their parts" {
     const alloc = std.testing.allocator;
     const tools = [_]tool_dispatch.Tool{
-        testTool("emma_knowledge", "Save a page.", .on_select),
+        testTool("shinbo_knowledge", "Save a page.", .on_select),
         testTool("read_tool_result", "Page back through a stored payload.", .on_select),
     };
 
@@ -745,7 +745,7 @@ test "native tool search splits compound names into their parts" {
 test "native tool search finds a term that appears only in the parameter schema" {
     const alloc = std.testing.allocator;
     const tools = [_]tool_dispatch.Tool{
-        testTool("emma_knowledge", "Save a page into the knowledge base.", .on_select),
+        testTool("shinbo_knowledge", "Save a page into the knowledge base.", .on_select),
         testSchemaTool("terminal", "Run a shell command.", .on_select, .{
             .properties = &.{
                 .{
@@ -766,13 +766,13 @@ test "native tool search finds a term that appears only in the parameter schema"
 test "native tool search ranks a name hit above a description hit" {
     const alloc = std.testing.allocator;
     const tools = [_]tool_dispatch.Tool{
-        testTool("emma_archive", "Store older notes for later.", .on_select),
-        testTool("emma_notes", "Store scratch text.", .on_select),
+        testTool("shinbo_archive", "Store older notes for later.", .on_select),
+        testTool("shinbo_notes", "Store scratch text.", .on_select),
     };
 
     const body = try searchOutput(alloc, tools[0..], .{}, "{\"query\":\"notes\"}");
     defer alloc.free(body);
-    try std.testing.expect(std.mem.startsWith(u8, body, "{\"tools\":[{\"name\":\"emma_notes\""));
+    try std.testing.expect(std.mem.startsWith(u8, body, "{\"tools\":[{\"name\":\"shinbo_notes\""));
     try std.testing.expect(std.mem.find(u8, body, "\"count\":2") != null);
 }
 
@@ -781,13 +781,13 @@ test "native tool select reports the exact registry schema through the dynamic s
     var sink = SelectSink{ .alloc = alloc };
     defer sink.deinit();
 
-    const result = try selectResult(alloc, test_tools[0..], .{}, &sink, "emma_threads");
+    const result = try selectResult(alloc, test_tools[0..], .{}, &sink, "shinbo_threads");
     defer result.deinit(alloc);
     try std.testing.expect(result == .success);
-    try std.testing.expect(std.mem.find(u8, result.success, "emma_threads") != null);
+    try std.testing.expect(std.mem.find(u8, result.success, "shinbo_threads") != null);
     try std.testing.expect(std.mem.find(u8, result.success, "next model step") != null);
 
-    try std.testing.expectEqualStrings("emma_threads", sink.name orelse return error.TestExpectedEqual);
+    try std.testing.expectEqualStrings("shinbo_threads", sink.name orelse return error.TestExpectedEqual);
     const expected = try tool_specs.toolGatewaySchemaJson(alloc, test_tools[0]);
     defer alloc.free(expected);
     try std.testing.expectEqualStrings(expected, sink.schema_json orelse return error.TestExpectedEqual);
@@ -797,18 +797,18 @@ test "native tool select reports the exact registry schema through the dynamic s
 test "native tool select rejects unknown, already advertised and never advertised names" {
     const alloc = std.testing.allocator;
     const tools = [_]tool_dispatch.Tool{
-        testTool("emma_threads", "Work with conversation threads.", .on_select),
+        testTool("shinbo_threads", "Work with conversation threads.", .on_select),
         testTool("read_file", "Read one file from disk.", .always),
-        testTool("emma_hidden", "Reachable by name only.", .never),
+        testTool("shinbo_hidden", "Reachable by name only.", .never),
     };
 
-    const unknown = try selectResult(alloc, tools[0..], .{}, null, "emma_nope");
+    const unknown = try selectResult(alloc, tools[0..], .{}, null, "shinbo_nope");
     defer unknown.deinit(alloc);
-    try std.testing.expectEqualStrings("Tool not found: emma_nope", unknown.failure);
+    try std.testing.expectEqualStrings("Tool not found: shinbo_nope", unknown.failure);
 
-    const hidden = try selectResult(alloc, tools[0..], .{}, null, "emma_hidden");
+    const hidden = try selectResult(alloc, tools[0..], .{}, null, "shinbo_hidden");
     defer hidden.deinit(alloc);
-    try std.testing.expectEqualStrings("Tool not found: emma_hidden", hidden.failure);
+    try std.testing.expectEqualStrings("Tool not found: shinbo_hidden", hidden.failure);
 
     const advertised = try selectResult(alloc, tools[0..], .{}, null, "read_file");
     defer advertised.deinit(alloc);
@@ -823,14 +823,14 @@ test "native tool select rejects unknown, already advertised and never advertise
 
     var rules = [_]types.PermissionRule{
         .{
-            .permission = @constCast("emma_threads"),
+            .permission = @constCast("shinbo_threads"),
             .pattern = @constCast("*"),
             .action = .deny,
         },
     };
-    const denied = try selectResult(alloc, tools[0..], .{ .rules = &rules }, null, "emma_threads");
+    const denied = try selectResult(alloc, tools[0..], .{ .rules = &rules }, null, "shinbo_threads");
     defer denied.deinit(alloc);
-    try std.testing.expectEqualStrings("Tool not found: emma_threads", denied.failure);
+    try std.testing.expectEqualStrings("Tool not found: shinbo_threads", denied.failure);
 }
 
 test "native tool select does not require a preceding search" {
@@ -838,7 +838,7 @@ test "native tool select does not require a preceding search" {
     var sink = SelectSink{ .alloc = alloc };
     defer sink.deinit();
 
-    for ([_][]const u8{ "emma_screen", "emma_knowledge" }) |name| {
+    for ([_][]const u8{ "shinbo_screen", "shinbo_knowledge" }) |name| {
         const result = try selectResult(alloc, test_tools[0..], .{}, &sink, name);
         defer result.deinit(alloc);
         try std.testing.expect(result == .success);
@@ -849,7 +849,7 @@ test "native tool select does not require a preceding search" {
 test "native tool search names the advertised tools the query is already asking for" {
     const alloc = std.testing.allocator;
     const tools = [_]tool_dispatch.Tool{
-        testTool("emma_threads", "Work with conversation threads.", .on_select),
+        testTool("shinbo_threads", "Work with conversation threads.", .on_select),
         testTool("read_file", "Read one file from disk.", .always),
         testTool("grep_files", "Search file contents.", .always),
         testTool("terminal", "Run a shell command.", .always),
@@ -866,13 +866,13 @@ test "native tool search names the advertised tools the query is already asking 
     const unrelated = try searchOutput(alloc, tools[0..], .{}, "{\"query\":\"conversation threads\"}");
     defer alloc.free(unrelated);
     try std.testing.expect(std.mem.find(u8, unrelated, "already_advertised") == null);
-    try std.testing.expect(std.mem.find(u8, unrelated, "emma_threads") != null);
+    try std.testing.expect(std.mem.find(u8, unrelated, "shinbo_threads") != null);
 }
 
 test "native tool search does not name an advertised tool denied by a rule" {
     const alloc = std.testing.allocator;
     const tools = [_]tool_dispatch.Tool{
-        testTool("emma_threads", "Work with conversation threads.", .on_select),
+        testTool("shinbo_threads", "Work with conversation threads.", .on_select),
         testTool("terminal", "Run a shell command.", .always),
     };
     var rules = [_]types.PermissionRule{

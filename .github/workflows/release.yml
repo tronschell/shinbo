@@ -57,8 +57,8 @@ jobs:
         if: github.event_name == 'workflow_run' && steps.version.outputs.skip != 'true'
         uses: actions/download-artifact@v4
         with:
-          name: emma-release-candidate
-          path: ${{ runner.temp }}/emma-release-candidate
+          name: shinbo-release-candidate
+          path: ${{ runner.temp }}/shinbo-release-candidate
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
           run-id: ${{ github.event.workflow_run.id }}
@@ -67,8 +67,8 @@ jobs:
         if: github.event_name == 'workflow_run' && steps.version.outputs.skip != 'true'
         uses: actions/download-artifact@v4
         with:
-          name: emma-release-candidate-windows
-          path: ${{ runner.temp }}/emma-release-candidate-windows
+          name: shinbo-release-candidate-windows
+          path: ${{ runner.temp }}/shinbo-release-candidate-windows
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
           run-id: ${{ github.event.workflow_run.id }}
@@ -85,9 +85,9 @@ jobs:
           EXPECTED_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
-          CANDIDATE="$RUNNER_TEMP/emma-release-candidate"
-          ARCHIVE_NAME="Emma-darwin-arm64.zip"
-          CHECKSUM_NAME="Emma-darwin-arm64.zip.sha256"
+          CANDIDATE="$RUNNER_TEMP/shinbo-release-candidate"
+          ARCHIVE_NAME="Shinbo-darwin-arm64.zip"
+          CHECKSUM_NAME="Shinbo-darwin-arm64.zip.sha256"
           ARCHIVE="$CANDIDATE/$ARCHIVE_NAME"
           CHECKSUM="$CANDIDATE/$CHECKSUM_NAME"
           MANIFEST="$CANDIDATE/manifest.json"
@@ -105,8 +105,8 @@ jobs:
           (cd "$CANDIDATE" && shasum -a 256 -c "$CHECKSUM_NAME")
           mkdir -p desktop/release
           ditto -x -k "$ARCHIVE" desktop/release
-          APP="desktop/release/Emma-darwin-arm64/Emma.app"
-          test -x "$APP/Contents/MacOS/Emma"
+          APP="desktop/release/Shinbo-darwin-arm64/Shinbo.app"
+          test -x "$APP/Contents/MacOS/Shinbo"
           test "$(plutil -extract CFBundleShortVersionString raw -o - "$APP/Contents/Info.plist")" = "$EXPECTED_VERSION"
           test "$(plutil -extract CFBundleVersion raw -o - "$APP/Contents/Info.plist")" = "$EXPECTED_VERSION"
           test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist")" = 'com.tronschell.emma'
@@ -119,14 +119,14 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
-          CANDIDATE="$RUNNER_TEMP/emma-release-candidate-windows"
+          CANDIDATE="$RUNNER_TEMP/shinbo-release-candidate-windows"
           MANIFEST="$CANDIDATE/manifest.json"
           test -f "$MANIFEST"
           EXPECTED_VERSION="$(node -p 'require("./package.json").version')"
           test "$(jq -er '.source_sha | strings' "$MANIFEST")" = "$EXPECTED_SOURCE_SHA"
           test "$(jq -er '.version | strings' "$MANIFEST")" = "$EXPECTED_VERSION"
           test "$(jq -er '.workflow_run_id | tostring' "$MANIFEST")" = "$EXPECTED_RUN_ID"
-          SETUP="Emma-$EXPECTED_VERSION-win32-x64-Setup.exe"
+          SETUP="Shinbo-$EXPECTED_VERSION-win32-x64-Setup.exe"
           test -f "$CANDIDATE/$SETUP"
           test -f "$CANDIDATE/RELEASES"
           test -f "$CANDIDATE/SHA256SUMS"
@@ -134,12 +134,12 @@ jobs:
           NUPKG="$(basename "$(ls -1 "$CANDIDATE"/*.nupkg)")"
           test "$(awk 'NF == 3 { print $2; next } { exit 1 }' "$CANDIDATE/RELEASES")" = "$NUPKG"
           (cd "$CANDIDATE" && shasum -a 256 -c SHA256SUMS)
-          ASSETS="$RUNNER_TEMP/emma-windows-assets"
+          ASSETS="$RUNNER_TEMP/shinbo-windows-assets"
           mkdir -p "$ASSETS"
-          cp "$CANDIDATE/$SETUP" "$ASSETS/Emma-$TAG-win32-x64-Setup.exe"
+          cp "$CANDIDATE/$SETUP" "$ASSETS/Shinbo-$TAG-win32-x64-Setup.exe"
           cp "$CANDIDATE/$NUPKG" "$ASSETS/$NUPKG"
           cp "$CANDIDATE/RELEASES" "$ASSETS/RELEASES"
-          (cd "$ASSETS" && shasum -a 256 "Emma-$TAG-win32-x64-Setup.exe" "$NUPKG" RELEASES > "Emma-$TAG-windows-x64.sha256")
+          (cd "$ASSETS" && shasum -a 256 "Shinbo-$TAG-win32-x64-Setup.exe" "$NUPKG" RELEASES > "Shinbo-$TAG-windows-x64.sha256")
 
       - uses: actions/setup-node@v5
         if: steps.version.outputs.skip != 'true'
@@ -153,8 +153,8 @@ jobs:
         env:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
-          printf '[Download Emma for macOS (DMG)](https://github.com/%s/releases/download/%s/Emma-%s-darwin-arm64.dmg)\n\nOpen the disk image and drag Emma onto Applications. The ZIP asset supports automatic updates.\n\n' "$GITHUB_REPOSITORY" "$TAG" "$TAG" > "$RUNNER_TEMP/emma-release-notes.md"
-          GITHUB_SHA="$RELEASE_SHA" node desktop/scripts/release-notes.mjs >> "$RUNNER_TEMP/emma-release-notes.md"
+          printf '[Download Shinbo for macOS (DMG)](https://github.com/%s/releases/download/%s/Shinbo-%s-darwin-arm64.dmg)\n\nOpen the disk image and drag Shinbo onto Applications. The ZIP asset supports automatic updates.\n\n' "$GITHUB_REPOSITORY" "$TAG" "$TAG" > "$RUNNER_TEMP/shinbo-release-notes.md"
+          GITHUB_SHA="$RELEASE_SHA" node desktop/scripts/release-notes.mjs >> "$RUNNER_TEMP/shinbo-release-notes.md"
 
       - name: setup-zig v2.2.1
         if: steps.version.outputs.skip != 'true' && github.event_name == 'workflow_dispatch'
@@ -196,21 +196,21 @@ jobs:
         run: |
           umask 077
           KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
-          printf '%s' "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/emma-cert.p12"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/emma-signing.keychain-db"
-          security set-keychain-settings -lut 21600 "$RUNNER_TEMP/emma-signing.keychain-db"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/emma-signing.keychain-db"
-          security list-keychains -d user -s "$RUNNER_TEMP/emma-signing.keychain-db" login.keychain-db
-          security import "$RUNNER_TEMP/emma-cert.p12" -k "$RUNNER_TEMP/emma-signing.keychain-db" -P "$CERT_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/emma-signing.keychain-db"
-          security find-identity -v -p codesigning "$RUNNER_TEMP/emma-signing.keychain-db" | grep 'Developer ID Application:'
+          printf '%s' "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/shinbo-cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/shinbo-signing.keychain-db"
+          security set-keychain-settings -lut 21600 "$RUNNER_TEMP/shinbo-signing.keychain-db"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/shinbo-signing.keychain-db"
+          security list-keychains -d user -s "$RUNNER_TEMP/shinbo-signing.keychain-db" login.keychain-db
+          security import "$RUNNER_TEMP/shinbo-cert.p12" -k "$RUNNER_TEMP/shinbo-signing.keychain-db" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/shinbo-signing.keychain-db"
+          security find-identity -v -p codesigning "$RUNNER_TEMP/shinbo-signing.keychain-db" | grep 'Developer ID Application:'
 
       - name: sign and verify the app and all native helpers
         if: steps.version.outputs.skip != 'true'
         working-directory: desktop
         run: |
-          npx --no-install electron-osx-sign release/Emma-darwin-arm64/Emma.app
-          codesign --verify --deep --strict --verbose=2 release/Emma-darwin-arm64/Emma.app
+          npx --no-install electron-osx-sign release/Shinbo-darwin-arm64/Shinbo.app
+          codesign --verify --deep --strict --verbose=2 release/Shinbo-darwin-arm64/Shinbo.app
 
       - name: notarize, staple, and verify Gatekeeper acceptance
         if: steps.version.outputs.skip != 'true'
@@ -220,16 +220,16 @@ jobs:
           API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           umask 077
-          printf '%s' "$API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/emma-api-key.p8"
-          ditto -c -k --keepParent desktop/release/Emma-darwin-arm64/Emma.app "$RUNNER_TEMP/emma-notarize.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/emma-notarize.zip" --key "$RUNNER_TEMP/emma-api-key.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER" --wait --timeout 20m --output-format json > "$RUNNER_TEMP/emma-notary-result.json"
-          if ! jq -e '.status == "Accepted"' "$RUNNER_TEMP/emma-notary-result.json"; then
-            xcrun notarytool log "$(jq -r '.id' "$RUNNER_TEMP/emma-notary-result.json")" --key "$RUNNER_TEMP/emma-api-key.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER"
+          printf '%s' "$API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/shinbo-api-key.p8"
+          ditto -c -k --keepParent desktop/release/Shinbo-darwin-arm64/Shinbo.app "$RUNNER_TEMP/shinbo-notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/shinbo-notarize.zip" --key "$RUNNER_TEMP/shinbo-api-key.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER" --wait --timeout 20m --output-format json > "$RUNNER_TEMP/shinbo-notary-result.json"
+          if ! jq -e '.status == "Accepted"' "$RUNNER_TEMP/shinbo-notary-result.json"; then
+            xcrun notarytool log "$(jq -r '.id' "$RUNNER_TEMP/shinbo-notary-result.json")" --key "$RUNNER_TEMP/shinbo-api-key.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER"
             exit 1
           fi
-          xcrun stapler staple desktop/release/Emma-darwin-arm64/Emma.app
-          xcrun stapler validate desktop/release/Emma-darwin-arm64/Emma.app
-          spctl --assess --type execute --verbose=2 desktop/release/Emma-darwin-arm64/Emma.app
+          xcrun stapler staple desktop/release/Shinbo-darwin-arm64/Shinbo.app
+          xcrun stapler validate desktop/release/Shinbo-darwin-arm64/Shinbo.app
+          spctl --assess --type execute --verbose=2 desktop/release/Shinbo-darwin-arm64/Shinbo.app
 
       - name: build, sign, notarize and staple the disk image
         if: steps.version.outputs.skip != 'true'
@@ -240,13 +240,13 @@ jobs:
         run: |
           umask 077
           npm run dmg:mac
-          DMG="desktop/release/Emma-$TAG-darwin-arm64.dmg"
-          IDENTITY="$(security find-identity -v -p codesigning "$RUNNER_TEMP/emma-signing.keychain-db" | awk -F'"' '/Developer ID Application:/ { print $2; exit }')"
-          codesign --sign "$IDENTITY" --keychain "$RUNNER_TEMP/emma-signing.keychain-db" --timestamp --force "$DMG"
+          DMG="desktop/release/Shinbo-$TAG-darwin-arm64.dmg"
+          IDENTITY="$(security find-identity -v -p codesigning "$RUNNER_TEMP/shinbo-signing.keychain-db" | awk -F'"' '/Developer ID Application:/ { print $2; exit }')"
+          codesign --sign "$IDENTITY" --keychain "$RUNNER_TEMP/shinbo-signing.keychain-db" --timestamp --force "$DMG"
           codesign --verify --strict --verbose=2 "$DMG"
-          xcrun notarytool submit "$DMG" --key "$RUNNER_TEMP/emma-api-key.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER" --wait --timeout 20m --output-format json > "$RUNNER_TEMP/emma-dmg-notary-result.json"
-          if ! jq -e '.status == "Accepted"' "$RUNNER_TEMP/emma-dmg-notary-result.json"; then
-            xcrun notarytool log "$(jq -r '.id' "$RUNNER_TEMP/emma-dmg-notary-result.json")" --key "$RUNNER_TEMP/emma-api-key.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER"
+          xcrun notarytool submit "$DMG" --key "$RUNNER_TEMP/shinbo-api-key.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER" --wait --timeout 20m --output-format json > "$RUNNER_TEMP/shinbo-dmg-notary-result.json"
+          if ! jq -e '.status == "Accepted"' "$RUNNER_TEMP/shinbo-dmg-notary-result.json"; then
+            xcrun notarytool log "$(jq -r '.id' "$RUNNER_TEMP/shinbo-dmg-notary-result.json")" --key "$RUNNER_TEMP/shinbo-api-key.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER"
             exit 1
           fi
           xcrun stapler staple "$DMG"
@@ -258,20 +258,20 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
-          ditto -c -k --keepParent desktop/release/Emma-darwin-arm64/Emma.app "Emma-$TAG-darwin-arm64.zip"
-          cp "desktop/release/Emma-$TAG-darwin-arm64.dmg" "Emma-$TAG-darwin-arm64.dmg"
-          shasum -a 256 "Emma-$TAG-darwin-arm64.zip" > "Emma-$TAG-darwin-arm64.zip.sha256"
-          shasum -a 256 "Emma-$TAG-darwin-arm64.dmg" > "Emma-$TAG-darwin-arm64.dmg.sha256"
-          ASSETS=("Emma-$TAG-darwin-arm64.dmg" "Emma-$TAG-darwin-arm64.dmg.sha256" "Emma-$TAG-darwin-arm64.zip" "Emma-$TAG-darwin-arm64.zip.sha256")
-          if [ -d "$RUNNER_TEMP/emma-windows-assets" ]; then
-            for asset in "$RUNNER_TEMP/emma-windows-assets"/*; do ASSETS+=("$asset"); done
+          ditto -c -k --keepParent desktop/release/Shinbo-darwin-arm64/Shinbo.app "Shinbo-$TAG-darwin-arm64.zip"
+          cp "desktop/release/Shinbo-$TAG-darwin-arm64.dmg" "Shinbo-$TAG-darwin-arm64.dmg"
+          shasum -a 256 "Shinbo-$TAG-darwin-arm64.zip" > "Shinbo-$TAG-darwin-arm64.zip.sha256"
+          shasum -a 256 "Shinbo-$TAG-darwin-arm64.dmg" > "Shinbo-$TAG-darwin-arm64.dmg.sha256"
+          ASSETS=("Shinbo-$TAG-darwin-arm64.dmg" "Shinbo-$TAG-darwin-arm64.dmg.sha256" "Shinbo-$TAG-darwin-arm64.zip" "Shinbo-$TAG-darwin-arm64.zip.sha256")
+          if [ -d "$RUNNER_TEMP/shinbo-windows-assets" ]; then
+            for asset in "$RUNNER_TEMP/shinbo-windows-assets"/*; do ASSETS+=("$asset"); done
           fi
-          gh release create "$TAG" "${ASSETS[@]}" --repo "$GITHUB_REPOSITORY" --target "$RELEASE_SHA" --title "$TAG" --notes-file "$RUNNER_TEMP/emma-release-notes.md" --latest
+          gh release create "$TAG" "${ASSETS[@]}" --repo "$GITHUB_REPOSITORY" --target "$RELEASE_SHA" --title "$TAG" --notes-file "$RUNNER_TEMP/shinbo-release-notes.md" --latest
 
       - name: remove the temporary signing credentials
         if: always()
         run: |
-          rm -f "$RUNNER_TEMP/emma-cert.p12" "$RUNNER_TEMP/emma-api-key.p8" "$RUNNER_TEMP/emma-notarize.zip" "$RUNNER_TEMP/emma-notary-result.json" "$RUNNER_TEMP/emma-dmg-notary-result.json"
-          if [ -f "$RUNNER_TEMP/emma-signing.keychain-db" ]; then
-            security delete-keychain "$RUNNER_TEMP/emma-signing.keychain-db"
+          rm -f "$RUNNER_TEMP/shinbo-cert.p12" "$RUNNER_TEMP/shinbo-api-key.p8" "$RUNNER_TEMP/shinbo-notarize.zip" "$RUNNER_TEMP/shinbo-notary-result.json" "$RUNNER_TEMP/shinbo-dmg-notary-result.json"
+          if [ -f "$RUNNER_TEMP/shinbo-signing.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/shinbo-signing.keychain-db"
           fi

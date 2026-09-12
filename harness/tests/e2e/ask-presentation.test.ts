@@ -82,7 +82,7 @@ function gatewayEnv(
 ): Record<string, string | undefined> {
   return {
     HOME: home,
-    EMMA_PROVIDER_API_KEY: "fake-ask-presentation-key",
+    SHINBO_PROVIDER_API_KEY: "fake-ask-presentation-key",
     FX_DISABLE_KEYCHAIN: "1",
     FX_SKIP_ONBOARDING: "1",
     FX_MODEL: FAKE_GATEWAY_MODEL,

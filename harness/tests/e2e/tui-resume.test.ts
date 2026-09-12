@@ -101,7 +101,7 @@ function gatewayEnv(
 ) {
   return {
     HOME: home,
-    EMMA_PROVIDER_API_KEY: "fake-tui-resume-key",
+    SHINBO_PROVIDER_API_KEY: "fake-tui-resume-key",
     FX_GATEWAY_BASE_URL: gateway.baseUrl,
     FX_GATEWAY_CHAT_URL: gateway.chatUrl,
     FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -2213,7 +2213,7 @@ test.skipIf(!tmuxAvailable())(
         cwd: realpathSync(workspace),
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
           FX_RECORD: tapePath,
           NO_COLOR: "1",
@@ -4945,7 +4945,7 @@ test.skipIf(!tmuxAvailable())(
         env: {
           ...gatewayEnv(home, gateway),
           FX_AUTO_UPGRADE: "1",
-          EMMA_UPGRADE_BASE_URL: release.baseUrl,
+          SHINBO_UPGRADE_BASE_URL: release.baseUrl,
         },
         stderrPath,
         width: 110,
@@ -5057,7 +5057,7 @@ test.skipIf(!tmuxAvailable())(
         env: {
           ...gatewayEnv(home, gateway),
           FX_AUTO_UPGRADE: "1",
-          EMMA_UPGRADE_BASE_URL: release.baseUrl,
+          SHINBO_UPGRADE_BASE_URL: release.baseUrl,
         },
         stderrPath,
         width: 110,
@@ -5816,7 +5816,7 @@ test.skipIf(!tmuxAvailable())(
     mkdirSync(home);
     mkdirSync(workspace);
     const workspaceRoot = realpathSync(workspace);
-    // 12 saved sessions exercise a first page that is taller than the viewport.
+
     const savedMarkers = Array.from(
       { length: 12 },
       (_, index) => `SESSION_PICKER_ROW_${index}`,

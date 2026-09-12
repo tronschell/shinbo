@@ -316,7 +316,7 @@ function relationshipTestEnv(
   return Object.fromEntries(Object.entries({
     ...process.env,
     HOME: fixture.home,
-    EMMA_PROVIDER_API_KEY: key,
+    SHINBO_PROVIDER_API_KEY: key,
     FX_GATEWAY_BASE_URL: gateway.baseUrl,
     FX_GATEWAY_CHAT_URL: gateway.chatUrl,
     FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -377,7 +377,7 @@ async function launch(
     cwd: fixture.workspace,
     env: {
       HOME: fixture.home,
-      EMMA_PROVIDER_API_KEY: undefined,
+      SHINBO_PROVIDER_API_KEY: undefined,
       FX_AUTO_UPGRADE: "0",
       FX_TRACE_LOG: tracePath,
       FX_TRACE_SCOPES: tracePath ? "subagent" : undefined,
@@ -544,7 +544,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "isolated-surface-key",
+            SHINBO_PROVIDER_API_KEY: "isolated-surface-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -722,7 +722,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
       });
       const env = {
         HOME: fixture.home,
-        EMMA_PROVIDER_API_KEY: "terminal-safe-child-key",
+        SHINBO_PROVIDER_API_KEY: "terminal-safe-child-key",
         FX_GATEWAY_BASE_URL: gateway.baseUrl,
         FX_GATEWAY_CHAT_URL: gateway.chatUrl,
         FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -905,7 +905,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "default-yolo-child-key",
+            SHINBO_PROVIDER_API_KEY: "default-yolo-child-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -1020,7 +1020,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "child-file-authority-key",
+            SHINBO_PROVIDER_API_KEY: "child-file-authority-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -1125,7 +1125,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
       });
       const env = {
         HOME: fixture.home,
-        EMMA_PROVIDER_API_KEY: "child-ctrl-c-key",
+        SHINBO_PROVIDER_API_KEY: "child-ctrl-c-key",
         FX_GATEWAY_BASE_URL: gateway.baseUrl,
         FX_GATEWAY_CHAT_URL: gateway.chatUrl,
         FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -1261,7 +1261,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           try {
             stream.release("CTRL_C_CLEANUP");
           } catch {
-            // The cancelled response stream is already closed by the client.
+
           }
         }
         gateway.stop();
@@ -1315,7 +1315,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "ask-write-child-key",
+            SHINBO_PROVIDER_API_KEY: "ask-write-child-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -1395,7 +1395,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "auto-write-child-key",
+            SHINBO_PROVIDER_API_KEY: "auto-write-child-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -1471,7 +1471,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "auto-delete-child-key",
+            SHINBO_PROVIDER_API_KEY: "auto-delete-child-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -1578,7 +1578,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "always-write-child-key",
+            SHINBO_PROVIDER_API_KEY: "always-write-child-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -1741,7 +1741,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "command-stream-child-key",
+            SHINBO_PROVIDER_API_KEY: "command-stream-child-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -1839,7 +1839,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "fast-route-key",
+            SHINBO_PROVIDER_API_KEY: "fast-route-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -1980,7 +1980,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "same-active-turn-key",
+            SHINBO_PROVIDER_API_KEY: "same-active-turn-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -2119,7 +2119,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "checkpoint-two-fake-key",
+            SHINBO_PROVIDER_API_KEY: "checkpoint-two-fake-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -2513,7 +2513,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "approved-reparent-key",
+            SHINBO_PROVIDER_API_KEY: "approved-reparent-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -2652,7 +2652,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "direct-tty-reparent-key",
+            SHINBO_PROVIDER_API_KEY: "direct-tty-reparent-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -2977,7 +2977,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "checkpoint-three-restart-key",
+            SHINBO_PROVIDER_API_KEY: "checkpoint-three-restart-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3053,7 +3053,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "checkpoint-three-restart-key",
+            SHINBO_PROVIDER_API_KEY: "checkpoint-three-restart-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3197,7 +3197,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "checkpoint-three-direct-key",
+            SHINBO_PROVIDER_API_KEY: "checkpoint-three-direct-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3241,7 +3241,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "checkpoint-three-direct-key",
+            SHINBO_PROVIDER_API_KEY: "checkpoint-three-direct-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3400,7 +3400,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "external-owner-key",
+            SHINBO_PROVIDER_API_KEY: "external-owner-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3457,7 +3457,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "external-owner-key",
+            SHINBO_PROVIDER_API_KEY: "external-owner-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3493,7 +3493,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "external-owner-key",
+            SHINBO_PROVIDER_API_KEY: "external-owner-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3665,7 +3665,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           try {
             directStream.release("CLEANUP");
           } catch {
-            // The client may already have closed the response stream.
+
           }
         }
         await direct?.kill();
@@ -3753,7 +3753,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "checkpoint-two-approval-key",
+            SHINBO_PROVIDER_API_KEY: "checkpoint-two-approval-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -4251,7 +4251,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "child-local-quit",
+            SHINBO_PROVIDER_API_KEY: "child-local-quit",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -4327,7 +4327,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "child-local-models",
+            SHINBO_PROVIDER_API_KEY: "child-local-models",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_E2E_GATEWAY_MODELS_URL: `${gateway.baseUrl}/coding-agent/v1/models`,
@@ -4461,7 +4461,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "child-pointer-selection",
+            SHINBO_PROVIDER_API_KEY: "child-pointer-selection",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -4551,7 +4551,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "child-local-skills",
+            SHINBO_PROVIDER_API_KEY: "child-local-skills",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -4681,7 +4681,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "child-narrow-config",
+            SHINBO_PROVIDER_API_KEY: "child-narrow-config",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -4783,7 +4783,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
       );
       const env = {
         HOME: fixture.home,
-        EMMA_PROVIDER_API_KEY: "duration-configuration-key",
+        SHINBO_PROVIDER_API_KEY: "duration-configuration-key",
         FX_GATEWAY_BASE_URL: gateway.baseUrl,
         FX_GATEWAY_CHAT_URL: gateway.chatUrl,
         FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -4963,7 +4963,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
       });
       const env = {
         HOME: fixture.home,
-        EMMA_PROVIDER_API_KEY: "configure-contention-key",
+        SHINBO_PROVIDER_API_KEY: "configure-contention-key",
         FX_GATEWAY_BASE_URL: gateway.baseUrl,
         FX_GATEWAY_CHAT_URL: gateway.chatUrl,
         FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -5186,7 +5186,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "child-position",
+            SHINBO_PROVIDER_API_KEY: "child-position",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -5305,7 +5305,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "child-resize",
+            SHINBO_PROVIDER_API_KEY: "child-resize",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -5324,9 +5324,9 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
         await active.waitForComposer(TIMEOUT);
         await active.sendText("Fill the main transcript for resize isolation.");
         await active.waitForText("MAIN_SCROLLBACK_160", TIMEOUT);
-        // Finished rows settle into native scrollback a frame after the final
-        // marker paints, so wait for the settled capture instead of sampling
-        // the instant the marker appears.
+
+
+
         const mainScrollbackBefore = await waitForFullScrollback(
           active,
           (scrollback) =>
@@ -5408,7 +5408,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "child-draft",
+            SHINBO_PROVIDER_API_KEY: "child-draft",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -5585,7 +5585,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "child-visible",
+            SHINBO_PROVIDER_API_KEY: "child-visible",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -5728,7 +5728,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "checkpoint-two-simultaneous-key",
+            SHINBO_PROVIDER_API_KEY: "checkpoint-two-simultaneous-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -5962,7 +5962,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "checkpoint-three-assembled-key",
+            SHINBO_PROVIDER_API_KEY: "checkpoint-three-assembled-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -6075,7 +6075,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "checkpoint-three-cancel-key",
+            SHINBO_PROVIDER_API_KEY: "checkpoint-three-cancel-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -6232,7 +6232,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "cancel-blocked-approval-key",
+            SHINBO_PROVIDER_API_KEY: "cancel-blocked-approval-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -6325,7 +6325,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "cancel-blocked-approval-key",
+            SHINBO_PROVIDER_API_KEY: "cancel-blocked-approval-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -6434,7 +6434,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "selected-child-route-key",
+            SHINBO_PROVIDER_API_KEY: "selected-child-route-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -6543,7 +6543,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "manager-fake-key",
+            SHINBO_PROVIDER_API_KEY: "manager-fake-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -6898,7 +6898,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "manager-bounded-tree-key",
+            SHINBO_PROVIDER_API_KEY: "manager-bounded-tree-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -6958,7 +6958,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
       );
       const env = {
         HOME: fixture.home,
-        EMMA_PROVIDER_API_KEY: "zero-turn-resume-key",
+        SHINBO_PROVIDER_API_KEY: "zero-turn-resume-key",
         FX_GATEWAY_BASE_URL: gateway.baseUrl,
         FX_GATEWAY_CHAT_URL: gateway.chatUrl,
         FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -7087,7 +7087,7 @@ describe.skipIf(!tmuxAvailable())("tui: Agents & processes", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "nested-send-key",
+            SHINBO_PROVIDER_API_KEY: "nested-send-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,

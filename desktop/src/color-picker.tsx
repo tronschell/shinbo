@@ -1,8 +1,8 @@
 import { hexHsv, hsvHex } from "../shared/color";
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
-/* The colour well: a swatch that opens Emma's own picker rather than Chromium's
-   grey OS panel. Square, ruled, mono — the same grid as everything else. */
+
+
 
 const clamp = (value: number) => Math.min(1, Math.max(0, value));
 

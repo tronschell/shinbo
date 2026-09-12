@@ -36,7 +36,7 @@ export function PluginsView({ busy, tools, onTools }: { busy: boolean; tools: To
 
   useEffect(() => {
     let active = true;
-    void window.emma.pluginCatalog()
+    void window.shinbo.pluginCatalog()
       .then((found) => { if (active) setCatalog(found); })
       .catch((reason: unknown) => { if (active) setError(reasonText(reason)); })
       .finally(() => { if (active) setLoading(false); });
@@ -93,7 +93,7 @@ export function PluginsView({ busy, tools, onTools }: { busy: boolean; tools: To
     {!loading && !catalog.marketplaces.length && <div className="content-empty">
       <Mark />
       <h2>No marketplaces yet</h2>
-      <p>A marketplace is a catalog of plugins: a GitHub repo, a Git URL, or a folder on this computer. Emma files the ones she writes here too.</p>
+      <p>A marketplace is a catalog of plugins: a GitHub repo, a Git URL, or a folder on this computer. Shinbo files the ones she writes here too.</p>
       <button type="button" className="plugin-add" disabled={working} onClick={() => setAdding(true)}>Add plugin marketplace</button>
     </div>}
 
@@ -105,8 +105,8 @@ export function PluginsView({ busy, tools, onTools }: { busy: boolean; tools: To
           <span>{marketplace.local ? "Folder on this computer" : marketplace.origin}{marketplace.ref ? ` · ${marketplace.ref}` : ""}{marketplace.sparse.length ? ` · ${marketplace.sparse.join(", ")}` : ""}</span>
           <h3>{marketplace.displayName}</h3>
         </div>
-        {!marketplace.local && <button type="button" disabled={working} onClick={() => void run(marketplace.id, () => window.emma.refreshMarketplace(marketplace.id))}>{pending === marketplace.id ? "Updating…" : "Update"}</button>}
-        <button type="button" className="artifact-danger" title={`Remove ${marketplace.displayName}`} aria-label={`Remove ${marketplace.displayName}`} disabled={working} onClick={() => void run(marketplace.id, () => window.emma.removeMarketplace(marketplace.id))}><TrashIcon /></button>
+        {!marketplace.local && <button type="button" disabled={working} onClick={() => void run(marketplace.id, () => window.shinbo.refreshMarketplace(marketplace.id))}>{pending === marketplace.id ? "Updating…" : "Update"}</button>}
+        <button type="button" className="artifact-danger" title={`Remove ${marketplace.displayName}`} aria-label={`Remove ${marketplace.displayName}`} disabled={working} onClick={() => void run(marketplace.id, () => window.shinbo.removeMarketplace(marketplace.id))}><TrashIcon /></button>
       </header>
       {marketplace.error && <p className="dialog-error">{marketplace.error}</p>}
       {!marketplace.error && !marketplace.plugins.length && <p className="artifact-missing">This marketplace lists no plugins.</p>}
@@ -118,8 +118,8 @@ export function PluginsView({ busy, tools, onTools }: { busy: boolean; tools: To
         hooks={installedById.get(`${marketplace.id}/${plugin.name}`)?.hooks ?? []}
         busy={working}
         pending={pending === `${marketplace.id}/${plugin.name}`}
-        install={() => void run(`${marketplace.id}/${plugin.name}`, () => window.emma.installPlugin({ marketplace: marketplace.id, plugin: plugin.name }))}
-        uninstall={() => void run(`${marketplace.id}/${plugin.name}`, () => window.emma.uninstallPlugin(`${marketplace.id}/${plugin.name}`))}
+        install={() => void run(`${marketplace.id}/${plugin.name}`, () => window.shinbo.installPlugin({ marketplace: marketplace.id, plugin: plugin.name }))}
+        uninstall={() => void run(`${marketplace.id}/${plugin.name}`, () => window.shinbo.uninstallPlugin(`${marketplace.id}/${plugin.name}`))}
         open={() => setShowing({ marketplace, plugin })}
       />)}</div>
     </section>)}
@@ -134,9 +134,9 @@ export function PluginsView({ busy, tools, onTools }: { busy: boolean; tools: To
           {plugin.hooks.length > 0 && <button type="button" className={`plugin-hooks-review ${untrustedHooks(plugin.hooks) ? "on" : ""}`} disabled={working} onClick={() => setReviewing(plugin.id)}>
             {plugin.hooks.length} {plugin.hooks.length === 1 ? "hook" : "hooks"}{untrustedHooks(plugin.hooks) ? " · review" : ""}
           </button>}
-          <button type="button" disabled={working} onClick={() => void run(plugin.id, () => window.emma.uninstallPlugin(plugin.id))}>Remove</button>
+          <button type="button" disabled={working} onClick={() => void run(plugin.id, () => window.shinbo.uninstallPlugin(plugin.id))}>Remove</button>
         </dd>
-        {plugin.apps.map((hosted) => <small key={hosted.id} className="plugin-hosted">Carries a ChatGPT-hosted connection Emma cannot run · {hosted.id}</small>)}
+        {plugin.apps.map((hosted) => <small key={hosted.id} className="plugin-hosted">Carries a ChatGPT-hosted connection Shinbo cannot run · {hosted.id}</small>)}
       </div>)}</dl>
     </section>}
 
@@ -146,19 +146,19 @@ export function PluginsView({ busy, tools, onTools }: { busy: boolean; tools: To
       installed={installedById.has(`${showing.marketplace.id}/${showing.plugin.name}`)}
       busy={working}
       close={() => setShowing(null)}
-      install={() => void run(`${showing.marketplace.id}/${showing.plugin.name}`, () => window.emma.installPlugin({ marketplace: showing.marketplace.id, plugin: showing.plugin.name }))}
-      uninstall={() => void run(`${showing.marketplace.id}/${showing.plugin.name}`, () => window.emma.uninstallPlugin(`${showing.marketplace.id}/${showing.plugin.name}`))}
+      install={() => void run(`${showing.marketplace.id}/${showing.plugin.name}`, () => window.shinbo.installPlugin({ marketplace: showing.marketplace.id, plugin: showing.plugin.name }))}
+      uninstall={() => void run(`${showing.marketplace.id}/${showing.plugin.name}`, () => window.shinbo.uninstallPlugin(`${showing.marketplace.id}/${showing.plugin.name}`))}
     />}
 
     {review && <PluginHooksDialog
       plugin={review}
       busy={working}
       close={() => setReviewing("")}
-      trust={(trusted) => void run(review.id, () => window.emma.trustPluginHooks({ id: review.id, trusted }))}
+      trust={(trusted) => void run(review.id, () => window.shinbo.trustPluginHooks({ id: review.id, trusted }))}
     />}
 
     {adding && <AddMarketplaceDialog busy={working} close={() => setAdding(false)} add={async (value) => {
-      setCatalog(await window.emma.addMarketplace(value));
+      setCatalog(await window.shinbo.addMarketplace(value));
       setAdding(false);
     }} />}</>}
   </section>;
@@ -191,14 +191,14 @@ function UsagePanel({ kind, busy, tools, onTools }: { kind: "skills" | "servers"
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = useCallback(() => window.emma.capabilityUsage()
+  const load = useCallback(() => window.shinbo.capabilityUsage()
     .then((usage) => setRows(kind === "skills" ? usage.skills : usage.servers))
     .catch((reason: unknown) => setError(reasonText(reason)))
     .finally(() => setLoading(false)), [kind]);
 
   useEffect(() => {
     void load();
-    return window.emma.onToolsChanged(() => void load());
+    return window.shinbo.onToolsChanged(() => void load());
   }, [load]);
 
   const days = recentDays(USAGE_WINDOW_DAYS);
@@ -329,7 +329,7 @@ function PluginHooksDialog({ plugin, busy, close, trust }: {
             <strong>{hook.event}</strong>
             {hook.matcher && <em>{hook.matcher}</em>}
             {hook.timeout > 0 && <em>{hook.timeout}s</em>}
-            <small>{!hookRuns(hook.event) ? "Emma has no such moment" : hook.trusted ? "Trusted" : "Not trusted"}</small>
+            <small>{!hookRuns(hook.event) ? "Shinbo has no such moment" : hook.trusted ? "Trusted" : "Not trusted"}</small>
           </div>
           <code>{hook.command}</code>
           {hook.statusMessage && <p>{hook.statusMessage}</p>}
@@ -359,7 +359,7 @@ function PluginDetailDialog({ plugin, marketplace, installed, busy, close, insta
   useEffect(() => { if (!dialog.current?.open) dialog.current?.showModal(); }, []);
   useEffect(() => {
     let active = true;
-    void window.emma.pluginDetail({ marketplace: marketplace.id, plugin: plugin.name })
+    void window.shinbo.pluginDetail({ marketplace: marketplace.id, plugin: plugin.name })
       .then((found) => { if (active) setDetail(found); })
       .catch(() => { if (active) setDetail(null); });
     return () => { active = false; };
@@ -388,7 +388,7 @@ function PluginDetailDialog({ plugin, marketplace, installed, busy, close, insta
           {!!face?.capabilities.length && <div><dt>Capabilities</dt><dd>{face.capabilities.join(", ")}</dd></div>}
           {!!face?.defaultPrompt.length && <div><dt>Prompts</dt><dd><ul className="plugin-prompts">{face.defaultPrompt.map((prompt) => <li key={prompt}>{prompt}</li>)}</ul></dd></div>}
           {!!links.length && <div><dt>Links</dt><dd className="plugin-links">{links.map(([label, url]) => <a key={label} href={url} target="_blank" rel="noreferrer">{label} ↗</a>)}</dd></div>}
-          {!!detail?.apps.length && <div><dt>Hosted apps</dt><dd>{detail.apps.map((hosted) => <span key={hosted.id} className="plugin-hosted">Carries a ChatGPT-hosted app Emma cannot run · {hosted.id}</span>)}</dd></div>}
+          {!!detail?.apps.length && <div><dt>Hosted apps</dt><dd>{detail.apps.map((hosted) => <span key={hosted.id} className="plugin-hosted">Carries a ChatGPT-hosted app Shinbo cannot run · {hosted.id}</span>)}</dd></div>}
         </dl>
       </div>
       <div className="plugin-dialog-actions">

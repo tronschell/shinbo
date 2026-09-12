@@ -5,11 +5,11 @@ Four seams, no in-process JavaScript SDK:
 | Seam | What it is |
 | --- | --- |
 | [Imports](#imports) | Skills and MCP servers already set up for another agent, referenced where they sit |
-| [Emma's own capabilities](#emmas-own-capabilities) | A skill, a tool, or an MCP server Emma writes for herself, live in the same turn |
+| [Shinbo's own capabilities](#shinbos-own-capabilities) | A skill, a tool, or an MCP server Shinbo writes for herself, live in the same turn |
 | [Plugins](#plugins) | The ChatGPT and Codex plugin format — manifest, skills, MCP config, hooks — from a marketplace |
 | [UI plugins](#ui-plugins) | One bounded CSS file that restyles the app |
 
-A fifth seam is Emma writing interface rather than capability: the `component`
+A fifth seam is Shinbo writing interface rather than capability: the `component`
 tool, whose widgets land in the context bar. See [components.md](components.md).
 
 ## Imports
@@ -52,18 +52,18 @@ Ceilings ([`desktop/main/capabilities.ts`](../desktop/main/capabilities.ts)):
 16 skill roots, 128 skills per root, 64 KiB per `SKILL.md`, 16 MCP files, 32
 servers, 128 KiB manifest, 256 KiB config.
 
-## Emma's own capabilities
+## Shinbo's own capabilities
 
-Emma owns four places under `<userData>`, and writes only there:
+Shinbo owns four places under `<userData>`, and writes only there:
 
 | Path | Written by | What it holds |
 | --- | --- | --- |
 | `skills/<slug>/SKILL.md` | `write_skill` | A durable lesson |
-| `mcp.json` | `install_mcp` | The one MCP config Emma owns |
+| `mcp.json` | `install_mcp` | The one MCP config Shinbo owns |
 | `tools/<slug>/run` + `about.txt` | `write_tool` | An executable script of her own |
 | `components/<id>/module.js` + `meta.json` | `component` | A widget in the context bar |
 
-Both capability files are synthesized into the manifest as an implicit `emma`
+Both capability files are synthesized into the manifest as an implicit `shinbo`
 source, so they need no import step. Enumeration re-reads them on every call and
 writing either calls `toolsChanged()`, which drops the harness's sessions — a
 skill or server installed mid-turn is usable on the next turn with nothing to
@@ -88,11 +88,11 @@ in `full` all six are auto, and in `auto` the `ask` rows are used and those call
 go to the verifier model.
 
 `component` is auto for the same reason `write_skill` is: it writes a file into
-Emma's own folder. The code it writes reaches the network only through
-`emma:component-fetch`, which is public https, and only with the variables the
+Shinbo's own folder. The code it writes reaches the network only through
+`shinbo:component-fetch`, which is public https, and only with the variables the
 component declared — so there is no arbitrary-code gate to place on it.
 
-The two halves of a tool are gated apart on purpose: writing a file into Emma's
+The two halves of a tool are gated apart on purpose: writing a file into Shinbo's
 own folder never asks, while running one is arbitrary code on the user's computer and
 sits exactly where `cli` does. `run_tool` runs the script with the connected
 folder as its working directory, hands the call's `input` as its single
@@ -107,8 +107,8 @@ program and the harness launching it.
 
 ### Bundled skills
 
-Emma ships her own skills in [`desktop/skills/`](../desktop/skills): `artifact`,
-`building-emma`, `installing-capabilities`, `meta-harness`,
+Shinbo ships her own skills in [`desktop/skills/`](../desktop/skills): `artifact`,
+`building-shinbo`, `installing-capabilities`, `meta-harness`,
 `scheduled-tasks`, `threads`. Each launch rewrites them into `<userData>/skills/`
 and the harness profile's `.fx/skills/`, so they are present before any import
 and always match the running build. A bundled slug is app-owned: a `write_skill`
@@ -123,7 +123,7 @@ first non-heading line, since the harness's catalog is description-driven.
 
 ## Plugins
 
-Emma reads [OpenAI's plugin format](https://developers.openai.com/plugins/build/plugins)
+Shinbo reads [OpenAI's plugin format](https://developers.openai.com/plugins/build/plugins)
 as published. A plugin is a folder:
 
 ```
@@ -145,10 +145,10 @@ manifest cannot point at `../../Library`.
 
 ### `interface`
 
-Emma reads `displayName`, `shortDescription`, `longDescription`,
+Shinbo reads `displayName`, `shortDescription`, `longDescription`,
 `developerName`, `category`, `capabilities`, `websiteURL`, `privacyPolicyURL`,
 `termsOfServiceURL`, `defaultPrompt`, `brandColor`, `composerIcon`, `logo`, and
-`screenshots`. `logoDark` is parsed past — Emma has one dark palette.
+`screenshots`. `logoDark` is parsed past — Shinbo has one dark palette.
 
 The three URLs must be `https:`. `brandColor` must be `#rgb` or `#rrggbb`.
 `defaultPrompt` caps at 3 entries of 128 characters, `capabilities` at 8,
@@ -173,8 +173,8 @@ A map of ChatGPT-hosted connections, not of servers:
 
 An `id` names a connection inside a ChatGPT account served by ChatGPT's own
 remote MCP endpoint — no command, no URL, no credential, so there is nothing for
-Emma's remote transport to dial. So Emma records each `{name, id, category}` and
-states it where the plugin is shown: *"Carries a ChatGPT-hosted connection Emma
+Shinbo's remote transport to dial. So Shinbo records each `{name, id, category}` and
+states it where the plugin is shown: *"Carries a ChatGPT-hosted connection Shinbo
 cannot run"*.
 Nothing reaches `mcpFiles`, and a plugin whose only content is an `.app.json`
 still installs.
@@ -196,12 +196,12 @@ Four events run:
 | `SessionEnd` | Sessions are dropped: a capability change, a settings change, quit. `matcher` sees `other` |
 
 Every payload also carries `session_id`, `cwd`, `hook_event_name`, `model`,
-`permission_mode`, and `transcript_path: null` — Emma keeps no transcript file.
-`stop_reason` is Emma's addition; the format defines none.
+`permission_mode`, and `transcript_path: null` — Shinbo keeps no transcript file.
+`stop_reason` is Shinbo's addition; the format defines none.
 
 `PreToolUse`, `PostToolUse`, `PermissionRequest`, `PreCompact`, `PostCompact`,
 `SubagentStart`, and `SubagentStop` are parsed and shown in the review dialog as
-**Emma has no such moment**, and never run. The tool loop is the harness, which
+**Shinbo has no such moment**, and never run. The tool loop is the harness, which
 dispatches Zig function pointers in-process with no per-call child to wrap;
 compaction and subagents are the harness's too. Hook *output* is captured for
 the error line only — no `additionalContext`, no decision read back.
@@ -219,7 +219,7 @@ marketplace, forgets its hashes.
 `cmd.exe /c <command>` on Windows), the connected folder as working directory,
 the payload as JSON on stdin, and a hand-built environment: `PATH`,
 `HOME`, `PLUGIN_ROOT`, `PLUGIN_DATA`, and `CLAUDE_PLUGIN_ROOT` /
-`CLAUDE_PLUGIN_DATA` aliases. Emma's own environment, provider keys included, is
+`CLAUDE_PLUGIN_DATA` aliases. Shinbo's own environment, provider keys included, is
 not inherited. The two paths are passed as variables rather than substituted
 into the command text, so a plugin folder named `store; rm -rf ~` cannot become
 a second command. `PLUGIN_DATA` is
@@ -247,7 +247,7 @@ A JSON catalog at `.agents/plugins/marketplace.json`,
 | Git ref | A branch or tag to pin. Overrides `@ref`. Git sources only |
 | Sparse paths | One per line, checked out with `git sparse-checkout`. Git sources only |
 
-The first time the Plugins page opens, Emma adds `openai/plugins` — OpenAI's own
+The first time the Plugins page opens, Shinbo adds `openai/plugins` — OpenAI's own
 catalog, filed as **Codex official**. It is an ordinary Git marketplace from
 then on. The seeding is marked by `<userData>/marketplaces/.default-added`,
 written only once the clone lands, so removing it is final and a failed clone is
@@ -256,7 +256,7 @@ retried next time.
 Git marketplaces clone into `<userData>/marketplaces/<name>/` shallow, blobless,
 with `core.symlinks=false`, `GIT_TERMINAL_PROMPT=0`, `GIT_ASKPASS=`, and
 `ssh -oBatchMode=yes` — a repo wanting credentials fails fast rather than
-hanging on a prompt Emma cannot answer. The clone lands in staging and is only
+hanging on a prompt Shinbo cannot answer. The clone lands in staging and is only
 renamed into place once its marketplace file parses and its name is free. Local
 marketplaces are read where they sit; removing one never deletes the folder.
 
@@ -280,12 +280,12 @@ field and the spec is passed after a `--` terminator.
 Install runs `npm pack <spec> --ignore-scripts --pack-destination <dir>`. `pack`
 downloads and never executes, and `--ignore-scripts` holds even if the tarball
 declares `preinstall`. The tarball is gunzipped in-process and piped to the
-system `tar`, so Emma counts decompressed bytes as they go and aborts past
+system `tar`, so Shinbo counts decompressed bytes as they go and aborts past
 256 MB. `tar` reads from stdin, refuses `..` members, and strips leading `/`.
 The `package/` directory is the plugin root, `realpath`-checked like every other
-path. Emma runs `npm` but never installs it; a computer without it gets a sentence,
+path. Shinbo runs `npm` but never installs it; a computer without it gets a sentence,
 not an `ENOENT`. Registry auth is whatever `npm` itself is configured with —
-Emma reads no token and writes no `.npmrc`. The checkout lands in
+Shinbo reads no token and writes no `.npmrc`. The checkout lands in
 `<userData>/marketplaces/.remote/<marketplace>/<plugin>/`.
 
 ### The Plugins page
@@ -295,7 +295,7 @@ category, and keywords; chips filter by marketplace and category, both derived
 from the catalogs on disk. A card shows icon, category, name, one line, and
 keywords; the name opens a detail dialog that fetches the long description,
 screenshots, capabilities, starter prompts, links, and hosted connections
-through `emma:plugin-detail` on open.
+through `shinbo:plugin-detail` on open.
 
 Installed plugins are recorded in `<userData>/installed-plugins.json`, **not**
 in `imports.json`, which is rewritten wholesale from the Settings selection and
@@ -303,32 +303,32 @@ would delete them. `loadManifest` appends each as a `plugin:<marketplace>/<name>
 source, so its skills reach the harness mirror and its MCP servers reach
 `session/new` by exactly the path an imported source takes. Installing calls
 `toolsChanged()`, so a plugin is live on the next turn. A plugin skill whose
-name collides with one of Emma's own is skipped rather than overwriting it.
+name collides with one of Shinbo's own is skipped rather than overwriting it.
 
 Ceilings: 32 marketplaces, 128 installed plugins, 64 skills per plugin, 16
 hosted app ids, 512 KiB per JSON file, 512 KiB per icon, 2 MiB per screenshot,
 4 MiB of card icons per catalog read, 256 MB unpacked per npm package, 120s
 clone timeout, 120s for `npm pack`, 30s for other Git calls.
 
-### Plugins Emma writes
+### Plugins Shinbo writes
 
 `write_plugin` takes a name, a description, an optional category, and a list of
 skills, and writes a real plugin folder under
-`<userData>/marketplaces/emma/plugins/<name>/`: `.codex-plugin/plugin.json` plus
+`<userData>/marketplaces/shinbo/plugins/<name>/`: `.codex-plugin/plugin.json` plus
 one `skills/<name>/SKILL.md` each. Frontmatter is generated unless the
-instructions already begin with `---`. It registers `emma` as a local
-marketplace named "Written by Emma", adds the plugin to its catalog, and
+instructions already begin with `---`. It registers `shinbo` as a local
+marketplace named "Written by Shinbo", adds the plugin to its catalog, and
 installs it — so the folder is portable to any other agent that reads the
 format.
 
 ## UI plugins
 
 `<userData>/plugins/<id>/plugin.json` (normally
-`%APPDATA%/Emma/plugins/<id>/plugin.json` on Windows or
-`~/Library/Application Support/Emma/plugins/<id>/plugin.json` on macOS):
+`%APPDATA%/Shinbo/plugins/<id>/plugin.json` on Windows or
+`~/Library/Application Support/Shinbo/plugins/<id>/plugin.json` on macOS):
 
 ```json
-{ "id": "my-emma-ui", "name": "My Emma UI", "version": "1.0.0", "uiStylesheet": "theme.css" }
+{ "id": "my-shinbo-ui", "name": "My Shinbo UI", "version": "1.0.0", "uiStylesheet": "theme.css" }
 ```
 
 The directory name must equal `id`, which is lowercase-hyphen and at most 64

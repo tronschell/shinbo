@@ -41,6 +41,7 @@ export const DEFAULT_VAULT_FOLDER = "knowledge-base";
 export const ATTACHMENT_FOLDER = "attachments";
 
 export const MAX_NOTE_BYTES = 256 * 1024;
+export const MAX_NOTE_FILE_BYTES = MAX_NOTE_BYTES + 16 * 1024;
 export const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 export const MAX_TAGS = 8;
 export const MAX_TAG_BYTES = 48;
@@ -111,4 +112,35 @@ export function keepKindLabel(kind: KeepKind): string {
   if (kind === "selection") return "Highlight";
   if (kind === "page") return "Page";
   return "Note";
+}
+
+export type Frontmatter = Record<string, string | string[]>;
+
+export const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+
+function scalar(raw: string): string | string[] {
+  const value = raw.trim();
+  if (value.startsWith("[")) {
+    return value.slice(1, value.endsWith("]") ? -1 : undefined).split(",").map((item) => item.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+  }
+  if (value.startsWith('"')) {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return typeof parsed === "string" ? parsed : value;
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
+export function parseFrontmatter(text: string): Frontmatter | null {
+  const match = FRONTMATTER.exec(text);
+  if (!match) return null;
+  const fields: Frontmatter = {};
+  for (const line of match[1].split(/\r?\n/)) {
+    const pair = /^([A-Za-z][A-Za-z0-9_-]*):[ \t]*(.*)$/.exec(line);
+    if (pair) fields[pair[1]] = scalar(pair[2]);
+  }
+  return fields;
 }

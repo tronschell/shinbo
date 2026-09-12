@@ -1,23 +1,23 @@
 ---
 name: sibling-repos
-description: Emma ships as three repositories — emma (the desktop app), emma-mobile (the iPhone client), and emma-website (the public site, docs, and roadmap). Use whenever a change in one of them needs a matching change in another, or when asked to update the site, the docs, the roadmap, or the phone client after a feature lands.
+description: Shinbo ships as three repositories — shinbo (the desktop app), shinbo-mobile (the iPhone client), and shinbo-website (the public site, docs, and roadmap). Use whenever a change in one of them needs a matching change in another, or when asked to update the site, the docs, the roadmap, or the phone client after a feature lands.
 ---
 
 # The three repositories
 
 | Repo | Path | What it is |
 | --- | --- | --- |
-| `emma` | `~/Documents/emma` | The macOS desktop app. Electron + Rust + the Zig harness. Source of truth for behaviour. |
-| `emma-mobile` | `~/Documents/emma-mobile` | Expo/React Native iPhone client. A remote for the Mac over Wi-Fi or tailnet, and a local agent of its own. |
-| `emma-website` | `~/Documents/emma-website` | Vite + React marketing site, docs, and roadmap. What the world sees. |
+| `shinbo` | `~/Documents/shinbo` | The macOS desktop app. Electron + Rust + the Zig harness. Source of truth for behaviour. |
+| `shinbo-mobile` | `~/Documents/shinbo-mobile` | Expo/React Native iPhone client. A remote for the Mac over Wi-Fi or tailnet, and a local agent of its own. |
+| `shinbo-website` | `~/Documents/shinbo-website` | Vite + React marketing site, docs, and roadmap. What the world sees. |
 
-`emma` leads. The other two follow it; neither drives a desktop change on its own.
+`shinbo` leads. The other two follow it; neither drives a desktop change on its own.
 
 ## When a change ripples
 
 Work through this after the desktop change is done and verified, not before.
 
-**New feature in `emma`**
+**New feature in `shinbo`**
 - Website: add or update the page or tile that covers it, and the entry in
   `ROADMAP.md` — move it out of *Next* into *Have*, or add a new section.
 - Website, major feature only: take screenshots of the real app and put them in
@@ -44,10 +44,10 @@ Work through this after the desktop change is done and verified, not before.
 
 Spawn a subagent per repository, so it gets a clean context window and does not
 carry the desktop diff around with it. One agent, one repo, one clear brief:
-what changed in `emma`, which files it touched, what the other repo needs to end
+what changed in `shinbo`, which files it touched, what the other repo needs to end
 up with. Read that repo's own `AGENTS.md` / `README.md` first — each repo has
-its own standards, and `emma`'s no-comments rule does not automatically apply
-elsewhere. Never edit `emma-mobile` or `emma-website` from the main session.
+its own standards, and `shinbo`'s no-comments rule does not automatically apply
+elsewhere. Never edit `shinbo-mobile` or `shinbo-website` from the main session.
 
 Each repo has its own remote and its own PR. Land them separately; reference the
 desktop PR in the body so the pair is findable.

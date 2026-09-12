@@ -432,7 +432,7 @@ async function launch(
     env: {
       HOME: fixture.home,
       SHELL: TERMINAL_FIXTURE_SHELL,
-      EMMA_PROVIDER_API_KEY: "fake-terminal-tool-key",
+      SHINBO_PROVIDER_API_KEY: "fake-terminal-tool-key",
       FX_AUTO_UPGRADE: "0",
       FX_PERMISSION_MODE: "yolo",
       FX_MODEL: FAKE_GATEWAY_MODEL,

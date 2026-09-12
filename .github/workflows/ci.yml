@@ -168,49 +168,49 @@ jobs:
       - name: install and launch the macOS package
         run: |
           version=$(node -p "require('./package.json').version")
-          image="desktop/release/Emma-v$version-darwin-arm64.dmg"
+          image="desktop/release/Shinbo-v$version-darwin-arm64.dmg"
           test -f "$image"
-          mount="$RUNNER_TEMP/emma-install-smoke-image"
+          mount="$RUNNER_TEMP/shinbo-install-smoke-image"
           copy="$RUNNER_TEMP/Applications"
           rm -rf "$mount" "$copy"
           mkdir -p "$mount" "$copy"
           hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$image"
-          ditto "$mount/Emma.app" "$copy/Emma.app"
+          ditto "$mount/Shinbo.app" "$copy/Shinbo.app"
           hdiutil detach "$mount" || hdiutil detach "$mount" -force
-          node desktop/scripts/install-smoke.mjs "$copy/Emma.app/Contents/MacOS/Emma" "$RUNNER_TEMP/emma-install-smoke-shot/macos.png"
-          rm -rf "$copy/Emma.app"
+          node desktop/scripts/install-smoke.mjs "$copy/Shinbo.app/Contents/MacOS/Shinbo" "$RUNNER_TEMP/shinbo-install-smoke-shot/macos.png"
+          rm -rf "$copy/Shinbo.app"
 
       - name: upload the macOS install smoke screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: install-smoke-macos
-          path: ${{ runner.temp }}/emma-install-smoke-shot/macos.png
+          path: ${{ runner.temp }}/shinbo-install-smoke-shot/macos.png
           retention-days: 3
           if-no-files-found: warn
 
       - name: archive the release candidate
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          mkdir -p "$RUNNER_TEMP/emma-release-candidate"
-          ditto -c -k --keepParent desktop/release/Emma-darwin-arm64 "$RUNNER_TEMP/emma-release-candidate/Emma-darwin-arm64.zip"
+          mkdir -p "$RUNNER_TEMP/shinbo-release-candidate"
+          ditto -c -k --keepParent desktop/release/Shinbo-darwin-arm64 "$RUNNER_TEMP/shinbo-release-candidate/Shinbo-darwin-arm64.zip"
 
       - name: checksum the release candidate
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          cd "$RUNNER_TEMP/emma-release-candidate"
-          shasum -a 256 Emma-darwin-arm64.zip > Emma-darwin-arm64.zip.sha256
+          cd "$RUNNER_TEMP/shinbo-release-candidate"
+          shasum -a 256 Shinbo-darwin-arm64.zip > Shinbo-darwin-arm64.zip.sha256
 
       - name: write the release candidate manifest
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: printf '{"source_sha":"%s","version":"%s","workflow_run_id":"%s"}\n' "$GITHUB_SHA" "$(node -p 'require("./package.json").version')" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/emma-release-candidate/manifest.json"
+        run: printf '{"source_sha":"%s","version":"%s","workflow_run_id":"%s"}\n' "$GITHUB_SHA" "$(node -p 'require("./package.json").version')" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/shinbo-release-candidate/manifest.json"
 
       - name: upload the release candidate
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
-          name: emma-release-candidate
-          path: ${{ runner.temp }}/emma-release-candidate
+          name: shinbo-release-candidate
+          path: ${{ runner.temp }}/shinbo-release-candidate
           compression-level: 0
           retention-days: 3
           if-no-files-found: error
@@ -368,7 +368,7 @@ jobs:
             Write-Output 'Packaging Windows unsigned. Add WINDOWS_CERT_PFX_BASE64 and WINDOWS_CERT_PASSWORD to sign it.'
             exit 0
           }
-          $pfx = Join-Path $env:RUNNER_TEMP 'emma-cert.pfx'
+          $pfx = Join-Path $env:RUNNER_TEMP 'shinbo-cert.pfx'
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT_PFX_BASE64))
           "pfx=$pfx" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
@@ -381,28 +381,28 @@ jobs:
       - name: install and launch the Windows package
         run: |
           $version = node -p "require('./package.json').version"
-          $setup = Join-Path (Get-Location) "desktop/release/squirrel/Emma-$version-win32-x64-Setup.exe"
+          $setup = Join-Path (Get-Location) "desktop/release/squirrel/Shinbo-$version-win32-x64-Setup.exe"
           if (-not (Test-Path $setup)) { throw "Missing installer: $setup" }
           Start-Process -FilePath $setup -ArgumentList '-s' -Wait
-          $root = Join-Path $env:LOCALAPPDATA 'Emma'
+          $root = Join-Path $env:LOCALAPPDATA 'Shinbo'
           $installed = Join-Path $root "app-$version"
-          $exe = Join-Path $installed 'Emma.exe'
+          $exe = Join-Path $installed 'Shinbo.exe'
           $updater = Join-Path $root 'Update.exe'
           $deadline = (Get-Date).AddMinutes(5)
           while (-not ((Test-Path $exe) -and (Test-Path $updater)) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
           if (-not (Test-Path $exe)) { throw "Missing installed app: $exe" }
           if (-not (Test-Path $updater)) { throw "Missing updater: $updater" }
           $programs = Join-Path $env:APPDATA 'Microsoft/Windows/Start Menu/Programs'
-          $shortcut = Get-ChildItem -Path $programs -Recurse -Filter 'Emma.lnk' | Select-Object -First 1
+          $shortcut = Get-ChildItem -Path $programs -Recurse -Filter 'Shinbo.lnk' | Select-Object -First 1
           if (-not $shortcut) { throw "Missing Start Menu shortcut under $programs" }
           Write-Output "Installed $exe with shortcut $($shortcut.FullName)"
           Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like "$root*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-          node desktop/scripts/install-smoke.mjs "$exe" (Join-Path $env:RUNNER_TEMP 'emma-install-smoke-shot/windows.png')
+          node desktop/scripts/install-smoke.mjs "$exe" (Join-Path $env:RUNNER_TEMP 'shinbo-install-smoke-shot/windows.png')
 
       - name: uninstall the Windows package
         run: |
           $version = node -p "require('./package.json').version"
-          $root = Join-Path $env:LOCALAPPDATA 'Emma'
+          $root = Join-Path $env:LOCALAPPDATA 'Shinbo'
           $installed = Join-Path $root "app-$version"
           Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like "$root*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
           $updater = Start-Process -FilePath (Join-Path $root 'Update.exe') -ArgumentList '--uninstall', '-s' -PassThru
@@ -416,25 +416,25 @@ jobs:
             Get-ChildItem -Path $root -Force -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
             throw "Uninstall left $installed behind"
           }
-          Write-Output "Uninstalled Emma $version"
+          Write-Output "Uninstalled Shinbo $version"
 
       - name: upload the Windows install smoke screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: install-smoke-windows
-          path: ${{ runner.temp }}/emma-install-smoke-shot/windows.png
+          path: ${{ runner.temp }}/shinbo-install-smoke-shot/windows.png
           retention-days: 3
           if-no-files-found: warn
 
       - name: stage the Windows release candidate
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          $candidate = Join-Path $env:RUNNER_TEMP 'emma-release-candidate-windows'
+          $candidate = Join-Path $env:RUNNER_TEMP 'shinbo-release-candidate-windows'
           New-Item -ItemType Directory -Force -Path $candidate | Out-Null
           $feed = @('RELEASES', 'SHA256SUMS')
           Get-ChildItem -Path desktop/release/squirrel -File |
-            Where-Object { $feed -contains $_.Name -or $_.Extension -eq '.nupkg' -or $_.Name -like 'Emma-*-Setup.exe' } |
+            Where-Object { $feed -contains $_.Name -or $_.Extension -eq '.nupkg' -or $_.Name -like 'Shinbo-*-Setup.exe' } |
             Copy-Item -Destination $candidate
           node -e "require('node:fs').writeFileSync(process.argv[1], JSON.stringify({ source_sha: process.env.GITHUB_SHA, version: require('./package.json').version, workflow_run_id: process.env.GITHUB_RUN_ID }) + '\n')" "$candidate/manifest.json"
 
@@ -442,12 +442,12 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
-          name: emma-release-candidate-windows
-          path: ${{ runner.temp }}/emma-release-candidate-windows
+          name: shinbo-release-candidate-windows
+          path: ${{ runner.temp }}/shinbo-release-candidate-windows
           compression-level: 0
           retention-days: 3
           if-no-files-found: error
 
       - name: remove the Windows signing certificate
         if: always()
-        run: Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:RUNNER_TEMP 'emma-cert.pfx')
+        run: Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:RUNNER_TEMP 'shinbo-cert.pfx')

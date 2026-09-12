@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-const gif = readFileSync(path.join(__dirname, "../../assets/installer/emma-setup.gif"));
+const gif = readFileSync(path.join(__dirname, "../../assets/installer/shinbo-setup.gif"));
 const packager = readFileSync(path.join(__dirname, "../../scripts/package-windows.mjs"), "utf8");
 
 function readFrames() {
@@ -55,6 +55,6 @@ test("the splash palette is the disk image's ink and paper", () => {
 });
 
 test("packaging hands the splash to Squirrel", () => {
-  assert.match(packager, /const loadingGif = path\.join\(desktop, "assets\/installer\/emma-setup\.gif"\);/);
+  assert.match(packager, /const loadingGif = path\.join\(desktop, "assets\/installer\/shinbo-setup\.gif"\);/);
   assert.match(packager, /^\s*loadingGif,$/m);
 });

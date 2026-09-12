@@ -22,7 +22,7 @@ import {
 
 const tmuxTest = test.skipIf(!tmuxAvailable());
 const ISOLATED_KEYS = [
-  "EMMA_PROVIDER_API_KEY",
+  "SHINBO_PROVIDER_API_KEY",
   "FX_E2E_GATEWAY_CHAT_URL",
   "FX_E2E_GATEWAY_MODELS_URL",
   "FX_E2E_GATEWAY_CREDITS_URL",
@@ -159,7 +159,7 @@ tmuxTest("tmux launch scrubs stale overrides without storing explicit credential
       startupWaitMs: 200,
       socketName,
       env: {
-        EMMA_PROVIDER_API_KEY: explicitCredential,
+        SHINBO_PROVIDER_API_KEY: explicitCredential,
       },
     });
 
@@ -169,7 +169,7 @@ tmuxTest("tmux launch scrubs stale overrides without storing explicit credential
     }
     expect(existsSync(resultPath)).toBe(true);
     const observed = JSON.parse(readFileSync(resultPath, "utf8"));
-    expect(observed.EMMA_PROVIDER_API_KEY).toBe(explicitCredential);
+    expect(observed.SHINBO_PROVIDER_API_KEY).toBe(explicitCredential);
     expect(observed.FX_E2E_GATEWAY_CHAT_URL).toBeNull();
     expect(observed.FX_E2E_GATEWAY_MODELS_URL).toBeNull();
     expect(observed.FX_E2E_GATEWAY_CREDITS_URL).toBeNull();
@@ -196,7 +196,7 @@ tmuxTest("tmux launch scrubs stale overrides without storing explicit credential
       ["-L", socketName, "show-environment", "-t", session.name],
       { encoding: "utf8" },
     );
-    expect(sessionEnvironment).not.toContain("EMMA_PROVIDER_API_KEY=");
+    expect(sessionEnvironment).not.toContain("SHINBO_PROVIDER_API_KEY=");
     expect(sessionEnvironment).not.toContain(explicitCredential);
   } finally {
     await session?.kill();

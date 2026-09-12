@@ -15,11 +15,11 @@ function paletteOf(node: HTMLElement) {
   return {
     background: read("--bg") || "#0e0e10",
     foreground: read("--text") || "#e8e6df",
-    cursor: read("--accent") || "#ff6a3d",
+    cursor: read("--accent") || "#ff5c94",
     selectionBackground: read("--border-strong") || "#e8e6df47",
     red: read("--rose") || "#ed7a9b",
     green: read("--lime") || "#c3d64b",
-    yellow: read("--orange") || "#ff6a3d",
+    yellow: read("--pink") || "#ff5c94",
     blue: read("--blue") || "#6faee6",
     magenta: read("--violet") || "#ae78f0",
     cyan: read("--teal") || "#3fd8c0",
@@ -70,12 +70,12 @@ export function TerminalSurfaceImplementation({ tab, active, onSelect, onLink }:
 
     const queued: { data: Uint8Array; at: number }[] = [];
     let replayedTo = -1;
-    const stopData = window.emma.onTerminalData((chunk) => {
+    const stopData = window.shinbo.onTerminalData((chunk) => {
       if (chunk.id !== tab.id) return;
       if (replayedTo < 0) queued.push({ data: chunk.data, at: chunk.at });
       else term.write(chunk.data);
     });
-    void window.emma.readTerminal(tab.id).then((saved) => {
+    void window.shinbo.readTerminal(tab.id).then((saved) => {
       term.write(saved.data);
       for (const chunk of queued) {
         if (chunk.at > saved.at) term.write(chunk.data);
@@ -88,8 +88,8 @@ export function TerminalSurfaceImplementation({ tab, active, onSelect, onLink }:
       replayedTo = 0;
     });
 
-    const typed = term.onData((data) => void window.emma.writeTerminal({ id: tab.id, data }).catch(() => undefined));
-    const resized = term.onResize(({ cols, rows }) => void window.emma.resizeTerminal({ id: tab.id, columns: cols, rows }).catch(() => undefined));
+    const typed = term.onData((data) => void window.shinbo.writeTerminal({ id: tab.id, data }).catch(() => undefined));
+    const resized = term.onResize(({ cols, rows }) => void window.shinbo.resizeTerminal({ id: tab.id, columns: cols, rows }).catch(() => undefined));
     const picked = () => {
       const selection = terminalSelection(term.getSelection());
       if (selection) held.current.onSelect({ id: tab.id, ...selection });
@@ -129,26 +129,27 @@ export function TerminalSurfaceImplementation({ tab, active, onSelect, onLink }:
 
 type TerminalPanelImplementationProps = TerminalPanelProps & { tabs: TerminalTab[]; tabGlyph: () => ReactNode };
 
-export function TerminalPanelImplementation({ tabs: allTabs, tabGlyph: TabGlyph, threadId, folderId, popped, onPop, onSelect, onHide, onOpenInEmma }: TerminalPanelImplementationProps) {
+export function TerminalPanelImplementation({ tabs: allTabs, tabGlyph: TabGlyph, threadId, folderId, popped, onPop, onSelect, onHide, onOpenInShinbo }: TerminalPanelImplementationProps) {
   const tabs = allTabs.filter((tab) => !popped.includes(tab.id));
   const [picked, setPicked] = useState("");
   const [error, setError] = useState("");
   const [link, setLink] = useState<{ url: string; x: number; y: number }>();
-  const started = useRef("");
 
   const start = useCallback(() => {
     setError("");
-    return window.emma.openTerminal({ threadId, columns: 80, rows: 24 })
+    return window.shinbo.openTerminal({ threadId, columns: 80, rows: 24 })
       .then((tab) => setPicked(tab.id))
       .catch((reason: unknown) => setError(reasonText(reason)));
   }, [threadId]);
 
   useEffect(() => {
-    const where = `${threadId}\u0000${folderId}`;
-    if (started.current === where) return;
-    started.current = where;
-    setError("");
-    void window.emma.listTerminals(threadId).then((found) => { if (!found.length) void start(); }).catch(() => void start());
+    let alive = true;
+    void window.shinbo.listTerminals(threadId).then((found) => {
+      if (!alive) return;
+      setError("");
+      if (!found.length) void start();
+    }).catch(() => { if (alive) void start(); });
+    return () => { alive = false; };
   }, [folderId, threadId, start]);
 
   useEffect(() => {
@@ -160,12 +161,12 @@ export function TerminalPanelImplementation({ tabs: allTabs, tabGlyph: TabGlyph,
 
   const activeId = tabs.some((tab) => tab.id === picked) ? picked : (tabs[0]?.id ?? "");
 
-  const openLink = (where: "emma" | "system") => {
+  const openLink = (where: "shinbo" | "system") => {
     const url = link?.url;
     setLink(undefined);
     if (!url) return;
-    if (where === "emma") onOpenInEmma(url);
-    else void window.emma.openLink(url).catch((reason: unknown) => setError(reasonText(reason)));
+    if (where === "shinbo") onOpenInShinbo(url);
+    else void window.shinbo.openLink(url).catch((reason: unknown) => setError(reasonText(reason)));
   };
 
   return <section className="terminal-panel" aria-label="Terminal">
@@ -173,7 +174,7 @@ export function TerminalPanelImplementation({ tabs: allTabs, tabGlyph: TabGlyph,
       {tabs.map((tab) => <div className="terminal-tab" key={tab.id} data-active={tab.id === activeId} data-ended={!tab.running}>
         <button type="button" onClick={() => setPicked(tab.id)} title={tab.cwd}><TabGlyph /><span>{tab.title}</span></button>
         <button type="button" className="terminal-tab-pop" aria-label={`Pop ${tab.title} out`} title="Pop this shell out into a floating window" onClick={() => onPop(tab.id)}>⇱</button>
-        <button type="button" className="terminal-tab-close" aria-label={`Close ${tab.title}`} title="Close this shell" onClick={() => void window.emma.closeTerminal(tab.id).catch(() => undefined)}>×</button>
+        <button type="button" className="terminal-tab-close" aria-label={`Close ${tab.title}`} title="Close this shell" onClick={() => void window.shinbo.closeTerminal(tab.id).catch(() => undefined)}>×</button>
       </div>)}
       <button type="button" className="terminal-add" aria-label="New terminal" title="New terminal" onClick={() => void start()}>+</button>
       <button type="button" className="terminal-hide" aria-label="Hide the terminal" title="Hide the terminal — the shells keep running" onClick={onHide}>×</button>
@@ -185,7 +186,7 @@ export function TerminalPanelImplementation({ tabs: allTabs, tabGlyph: TabGlyph,
     {error && tabs.length > 0 && <p className="terminal-error" role="alert">{error}</p>}
     {link && <section className="source-popover terminal-link" role="menu" aria-label="Open this link" style={{ left: `${link.x}px`, bottom: `${innerHeight - link.y + 8}px` }} onPointerDown={(event) => event.stopPropagation()}>
       <span className="terminal-link-url">{link.url}</span>
-      <button type="button" role="menuitem" autoFocus onClick={() => openLink("emma")}><strong>Emma's browser</strong><small>The pane beside this thread, where the agent looks too</small></button>
+      <button type="button" role="menuitem" autoFocus onClick={() => openLink("shinbo")}><strong>Shinbo's browser</strong><small>The pane beside this thread, where the agent looks too</small></button>
       <button type="button" role="menuitem" onClick={() => openLink("system")}><strong>Default browser</strong><small>Hands it to your system browser</small></button>
     </section>}
   </section>;

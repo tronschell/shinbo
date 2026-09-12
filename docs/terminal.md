@@ -2,12 +2,12 @@
 
 A real shell at the foot of the thread, opened in the folder that thread is
 working out of. Select output with the mouse and it becomes a context chip on the
-composer; Command-click on macOS or Ctrl-click on Windows a URL and Emma asks
+composer; Command-click on macOS or Ctrl-click on Windows a URL and Shinbo asks
 which browser should take it.
 
 | | |
 | --- | --- |
-| pty helper | [native/pty.c](../desktop/native/pty.c) or [native/pty_win.c](../desktop/native/pty_win.c) → `emma-pty` or `emma-pty.exe` |
+| pty helper | [native/pty.c](../desktop/native/pty.c) or [native/pty_win.c](../desktop/native/pty_win.c) → `shinbo-pty` or `shinbo-pty.exe` |
 | The shells | [main/terminal.ts](../desktop/main/terminal.ts) |
 | The panel | [src/terminal.tsx](../desktop/src/terminal.tsx), [styles/terminal.css](../desktop/src/styles/terminal.css) |
 | Bounds and the two shared helpers | [shared/terminal.ts](../desktop/shared/terminal.ts) |
@@ -65,7 +65,7 @@ model writes are one language. `TERM` is `xterm-256color` and `COLORTERM` is
 `truecolor`. The tab is named after the last segment of the cwd, or `shell` if
 that is empty or over 40 characters.
 
-Emma does not offer `cmd.exe` or Git Bash as the panel's shell. Either is one
+Shinbo does not offer `cmd.exe` or Git Bash as the panel's shell. Either is one
 `cmd` or `bash` away inside the PowerShell session, and neither is what the
 model is told it has.
 
@@ -76,12 +76,12 @@ one; the `×` at the right of the strip hides the panel.
 
 `node-pty` is a native module and would need a rebuild for every Electron
 release. Instead the platform helper (`native/pty.c` on macOS or
-`native/pty_win.c` on Windows) builds to `emma-pty` or `emma-pty.exe` beside the
+`native/pty_win.c` on Windows) builds to `shinbo-pty` or `shinbo-pty.exe` beside the
 other helpers in `dist-native/`, from the same `build:native` script, and ships
 as an `--extra-resource`:
 
 ```
-emma-pty <columns> <rows> <command> [argument...]
+shinbo-pty <columns> <rows> <command> [argument...]
 ```
 
 On macOS it calls `forkpty(3)` at that size, `execvp`s the command in the child,
@@ -90,14 +90,14 @@ ConPTY session and relays the same streams through its pipes. Resize travels on
 the helper's control stream as `"COLS ROWS\n"`; the platform helper applies it
 to the active terminal.
 
-`emma-pty --self-test` starts a platform shell at 40×10 and asserts the terminal
+`shinbo-pty --self-test` starts a platform shell at 40×10 and asserts the terminal
 size. It runs as part of `build:native`, so a broken helper fails the build
 rather than the app.
 
 ## Scrollback and replay
 
 Main keeps the last 256KB of each shell's output and a monotonic byte count of
-everything ever written to it. Live output is broadcast as `emma:terminal-data`
+everything ever written to it. Live output is broadcast as `shinbo:terminal-data`
 with that offset attached.
 
 A surface that mounts mid-session subscribes first and queues what arrives, then
@@ -137,23 +137,23 @@ at the pointer:
 
 | | |
 | --- | --- |
-| **Emma's browser** | Opens the browser pane on this thread and loads it there — the same page the agent can see. |
-| **Default browser** | `emma:open-link` → `shell.openExternal`. |
+| **Shinbo's browser** | Opens the browser pane on this thread and loads it there — the same page the agent can see. |
+| **Default browser** | `shinbo:open-link` → `shell.openExternal`. |
 
-`emma:open-link` caps the string at 2048 characters and runs it through
+`shinbo:open-link` caps the string at 2048 characters and runs it through
 `externalUrl`, so only `http` and `https` ever reach the system browser.
 
 ## What main will not accept
 
 | Channel | Bound |
 | --- | --- |
-| `emma:terminal-open` | thread id through `boundedCapabilityId`; columns and rows are safe integers in 1–4096; cwd is main's, never the renderer's |
-| `emma:terminal-write` | at most 64KB of input, and only to a shell that is still running |
-| `emma:terminal-resize` | same 1–4096 size check |
-| `emma:terminal-close`, `-list`, `-buffer` | id through `boundedCapabilityId` |
+| `shinbo:terminal-open` | thread id through `boundedCapabilityId`; columns and rows are safe integers in 1–4096; cwd is main's, never the renderer's |
+| `shinbo:terminal-write` | at most 64KB of input, and only to a shell that is still running |
+| `shinbo:terminal-resize` | same 1–4096 size check |
+| `shinbo:terminal-close`, `-list`, `-buffer` | id through `boundedCapabilityId` |
 
 Every handler goes through `mainWindowSender(event)` first, so a renderer that is
-not Emma's own window is refused before any of this runs.
+not Shinbo's own window is refused before any of this runs.
 
 Quitting terminates every shell's process tree and forces it after two seconds if
 one has not gone.
@@ -161,7 +161,7 @@ one has not gone.
 ## The agent's durable sessions
 
 The panel is not the only shell in the app. `terminal.start` opens a durable
-session that outlives the `emma-cli` process that asked for it: a background
+session that outlives the `shinbo-cli` process that asked for it: a background
 terminal host holds the sessions, and every later `list`, `read`, `write`,
 `wait` and `close` reaches it over a socket in the profile's `terminal-host`
 directory (or under `%TEMP%` when that path would exceed the 108-byte

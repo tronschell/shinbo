@@ -1,6 +1,6 @@
-/* Emma's own colour well, in place of Chromium's grey OS panel: a square
-   saturation field over the picked hue, a spectrum rule under it, and the hex
-   in mono. Drawn with the same 1px rules as the rest of the app. */
+
+
+
 .color-well { position: relative; display: inline-flex; }
 .source-popover.color-menu { top: calc(100% + var(--s-2)); bottom: auto; left: auto; right: 0; display: grid; gap: var(--s-2); width: 212px; max-height: none; overflow: visible; padding: var(--s-2); touch-action: none; }
 

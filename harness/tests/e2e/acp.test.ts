@@ -192,7 +192,7 @@ function fakeGatewayEnv(
 ) {
   return {
     HOME: root.home,
-    EMMA_PROVIDER_API_KEY: "fake-acp-file-key",
+    SHINBO_PROVIDER_API_KEY: "fake-acp-file-key",
     FX_GATEWAY_BASE_URL: gateway.baseUrl,
     FX_GATEWAY_CHAT_URL: gateway.chatUrl,
     FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -818,7 +818,7 @@ function deferred<T>() {
 async function startCodeSession(client: AcpClient) {
   await client.request("initialize", { protocolVersion: 1 }, 1);
   const created = await client.request("session/new", { mcpServers: [] }, 2) as any;
-  await client.readLine(); // consume session/update notification
+  await client.readLine();
   await client.request("session/set_mode", { modeId: "code" }, 3);
   return created.result.sessionId as string;
 }
@@ -1746,7 +1746,7 @@ describe("acp: model-independent", () => {
           cwd: root.workspace,
           env: {
             HOME: root.home,
-            EMMA_PROVIDER_API_KEY: "e2e-placeholder",
+            SHINBO_PROVIDER_API_KEY: "e2e-placeholder",
           },
         });
         const resp = await client.request(
@@ -4049,7 +4049,7 @@ describe("acp: model-independent", () => {
           cwd: root.workspace,
           env: {
             HOME: root.home,
-            EMMA_PROVIDER_API_KEY: "e2e-placeholder",
+            SHINBO_PROVIDER_API_KEY: "e2e-placeholder",
           },
         });
 
@@ -4097,7 +4097,7 @@ describe("acp: model-independent", () => {
           cwd: root.workspace,
           env: {
             HOME: root.home,
-            EMMA_PROVIDER_API_KEY: "e2e-placeholder",
+            SHINBO_PROVIDER_API_KEY: "e2e-placeholder",
           },
         });
         expect(
@@ -4213,7 +4213,7 @@ describe("acp: model-independent", () => {
             cwd: acceptedRoot.workspace,
             env: {
               ...fakeGatewayEnv(acceptedRoot, acceptedGateway),
-              EMMA_PROVIDER_API_KEY: SEEDED_GATEWAY_TOKEN,
+              SHINBO_PROVIDER_API_KEY: SEEDED_GATEWAY_TOKEN,
               FX_DISABLE_KEYCHAIN: "1",
             },
           });
@@ -4556,7 +4556,7 @@ describe("acp: model-independent", () => {
           message.params?.update?.sessionUpdate === "agent_message_chunk"
         );
         expect(authUpdate?.params.update.content.text).toBe(
-          "EMMA_PROVIDER_API_KEY authentication failed · HTTP 401",
+          "SHINBO_PROVIDER_API_KEY authentication failed · HTTP 401",
         );
         const serialized = JSON.stringify({ messages, response });
         expect(serialized).not.toContain("fake-acp-file-key");
@@ -4776,13 +4776,13 @@ describe("acp: model-independent", () => {
           cwd: root.workspace,
           env: {
             HOME: root.home,
-            EMMA_PROVIDER_API_KEY: "",
+            SHINBO_PROVIDER_API_KEY: "",
             FX_DISABLE_KEYCHAIN: "1",
           },
         });
         const resp = await client.request("initialize", { protocolVersion: 1 }, 1) as any;
         expect(resp.error).toBeDefined();
-        expect(resp.error.message).toContain("EMMA_PROVIDER_API_KEY");
+        expect(resp.error.message).toContain("SHINBO_PROVIDER_API_KEY");
         expect(client.stderr).toBe("");
       } finally {
         await client?.close();
@@ -4796,7 +4796,7 @@ describe("acp: model-independent", () => {
     "invalid JSON returns parse error without stderr",
     async () => {
       client = await AcpClient.create({
-        env: { EMMA_PROVIDER_API_KEY: "" },
+        env: { SHINBO_PROVIDER_API_KEY: "" },
       });
       (client as any).proc.stdin!.write("this is not json\n");
       const resp = await client.readLine() as any;
@@ -4811,7 +4811,7 @@ describe("acp: model-independent", () => {
     "exact and oversized request frames preserve the ACP connection boundary",
     async () => {
       client = await AcpClient.create({
-        env: { EMMA_PROVIDER_API_KEY: "" },
+        env: { SHINBO_PROVIDER_API_KEY: "" },
       });
       const stdin = (client as any).proc.stdin!;
       const frameLimit = 8 * 1024 * 1024;
@@ -4862,7 +4862,7 @@ describe("acp: model-independent", () => {
     "method before initialize returns error -32600",
     async () => {
       client = await AcpClient.create({
-        env: { EMMA_PROVIDER_API_KEY: "" },
+        env: { SHINBO_PROVIDER_API_KEY: "" },
       });
       const resp = await client.request("session/new", {}, 1) as any;
       expect(resp.error).toBeDefined();
@@ -4886,7 +4886,7 @@ describe("acp: model-independent", () => {
           cwd: realpathSync(workspace),
           env: {
             HOME: realpathSync(home),
-            EMMA_PROVIDER_API_KEY: "e2e-placeholder",
+            SHINBO_PROVIDER_API_KEY: "e2e-placeholder",
             FX_E2E_FAIL_ON_DURABLE_MUTATION: "1",
           },
         });
@@ -5032,7 +5032,7 @@ describe("acp: model-independent", () => {
           cwd: realpathSync(workspace),
           env: {
             HOME: realpathSync(home),
-            EMMA_PROVIDER_API_KEY: "e2e-placeholder",
+            SHINBO_PROVIDER_API_KEY: "e2e-placeholder",
             FX_E2E_FAIL_ON_DURABLE_MUTATION: "1",
           },
         });
@@ -5058,7 +5058,7 @@ describe("acp: model-independent", () => {
       client = await AcpClient.create({
         omitHome: true,
         env: {
-          EMMA_PROVIDER_API_KEY: "e2e-placeholder",
+          SHINBO_PROVIDER_API_KEY: "e2e-placeholder",
         },
       });
       expect(
@@ -5118,7 +5118,7 @@ describe("acp: model-independent", () => {
           cwd: workspaceRoot,
           env: {
             HOME: home,
-            EMMA_PROVIDER_API_KEY: "e2e-placeholder",
+            SHINBO_PROVIDER_API_KEY: "e2e-placeholder",
           },
         });
         expect(
@@ -5912,9 +5912,9 @@ describe("acp: model-independent", () => {
         expect(firstWire).not.toContain("\\u001b");
         expect(readFileSync(target, "utf8")).toBe("first\n");
 
-        // The session grant recorded by allow_always must satisfy the second
-        // write without another round-trip, even though the client would now
-        // reject one.
+
+
+
         client.setPermissionOption("reject_once");
         const second = await runPrompt(client, "Repeat the approved external write.", TIMEOUT);
         expect(
@@ -6979,7 +6979,7 @@ describe.skipIf(!HAS_API_KEY)("acp: model-backed protocol", () => {
         });
         await client.request("initialize", { protocolVersion: 1 }, 1);
         await client.request("session/new", { mcpServers: [] }, 2);
-        await client.readLine(); // consume session/update notification
+        await client.readLine();
         const resp = await client.request("session/set_mode", { modeId: "code" }, 3) as any;
         expect(resp.result).toBeDefined();
       } finally {
@@ -7003,7 +7003,7 @@ describe.skipIf(!HAS_API_KEY)("acp: model-backed protocol", () => {
         });
         await client.request("initialize", { protocolVersion: 1 }, 1);
         const newResp = await client.request("session/new", { mcpServers: [] }, 2) as any;
-        await client.readLine(); // consume session/update notification
+        await client.readLine();
         const sessionId = newResp.result.sessionId;
 
         const loadResp = await client.request(
@@ -7041,7 +7041,7 @@ describe.skipIf(!HAS_API_KEY)("acp: model-backed protocol", () => {
         });
         await client.request("initialize", { protocolVersion: 1 }, 1);
         await client.request("session/new", { mcpServers: [] }, 2);
-        await client.readLine(); // consume session/update notification
+        await client.readLine();
 
         const resp = await client.request("session/set_config_option", {
           configId: "model",
@@ -7074,7 +7074,7 @@ describe.skipIf(!HAS_API_KEY)("acp: model-backed protocol", () => {
         });
         await client.request("initialize", { protocolVersion: 1 }, 1);
         await client.request("session/new", { mcpServers: [] }, 2);
-        await client.readLine(); // consume session/update notification
+        await client.readLine();
 
         const promptId = 10;
         client.send({
@@ -7119,7 +7119,7 @@ describe.skipIf(!HAS_API_KEY)("acp: model-backed protocol", () => {
         });
         await client.request("initialize", { protocolVersion: 1 }, 1);
         await client.request("session/new", { mcpServers: [] }, 2);
-        await client.readLine(); // consume session/update notification
+        await client.readLine();
 
         client.send({ jsonrpc: "2.0", method: "session/cancel", params: {} });
         await new Promise((r) => setTimeout(r, 300));
@@ -7177,7 +7177,7 @@ describe.skipIf(!HAS_API_KEY)("acp: model-backed protocol", () => {
         });
         await client.request("initialize", { protocolVersion: 1 }, 1);
         await client.request("session/new", { mcpServers: [] }, 2);
-        await client.readLine(); // consume session/update notification
+        await client.readLine();
         await client.request("session/list", {}, 3);
         expect(client.stderr).toBe("");
       } finally {

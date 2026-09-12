@@ -1,6 +1,6 @@
 # Getting started
 
-Emma targets macOS 12 or later on Apple silicon and Windows 10 version 1809 or
+Shinbo targets macOS 12 or later on Apple silicon and Windows 10 version 1809 or
 later on x64. Published downloads contain the macOS disk image and zip and the
 Windows x64 installer, which is unsigned until the Windows signing secrets
 exist. No build toolchains are needed for a published build. The rest of this page covers building from
@@ -42,8 +42,8 @@ so it needs network once.
 ## Install and run
 
 ```bash
-git clone https://github.com/tronschell/emma.git
-cd emma
+git clone https://github.com/tronschell/shinbo.git
+cd shinbo
 npm --prefix desktop install
 npm run dev
 ```
@@ -55,7 +55,7 @@ the main process — a few minutes. Later runs reuse the caches.
 ### `npm run dev` vs `npm --prefix desktop start`
 
 `npm run dev` runs [dev.mjs](../desktop/scripts/dev.mjs), which stops at the
-first failing step: `build:host` (cargo `emma-host`, then `zig build`) →
+first failing step: `build:host` (cargo `shinbo-host`, then `zig build`) →
 `build:native` (the platform native toolchain) → `build:main` (tsc) → Vite, then
 Electron 800 ms later.
 Quitting Electron `SIGTERM`s Vite, so one Ctrl-C cleans up both.
@@ -65,7 +65,7 @@ Quitting Electron `SIGTERM`s Vite, so one Ctrl-C cleans up both.
 | Renderer | Vite dev server on `127.0.0.1:5173`, hot reload | `dist-renderer/index.html` over `file://` |
 | `vendor:ripgrep` | no | yes |
 | `build:renderer` | no | yes |
-| `EMMA_DEV_SERVER_URL` | `http://127.0.0.1:5173` | unset |
+| `SHINBO_DEV_SERVER_URL` | `http://127.0.0.1:5173` | unset |
 | Closest to shipping | no | yes |
 
 A tree that has only ever run `npm run dev` never vendors `desktop/vendor/rg`.
@@ -80,12 +80,12 @@ resolved from the inherited `PATH`, so without either the vendored copy or a
 
 ## First launch
 
-Emma takes a single-instance lock, so a second launch focuses the first window
+Shinbo takes a single-instance lock, so a second launch focuses the first window
 instead of opening one. A packaged app and a dev run share Electron's `userData`
 lock — see [troubleshooting.md](troubleshooting.md).
 
 A three-step walkthrough opens once (**Connect · Permissions · Quick Ask**),
-gated on `emma.setupSeen.v1` in `localStorage`. Connect requires a verified
+gated on `shinbo.setupSeen.v1` in `localStorage`. Connect requires a verified
 OpenRouter API key; a free key is enough. Subscription connections are optional
 and do not replace OpenRouter.
 
@@ -95,26 +95,26 @@ shortcut and opens the real Quick Ask interface; Finish setup opens the workspac
 The current step is saved so setup can resume after a relaunch.
 
 Choose your **vault** later in Settings — an Obsidian vault or any plain folder.
-Emma writes one Markdown note per save into `<vault>/knowledge-base`; there is
+Shinbo writes one Markdown note per save into `<vault>/knowledge-base`; there is
 no second copy. See [data.md](data.md) for the layout.
 
 ## Platform permissions
 
 One table drives both the walkthrough and the pane each button opens:
 [shared/setup.ts](../desktop/shared/setup.ts). On macOS, microphone is the only
-grant Emma can raise itself (`askForMediaAccess`); other rows open System Settings
-and re-check when Emma comes back to the front. Windows rows open Windows Settings
+grant Shinbo can raise itself (`askForMediaAccess`); other rows open System Settings
+and re-check when Shinbo comes back to the front. Windows rows open Windows Settings
 where the operating system exposes a setting.
 
-| Grant | Why, exactly | Status Emma can read |
+| Grant | Why, exactly | Status Shinbo can read |
 | --- | --- | --- |
-| Accessibility | `NSEvent addGlobalMonitorForEventsMatchingMask` only reports other apps' key presses to a trusted process — that is the left-Option double-tap. The same grant lets [computer.m](../desktop/native/computer.m) read and operate approved apps' accessibility controls; each app still needs separate approval. **Relaunch Emma after granting.** | `isTrustedAccessibilityClient` |
+| Accessibility | `NSEvent addGlobalMonitorForEventsMatchingMask` only reports other apps' key presses to a trusted process — that is the left-Option double-tap. The same grant lets [computer.m](../desktop/native/computer.m) read and operate approved apps' accessibility controls; each app still needs separate approval. **Relaunch Shinbo after granting.** | `isTrustedAccessibilityClient` |
 | Screen Recording | The separate ▣ screen-context orb and ✎ annotation sheet capture the display; the app-scoped `computer` tool does not take screenshots. [captureDisplay](../desktop/main/computer.ts) checks this grant before capturing. **Relaunch after granting.** | `getMediaAccessStatus("screen")` |
 | Microphone | Dictation into the composer. | `getMediaAccessStatus("microphone")` |
-| Speech Recognition | The built-in dictation engine: macOS Speech.framework or Windows SAPI, through the platform `emma-transcribe` helper. A local speech server needs neither. | macOS has no direct status query; Windows has no per-app grant and reports the built-in capability |
-| Files & Folders | Writing notes into the vault folder you chose. Checked by writing `.emma-write-check` and deleting it ([vault.ts:106](../desktop/main/vault.ts#L106)), because TCC has no query API. | write probe |
+| Speech Recognition | The built-in dictation engine: macOS Speech.framework or Windows SAPI, through the platform `shinbo-transcribe` helper. A local speech server needs neither. | macOS has no direct status query; Windows has no per-app grant and reports the built-in capability |
+| Files & Folders | Writing notes into the vault folder you chose. Checked by writing `.shinbo-write-check` and deleting it ([vault.ts:106](../desktop/main/vault.ts#L106)), because TCC has no query API. | write probe |
 | Automation | On macOS, reading the front browser tab uses Apple Events; on Windows, UI Automation reads supported browser windows. This is how "save this page" works without a screenshot ([clip.ts](../desktop/main/clip.ts)). | none — macOS reports Apple Events grants to nobody |
-| Notifications | One banner when a run lands or stops on a permission ask. Unsigned macOS builds are never prompted, so Emma bounces the Dock icon instead. | `Notification.isSupported()` |
+| Notifications | One banner when a run lands or stops on a permission ask. Unsigned macOS builds are never prompted, so Shinbo bounces the Dock icon instead. | `Notification.isSupported()` |
 
 Windows does not use the macOS TCC permission prompts. Accessibility and
 Automation are not required there; the setup dialog marks them **Not required**
@@ -131,13 +131,13 @@ router**, a chain of ten free tool-capable OpenRouter ids whose first three
 travel as OpenRouter's fallback array, the most it accepts
 ([settings.ts](../desktop/shared/settings.ts) `FREE_ROUTER_MODELS`).
 
-A key only reaches `emma-cli` through its spawn environment, so it takes effect
+A key only reaches `shinbo-cli` through its spawn environment, so it takes effect
 on the next harness spawn; saving one closes every idle harness.
 
 ## Your first turn
 
 - **Attach a folder.** The ＋ menu. A thread holds **one** folder and it becomes
-  the working directory `emma-cli` is spawned in. With no folder, the thread runs
+  the working directory `shinbo-cli` is spawned in. With no folder, the thread runs
   in `userData/workspaces/<threadId>`.
 - **Pick a permission mode** in the composer. Four modes, default `ask` —
   [permissions.md](permissions.md).
@@ -182,10 +182,10 @@ is not a supported target.
 
 ## Credits
 
-`harness/` is Emma's fork of [vercel-labs/fx](https://github.com/vercel-labs/fx)
+`harness/` is Shinbo's fork of [vercel-labs/fx](https://github.com/vercel-labs/fx)
 (Apache-2.0, © Vercel, Inc. and fx contributors), forked at `580a0c5` /
 upstream v0.0.4 — see [harness/FORK.md](../harness/FORK.md) and
-[harness/THIRD_PARTY_NOTICES.md](../harness/THIRD_PARTY_NOTICES.md). Emma also
+[harness/THIRD_PARTY_NOTICES.md](../harness/THIRD_PARTY_NOTICES.md). Shinbo also
 vendors [ripgrep](https://github.com/BurntSushi/ripgrep) and builds on
 [Electron](https://github.com/electron/electron),
 [React](https://github.com/facebook/react),
@@ -202,11 +202,11 @@ Departure Mono (SIL OFL). Vendor brand marks:
 - [architecture.md](architecture.md) — how Electron, Rust and Zig fit together
 - [development.md](development.md) — workflow, tests, packaging
 - [troubleshooting.md](troubleshooting.md) — when a step above fails
-- [data.md](data.md) — every file Emma writes, every env var
+- [data.md](data.md) — every file Shinbo writes, every env var
 - [concepts.md](concepts.md) — threads, runs, the vocabulary
 - [permissions.md](permissions.md) — the four modes and the gate table
 - [computer-use.md](computer-use.md) — approved app-scoped accessibility controls
 - [models.md](models.md) — providers, the catalog, routers
-- [harness.md](harness.md) — `emma-cli`, the fx fork
+- [harness.md](harness.md) — `shinbo-cli`, the fx fork
 - [notch.md](notch.md) — Quick Ask and the island
 - [voice.md](voice.md) — dictation

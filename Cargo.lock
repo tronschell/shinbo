@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "emma-core"
+name = "shinbo-core"
 version = "0.1.0"
 dependencies = [
  "serde",
@@ -11,10 +11,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "emma-host"
+name = "shinbo-host"
 version = "0.1.0"
 dependencies = [
- "emma-core",
+ "shinbo-core",
  "serde",
  "serde_json",
 ]

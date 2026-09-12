@@ -14,7 +14,6 @@ const Allocator = std.mem.Allocator;
 pub const ResolveChatUrlFn = *const fn (?*anyopaque, []const u8) []const u8;
 
 pub const ChatUrlProvider = struct {
-    /// When set, context must remain valid until every in-flight `resolve` returns.
     context: ?*anyopaque = null,
     resolve_fn: ResolveChatUrlFn,
 
@@ -31,7 +30,6 @@ pub const CliModelCatalogInput = struct {
 
 pub const CliModelCatalogResult = union(enum) {
     loaded: struct {
-        /// Owned model id strings; the caller frees them with `collections.freeStringList`.
         ids: std.ArrayList([]u8),
         provenance: model_catalog.Provenance,
     },
@@ -45,7 +43,6 @@ pub const FetchCliModelCatalogFn = *const fn (
 ) CliModelCatalogResult;
 
 pub const CliModelCatalogProvider = struct {
-    /// When set, context must remain valid until every in-flight `fetch` returns.
     context: ?*anyopaque = null,
     fetch_fn: FetchCliModelCatalogFn,
 
@@ -329,7 +326,7 @@ test "capability resolver uses provider catalog metadata" {
         std.testing.allocator,
         fake.provider(),
         .{
-            .access = credentials.catalogAccessForCredential(.emma_provider_api_key, "test-key"),
+            .access = credentials.catalogAccessForCredential(.shinbo_provider_api_key, "test-key"),
             .endpoint = "/v1/models",
             .cancel_flag = &cancel_flag,
         },
@@ -363,7 +360,7 @@ test "capability resolver retries rejected authenticated catalog access anonymou
         std.testing.allocator,
         fake.provider(),
         .{
-            .access = credentials.catalogAccessForCredential(.emma_provider_api_key, "test-key"),
+            .access = credentials.catalogAccessForCredential(.shinbo_provider_api_key, "test-key"),
             .endpoint = "/v1/models",
         },
         "provider/model",

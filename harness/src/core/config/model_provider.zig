@@ -1,9 +1,6 @@
 const std = @import("std");
 const types = @import("../shared/types.zig");
 
-/// Emma routes every model through one OpenAI-compatible endpoint, so the
-/// provider seam has a single member. It is kept as a type rather than removed
-/// so a second route can be added without re-threading every call site.
 pub const ProviderId = enum {
     gateway,
 };
@@ -20,7 +17,7 @@ pub fn parse(value: []const u8) ?ProviderId {
 
 pub fn label(provider: ProviderId) []const u8 {
     return switch (provider) {
-        .gateway => "Emma provider",
+        .gateway => "Shinbo provider",
     };
 }
 
@@ -34,7 +31,7 @@ pub fn usesGatewayAuxiliaries(provider: ProviderId) bool {
 }
 
 test "the single provider authorizes any resolved credential" {
-    try std.testing.expect(authorizesCredential(.gateway, .emma_provider_api_key));
+    try std.testing.expect(authorizesCredential(.gateway, .shinbo_provider_api_key));
     try std.testing.expect(!authorizesCredential(.gateway, null));
 }
 

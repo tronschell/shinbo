@@ -339,7 +339,7 @@ fn loadedCatalogStatusText(state: model_cache_runtime.ModelMenuCatalogState) ?[]
     if (state.private_models_hidden) {
         const reason = state.public_only_reason orelse return "Using the public model catalog.";
         return switch (reason) {
-            .no_credential => "Using the public model catalog; set EMMA_PROVIDER_API_KEY for private models.",
+            .no_credential => "Using the public model catalog; set SHINBO_PROVIDER_API_KEY for private models.",
             .credential_refresh_failed => "The provider credential could not be refreshed; using the public model catalog.",
             .authenticated_credential_rejected => "Your provider credential was rejected; using the public model catalog.",
         };
@@ -512,14 +512,14 @@ test "model menu states and navigation budget stay bounded" {
 test "model menu status follows provenance and retryable failure precedence" {
     try std.testing.expectEqualStrings(
         "Model catalog: authenticated with an API key.",
-        loadedCatalogStatusText(.{ .access_level = .authenticated, .source = .emma_provider_api_key }).?,
+        loadedCatalogStatusText(.{ .access_level = .authenticated, .source = .shinbo_provider_api_key }).?,
     );
 
     const cases = [_]struct {
         state: model_cache_runtime.ModelMenuCatalogState,
         expected: []const u8,
     }{
-        .{ .state = .{ .public_only_reason = .no_credential, .private_models_hidden = true }, .expected = "Using the public model catalog; set EMMA_PROVIDER_API_KEY for private models." },
+        .{ .state = .{ .public_only_reason = .no_credential, .private_models_hidden = true }, .expected = "Using the public model catalog; set SHINBO_PROVIDER_API_KEY for private models." },
         .{ .state = .{ .public_only_reason = .credential_refresh_failed, .private_models_hidden = true }, .expected = "The provider credential could not be refreshed; using the public model catalog." },
         .{ .state = .{ .public_only_reason = .authenticated_credential_rejected, .private_models_hidden = true }, .expected = "Your provider credential was rejected; using the public model catalog." },
         .{ .state = .{ .failure = .{ .category = .transport, .retryable = true } }, .expected = "Could not reach the provider; retry /models." },

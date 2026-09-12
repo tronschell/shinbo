@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PLAN_ROW, planLayout, planRows, type PlanStatus, type PlanStep } from "../shared/plan";
-import { flattenTaskListTasks, taskListProgress, taskListState, type FlatTaskListTask, type TaskList, type TaskListStatus } from "../shared/task-list";
+import { PLAN_PAD, PLAN_ROW, type PlanSpot, type PlanStatus, type PlanStep } from "../shared/plan";
+import { flattenTaskListTasks, taskListProgress, taskListState, type FlatTaskListTask, type TaskList, type TaskListStatus, type TaskListTask } from "../shared/task-list";
 import { CaretIcon, ExpandIcon } from "./icons";
 import { Markdown } from "./markdown";
 import { PlanGraph, type PlanShape } from "./plan";
@@ -16,11 +16,26 @@ function graphSteps(flat: readonly FlatTaskListTask[]): PlanStep[] {
   return flat.map(({ task, parentId }) => ({ id: task.id, title: task.title, status: planStatus(task.status), needs: parentId ? [parentId] : [], brief: "", tasks: [] }));
 }
 
+function treeLayout(flat: readonly FlatTaskListTask[], row: number): { waves: string[][]; spots: Map<string, PlanSpot>; height: number } {
+  const leaves = flat.filter(({ task }) => !task.subtasks.length).length;
+  const spots = new Map<string, PlanSpot>();
+  const waves: string[][] = [];
+  let leaf = 0;
+  const place = (task: TaskListTask, depth: number): number => {
+    const xs = task.subtasks.map((sub) => place(sub, depth + 1));
+    const x = xs.length ? (xs[0] + xs[xs.length - 1]) / 2 : ((leaf++ + 0.5) / leaves) * 100;
+    spots.set(task.id, { x, y: PLAN_PAD + depth * row, wave: depth });
+    (waves[depth] ??= []).push(task.id);
+    return x;
+  };
+  for (const { task, depth } of flat) if (depth === 0) place(task, 0);
+  return { waves, spots, height: waves.length ? PLAN_PAD * 2 + (waves.length - 1) * row : 0 };
+}
+
 function useTaskListShape(flat: readonly FlatTaskListTask[], row = PLAN_ROW): { steps: PlanStep[]; shape: PlanShape } {
   return useMemo(() => {
     const steps = graphSteps(flat);
-    const waves = planRows(steps);
-    const { spots, height } = planLayout(waves, steps, row);
+    const { waves, spots, height } = treeLayout(flat, row);
     const statuses = new Map(flat.map(({ task }) => [task.id, task.status]));
     return { steps, shape: { waves, spots, height, row, state: (step) => visualState(statuses.get(step.id) ?? "pending") } };
   }, [flat, row]);
@@ -30,9 +45,9 @@ function useTaskLists(threadId: string, sample?: TaskList[]): TaskList[] {
   const [lists, setLists] = useState<TaskList[]>([]);
   useEffect(() => {
     if (sample) return;
-    const load = () => void window.emma.listTaskLists().then(setLists).catch(() => undefined);
+    const load = () => void window.shinbo.listTaskLists().then(setLists).catch(() => undefined);
     load();
-    return window.emma.onTaskListsChanged(load);
+    return window.shinbo.onTaskListsChanged(load);
   }, [sample]);
   return useMemo(() => sample ?? lists.filter((list) => list.threadId === threadId), [lists, sample, threadId]);
 }
@@ -85,7 +100,7 @@ export function TaskListRail({ threadId, sample }: { threadId: string; sample?: 
   if (!list || !progress) {
     return <section className="plan-widget task-list-widget">
       <span>Tasks</span>
-      <p className="subagent-empty">Nothing tracked yet — Emma writes one per <code>task_list write</code>.</p>
+      <p className="subagent-empty">Nothing tracked yet — Shinbo writes one per <code>task_list write</code>.</p>
     </section>;
   }
 

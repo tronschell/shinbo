@@ -95,7 +95,7 @@ async function start(args = []) {
     wasm,
     args,
     terminal: capture.terminal,
-    env: { EMMA_PROVIDER_API_KEY: "term-session-test-key", FX_THEME: "dark" },
+    env: { SHINBO_PROVIDER_API_KEY: "term-session-test-key", FX_THEME: "dark" },
     fetch: mockFetch,
     sessionStore,
   });

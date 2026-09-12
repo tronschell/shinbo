@@ -136,7 +136,7 @@ function fakeGatewayEnv(
 ) {
   return {
     HOME: root.home,
-    EMMA_PROVIDER_API_KEY: "fake-live-web-fetch-key",
+    SHINBO_PROVIDER_API_KEY: "fake-live-web-fetch-key",
     FX_AUTO_UPGRADE: "0",
     FX_GATEWAY_BASE_URL: gateway.baseUrl,
     FX_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -145,8 +145,8 @@ function fakeGatewayEnv(
 }
 
 describe.skipIf(process.env.FX_WEB_FETCH_LIVE !== "1")("live web_fetch public URL", () => {
-  // These mutable endpoints are operational probes, not deterministic HTTP
-  // framing proof. The transport/framing contract is covered by Zig fixtures.
+
+
   for (const probe of [
     { url: LIVE_ROBOTS_URL, domain: "vercel.com", label: "robots" },
     { url: LIVE_MODELS_URL, domain: "openrouter.ai", label: "models" },

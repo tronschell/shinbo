@@ -19,7 +19,10 @@ test("turn admission preserves active same-thread ownership until its cleanup fi
   const threadContexts = new Map<string, typeof context>([["active", context]]);
   const runTurn = runInNewContext(`${runTurnSource}\nrunTurn`, {
     harnessRuns,
-    agents: { forget: (threadId: string) => forgotten.push(threadId) },
+    pendingTurns: new Set<string>(),
+    goalStopped: new Set<string>(),
+    host: { request: async () => null },
+    agents: { forget: (threadId: string) => forgotten.push(threadId), isLive: () => false },
     threadSubagent: () => undefined,
     threadModel: (threadId: string) => threadContexts.get(threadId)?.model ?? "model",
     threadContext: (threadId: string) => threadContexts.get(threadId) ?? { folderIds: [], model: "model", effort: "" },

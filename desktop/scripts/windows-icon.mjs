@@ -113,4 +113,4 @@ images.forEach(({ size, data }, index) => {
   directory.writeUInt32LE(offset, at + 12);
   offset += data.length;
 });
-writeFileSync(path.join(import.meta.dirname, "..", "assets", "emma.ico"), Buffer.concat([directory, ...images.map((image) => image.data)]));
+writeFileSync(path.join(import.meta.dirname, "..", "assets", "shinbo.ico"), Buffer.concat([directory, ...images.map((image) => image.data)]));

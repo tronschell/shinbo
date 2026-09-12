@@ -16,7 +16,7 @@ test("platform copy names the local machine and the overlay", () => {
 test("the phone approval copy reads on a Mac and hard-codes one nowhere", () => {
   const device = localDevice("darwin");
   assert.equal(`Approve on this ${device}`, "Approve on this Mac");
-  assert.equal(`Emma will run this on your ${device} now, in /tmp:`, "Emma will run this on your Mac now, in /tmp:");
+  assert.equal(`Shinbo will run this on your ${device} now, in /tmp:`, "Shinbo will run this on your Mac now, in /tmp:");
   assert.equal(`Nobody at your ${device} approved that command.`, "Nobody at your Mac approved that command.");
   assert.deepEqual(mainSource().match(/(?:this|your) Macs?\b/g), null);
 });

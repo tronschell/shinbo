@@ -2024,7 +2024,7 @@ test "Windows captured profiles run PowerShell and report its exit code" {
     const cmdlet_failure = try executeCommandInEnvironment(
         cfg,
         arena,
-        "Get-Item C:\no-such-file-emma-test",
+        "Get-Item C:\no-such-file-shinbo-test",
         ".",
         .{ .clean = shell },
     );

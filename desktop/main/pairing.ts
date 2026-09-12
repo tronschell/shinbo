@@ -9,19 +9,19 @@ export type Peer = {
   key: string;
   name: string;
   addr: string;
-  /** `<saltHex>:<hashHex>`. Never the PIN itself, and never sent to the phone. */
+
   pin: string;
-  /** True once the phone has proved the PIN. A staged pairing is saved only after that. */
+
   verified: boolean;
-  /**
-   * Doubles as the device's id: a phone is paired by scanning a code and typing a
-   * PIN, so no two finish in the same millisecond.
-   * ponytail: give Peer its own id if pairing ever stops being hand-driven.
-   */
+
+
+
+
+
   pairedAt: number;
 };
 
-/** How many phones one Mac pairs at once. A fourth is refused, never silently evicted. */
+
 export const MAX_PEERS = 3;
 
 const MAX_NAME_CHARS = 200;
@@ -31,7 +31,7 @@ const KEY = new RegExp(`^[A-Za-z0-9_-]{${Math.ceil((KEY_BYTES * 4) / 3)}}$`);
 const PIN_RECORD = /^[0-9a-f]{32}:[0-9a-f]{64}$/;
 
 const peersFile = (userData: string) => path.join(userData, "mobile-peers.json");
-/** Emma paired one phone before it paired three; that file is read once and retired. */
+
 const legacyFile = (userData: string) => path.join(userData, "mobile-peer.json");
 
 function hashPin(pin: string, salt: Buffer): Buffer {
@@ -44,7 +44,7 @@ export function sealPin(pin: string): string {
   return `${salt.toString("hex")}:${hashPin(pin, salt).toString("hex")}`;
 }
 
-/** Constant-time check of a PIN against a sealed record. */
+
 export function checkPin(record: string, pin: unknown): boolean {
   if (!PIN_RECORD.test(record) || !isPin(pin)) return false;
   const [salt, expected] = record.split(":");
@@ -53,7 +53,7 @@ export function checkPin(record: string, pin: unknown): boolean {
 
 export function mintPeer(name: string, addr: string, pin: string): Peer {
   const address = bridgeAddress(addr);
-  if (!address) throw new Error("Emma needs an address to pair a phone on.");
+  if (!address) throw new Error("Shinbo needs an address to pair a phone on.");
   return {
     key: randomBytes(KEY_BYTES).toString("base64url"),
     name,
@@ -89,7 +89,7 @@ function readPeers(raw: string): Peer[] {
   const peers: Peer[] = [];
   for (const entry of list) {
     const peer = decodePeer(entry);
-    // One unreadable record does not cost the user the phones that still work.
+
     if (peer && !peers.some((held) => held.pairedAt === peer.pairedAt)) peers.push(peer);
   }
   return peers.slice(0, MAX_PEERS);
@@ -106,7 +106,7 @@ export function loadPeers(userData: string): Peer[] {
     try {
       return readPeers(raw);
     } catch {
-      console.error("Emma: the stored phone pairings could not be read; pair the phones again");
+      console.error("Shinbo: the stored phone pairings could not be read; pair the phones again");
       return [];
     }
   }
@@ -114,7 +114,7 @@ export function loadPeers(userData: string): Peer[] {
 }
 
 export function savePeers(userData: string, peers: readonly Peer[]): void {
-  if (!safeStorage.isEncryptionAvailable()) throw new Error("This computer's secure credential store is unavailable, so Emma will not store the phone's pairing key in plain text.");
+  if (!safeStorage.isEncryptionAvailable()) throw new Error("This computer's secure credential store is unavailable, so Shinbo will not store the phone's pairing key in plain text.");
   const stored = peers.map((peer) => ({ ...peer, key: safeStorage.encryptString(peer.key).toString("base64") }));
   mkdirSync(userData, { recursive: true, mode: 0o700 });
   const temporary = path.join(userData, ".mobile-peers.tmp");

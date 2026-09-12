@@ -65,7 +65,7 @@ fn stream(raw: ?*anyopaque, alloc: Allocator, request: stream_provider.Request) 
     try headers.appendSlice(alloc, &.{
         .{ .name = "content-type", .value = "application/json" },
         .{ .name = "authorization", .value = auth },
-        .{ .name = "X-Title", .value = "emma-cli" },
+        .{ .name = "X-Title", .value = "shinbo-cli" },
         .{ .name = "ai-language-model-specification-version", .value = "4" },
         .{ .name = "ai-language-model-id", .value = request.model },
         .{ .name = "ai-language-model-streaming", .value = "true" },

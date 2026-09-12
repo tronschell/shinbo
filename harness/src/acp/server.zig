@@ -54,7 +54,7 @@ const Allocator = std.mem.Allocator;
 const ErrorCode = jsonrpc.ErrorCode;
 const writeJsonStr = jsonrpc.writeJsonStr;
 const legacy_url_completion_timeout_ms: i64 = 10 * 60 * 1000;
-/// Upper bound on the configurable captured-command timeout, in minutes.
+
 pub const max_command_timeout_minutes: usize = 120;
 
 const AcpMethod = enum {
@@ -110,9 +110,7 @@ const AcpMethod = enum {
             .session_list,
             .session_remove,
             .session_prompt,
-            // Rewriting the history a running turn is reading from another
-            // thread is a data race, so a mid-turn compaction is refused rather
-            // than raced. The caller compacts between turns.
+
             .session_compact,
             .session_set_config_option,
             .unknown,
@@ -126,7 +124,7 @@ pub const Config = acp_runner.Config;
 pub const OutboundKind = enum {
     permission,
     elicitation,
-    /// A tool the client owns and runs on our behalf. See `EmmaToolResponder`.
+
     client_tool,
 };
 
@@ -191,20 +189,17 @@ pub const ActiveSessionState = struct {
     permission_mode: types.PermissionMode,
     sandbox_backend: sandbox.BackendKind,
     permission_rules: types.PermissionRuleSet,
-    /// Runtime-only "allow for this session" grants. Never persisted to
-    /// profile or project configuration.
+
     session_grants: []types.PermissionGrant = &.{},
     session_rt: session_runtime.SessionRuntime,
-    /// Experimental per-step context hooks, off unless the client turns them on
-    /// with the `context_experiments` config option.
+
     context_experiments: context_experiments.Settings = .{},
     fresh_handoff: ?[]u8 = null,
     command_timeout_ms: ?usize = null,
     semantic_grep: ?mcp_contract.McpServerConfig = null,
     tool_hints: tool_overrides.Hints = .{},
     preselected_tools: tool_overrides.Names = .{},
-    /// What `effort` above is allowed to be: the stops the client says this model
-    /// publishes, empty unless it sent them with the `reasoning_effort` option.
+
     reasoning_efforts: model_capabilities.ReasoningEffortOptions = .{},
     image_input: ?bool = null,
     mcp: ?*mcp_runtime.McpRuntime = null,
@@ -240,8 +235,7 @@ const ActivePrompt = struct {
     state: *ServerState,
     alloc: Allocator,
     msg: jsonrpc.Message,
-    /// Mode and permission policy captured when the prompt was dispatched.
-    /// Mid-turn mode changes apply to the next prompt, never the running one.
+
     mode: []const u8,
     permission_mode: types.PermissionMode,
     sandbox_backend: sandbox.BackendKind,
@@ -279,8 +273,7 @@ pub const ServerState = struct {
     active_session: ?ActiveSessionState = null,
     active_prompt: ?*ActivePrompt = null,
     subagent_authority_mutex: std.Io.Mutex = .init,
-    /// Only to keep one steering message's invocation id apart from the next, for
-    /// two sent inside the same millisecond.
+
     steer_sequence: u64 = 0,
     steer_mutex: std.Io.Mutex = .init,
     pending_steers: std.ArrayListUnmanaged([]u8) = .empty,
@@ -361,8 +354,6 @@ fn adoptServerCredential(state: *ServerState, credential: *credentials.Credentia
     }
 }
 
-/// Ensures the process and active ACP session use a credential authorized for
-/// the final model route. Returns false when that route has no credential.
 pub fn selectCredentialForProvider(
     state: *ServerState,
     provider: model_provider.ProviderId,
@@ -375,7 +366,7 @@ pub fn selectCredentialForProvider(
     var credential = if (state.cfg.credential_override) |override|
         credentials.Credential{
             .token = try state.alloc.dupe(u8, override),
-            .source = .emma_provider_api_key,
+            .source = .shinbo_provider_api_key,
         }
     else blk: {
         const resolution = try credentials.resolve(state.alloc);
@@ -694,8 +685,7 @@ pub fn runWithTransport(
         };
         if (state.terminate_connection) break;
     }
-    // Release any prompt thread parked on a pending approval before
-    // state.deinit() joins it, or shutdown deadlocks.
+
     handleCancel(&state);
 }
 
@@ -1341,7 +1331,7 @@ fn handleInitialize(state: *ServerState, alloc: Allocator, msg: *jsonrpc.Message
     const credential: *credentials.Credential = if (state.cfg.credential_override) |override_key| override: {
         routed_credential = .{
             .token = try alloc.dupe(u8, override_key),
-            .source = .emma_provider_api_key,
+            .source = .shinbo_provider_api_key,
         };
         break :override &routed_credential.?;
     } else if (startup_credential != null)
@@ -1508,17 +1498,18 @@ fn handleSetConfigOption(state: *ServerState, alloc: Allocator, msg: *jsonrpc.Me
     };
 
     if (std.mem.eql(u8, config_id, "model")) {
+        const selected = if (value.len == 0) state.configured_model else value;
         const session = if (state.active_session) |*active| active else return state.writer.writeError(alloc, msg.id, .{
             .code = ErrorCode.invalid_request,
             .message = "No active session",
         });
-        session_codec.validateModelPreference(value) catch
+        session_codec.validateModelPreference(selected) catch
             return state.writer.writeError(alloc, msg.id, .{
                 .code = ErrorCode.invalid_params,
                 .message = "Invalid session model",
             });
         if (host_target.is_wasm and session.writable == null) {
-            const next_model = alloc.dupe(u8, value) catch
+            const next_model = alloc.dupe(u8, selected) catch
                 return state.writer.writeError(alloc, msg.id, .{
                     .code = ErrorCode.internal_error,
                     .message = "Failed to update session model",
@@ -1537,7 +1528,7 @@ fn handleSetConfigOption(state: *ServerState, alloc: Allocator, msg: *jsonrpc.Me
         } else commitActiveSessionModel(
             alloc,
             session,
-            value,
+            selected,
             session_test_controls.logOptions(),
         ) catch |err| {
             if (modelCommitFailureTerminatesConnection(err)) {
@@ -1559,8 +1550,7 @@ fn handleSetConfigOption(state: *ServerState, alloc: Allocator, msg: *jsonrpc.Me
                     "Failed to persist session model",
             });
         };
-        // The efforts below belong to the model they were published for, and this is
-        // not that model any more. The client sends the new list with its next turn.
+
         session.reasoning_efforts = .{};
         session.image_input = null;
     } else if (std.mem.eql(u8, config_id, "mode")) {
@@ -1570,10 +1560,6 @@ fn handleSetConfigOption(state: *ServerState, alloc: Allocator, msg: *jsonrpc.Me
             applySessionMode(state.cfg.mode_registry, session, value);
         }
     } else if (std.mem.eql(u8, config_id, "context_window")) {
-        // The client knows the real window — it has the model catalog — and the
-        // harness's own capability table only recognises a handful of prefixes.
-        // Without this the token-pressure compaction trigger never fires, because
-        // a zero window makes `historyOverTokenBudget` answer false every time.
         const window = std.fmt.parseInt(usize, value, 10) catch
             return state.writer.writeError(alloc, msg.id, .{
                 .code = ErrorCode.invalid_params,
@@ -1585,10 +1571,6 @@ fn handleSetConfigOption(state: *ServerState, alloc: Allocator, msg: *jsonrpc.Me
         });
         session.session_rt.context_window_tokens = window;
     } else if (std.mem.eql(u8, config_id, "reasoning_effort")) {
-        // Same reason as `context_window`: the client has the model catalog and this
-        // harness does not reach one from behind Emma's gateway, so without the
-        // published list every effort fails `reasoningEffortSupported` and no
-        // request ever carries one.
         const selection = parseReasoningEffort(value) catch
             return state.writer.writeError(alloc, msg.id, .{
                 .code = ErrorCode.invalid_params,
@@ -1698,10 +1680,6 @@ fn handleSetConfigOption(state: *ServerState, alloc: Allocator, msg: *jsonrpc.Me
     try state.writer.writeResponse(alloc, msg.id, out.writer.buffered());
 }
 
-/// The longest a single captured command may run, carried as whole minutes in the
-/// same option string the context experiments use. Null means "leave the default".
-/// Zero minutes would terminate every command the instant it started, so it is
-/// rejected rather than honoured.
 fn parseCommandTimeoutMs(value: []const u8) !?usize {
     var pairs = std.mem.splitScalar(u8, value, ',');
     while (pairs.next()) |raw| {
@@ -1808,9 +1786,9 @@ test "context experiment options parse into the settings the loop reads" {
         @as(?usize, 10 * std.time.ms_per_min),
         try parseCommandTimeoutMs("compact_percent=80,command_timeout_minutes=10"),
     );
-    // Absent leaves the built-in default in place rather than forcing one.
+
     try std.testing.expectEqual(@as(?usize, null), try parseCommandTimeoutMs("compact_percent=80"));
-    // Zero would kill every command instantly; the ceiling keeps a stray digit from hanging a turn.
+
     try std.testing.expectError(error.InvalidValue, parseCommandTimeoutMs("command_timeout_minutes=0"));
     try std.testing.expectError(
         error.InvalidValue,
@@ -1830,14 +1808,6 @@ test "context experiment options parse into the settings the loop reads" {
     try std.testing.expectError(error.InvalidValue, parseContextExperiments("compact_percent=101"));
 }
 
-/// `high;none,low,medium,high` — the stop the client's picker is on, then every stop
-/// the model it belongs to publishes. One option rather than two for the same reason
-/// as the experiments above, and because neither half is any use alone: an effort no
-/// capability list names is dropped before a request can carry it. `auto`, or nothing
-/// before the semicolon, is the model's own default and sends no reasoning field.
-///
-/// No enum of effort names anywhere: the vocabulary is the model's, not this
-/// harness's, and the two disagree from one model to the next.
 fn parseReasoningEffort(value: []const u8) !struct {
     effort: types.ReasoningEffort,
     options: model_capabilities.ReasoningEffortOptions,
@@ -1856,8 +1826,7 @@ fn parseReasoningEffort(value: []const u8) !struct {
         if (name.len == 0) continue;
         const option = types.ReasoningEffort.parse(name) orelse return error.InvalidValue;
         if (option.isDefault()) continue;
-        // Refused rather than truncated: a list this long is a client that has lost
-        // track of its catalog, and dropping its tail would drop the chosen stop.
+
         if (options.len == options.values.len) return error.InvalidValue;
         options.values[options.len] = option;
         options.len += 1;
@@ -1873,11 +1842,9 @@ test "the reasoning effort option carries the pick and the list it has to be in"
     const capabilities = model_capabilities.Capabilities{ .reasoning_efforts = parsed.options };
     try std.testing.expect(model_capabilities.reasoningEffortSupported(capabilities, parsed.effort));
 
-    // The default is the one value that must leave the request without the field.
     try std.testing.expect((try parseReasoningEffort("auto;low,high")).effort.isDefault());
     try std.testing.expect((try parseReasoningEffort(";low,high")).effort.isDefault());
 
-    // A model with no stops publishes none, and a stop outside its list stays dropped.
     const silent = try parseReasoningEffort("auto;");
     try std.testing.expectEqual(@as(usize, 0), silent.options.len);
     const stale = try parseReasoningEffort("xhigh;low,medium,high");
@@ -2292,8 +2259,7 @@ test "ACP prompt gate policy keeps lifecycle interruption responsive" {
     try std.testing.expect(!AcpMethod.session_close.waitsForActivePrompt());
     try std.testing.expect(AcpMethod.session_list.waitsForActivePrompt());
     try std.testing.expect(AcpMethod.session_prompt.waitsForActivePrompt());
-    // Compaction rewrites the very history a running prompt is reading on
-    // another thread, so it is refused during one rather than raced.
+
     try std.testing.expect(AcpMethod.session_compact.waitsForActivePrompt());
     try std.testing.expect(AcpMethod.session_set_config_option.waitsForActivePrompt());
     try std.testing.expect(!AcpMethod.session_set_mode.waitsForActivePrompt());

@@ -2982,6 +2982,7 @@ pub fn appendExecutionMemoryChatMessages(
             .role = .assistant,
             .content = step.assistant,
             .reasoning = step.reasoning,
+            .reasoning_details_json = step.reasoning_details_json,
             .tool_calls = step.tool_calls,
         });
         for (step.tool_results) |result| {

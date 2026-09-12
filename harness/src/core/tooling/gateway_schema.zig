@@ -1,19 +1,12 @@
 const std = @import("std");
 
-/// Emma's own ceiling, from `desktop/main/tools.ts`, rather than fx's 1024.
-///
-/// Several of Emma's tools are a list of actions with a line each, and at 1024
-/// `plan` lost its `update` and `delete` lines and `threads` lost the sentence
-/// telling the model when to reach for `task` instead. A tool whose description
-/// is cut mid-list is worse than one that costs a few hundred more tokens.
 pub const description_max_bytes: usize = 4 * 1024;
 pub const truncation_marker = "... [truncated]";
 
 pub const JsonType = enum {
     string,
     integer,
-    /// Fractional values, which `integer` silently narrows away. Emma's
-    /// `computer` tool takes a `duration` in seconds and means 0.5 by it.
+
     number,
     boolean,
     object,
@@ -87,8 +80,6 @@ fn writeCappedDescriptionJsonString(
     try std.json.Stringify.value(capped_description, .{}, writer);
 }
 
-/// Opens the gateway's flattened function-tool envelope, up to the
-/// "inputSchema" value. The caller writes the schema and the closing brace.
 fn writeFunctionSchemaOpen(
     writer: *std.Io.Writer,
     name: []const u8,
@@ -120,8 +111,6 @@ pub fn builtinFunctionSchemaJsonAlloc(alloc: std.mem.Allocator, schema: Function
     return try out.toOwnedSlice();
 }
 
-/// Envelope for a dynamic (MCP) tool whose input schema is already rendered
-/// JSON. Caller owns the returned slice.
 pub fn dynamicFunctionSchemaJsonAlloc(
     alloc: std.mem.Allocator,
     name: []const u8,

@@ -102,7 +102,7 @@ test("a store change refreshes the snapshot even while the window is not on scre
     window: {
       addEventListener: () => {},
       removeEventListener: () => {},
-      emma: { onChanged: (handler: () => void) => { changed = handler; return handler; }, offChanged: () => {} },
+      shinbo: { onChanged: (handler: () => void) => { changed = handler; return handler; }, offChanged: () => {} },
     },
     queueMicrotask: () => {},
     setInterval: (handler: () => void) => { tick = handler; return 1; },
@@ -170,7 +170,7 @@ test("a mentioned skill comes back to its caller instead of being left in the co
   assert.equal(put.length, 0, "nothing is left in the shared attachment slot for another surface to send");
 });
 
-test("scheduled workflows use Emma's selected model unless the job pins a model", async () => {
+test("scheduled workflows use Shinbo's selected model unless the job pins a model", async () => {
   const main = ts.createSourceFile("main.ts", readFileSync(path.join(__dirname, "../../main/main.ts"), "utf8"), ts.ScriptTarget.Latest, true);
   const names = ["runScheduledWorkflow", "providerFor", "providerRoute", "harnessModel"];
   const functions = names.map((name) => {
@@ -185,7 +185,7 @@ test("scheduled workflows use Emma's selected model unless the job pins a model"
       const requests: unknown[] = [];
       const threadContexts = new Map<string, Record<string, unknown>>();
       const scope = {
-        selectedModel, selectedEffort: "high",
+        selectedModel, selectedEffort: "high", AbortController, workflowRuns: new Map(), runtimeReady: Promise.resolve(), agents: { list: () => [] },
         threadContext: (threadId: string) => threadContexts.get(threadId) ?? { folderIds: ["folder"], model: "old-model", effort: "low" },
         rememberThreadContext: (threadId: string, context: Record<string, unknown>) => threadContexts.set(threadId, context),
         providers: [{ id: "local", modelId: "local-model", baseUrl: "http://127.0.0.1:1234/v1", credentialEnv: "" }],

@@ -227,7 +227,7 @@ function createRoot(
 function fixtureEnv(root: FixtureRoot, activeGateway: ReturnType<typeof startFakeGateway>) {
   return {
     HOME: root.home,
-    EMMA_PROVIDER_API_KEY: "fake-mcp-stdio-key",
+    SHINBO_PROVIDER_API_KEY: "fake-mcp-stdio-key",
     FX_AUTO_UPGRADE: "0",
     FX_PERMISSION_MODE: "auto",
     FX_GATEWAY_BASE_URL: activeGateway.baseUrl,

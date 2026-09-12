@@ -10,8 +10,8 @@ import { createInterface } from "node:readline";
 
 const [action, argument, port] = process.argv.slice(2);
 if (action === "seed") {
-  assert.ok(argument, "Pass a freshly built emma-host binary");
-  const root = await realpath(await mkdtemp(path.join(tmpdir(), "emma-audit-mock-")));
+  assert.ok(argument, "Pass a freshly built shinbo-host binary");
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), "shinbo-audit-mock-")));
   const fixture = Object.fromEntries(["data", "profile", "home", "workspace"].map((name) => [name, path.join(root, name)]));
   for (const directory of Object.values(fixture)) await mkdir(directory, { recursive: true });
   const marker = path.join(fixture.workspace, "permission-marker.txt");
@@ -27,7 +27,7 @@ if (action === "seed") {
   await writeFile(path.join(tool, "run"), `#!/bin/sh\nprintf 'approved\\n' >> '${marker.replaceAll("'", "'\\''")}'\nprintf 'audit marker recorded\\n'\n`, { mode: 0o700 });
   const folderId = randomUUID();
   await writeFile(path.join(fixture.profile, "folders.json"), JSON.stringify([{ id: folderId, path: fixture.workspace, name: "Audit mock workspace" }]));
-  const child = spawn(path.resolve(argument), [], { env: { PATH: process.env.PATH, HOME: fixture.home, EMMA_DATA_DIR: fixture.data }, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(path.resolve(argument), [], { env: { PATH: process.env.PATH, HOME: fixture.home, SHINBO_DATA_DIR: fixture.data }, stdio: ["pipe", "pipe", "pipe"] });
   const pending = new Map();
   let id = 0;
   let stderr = "";
@@ -120,5 +120,5 @@ if (action === "seed") {
   process.on("SIGINT", () => server.close());
   process.on("SIGTERM", () => server.close());
 } else {
-  throw new Error("Usage: node audit-fixture.mjs seed /absolute/emma-host | serve /absolute/fixture.json [port]");
+  throw new Error("Usage: node audit-fixture.mjs seed /absolute/shinbo-host | serve /absolute/fixture.json [port]");
 }

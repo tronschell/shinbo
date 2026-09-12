@@ -11,7 +11,7 @@ async function tick() {
   if (sampling || document.hidden) return;
   sampling = true;
   try {
-    const sample = await window.emma.machineSample();
+    const sample = await window.shinbo.machineSample();
     history = [...history, sample].slice(-MACHINE_HISTORY);
     for (const listener of listeners) listener(history);
   } catch {

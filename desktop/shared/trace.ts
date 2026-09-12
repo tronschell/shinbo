@@ -59,7 +59,11 @@ export function layoutSpans(spans: readonly TraceSpan[], now: number, collapsed:
 
     const parent = span.parentId && ids.has(span.parentId) ? span.parentId : undefined;
     if (!parent) roots.push(span);
-    else children.set(parent, [...(children.get(parent) ?? []), span]);
+    else {
+      const siblings = children.get(parent);
+      if (siblings) siblings.push(span);
+      else children.set(parent, [span]);
+    }
   }
   for (const list of children.values()) list.sort((left, right) => left.startedAt - right.startedAt);
   roots.sort((left, right) => left.startedAt - right.startedAt);

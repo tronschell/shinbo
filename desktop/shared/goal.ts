@@ -112,7 +112,7 @@ export function goalResult(action: GoalAction, threadId: string, goal: Goal | un
   switch (action) {
     case "set":
       return `Pursuing "${goal.objective}". ${mark}\n\n${state}\n`
-        + `This goal outlives this turn: when you stop talking Emma drives another turn at it, and another, until you record it complete with evidence, the budget runs out, or the user stops it. `
+        + `This goal outlives this turn: when you stop talking Shinbo drives another turn at it, and another, until you record it complete with evidence, the budget runs out, or the user stops it. `
         + `So start the work now instead of describing what you are about to do, and keep the objective whole — do not shrink it to what fits in this turn.`;
     case "get":
       return `Pursuing "${goal.objective}". ${mark}\n\n${state}`;
@@ -143,7 +143,7 @@ export function goalResult(action: GoalAction, threadId: string, goal: Goal | un
           return goal.blockedStreak > 0
             ? `Blocker recorded — ${count(goal.blockedStreak)} of ${count(GOAL_BLOCKED_TURNS)}. ${mark}\n\n${state}\n`
               + `The goal stays active, because one blocked turn is not a blocked goal. Keep working: route around it, come at it another way, or do the part of the objective it does not touch. `
-              + `If the same thing stops you again next goal turn, report it again — Emma counts the streak, and at ${count(GOAL_BLOCKED_TURNS)} in a row the goal is called blocked and the pursuit ends.`
+              + `If the same thing stops you again next goal turn, report it again — Shinbo counts the streak, and at ${count(GOAL_BLOCKED_TURNS)} in a row the goal is called blocked and the pursuit ends.`
             : `Pursuing "${goal.objective}", with a clean slate on blockers. ${mark}\n\n${state}\n`
               + `Carry on with the work. Completion still needs evidence of the end state itself, not of the effort.`;
       }

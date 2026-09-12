@@ -1,6 +1,6 @@
 import { additionValid, leverNames, metricNames, validateImprovements, MAX_ADDITION_CHARS, type Draft, type Improvements, type Lever, type Metric } from "../shared/improvement";
 
-const KEY = "emma.improvements.v1";
+const KEY = "shinbo.improvements.v1";
 
 export function readImprovements(): Improvements {
   try { return validateImprovements(JSON.parse(localStorage.getItem(KEY) ?? "null")); }
@@ -15,10 +15,10 @@ export function saveImprovements(next: Improvements): Improvements {
 }
 
 export function syncImprovements(store: Improvements = readImprovements()) {
-  void window.emma.setImprovements(store).catch(() => undefined);
+  void window.shinbo.setImprovements(store).catch(() => undefined);
 }
 
-const QUEUE_KEY = "emma.repair-queue.v1";
+const QUEUE_KEY = "shinbo.repair-queue.v1";
 const MAX_QUEUE = 8;
 
 export function readQueue(): Draft[] {

@@ -27,7 +27,7 @@ test("thread picker saves the selected thread only and updates UI after persiste
   let done!: () => void;
   const change = load<(next: unknown) => Promise<void>>("changeThreadModel", {
     thread: { id: "a" },
-    window: { emma: { request: (method: string, params: unknown) => { calls.push({ method, params }); return new Promise<void>((resolve) => { done = resolve; }); } } },
+    window: { shinbo: { request: (method: string, params: unknown) => { calls.push({ method, params }); return new Promise<void>((resolve) => { done = resolve; }); } } },
     onModelChanged: (next: unknown) => calls.push(next),
   });
   const next = { selectedModel: "provider:one", thinkingLevel: "high" };
@@ -43,7 +43,7 @@ test("failed model persistence does not change the displayed selection", async (
   let changed = false;
   const change = load<(next: unknown) => Promise<void>>("changeThreadModel", {
     thread: { id: "a" },
-    window: { emma: { request: async () => { throw new Error("Unavailable model"); } } },
+    window: { shinbo: { request: async () => { throw new Error("Unavailable model"); } } },
     onModelChanged: () => { changed = true; },
   });
   await assert.rejects(change({ selectedModel: "provider:missing", thinkingLevel: "" }), /Unavailable model/);
@@ -76,7 +76,7 @@ test("thread navigation restores model and thread together and ignores stale loa
     setThreadLoadError: () => undefined,
     setLoadedThread: (value: unknown) => loaded.push(value), setLoadedSubthread: () => undefined,
     isCurrentThreadLoad: (parent: string, selected: string, request: string, current: string) => parent === selected && request === current,
-    window: { emma: {
+    window: { shinbo: {
       request: async (_method: string, { threadId }: { threadId: string }) => ({ id: threadId, messages: [] }),
       getThreadContext: (id: string) => new Promise((resolve) => pending.set(id, resolve)),
     } },
@@ -89,14 +89,14 @@ test("thread navigation restores model and thread together and ignores stale loa
   await second;
   pending.get("a")!({ model: "provider:a", effort: "low" });
   await first;
-  assert.deepEqual(JSON.parse(JSON.stringify(loaded)), [{ id: "b", messages: [], modelSelection: { model: "provider:b", effort: "high" } }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(loaded)), [{ id: "b", messages: [], context: { model: "provider:b", effort: "high" } }]);
 });
 
 test("mounting a thread does not write any model selection", () => {
   const view = declaration("ThreadView");
   const calls: ts.CallExpression[] = [];
   function visit(node: ts.Node) {
-    if (ts.isCallExpression(node) && node.expression.getText(source) === "window.emma.setThreadContext") calls.push(node);
+    if (ts.isCallExpression(node) && node.expression.getText(source) === "window.shinbo.setThreadContext") calls.push(node);
     ts.forEachChild(node, visit);
   }
   visit(view);
@@ -104,4 +104,68 @@ test("mounting a thread does not write any model selection", () => {
   const value = calls[0].arguments[0];
   assert.ok(ts.isObjectLiteralExpression(value));
   assert.ok(!value.properties.some((property) => property.name?.getText(source) === "model"));
+});
+
+test("opening a remote task hydrates context without changing its permissions", () => {
+  const view = declaration("ThreadView") as ts.FunctionDeclaration;
+  const choices = new Set(["[mode, setMode]", "[review, setReview]", "[folderIds, setFolderIds]", "[context, setContext]"]);
+  const statements = view.body!.statements.flatMap((node) => {
+    if (ts.isVariableStatement(node)) {
+      const declarations = node.declarationList.declarations.filter((item) => choices.has(item.name.getText(source)) || ["context", "{ mode, review, folderIds }"].includes(item.name.getText(source)));
+      return declarations.map((item) => `const ${item.getText(source)};`);
+    }
+    if (ts.isExpressionStatement(node) && ts.isCallExpression(node.expression) && node.expression.expression.getText(source) === "useEffect" && /setThreadFolders|setContext\(thread.context\)/.test(node.getText(source))) return [node.getText(source)];
+    return [];
+  });
+  const context = { folderIds: ["remote-project"], mode: "ask", review: true };
+  const writes: unknown[] = [];
+  const cached: Record<string, unknown> = {};
+  const scope = {
+    thread: { id: "remote-task", context }, threadId: "remote-task", defaultMode: "full",
+    useState: (initial: unknown) => [typeof initial === "function" ? initial() : initial, () => undefined],
+    useEffect: (effect: () => void) => effect(),
+    threadMode: () => "full", threadReview: () => false, threadFolders: () => ["stale-project"],
+    setThreadFolders: (_id: string, value: unknown) => { cached.folderIds = value; },
+    setThreadMode: (_id: string, value: unknown) => { cached.mode = value; },
+    setThreadReview: (_id: string, value: unknown) => { cached.review = value; },
+    window: { shinbo: { setThreadContext: async (value: unknown) => { writes.push(value); } } },
+  };
+  runInNewContext(ts.transpileModule(statements.join("\n"), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, scope);
+  assert.deepEqual(writes, []);
+  assert.deepEqual(cached, context);
+});
+
+test("explicit context changes update the selected task only after native acceptance", async () => {
+  for (const refuse of [false, true]) {
+    const context = { folderIds: ["remote-project"], mode: "ask", review: true, model: "provider:pinned", effort: "high" };
+    const changes: unknown[] = [];
+    const writes: unknown[] = [];
+    const errors: string[] = [];
+    const change = load<(patch: unknown) => Promise<void>>("changeContext", {
+      context, contextBusy: false, thread: { id: "remote-task" }, setContextBusy: () => undefined,
+      window: { shinbo: { setThreadContext: async (value: unknown) => { writes.push(value); if (refuse) throw new Error("save failed"); } } },
+      onContextChanged: (value: unknown) => { changes.push(value); },
+      setRunError: (value: string) => { errors.push(value); }, reasonText: (reason: Error) => reason.message,
+    });
+    await change({ mode: "acceptEdits" });
+    assert.deepEqual(JSON.parse(JSON.stringify(writes)), [{ threadId: "remote-task", folderIds: ["remote-project"], mode: "acceptEdits", review: true }]);
+    assert.deepEqual(JSON.parse(JSON.stringify(changes)), refuse ? [] : [{ ...context, mode: "acceptEdits" }]);
+    assert.deepEqual(errors, refuse ? ["save failed"] : []);
+  }
+});
+
+test("new desktop tasks persist their chosen folder and default permission before opening", async () => {
+  const writes: unknown[] = [];
+  const opened: string[] = [];
+  const create = load<(folder: string) => Promise<void>>("createThread", {
+    thread: undefined, settings: { defaultPermissionMode: "acceptEdits" },
+    act: async () => ({ id: "new-task" }),
+    window: { shinbo: { setThreadContext: async (value: unknown) => { writes.push(value); assert.deepEqual(opened, []); } } },
+    setThreadFolders: () => undefined, setThreadId: (id: string) => { opened.push(id); },
+    setView: () => undefined, load: async () => undefined, setError: (reason: string) => { throw new Error(reason); },
+    reasonText: (reason: Error) => reason.message,
+  });
+  await create("chosen-project");
+  assert.deepEqual(JSON.parse(JSON.stringify(writes)), [{ threadId: "new-task", folderIds: ["chosen-project"], mode: "acceptEdits" }]);
+  assert.deepEqual(opened, ["new-task"]);
 });

@@ -28,7 +28,7 @@ try {
       return fetch(input, init);
     },
     env: {
-      EMMA_PROVIDER_API_KEY: "native-core-cancel-key",
+      SHINBO_PROVIDER_API_KEY: "native-core-cancel-key",
       FX_GATEWAY_CHAT_URL: `http://127.0.0.1:${port}/stall`,
       FX_MODEL: "native/test-model",
     },

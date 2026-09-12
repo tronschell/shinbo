@@ -58,7 +58,7 @@ test("rewriting and updating a task list keep durable progress", () => {
 });
 
 test("task list files are isolated, atomic records", async () => {
-  const root = path.join(tmpdir(), `emma-task-lists-${randomUUID()}`);
+  const root = path.join(tmpdir(), `shinbo-task-lists-${randomUUID()}`);
   try {
     const saved = await saveTaskList(root, { title: "Ship tasks", goal: "Track it.", tasks, threadId: "thread-7" });
     assert.equal(saved.id, "ship-tasks");

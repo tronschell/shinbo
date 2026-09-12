@@ -1,9 +1,9 @@
 ---
 name: contributing
-description: How to contribute to the Emma repository — the house standards, which layer to rebuild for a given change, how to run a dev instance (and a second one that will not fight the first), how to run against the packaged build, the six checks, and how to verify a change in the real app. Use for any change to Emma's own desktop, crates, or harness code, or when asked how to build, run, check, or package this repo.
+description: How to contribute to the Shinbo repository — the house standards, which layer to rebuild for a given change, how to run a dev instance (and a second one that will not fight the first), how to run against the packaged build, the six checks, and how to verify a change in the real app. Use for any change to Shinbo's own desktop, crates, or harness code, or when asked how to build, run, check, or package this repo.
 ---
 
-# Contributing to Emma
+# Contributing to Shinbo
 
 ## Read first
 
@@ -53,7 +53,7 @@ Three ways, and they are not interchangeable.
 | --- | --- | --- |
 | **Dev** | `npm run dev` | Builds host + native + main, starts Vite, launches Electron against it. Only `desktop/src/**` hot-reloads |
 | **Prod-ish** | `npm --prefix desktop start` | Same builds, no Vite — Electron runs the built bundle. Closest thing to the shipped app without packaging |
-| **Packaged** | `npm run package:mac` | Release Rust + ReleaseSafe Zig + `electron-packager` → `desktop/release/Emma-darwin-arm64/Emma.app`. Apple silicon only, unsigned |
+| **Packaged** | `npm run package:mac` | Release Rust + ReleaseSafe Zig + `electron-packager` → `desktop/release/Shinbo-darwin-arm64/Shinbo.app`. Apple silicon only, unsigned |
 
 First clone:
 
@@ -65,18 +65,18 @@ npm run dev
 `scripts/dev.mjs` is strictly sequential and has **no watcher**. A change to
 `main/`, `shared/`, `crates/`, `harness/` or `native/` means quit and rerun
 `npm run dev`. A main-process edit that was not rebuilt *and relaunched* shows up
-as red `No handler registered for 'emma:…'` in the window — that is a stale main
+as red `No handler registered for 'shinbo:…'` in the window — that is a stale main
 process, not your bug.
 
 ### A second instance, without killing the first
 
-A running Emma holds Electron's single-instance lock, so a plain `electron .`
+A running Shinbo holds Electron's single-instance lock, so a plain `electron .`
 exits silently with code 0 and looks like a build failure. Give the second one
 its own profile, and its own data root so it does not edit real threads:
 
 ```sh
-cd desktop && EMMA_DATA_DIR=/tmp/emma-dev-data ./node_modules/.bin/electron . \
-  --user-data-dir=/tmp/emma-dev-profile --remote-debugging-port=9223
+cd desktop && SHINBO_DATA_DIR=/tmp/shinbo-dev-data ./node_modules/.bin/electron . \
+  --user-data-dir=/tmp/shinbo-dev-profile --remote-debugging-port=9223
 ```
 
 The unsigned dev binary never gets macOS notification permission — only the
@@ -115,12 +115,12 @@ Launching is not verifying. Visible or platform work is not done until the real
 app has been launched and the changed interaction exercised.
 
 ```sh
-EMMA_CDP_PORT=9223 node desktop/scripts/drive.mjs \
-  'return await window.emma.request("snapshot", {})'
-node desktop/scripts/shot.mjs 9223 /tmp/emma-shots 1440 900
+SHINBO_CDP_PORT=9223 node desktop/scripts/drive.mjs \
+  'return await window.shinbo.request("snapshot", {})'
+node desktop/scripts/shot.mjs 9223 /tmp/shinbo-shots 1440 900
 ```
 
-`drive.mjs` evaluates against the real `window.emma` bridge — the same path a
+`drive.mjs` evaluates against the real `window.shinbo` bridge — the same path a
 click takes. Its argument is an async function *body*, so it needs `return`.
 `shot.mjs` reloads first, so it picks up a renderer rebuild but not a main one.
 A screenshot that disagrees with the source is a stale bundle: rebuild, confirm

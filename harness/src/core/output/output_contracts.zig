@@ -657,7 +657,7 @@ pub const ModelListSnapshot = struct {
         if (!self.private_models_hidden) return null;
         const reason = self.public_only_reason orelse return "Using the public model catalog.";
         return switch (reason) {
-            .no_credential => "Using the public model catalog; set EMMA_PROVIDER_API_KEY for private models.",
+            .no_credential => "Using the public model catalog; set SHINBO_PROVIDER_API_KEY for private models.",
             .credential_refresh_failed => "The provider credential could not be refreshed; using the public model catalog.",
             .authenticated_credential_rejected => "Your provider credential was rejected; using the public model catalog.",
         };
@@ -1321,8 +1321,6 @@ pub const CreditsSnapshot = struct {
     raw_json: ?[]const u8 = null,
     err_message: ?[]const u8 = null,
 
-    /// Frees provider-owned fields. `raw_json` remains borrowed presentation
-    /// input and is not released here.
     pub fn deinit(self: *CreditsSnapshot, alloc: Allocator) void {
         if (self.balance) |value| alloc.free(value);
         if (self.used) |value| alloc.free(value);
@@ -1836,7 +1834,7 @@ test "command failure snapshot renders stable escaped json" {
 test "core status snapshot text and json stay stable" {
     const snapshot = StatusSnapshot{
         .model = "alpha",
-        .auth_help = "emma-cli has no provider credential. Set EMMA_PROVIDER_API_KEY.",
+        .auth_help = "shinbo-cli has no provider credential. Set SHINBO_PROVIDER_API_KEY.",
         .permission_mode = .ask,
         .workspace_root = "/tmp/fx",
         .history_turns = 3,
@@ -1847,14 +1845,14 @@ test "core status snapshot text and json stay stable" {
     const text = try snapshot.renderText(std.testing.allocator);
     defer std.testing.allocator.free(text);
     try std.testing.expectEqualStrings(
-        "[status] model=alpha\n[status] update_channel=stable\n[status] build_channel=stable\n[status] auth=missing\n[status] auth_help=emma-cli has no provider credential. Set EMMA_PROVIDER_API_KEY.\n[status] permission_mode=ask\n[status] sandbox=none\n[status] workspace=/tmp/fx\n[status] history_turns=3\n[status] session_permission_grants=1\n[status] agent_step_limit=24\n",
+        "[status] model=alpha\n[status] update_channel=stable\n[status] build_channel=stable\n[status] auth=missing\n[status] auth_help=shinbo-cli has no provider credential. Set SHINBO_PROVIDER_API_KEY.\n[status] permission_mode=ask\n[status] sandbox=none\n[status] workspace=/tmp/fx\n[status] history_turns=3\n[status] session_permission_grants=1\n[status] agent_step_limit=24\n",
         text,
     );
 
     const json = try snapshot.renderJson(std.testing.allocator);
     defer std.testing.allocator.free(json);
     try std.testing.expectEqualStrings(
-        "{\"kind\":\"status\",\"model\":\"alpha\",\"update_channel\":\"stable\",\"build_channel\":\"stable\",\"build_revision\":\"\",\"auth\":\"missing\",\"auth_help\":\"emma-cli has no provider credential. Set EMMA_PROVIDER_API_KEY.\",\"permission_mode\":\"ask\",\"sandbox\":\"none\",\"workspace\":\"/tmp/fx\",\"history_turns\":3,\"session_permission_grants\":1,\"agent_step_limit\":24}",
+        "{\"kind\":\"status\",\"model\":\"alpha\",\"update_channel\":\"stable\",\"build_channel\":\"stable\",\"build_revision\":\"\",\"auth\":\"missing\",\"auth_help\":\"shinbo-cli has no provider credential. Set SHINBO_PROVIDER_API_KEY.\",\"permission_mode\":\"ask\",\"sandbox\":\"none\",\"workspace\":\"/tmp/fx\",\"history_turns\":3,\"session_permission_grants\":1,\"agent_step_limit\":24}",
         json,
     );
 }
@@ -1943,8 +1941,8 @@ test "model list explains public-only and rejected-credential catalogs" {
     }{
         .{
             .snapshot = .{ .ids = &ids, .private_models_hidden = true, .public_only_reason = .no_credential },
-            .text = "[models] 1 available\n - alpha\n[models] Using the public model catalog; set EMMA_PROVIDER_API_KEY for private models.\n",
-            .body = "1 available\n - alpha\nUsing the public model catalog; set EMMA_PROVIDER_API_KEY for private models.",
+            .text = "[models] 1 available\n - alpha\n[models] Using the public model catalog; set SHINBO_PROVIDER_API_KEY for private models.\n",
+            .body = "1 available\n - alpha\nUsing the public model catalog; set SHINBO_PROVIDER_API_KEY for private models.",
         },
         .{
             .snapshot = rejected,
@@ -1953,8 +1951,8 @@ test "model list explains public-only and rejected-credential catalogs" {
         },
         .{
             .snapshot = .{ .ids = &.{}, .private_models_hidden = true, .public_only_reason = .no_credential },
-            .text = "[models] no models returned by gateway\n[models] Using the public model catalog; set EMMA_PROVIDER_API_KEY for private models.\n",
-            .body = "no models returned by gateway\nUsing the public model catalog; set EMMA_PROVIDER_API_KEY for private models.",
+            .text = "[models] no models returned by gateway\n[models] Using the public model catalog; set SHINBO_PROVIDER_API_KEY for private models.\n",
+            .body = "no models returned by gateway\nUsing the public model catalog; set SHINBO_PROVIDER_API_KEY for private models.",
         },
         .{
             .snapshot = .{ .ids = &.{}, .private_models_hidden = true, .public_only_reason = .authenticated_credential_rejected },
@@ -1980,7 +1978,6 @@ test "model list explains public-only and rejected-credential catalogs" {
         json,
     );
 
-    // An API key hides nothing, so the note must stay absent.
     const quiet_text = try shown.renderText(alloc);
     defer alloc.free(quiet_text);
     try std.testing.expect(std.mem.find(u8, quiet_text, "public model catalog") == null);
@@ -2513,13 +2510,13 @@ test "core session recovery snapshot text and json stay stable" {
 
 test "core doctor snapshot text and json stay stable" {
     const checks = [_]doctor_runtime.Check{
-        .{ .name = @constCast("auth"), .status = .ok, .detail = @constCast("EMMA_PROVIDER_API_KEY is configured") },
+        .{ .name = @constCast("auth"), .status = .ok, .detail = @constCast("SHINBO_PROVIDER_API_KEY is configured") },
         .{ .name = @constCast("gh"), .status = .warn, .detail = @constCast("GitHub CLI not found in PATH") },
     };
     const snapshot = DoctorSnapshot{
         .workspace_root = "/tmp/fx",
         .model = "alpha",
-        .auth = .{ .active_source = .emma_provider_api_key },
+        .auth = .{ .active_source = .shinbo_provider_api_key },
         .permission_mode = .ask,
         .agent_step_limit = 24,
         .checks = &checks,
@@ -2528,14 +2525,14 @@ test "core doctor snapshot text and json stay stable" {
     const text = try snapshot.renderText(std.testing.allocator);
     defer std.testing.allocator.free(text);
     try std.testing.expectEqualStrings(
-        "[doctor] ok=1 warn=1 fail=0\n[doctor] workspace=/tmp/fx\n[doctor] model=alpha\n[doctor] auth=EMMA_PROVIDER_API_KEY\n[doctor] permission_mode=ask\n[doctor] agent_step_limit=24\n[ok] auth: EMMA_PROVIDER_API_KEY is configured\n[warn] gh: GitHub CLI not found in PATH\n",
+        "[doctor] ok=1 warn=1 fail=0\n[doctor] workspace=/tmp/fx\n[doctor] model=alpha\n[doctor] auth=SHINBO_PROVIDER_API_KEY\n[doctor] permission_mode=ask\n[doctor] agent_step_limit=24\n[ok] auth: SHINBO_PROVIDER_API_KEY is configured\n[warn] gh: GitHub CLI not found in PATH\n",
         text,
     );
 
     const json = try snapshot.renderJson(std.testing.allocator);
     defer std.testing.allocator.free(json);
     try std.testing.expectEqualStrings(
-        "{\"kind\":\"doctor\",\"ok_count\":1,\"warn_count\":1,\"fail_count\":0,\"workspace\":\"/tmp/fx\",\"model\":\"alpha\",\"auth\":\"EMMA_PROVIDER_API_KEY\",\"permission_mode\":\"ask\",\"agent_step_limit\":24,\"checks\":[{\"name\":\"auth\",\"status\":\"ok\",\"detail\":\"EMMA_PROVIDER_API_KEY is configured\"},{\"name\":\"gh\",\"status\":\"warn\",\"detail\":\"GitHub CLI not found in PATH\"}]}",
+        "{\"kind\":\"doctor\",\"ok_count\":1,\"warn_count\":1,\"fail_count\":0,\"workspace\":\"/tmp/fx\",\"model\":\"alpha\",\"auth\":\"SHINBO_PROVIDER_API_KEY\",\"permission_mode\":\"ask\",\"agent_step_limit\":24,\"checks\":[{\"name\":\"auth\",\"status\":\"ok\",\"detail\":\"SHINBO_PROVIDER_API_KEY is configured\"},{\"name\":\"gh\",\"status\":\"warn\",\"detail\":\"GitHub CLI not found in PATH\"}]}",
         json,
     );
 }

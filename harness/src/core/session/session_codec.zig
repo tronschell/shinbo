@@ -90,6 +90,8 @@ pub const RecoveryCheckpoint = struct {
     }
 };
 
+pub const max_context_handoff_bytes: usize = 20_000;
+
 pub const DurableSessionState = struct {
     id: []u8,
     origin_workspace_root: []u8,
@@ -100,6 +102,7 @@ pub const DurableSessionState = struct {
     preferences: DurableSessionPreferences,
     history: []session.HistoryTurn,
     context_history_start: usize = 0,
+    context_handoff: ?[]u8 = null,
     total_input_tokens: u64,
     total_output_tokens: u64,
     permission_state: session_permission_state.State = .{},
@@ -118,6 +121,7 @@ pub const DurableSessionState = struct {
         alloc.free(self.workspace_root);
         self.preferences.deinit(alloc);
         session.freeHistoryTurnSlice(alloc, self.history);
+        if (self.context_handoff) |handoff| alloc.free(handoff);
         self.permission_state.deinit(alloc);
         if (self.last_subagent_work_id) |id| alloc.free(id);
         if (self.usage) |*usage| usage.deinit(alloc);
@@ -139,6 +143,8 @@ pub const DurableSessionState = struct {
         }
         const history = try dupeHistory(alloc, self.history);
         errdefer session.freeHistoryTurnSlice(alloc, history);
+        const context_handoff = if (self.context_handoff) |handoff| try alloc.dupe(u8, handoff) else null;
+        errdefer if (context_handoff) |handoff| alloc.free(handoff);
         const last_subagent_work_id = if (self.last_subagent_work_id) |work_id|
             try alloc.dupe(u8, work_id)
         else
@@ -168,6 +174,7 @@ pub const DurableSessionState = struct {
             .preferences = preferences,
             .history = history,
             .context_history_start = self.context_history_start,
+            .context_handoff = context_handoff,
             .total_input_tokens = self.total_input_tokens,
             .total_output_tokens = self.total_output_tokens,
             .permission_state = permission_state,
@@ -522,6 +529,9 @@ pub fn validateState(state: DurableSessionState) !void {
     try validateConversationLanguage(state.conversation_language);
     try validateModel(state.preferences.model);
     if (state.context_history_start > state.history.len) return error.InvalidDurableField;
+    if (state.context_handoff) |handoff| {
+        if (state.context_history_start == 0 or handoff.len == 0 or handoff.len > max_context_handoff_bytes or !std.unicode.utf8ValidateSlice(handoff)) return error.InvalidDurableField;
+    }
     if (state.last_subagent_work_id) |id| {
         session.validateWorkId(id) catch return error.InvalidDurableField;
     }
@@ -600,6 +610,10 @@ fn writeState(writer: *std.Io.Writer, state: DurableSessionState) !void {
     if (state.recovery_checkpoint) |checkpoint| {
         try writer.writeAll(",\"recovery_checkpoint\":");
         try writeRecoveryCheckpoint(writer, checkpoint);
+    }
+    if (state.context_handoff) |handoff| {
+        try writer.writeAll(",\"context_handoff\":");
+        try writeJsonString(writer, handoff);
     }
     try writer.writeByte('}');
 }
@@ -802,6 +816,8 @@ fn decodeStateImpl(alloc: Allocator, source: *std.Io.Reader, limits: DecodeLimit
     try expectKey(&json_reader, alloc, "total_output_tokens");
     const total_output_tokens = try readU64(&json_reader, alloc);
     var context_history_start: usize = 0;
+    var context_handoff: ?[]u8 = null;
+    errdefer if (context_handoff) |handoff| alloc.free(handoff);
     var context_seen = false;
     var permission_state: session_permission_state.State = .{};
     errdefer permission_state.deinit(alloc);
@@ -815,6 +831,7 @@ fn decodeStateImpl(alloc: Allocator, source: *std.Io.Reader, limits: DecodeLimit
     while (try json_reader.peekNextTokenType() != .object_end) {
         const key = try readStringOwned(&json_reader, alloc, 64);
         defer alloc.free(key);
+        if (context_handoff != null) return error.InvalidSessionFormat;
         if (std.mem.eql(u8, key, "context_history_start")) {
             if (context_seen or permission_state_seen or usage_seen or last_subagent_work_id != null or recovery_checkpoint != null) {
                 return error.InvalidSessionFormat;
@@ -865,6 +882,8 @@ fn decodeStateImpl(alloc: Allocator, source: *std.Io.Reader, limits: DecodeLimit
                 .parse_numbers = false,
             });
             recovery_checkpoint = try parseRecoveryCheckpoint(alloc, value);
+        } else if (std.mem.eql(u8, key, "context_handoff")) {
+            context_handoff = try readStringOwned(&json_reader, alloc, @min(limits.max_value_bytes, max_context_handoff_bytes));
         } else return error.InvalidSessionFormat;
     }
     errdefer if (usage) |*snapshot| snapshot.deinit(alloc);
@@ -888,6 +907,7 @@ fn decodeStateImpl(alloc: Allocator, source: *std.Io.Reader, limits: DecodeLimit
         },
         .history = owned_history,
         .context_history_start = context_history_start,
+        .context_handoff = context_handoff,
         .total_input_tokens = total_input_tokens,
         .total_output_tokens = total_output_tokens,
         .permission_state = permission_state,
@@ -1018,6 +1038,10 @@ fn writeExecutionMemory(writer: *std.Io.Writer, execution: session.ExecutionMemo
         if (step.reasoning) |reasoning| {
             try writer.writeAll(",\"reasoning\":");
             try writeDurableBytes(writer, reasoning);
+        }
+        if (step.reasoning_details_json) |details| {
+            try writer.writeAll(",\"reasoning_details_json\":");
+            try writeDurableBytes(writer, details);
         }
         try writer.writeAll(",\"tool_calls\":[");
         for (step.tool_calls, 0..) |tool_call, call_index| {
@@ -1338,23 +1362,41 @@ fn parseToolSteps(
     errdefer for (steps[0..parsed_count]) |step| {
         if (step.assistant) |assistant| alloc.free(assistant);
         if (step.reasoning) |reasoning| alloc.free(reasoning);
+        if (step.reasoning_details_json) |details| alloc.free(details);
         session.freeToolCallSlice(alloc, step.tool_calls);
         session.freePersistedToolResults(alloc, step.tool_results);
     };
     for (value.array.items, 0..) |step_value, i| {
-        const step_shape = try exactVariantObject(
-            step_value,
-            &.{ "assistant", "tool_calls", "tool_results" },
-            &.{ "assistant", "reasoning", "tool_calls", "tool_results" },
-        );
-        const object = step_shape.object;
+        const step_object = try requireObject(step_value);
+        var keys: [5][]const u8 = .{ "assistant", "tool_calls", "tool_results", undefined, undefined };
+        var key_count: usize = 3;
+        for ([_][]const u8{ "reasoning", "reasoning_details_json" }) |key| {
+            if (step_object.contains(key)) {
+                keys[key_count] = key;
+                key_count += 1;
+            }
+        }
+        const object = try exactObject(step_value, keys[0..key_count]);
         const assistant = try parseOptionalDurableBytes(alloc, object.get("assistant") orelse return error.InvalidSessionFormat);
         errdefer if (assistant) |owned| alloc.free(owned);
-        const reasoning = if (step_shape.extended)
+        const reasoning = if (object.contains("reasoning"))
             try parseRequiredDurableBytes(alloc, object, "reasoning")
         else
             null;
         errdefer if (reasoning) |owned| alloc.free(owned);
+        const reasoning_details_json = if (object.contains("reasoning_details_json"))
+            try parseRequiredDurableBytes(alloc, object, "reasoning_details_json")
+        else
+            null;
+        errdefer if (reasoning_details_json) |owned| alloc.free(owned);
+        if (reasoning_details_json) |details| {
+            const parsed = std.json.parseFromSlice(std.json.Value, alloc, details, .{}) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => return error.InvalidSessionFormat,
+            };
+            defer parsed.deinit();
+            if (parsed.value != .array) return error.InvalidSessionFormat;
+        }
         const tool_calls = try parseToolCalls(alloc, object.get("tool_calls") orelse return error.InvalidSessionFormat);
         errdefer session.freeToolCallSlice(alloc, tool_calls);
         const tool_results = try parseToolResults(
@@ -1367,6 +1409,7 @@ fn parseToolSteps(
         steps[i] = .{
             .assistant = assistant,
             .reasoning = reasoning,
+            .reasoning_details_json = reasoning_details_json,
             .tool_calls = tool_calls,
             .tool_results = tool_results,
         };
@@ -2323,6 +2366,7 @@ test "durable state round trips live history while discarding legacy authority" 
         },
         .history = @constCast(history[0..]),
         .context_history_start = 3,
+        .context_handoff = @constCast("Deployment is finished; verify version 7 next."),
         .total_input_tokens = 1234,
         .total_output_tokens = 567,
         .last_subagent_work_id = @constCast("work-17"),
@@ -2345,6 +2389,20 @@ test "durable state round trips live history while discarding legacy authority" 
     var decoded = try decodeState(alloc, &source, .{});
     defer decoded.deinit(alloc);
     try expectStateEqual(state, decoded);
+    var duplicate = try decoded.dupe(alloc);
+    defer duplicate.deinit(alloc);
+    try expectStateEqual(decoded, duplicate);
+    try std.testing.expect(duplicate.context_handoff.?.ptr != decoded.context_handoff.?.ptr);
+    duplicate.context_history_start = 0;
+    try std.testing.expectError(error.InvalidDurableField, validateState(duplicate));
+    duplicate.context_history_start = state.context_history_start;
+    alloc.free(duplicate.context_handoff.?);
+    duplicate.context_handoff = try alloc.dupe(u8, "");
+    try std.testing.expectError(error.InvalidDurableField, validateState(duplicate));
+    alloc.free(duplicate.context_handoff.?);
+    duplicate.context_handoff = try alloc.alloc(u8, max_context_handoff_bytes + 1);
+    @memset(duplicate.context_handoff.?, 'h');
+    try std.testing.expectError(error.InvalidDurableField, validateState(duplicate));
 }
 
 test "durable state repairs duplicate-key execution and interrupted tool arguments" {
@@ -3037,6 +3095,8 @@ fn expectStateEqual(expected: DurableSessionState, actual: DurableSessionState) 
     try std.testing.expectEqual(expected.preferences.effort, actual.preferences.effort);
     try std.testing.expectEqual(expected.preferences.fast_mode, actual.preferences.fast_mode);
     try std.testing.expectEqual(expected.context_history_start, actual.context_history_start);
+    try std.testing.expectEqual(expected.context_handoff != null, actual.context_handoff != null);
+    if (expected.context_handoff) |handoff| try std.testing.expectEqualStrings(handoff, actual.context_handoff.?);
     try std.testing.expectEqual(expected.total_input_tokens, actual.total_input_tokens);
     try std.testing.expectEqual(expected.total_output_tokens, actual.total_output_tokens);
     try expectPermissionStateEqual(expected.permission_state, actual.permission_state);
@@ -3509,26 +3569,36 @@ test "durable execution steps carry assistant reasoning and stay legacy-shaped w
         .total_output_tokens = 0,
     };
 
-    var encoded: std.Io.Writer.Allocating = .init(alloc);
-    defer encoded.deinit();
-    _ = try encodeState(state, &encoded.writer);
-    try std.testing.expect(std.mem.find(u8, encoded.written(), "\"reasoning\":\"the working out\"") != null);
-    try std.testing.expect(std.mem.find(u8, encoded.written(), "\"schema_version\":3") != null);
-
-    var source = std.Io.Reader.fixed(encoded.written());
-    var decoded = try decodeState(alloc, &source, .{});
-    defer decoded.deinit(alloc);
-    const decoded_step = decoded.history[0].assistant.execution.tool_steps[0];
-    try std.testing.expectEqualStrings("the working out", decoded_step.reasoning.?);
-
-    steps[0].reasoning = null;
-    var plain: std.Io.Writer.Allocating = .init(alloc);
-    defer plain.deinit();
-    _ = try encodeState(state, &plain.writer);
-    try std.testing.expect(std.mem.find(u8, plain.written(), "\"reasoning\"") == null);
-
-    var plain_source = std.Io.Reader.fixed(plain.written());
-    var plain_decoded = try decodeState(alloc, &plain_source, .{});
-    defer plain_decoded.deinit(alloc);
-    try std.testing.expect(plain_decoded.history[0].assistant.execution.tool_steps[0].reasoning == null);
+    const reasoning = "the working out";
+    const details = "[{\"type\":\"reasoning.encrypted\",\"data\":\"opaque signature\"}]";
+    for (0..4) |fields| {
+        steps[0].reasoning = if (fields & 1 != 0) @constCast(reasoning) else null;
+        steps[0].reasoning_details_json = if (fields & 2 != 0) @constCast(details) else null;
+        var encoded: std.Io.Writer.Allocating = .init(alloc);
+        defer encoded.deinit();
+        _ = try encodeState(state, &encoded.writer);
+        try std.testing.expect(std.mem.find(u8, encoded.written(), "\"schema_version\":3") != null);
+        var source = std.Io.Reader.fixed(encoded.written());
+        var decoded = try decodeState(alloc, &source, .{});
+        defer decoded.deinit(alloc);
+        const decoded_step = decoded.history[0].assistant.execution.tool_steps[0];
+        if (fields & 1 != 0) {
+            try std.testing.expectEqualStrings(reasoning, decoded_step.reasoning.?);
+        } else {
+            try std.testing.expect(decoded_step.reasoning == null);
+            try std.testing.expect(std.mem.find(u8, encoded.written(), "\"reasoning\"") == null);
+        }
+        if (fields & 2 != 0) {
+            try std.testing.expectEqualStrings(details, decoded_step.reasoning_details_json.?);
+        } else {
+            try std.testing.expect(decoded_step.reasoning_details_json == null);
+            try std.testing.expect(std.mem.find(u8, encoded.written(), "\"reasoning_details_json\"") == null);
+        }
+    }
+    steps[0].reasoning_details_json = @constCast("not valid JSON");
+    var invalid: std.Io.Writer.Allocating = .init(alloc);
+    defer invalid.deinit();
+    _ = try encodeState(state, &invalid.writer);
+    var invalid_source = std.Io.Reader.fixed(invalid.written());
+    try std.testing.expectError(error.InvalidSessionFormat, decodeState(alloc, &invalid_source, .{}));
 }

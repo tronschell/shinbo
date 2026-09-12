@@ -1,0 +1,13 @@
+# Independent targeted cache ownership review
+
+Compared the one-line `ThreadStore::read` change and its 64-record regression with `/tmp/shinbo-perf-targeted-cache/thread.before.rs`, the original host fixes, and the current targeted readers used by exports, agent tools, and subscription history. No correctness defect was found.
+
+`cached(id)` returns an owned `Arc<Thread>` before eviction runs. Removing cache entries drops only the cache's references, so previously returned replies and snapshots remain valid. Cache borrowing is completed before `retain` obtains its mutable borrow. The runtime processes store commands through its actor channel; it does not concurrently mutate these `RefCell` maps. A caller holding an earlier Arc is independent of later actor commands.
+
+The fallible read happens before both eviction and `last_read` assignment. A missing or malformed target therefore preserves the prior successful target and does not return stale data. Metadata checking and parse validation remain unchanged. The compact `summaries` map is separate and untouched by the new retain, so unrelated compact projections keep their reuse benefit. Repeated reads of the latest unchanged target and compact refreshes retain Arc identity. Older alternating targets may require reparsing; that is the explicit bounded-cache tradeoff.
+
+Full cached listing and save paths can still populate additional parsed entries until the next targeted or compact read. The one-line correction is not a universal one-record guarantee for every store operation, nor does it reclaim records still owned by callers. The regression accurately checks the targeted-read sequence, preserved prior replies, same-target reuse after summaries, and failed-read preservation. Existing summary invalidation tests cover changed, malformed, saved, and deleted files.
+
+The bounded residual-path review found one small integration candidate: the subscription renderer still retained all selected full histories before extracting generation rows. The coordinator authorized that correction; implementation and deterministic before/after processing counts are now recorded in `performance-model-plan-history.md`. This adds no new issue count. Other documented residuals, including extreme timeline reconciliation/layout and dense exact diffs, do not yield an equally small demonstrated fix from this source-only review. Activity/readTurns and runtime lifecycle work remain with their assigned agents.
+
+No Rust source or tests were edited, and no CPU benchmark or native UI was run for this review. The owner's completed Rust checks cover the cache change; the renderer integration has its separate focused verification.

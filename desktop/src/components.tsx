@@ -14,11 +14,11 @@ export function useComponents(): ComponentMeta[] {
   const [built, setBuilt] = useState<ComponentMeta[]>([]);
   useEffect(() => {
     let alive = true;
-    const read = () => void window.emma.listComponents()
+    const read = () => void window.shinbo.listComponents()
       .then((found) => { if (alive) setBuilt(found); })
       .catch(() => { if (alive) setBuilt([]); });
     read();
-    const stop = window.emma.onComponentsChanged(read);
+    const stop = window.shinbo.onComponentsChanged(read);
     return () => { alive = false; stop(); };
   }, []);
   return built;
@@ -58,17 +58,18 @@ function Mounted({ meta }: { meta: ComponentMeta }) {
 
 function useModule(meta: ComponentMeta, onError: (why: string) => void) {
   const [made, setMade] = useState<{ version: number; Component: FunctionComponent<{ expanded: boolean }> } | null>(null);
+  const variablesKey = JSON.stringify(meta.variables ?? []);
   const api = useMemo(() => ({
     ...runtime,
-    variables: meta.variables ?? [],
-    fetch: (url: string, init?: Omit<ComponentRequest, "url">) => window.emma.componentFetch({ id: meta.id, request: { ...init, url } }),
-  }), [meta.id, meta.variables]);
+    variables: JSON.parse(variablesKey) as string[],
+    fetch: (url: string, init?: Omit<ComponentRequest, "url">) => window.shinbo.componentFetch({ id: meta.id, request: { ...init, url } }),
+  }), [meta.id, variablesKey]);
   useEffect(() => {
     let alive = true;
-    void import(/* @vite-ignore */ componentModuleUrl(meta.id, meta.version))
+    void import(                   componentModuleUrl(meta.id, meta.version))
       .then((module: { default?: unknown }) => {
         if (!alive) return;
-        if (typeof module.default !== "function") throw new Error("A component module has to `export default` a function: it is handed { h, useState, emma, fetch } and returns the component.");
+        if (typeof module.default !== "function") throw new Error("A component module has to `export default` a function: it is handed { h, useState, shinbo, fetch } and returns the component.");
         const Component = (module.default as (given: typeof api) => unknown)(api);
         if (typeof Component !== "function") throw new Error(`The default export returned ${typeof Component}. It has to return a component — a function that returns h(...).`);
         setMade({ version: meta.version, Component: Component as FunctionComponent<{ expanded: boolean }> });
@@ -103,7 +104,7 @@ function Frame({ meta }: { meta: ComponentMeta }) {
       const rect = box.current?.getBoundingClientRect();
       if (!rect || rect.width < 8 || rect.height < 8) return;
       shot.current = key;
-      void window.emma.shootComponent({ id: meta.id, x: rect.x, y: rect.y, width: rect.width, height: rect.height })
+      void window.shinbo.shootComponent({ id: meta.id, x: rect.x, y: rect.y, width: rect.width, height: rect.height })
         .catch(() => { shot.current = ""; });
     }, REVEAL_MS + 160);
     return () => clearTimeout(timer);
@@ -143,16 +144,16 @@ function BuiltMenu({ meta }: { meta: ComponentMeta }) {
   const [open, setOpen] = useState(false);
   const remove = () => {
     setOpen(false);
-    if (!confirm(`Delete “${meta.title}”?\n\nEmma built this into ${COMPONENT_ZONE_LABEL}. It goes for good — only she can build it again.`)) return;
-    void window.emma.deleteComponent(meta.id);
+    if (!confirm(`Delete “${meta.title}”?\n\nShinbo built this into ${COMPONENT_ZONE_LABEL}. It goes for good — only she can build it again.`)) return;
+    void window.shinbo.deleteComponent(meta.id);
   };
   return <span className="built-menu"
     onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false); }}
     onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}>
-    <button type="button" className="bar-flip" aria-label={`More for ${meta.title}`} aria-expanded={open} title={`${meta.title} — built by Emma`} onClick={() => setOpen((was) => !was)}><MoreIcon /></button>
+    <button type="button" className="bar-flip" aria-label={`More for ${meta.title}`} aria-expanded={open} title={`${meta.title} — built by Shinbo`} onClick={() => setOpen((was) => !was)}><MoreIcon /></button>
     {open && <span className="built-menu-list" role="menu">
-      <button type="button" role="menuitem" onClick={() => { setOpen(false); void window.emma.expandComponent({ id: meta.id, expands: !meta.expands }); }}>{meta.expands ? "No full screen" : "Allow full screen"}</button>
-      <button type="button" role="menuitem" onClick={() => { setOpen(false); void window.emma.enableComponent(meta.id, false); }}>Switch off</button>
+      <button type="button" role="menuitem" onClick={() => { setOpen(false); void window.shinbo.expandComponent({ id: meta.id, expands: !meta.expands }); }}>{meta.expands ? "No full screen" : "Allow full screen"}</button>
+      <button type="button" role="menuitem" onClick={() => { setOpen(false); void window.shinbo.enableComponent(meta.id, false); }}>Switch off</button>
       <button type="button" role="menuitem" className="built-danger" onClick={remove}>Delete…</button>
     </span>}
   </span>;
@@ -163,10 +164,10 @@ export function BuiltSettings({ busy, onAttach }: { busy: boolean; onAttach: (me
   const [note, setNote] = useState("");
   const act = (work: Promise<unknown>) => void work.then(() => setNote("")).catch((reason: unknown) => setNote(reasonText(reason)));
   const removeAll = () => {
-    if (!confirm(`Delete all ${built.length} of them?\n\nEverything Emma has built into her interface goes for good.`)) return;
-    act(Promise.all(built.map((one) => window.emma.deleteComponent(one.id))));
+    if (!confirm(`Delete all ${built.length} of them?\n\nEverything Shinbo has built into her interface goes for good.`)) return;
+    act(Promise.all(built.map((one) => window.shinbo.deleteComponent(one.id))));
   };
-  if (!built.length) return <div className="built-settings-empty"><h3>Your interface extensions</h3><p>Ask Emma to build a component in a thread. It appears in {COMPONENT_ZONE_LABEL}, below the built-in widgets.</p><div><span>Try asking</span><blockquote>Add a project checklist to my context bar.</blockquote></div><p>Once you have one, manage its visibility, settings and saved keys here.</p></div>;
+  if (!built.length) return <div className="built-settings-empty"><h3>Your interface extensions</h3><p>Ask Shinbo to build a component in a thread. It appears in {COMPONENT_ZONE_LABEL}, below the built-in widgets.</p><div><span>Try asking</span><blockquote>Add a project checklist to my context bar.</blockquote></div><p>Once you have one, manage its visibility, settings and saved keys here.</p></div>;
   return <div className="built-list">
     {note && <p className="built-error" role="status">{note}</p>}
     {built.map((one) => <article key={one.id} className="built-card" data-off={one.disabled || undefined}>
@@ -177,9 +178,9 @@ export function BuiltSettings({ busy, onAttach }: { busy: boolean; onAttach: (me
       </div>
       <div className="built-card-acts">
         <button type="button" disabled={busy} onClick={() => onAttach(one)}>Send to a thread</button>
-        <label className="check"><input type="checkbox" checked={!one.disabled} disabled={busy} onChange={(event) => act(window.emma.enableComponent(one.id, event.target.checked))} />Enabled</label>
+        <label className="check"><input type="checkbox" checked={!one.disabled} disabled={busy} onChange={(event) => act(window.shinbo.enableComponent(one.id, event.target.checked))} />Enabled</label>
       </div>
-      <details className="built-card-options"><summary>Options{one.variables?.length ? ` & ${one.variables.length} saved-key slots` : ""}</summary><div><label className="check"><input type="checkbox" checked={one.expands} disabled={busy} onChange={(event) => act(window.emma.expandComponent({ id: one.id, expands: event.target.checked }))} />Allow full screen</label>{one.variables?.length ? <Variables meta={one} busy={busy} onError={setNote} /> : null}<button type="button" className="reset-data" disabled={busy} onClick={() => { if (confirm(`Delete “${one.title}”?\n\nIt goes for good — only Emma can build it again.`)) act(window.emma.deleteComponent(one.id)); }}>Delete component…</button></div></details>
+      <details className="built-card-options"><summary>Options{one.variables?.length ? ` & ${one.variables.length} saved-key slots` : ""}</summary><div><label className="check"><input type="checkbox" checked={one.expands} disabled={busy} onChange={(event) => act(window.shinbo.expandComponent({ id: one.id, expands: event.target.checked }))} />Allow full screen</label>{one.variables?.length ? <Variables meta={one} busy={busy} onError={setNote} /> : null}<button type="button" className="reset-data" disabled={busy} onClick={() => { if (confirm(`Delete “${one.title}”?\n\nIt goes for good — only Shinbo can build it again.`)) act(window.shinbo.deleteComponent(one.id)); }}>Delete component…</button></div></details>
     </article>)}
     <footer><button type="button" className="built-danger" disabled={busy} onClick={removeAll}>Delete all {built.length}</button></footer>
   </div>;
@@ -188,9 +189,9 @@ export function BuiltSettings({ busy, onAttach }: { busy: boolean; onAttach: (me
 function Variables({ meta, busy, onError }: { meta: ComponentMeta; busy: boolean; onError: (why: string) => void }) {
   const [stored, setStored] = useState<CredentialSummary[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  useEffect(() => { void window.emma.listCredentials().then(setStored).catch(() => setStored([])); }, []);
+  useEffect(() => { void window.shinbo.listCredentials().then(setStored).catch(() => setStored([])); }, []);
   const save = (env: string, secret: string | undefined) => {
-    void window.emma.saveCredential({ env, secret })
+    void window.shinbo.saveCredential({ env, secret })
       .then((next) => { setStored(next); setDrafts((was) => ({ ...was, [env]: "" })); onError(""); })
       .catch((reason: unknown) => onError(reasonText(reason)));
   };
@@ -214,5 +215,5 @@ function Variables({ meta, busy, onError }: { meta: ComponentMeta; busy: boolean
 function Shot({ meta }: { meta: ComponentMeta }) {
   const [missing, setMissing] = useState(false);
   if (missing) return <span className="built-shot built-shot-none" aria-hidden="true" />;
-  return <img className="built-shot" src={componentShotUrl(meta.id, meta.version)} alt={`${meta.title}, as it looks in Emma`} onError={() => setMissing(true)} />;
+  return <img className="built-shot" src={componentShotUrl(meta.id, meta.version)} alt={`${meta.title}, as it looks in Shinbo`} onError={() => setMissing(true)} />;
 }

@@ -1,6 +1,6 @@
 # Agents
 
-Emma's page about Emma. It reads the span traces her own finished turns left
+Shinbo's page about Shinbo. It reads the span traces her own finished turns left
 behind, names the friction that keeps repeating, drafts one change about it, and
 then — this is the part that matters — tries to prove the change helped before
 keeping it. The proof is a **replay bench**: your own saved cases, replayed
@@ -70,7 +70,7 @@ are costs — lower is better**, so no surface anywhere inverts a sign.
 The header numbers are zero on a turn recorded before they existed. The cost
 proxies are each also what *giving up early* looks like: a turn that quits after
 two calls scores beautifully. `failed` is the last number for exactly that reason — it is the one that goes up when
-Emma buys a low step count by not finishing. Read it alongside whichever of the
+Shinbo buys a low step count by not finishing. Read it alongside whichever of the
 three a trial is being judged on.
 
 ### Where the tokens go
@@ -527,7 +527,7 @@ A baseline run replays the cases under arm A alone, and the scoreboard plots one
 point per baseline run over time. Four rules keep it honest:
 
 - **Same mode and model.** Switching from a smaller model to a larger one
-  mid-history would otherwise credit the model change to Emma's own lessons.
+  mid-history would otherwise credit the model change to Shinbo's own lessons.
 - **Same metric.** A run is plotted only on the curve of the metric it stamped;
   it is never recomputed under a metric it did not declare. The page builds a
   curve for each of the four and draws whichever has the most points, ties going

@@ -5,7 +5,7 @@ export type ModelSource = "openrouter" | "local";
 export type BrandAsset = {
   src: string;
   sourceUrl: string;
-  retrievedAt: "2026-08-20";
+  retrievedAt: "2026-08-20" | "2026-09-11";
   license: string;
 };
 
@@ -37,6 +37,8 @@ const simpleIconUrls = {
   jira: new URL("../assets/brands/jira.svg", import.meta.url).href,
   todoist: new URL("../assets/brands/todoist.svg", import.meta.url).href,
   xiaomi: new URL("../assets/brands/xiaomi.svg", import.meta.url).href,
+  lmstudio: new URL("../assets/brands/lmstudio.svg", import.meta.url).href,
+  ollama: new URL("../assets/brands/ollama.svg", import.meta.url).href,
 } as const;
 
 const simpleIcons = (file: keyof typeof simpleIconUrls, commit: string, sourceUrl = `https://raw.githubusercontent.com/simple-icons/simple-icons/${commit}/icons/${file}.svg`): BrandAsset => ({
@@ -129,6 +131,20 @@ const assets = {
     retrievedAt: "2026-08-20",
     license: "Official Pi coding-agent badge from the Pi press kit; tile dropped, glyph kept white; use only to identify Pi; Pi and Earendil marks remain with their owners",
   },
+  lmstudio: simpleIcons("lmstudio", "fadc8239f9a45499f6a30e2dd5c73b84275e1ec7"),
+  ollama: simpleIcons("ollama", "856e2915b49a4c4752e548de05fcb4a526a5ee40"),
+  llamacpp: {
+    src: new URL("../assets/brands/llamacpp.svg", import.meta.url).href,
+    sourceUrl: "https://raw.githubusercontent.com/ggml-org/llama.cpp/2cfef4d117d67ab1dec002915b48a15d11ee1973/media/llama1-icon-transparent.svg",
+    retrievedAt: "2026-09-11",
+    license: "llama.cpp project icon from the ggml-org/llama.cpp repository (MIT); recoloured #fff; the mark remains with its owners",
+  },
+  omlx: {
+    src: new URL("../assets/brands/omlx.svg", import.meta.url).href,
+    sourceUrl: "https://raw.githubusercontent.com/jundot/omlx/4cee64cad10c83a783200700e3d49e1a244fd7c0/docs/images/icon-rounded-dark.svg",
+    retrievedAt: "2026-09-11",
+    license: "oMLX app icon from the jundot/omlx repository (Apache-2.0); rounded tile and shadow dropped, glyph kept white; the mark remains with its owner",
+  },
   openrouter: {
     src: new URL("../assets/brands/openrouter.svg", import.meta.url).href,
     sourceUrl: "https://openrouter.ai/brand/v2/openrouter-dark.svg",
@@ -183,6 +199,18 @@ export const providerBrands: readonly BrandDefinition[] = [
 const providerById = new Map(providerBrands.map((brand) => [brand.id, brand]));
 if (import.meta.env.DEV && providerById.size !== providerBrands.length) {
   throw new Error(`duplicate provider brand id in providerBrands (${providerBrands.length} entries, ${providerById.size} unique)`);
+}
+
+const engineBrands: Record<string, BrandDefinition> = {
+  lmstudio: definition("lmstudio", "LM Studio", "LM", assets.lmstudio),
+  ollama: definition("ollama", "Ollama", "O", assets.ollama),
+  llamacpp: definition("llamacpp", "llama.cpp", "λ", assets.llamacpp),
+  omlx: definition("omlx", "oMLX", "oM", assets.omlx),
+};
+
+/** Local inference engines from PROVIDER_PRESETS; custom endpoints get no brand. */
+export function brandForEngine(id: string): BrandDefinition | undefined {
+  return engineBrands[id];
 }
 
 export function brandForImporter(id: string): BrandDefinition | undefined {

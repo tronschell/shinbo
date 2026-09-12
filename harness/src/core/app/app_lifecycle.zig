@@ -33,8 +33,6 @@ const TranscriptRuntime = transcript_runtime.TranscriptRuntime;
 pub const ResizeHandler = shell_runtime.ResizeHandler;
 pub const default_permission_mode = config_runtime.default_permission_mode;
 
-/// Compile-time terminal restoration for one async-signal-safe `write(2)` call.
-/// Resets terminal modes and ends with a newline before the next shell prompt.
 const abnormal_exit_restore_prefix = "\x1b[?2026l\x1b[?1000l\x1b[?1002l\x1b[?1004l\x1b[?1006l\x1b[?1l\x1b>\x1b[?1049l\x1b[?7h\x1b[4l\x1b[?6l\x1b[0m\x1b[?25h\x1b[?2031l\x1b[?2004l";
 const abnormal_exit_restore = abnormal_exit_restore_prefix ++ "\x1b[<u\x1b[>4;0m\n";
 const tmux_abnormal_exit_restore = abnormal_exit_restore_prefix ++ "\x1b[>4;0m\n";
@@ -45,15 +43,10 @@ const alternate_screen_enter = "\x1b[?1049h";
 const alternate_mouse_tracking_enter = "\x1b[?1000h\x1b[?1006h";
 const terminal_takeover_reset = "\x1b[?2026l\x1b[?1000l\x1b[?1002l\x1b[?1004l\x1b[?1006l\x1b[?1l\x1b>\x1b[?2004l\x1b[<u\x1b[>4;0m\x1b[4l\x1b[?6l\x1b[?7h\x1b[0m\x1b[?25h";
 
-/// Original handlers, written at bootstrap and restored at shutdown.
-/// Signal context never mutates them.
 var old_sigterm_action: ?std.posix.Sigaction = null;
 var old_sighup_action: ?std.posix.Sigaction = null;
 
-/// Restores terminal state, installs the default disposition, and re-raises.
-/// Must remain async-signal-safe: only `write(2)`, `sigaction(2)`, and `raise(3)`.
 fn abnormalExitHandlerWithRestore(comptime restore: []const u8, sig: std.posix.SIG) void {
-    // Signal context cannot recover from a failed async-signal-safe write.
     _ = std.c.write(
         std.posix.STDOUT_FILENO,
         restore.ptr,
@@ -77,9 +70,6 @@ fn tmuxAbnormalExitHandler(sig: std.posix.SIG) callconv(.c) void {
     abnormalExitHandlerWithRestore(tmux_abnormal_exit_restore, sig);
 }
 
-/// Install handlers for SIGTERM and SIGHUP so an externally-terminated
-/// fx restores terminal state before dying. SIGINT is not included
-/// because raw mode disables terminal-generated SIGINT.
 pub fn installAbnormalExitHandlers(tmux: ?[]const u8) void {
     if (!shell_runtime.supports_resize_signal) return;
 
@@ -459,8 +449,6 @@ pub fn bootstrapInteractiveApp(cfg: BootstrapConfig) !StartupState {
         return error.RecordingStartFailed;
     };
 
-    // The shadow VT is load-bearing: frame commit diffs the target
-    // surface against it and records the accepted terminal state.
     try cfg.shell.enableShadowVt(cfg.alloc);
 
     ui_render.setTruecolorSupport(ui_render.truecolorSupportedForValues(
@@ -490,8 +478,7 @@ pub fn bootstrapInteractiveApp(cfg: BootstrapConfig) !StartupState {
         cfg.startup_min_body_rows,
         state.startup_scrollback,
     );
-    // Enable keyboard/paste protocol modes and disable autowrap for the
-    // interactive session. Shutdown restores each mode.
+
     try enableInteractiveTerminalModes(cfg.shell, cfg.metrics);
     try cfg.shell.initViewportWithReservedRows(cfg.metrics, launch_start_row, effective_startup_min_body_rows);
 
@@ -562,9 +549,6 @@ pub fn shutdownInteractiveShell(
     finishLeavingInteractiveMode(terminal, shell, metrics);
 }
 
-/// Cooked-mode handoff for Ctrl-Z / SIGTSTP. Same terminal restore as
-/// shutdown, but keeps signal handlers, title, and recording so resume can
-/// continue the same session.
 fn suspendTerminalForJobControl(
     terminal: *TerminalState,
     shell: *TranscriptRuntime,
@@ -575,9 +559,6 @@ fn suspendTerminalForJobControl(
     finishLeavingInteractiveMode(terminal, shell, metrics);
 }
 
-/// Raise SIGTSTP after restoring cooked mode; on SIGCONT rebuild interactive
-/// terminal state and request a full repaint. Platforms without job-control
-/// signals (same set as `supports_resize_signal`) are a no-op.
 pub fn suspendToJobControl(
     terminal: *TerminalState,
     shell: *TranscriptRuntime,
@@ -608,8 +589,6 @@ fn finishLeavingInteractiveMode(terminal: *TerminalState, shell: *TranscriptRunt
     emitShutdownCleanupAndResume(shell, metrics);
 }
 
-/// Re-arm raw mode after a job-control continue, re-query layout in case the
-/// terminal was resized while stopped, then request a full repaint.
 fn resumeTerminalAfterJobControl(
     terminal: *TerminalState,
     shell: *TranscriptRuntime,
@@ -639,10 +618,6 @@ fn normalExitRestoreSequence(tmux: ?[]const u8) []const u8 {
         tmux_normal_exit_restore;
 }
 
-/// Full transcript steady state is `active`: the terminal owns the
-/// full-transcript alternate screen and the shell projection is active.
-/// The drift states exist only while a recovery or approval handoff path
-/// is resolving a partially transitioned screen.
 const FullTranscriptLifecycleState = enum {
     inactive,
     active,
@@ -841,9 +816,6 @@ pub fn leaveTerminalSessionScreen(
     terminal.alternate_frame_layout = .{};
 }
 
-/// Transfer the existing alternate buffer directly back to the manager.
-/// The child modes are removed before ownership changes, so a failed write
-/// leaves terminal-session cleanup armed.
 pub fn handoffTerminalSessionToSubagentManager(
     terminal: *TerminalState,
     shell: *TranscriptRuntime,
@@ -973,7 +945,7 @@ fn enterAlternateScreen(
 ) !void {
     if (terminal.alternate_screen_owner == owner) return;
     if (terminal.alternate_screen_owner != .none) return error.AlternateScreenAlreadyOwned;
-    // Keep the flag set if the write fails so shutdown still attempts a restore.
+
     terminal.alternate_screen_owner = owner;
     terminal.alternate_frame_layout = .{};
     try writeLifecycleTerminalBytes(shell, metrics, alternate_screen_enter);
@@ -1008,15 +980,11 @@ fn setAlternateScreenMouseTracking(
         return;
     }
     if (enabled) {
-        // Keep the state armed on an enable write failure so leave/shutdown
-        // still attempts to restore the terminal mode.
         terminal.alternate_mouse_tracking_active = true;
         try writeLifecycleTerminalBytes(shell, metrics, alternate_mouse_tracking_enter);
         return;
     }
 
-    // Keep the state armed on a disable failure so leave/shutdown still
-    // attempts to restore the terminal mode.
     try writeLifecycleTerminalBytes(
         shell,
         metrics,
@@ -1950,7 +1918,7 @@ test "shutdown cleanup erases from footer frame top after frame commit" {
 test "loadStartupState applies core env overrides" {
     var env = try TestEnv.install(std.testing.allocator, &.{
         .{ .key = "FX_MODEL", .value = "  env-model  " },
-        .{ .key = "EMMA_PROVIDER_API_KEY", .value = "gateway-key" },
+        .{ .key = "SHINBO_PROVIDER_API_KEY", .value = "gateway-key" },
         .{ .key = "FX_PERMISSION_MODE", .value = "auto" },
         .{ .key = "FX_MAX_AGENT_STEPS", .value = "37" },
     });
@@ -1969,7 +1937,7 @@ test "loadStartupState applies core env overrides" {
     try std.testing.expectEqual(config_runtime.ModelSource.process_override, state.model_source);
     try std.testing.expect(!state.fast_mode);
     try std.testing.expectEqualStrings("gateway-key", state.apiKey().?);
-    try std.testing.expectEqual(credentials.Source.emma_provider_api_key, state.credential.?.source);
+    try std.testing.expectEqual(credentials.Source.shinbo_provider_api_key, state.credential.?.source);
     try std.testing.expectEqual(PermissionMode.auto, state.permission_mode);
     try std.testing.expectEqual(@as(usize, 37), state.agent_step_limit);
     try std.testing.expectEqual(sandbox.BackendKind.auto, state.sandbox_backend);

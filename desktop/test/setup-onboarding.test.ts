@@ -22,7 +22,7 @@ test("onboarding requires a verified OpenRouter key even when subscriptions are 
   const state = createContext({
     balance: null as KeyBalance | null, checking: false, saving: false, error: "", stored: [], drafts: { OPENROUTER_API_KEY: "invalid" }, OPENROUTER_ENV: "OPENROUTER_API_KEY",
     reasonText: (reason: Error) => reason.message,
-    window: { emma: {
+    window: { shinbo: {
       saveCredential: async () => [{ env: "OPENROUTER_API_KEY", masked: "key", readable: true }],
       openRouterBalance: async () => ({ ...key, error: "OpenRouter rejected that key." }),
     } },
@@ -42,17 +42,17 @@ test("onboarding requires a verified OpenRouter key even when subscriptions are 
   await verify();
   assert.equal(ready(), false);
   assert.equal(state.balance.error, "OpenRouter rejected that key.");
-  state.window.emma.openRouterBalance = async () => key;
+  state.window.shinbo.openRouterBalance = async () => key;
   await verify();
   assert.equal(ready(), true);
   state.checking = true;
   assert.equal(ready(), false);
   state.checking = false;
-  state.window.emma.openRouterBalance = async () => { throw new Error("Offline"); };
+  state.window.shinbo.openRouterBalance = async () => { throw new Error("Offline"); };
   await verify();
   assert.equal(ready(), false);
   assert.equal(state.error, "Offline");
-  state.window.emma.saveCredential = async () => { throw new Error("Credential store locked"); };
+  state.window.shinbo.saveCredential = async () => { throw new Error("Credential store locked"); };
   await state.saveKey("OPENROUTER_API_KEY", "replacement");
   assert.equal(ready(), false);
   assert.equal(state.saving, false);
@@ -97,7 +97,7 @@ test("Quick Ask opens the native interface and recovers from a failed demo", asy
   const state = createContext({
     busy: false, tapped: false, error: "",
     reasonText: (reason: Error) => reason.message,
-    window: { emma: { demoQuickAsk: async () => { if (fail) throw new Error("Unavailable"); } } },
+    window: { shinbo: { demoQuickAsk: async () => { if (fail) throw new Error("Unavailable"); } } },
   });
   state.setBusy = (value: boolean) => { state.busy = value; };
   state.setError = (value: string) => { state.error = value; };

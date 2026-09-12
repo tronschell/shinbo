@@ -1,8 +1,22 @@
 import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
-import { constants, DatabaseSync } from "node:sqlite";
-import { ARTIFACT_DB_FILE, ARTIFACT_EXTENSIONS, ARTIFACT_FILE_TYPES, ARTIFACT_KINDS, ARTIFACT_SURFACES, artifactSlug, isArtifactKind, isArtifactSurface, MAX_ARTIFACT_BYTES, MAX_ARTIFACT_DB_BYTES, MAX_ARTIFACT_FILES, MAX_ARTIFACT_ROWS, MAX_ARTIFACT_SQL_CHARS, MAX_ARTIFACT_SQL_PARAMS, MAX_ARTIFACT_TITLE_CHARS, MAX_ARTIFACTS, mountable, validArtifactFile, validArtifactId, type Artifact, type ArtifactKind, type ArtifactMeta } from "../shared/artifacts";
+import { fork } from "node:child_process";
+import { ARTIFACT_DB_FILE, ARTIFACT_EXTENSIONS, ARTIFACT_FILE_TYPES, ARTIFACT_KINDS, ARTIFACT_SURFACES, artifactSlug, isArtifactKind, isArtifactSurface, MAX_ARTIFACT_BYTES, MAX_ARTIFACT_FILES, MAX_ARTIFACT_SQL_CHARS, MAX_ARTIFACT_SQL_PARAMS, MAX_ARTIFACT_TITLE_CHARS, MAX_ARTIFACTS, mountable, validArtifactFile, validArtifactId, type Artifact, type ArtifactKind, type ArtifactMeta } from "../shared/artifacts";
 import { writeAtomic } from "./write-atomic";
+
+const MAX_QUERY_MS = 2000;
+const MAX_ACTIVE_QUERIES = 4;
+let activeQueries = 0;
+
+const mutations = new Map<string, Promise<unknown>>();
+
+function mutate<T>(userData: string, operation: () => Promise<T>): Promise<T> {
+  const key = path.resolve(userData);
+  const pending = (mutations.get(key) ?? Promise.resolve()).then(operation, operation);
+  mutations.set(key, pending);
+  void pending.finally(() => { if (mutations.get(key) === pending) mutations.delete(key); }).catch(() => undefined);
+  return pending;
+}
 
 export function artifactRoot(userData: string): string {
   return path.join(userData, "artifacts");
@@ -85,7 +99,11 @@ export async function readArtifact(userData: string, id: string): Promise<Artifa
   return { ...meta, content: await readBounded(file, MAX_ARTIFACT_BYTES), path: file };
 }
 
-export async function writeArtifact(userData: string, input: ArtifactInput): Promise<Artifact> {
+export function writeArtifact(userData: string, input: ArtifactInput): Promise<Artifact> {
+  return mutate(userData, () => storeArtifact(userData, input));
+}
+
+async function storeArtifact(userData: string, input: ArtifactInput): Promise<Artifact> {
   const title = typeof input.title === "string" ? input.title.trim() : "";
   if (!title || title.length > MAX_ARTIFACT_TITLE_CHARS) throw new Error(`An artifact needs a title of 1 to ${MAX_ARTIFACT_TITLE_CHARS} characters.`);
   if (!isArtifactKind(input.kind)) throw new Error(`"${String(input.kind).slice(0, 32)}" is not an artifact kind. Use one of ${ARTIFACT_KINDS.join(", ")}.`);
@@ -95,7 +113,7 @@ export async function writeArtifact(userData: string, input: ArtifactInput): Pro
   const taken = (await readdir(root).catch(() => [])).slice(0, MAX_ARTIFACTS + 1);
   const id = input.id ?? unique(artifactSlug(title), taken);
   const directory = artifactDirectory(userData, id);
-  if (!taken.includes(id) && taken.length >= MAX_ARTIFACTS) throw new Error(`Emma already holds the maximum of ${MAX_ARTIFACTS} artifacts. Delete one before making another.`);
+  if (!taken.includes(id) && taken.length >= MAX_ARTIFACTS) throw new Error(`Shinbo already holds the maximum of ${MAX_ARTIFACTS} artifacts. Delete one before making another.`);
   const previous = await readMeta(directory, id).catch(() => undefined);
   const meta: ArtifactMeta = {
     id,
@@ -111,10 +129,10 @@ export async function writeArtifact(userData: string, input: ArtifactInput): Pro
   };
   await mkdir(directory, { recursive: true, mode: 0o700 });
 
-  if (previous && previous.kind !== meta.kind) await rm(contentPath(directory, previous.kind), { force: true });
   const file = contentPath(directory, meta.kind);
   await writeAtomic(file, input.content);
   await writeAtomic(path.join(directory, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`);
+  if (previous && contentPath(directory, previous.kind) !== file) await rm(contentPath(directory, previous.kind), { force: true }).catch(() => undefined);
   return { ...meta, content: input.content, path: file };
 }
 
@@ -123,7 +141,7 @@ async function surfaceFor(userData: string, id: string, input: ArtifactInput, pr
   const asked = input.surface;
   if (asked === undefined) return mountable(kind) ? previous?.surface : undefined;
   if (asked === "none" || asked === "") return undefined;
-  if (!isArtifactSurface(asked)) throw new Error(`"${String(asked).slice(0, 32)}" is not a region of Emma's interface. Use one of ${ARTIFACT_SURFACES.join(", ")}, or "none" to hand the region back to the built-in.`);
+  if (!isArtifactSurface(asked)) throw new Error(`"${String(asked).slice(0, 32)}" is not a region of Shinbo's interface. Use one of ${ARTIFACT_SURFACES.join(", ")}, or "none" to hand the region back to the built-in.`);
   if (!mountable(kind)) throw new Error(`A ${kind} artifact does not run, so it cannot be a region. A region is kind "code", language "js": one module that default-exports the factory.`);
   if (asked === previous?.surface) return asked;
 
@@ -133,14 +151,18 @@ async function surfaceFor(userData: string, id: string, input: ArtifactInput, pr
 }
 
 export async function updateArtifact(userData: string, id: string, oldStr: string, newStr: string): Promise<Artifact> {
-  const artifact = await readArtifact(userData, id);
-  const content = replaceOnce(artifact.content, oldStr, newStr, id);
-  return await writeArtifact(userData, { id, title: artifact.title, kind: artifact.kind, language: artifact.language, content });
+  return mutate(userData, async () => {
+    const artifact = await readArtifact(userData, id);
+    const content = replaceOnce(artifact.content, oldStr, newStr, id);
+    return storeArtifact(userData, { id, title: artifact.title, kind: artifact.kind, language: artifact.language, content });
+  });
 }
 
 export async function updateArtifactFile(userData: string, id: string, file: string, oldStr: string, newStr: string): Promise<Artifact> {
-  const before = await readArtifactFile(userData, id, file);
-  return await writeArtifactFile(userData, id, file, replaceOnce(before, oldStr, newStr, `${file} in ${id}`));
+  return mutate(userData, async () => {
+    const before = await readArtifactFile(userData, id, file);
+    return storeArtifactFile(userData, id, file, replaceOnce(before, oldStr, newStr, `${file} in ${id}`));
+  });
 }
 
 function replaceOnce(content: string, oldStr: string, newStr: string, where: string): string {
@@ -168,7 +190,11 @@ export async function readArtifactFile(userData: string, id: string, file: strin
   return await readBounded(found, MAX_ARTIFACT_BYTES);
 }
 
-export async function writeArtifactFile(userData: string, id: string, file: string, content: string): Promise<Artifact> {
+export function writeArtifactFile(userData: string, id: string, file: string, content: string): Promise<Artifact> {
+  return mutate(userData, () => storeArtifactFile(userData, id, file, content));
+}
+
+async function storeArtifactFile(userData: string, id: string, file: string, content: string): Promise<Artifact> {
   const artifact = await readArtifact(userData, id);
   if (artifact.kind !== "app") throw new Error(`${id} is a ${artifact.kind} artifact, which is one file. Only an app holds files beside it.`);
   const found = artifactFilePath(userData, id, file);
@@ -177,7 +203,7 @@ export async function writeArtifactFile(userData: string, id: string, file: stri
   const held = await artifactFiles(userData, id);
   if (!held.includes(file) && held.length >= MAX_ARTIFACT_FILES) throw new Error(`${id} already holds ${MAX_ARTIFACT_FILES} files. Rewrite one of them instead.`);
   await writeAtomic(found, content);
-  return await writeArtifact(userData, { id, title: artifact.title, kind: artifact.kind, language: artifact.language, content: artifact.content });
+  return await storeArtifact(userData, { id, title: artifact.title, kind: artifact.kind, language: artifact.language, content: artifact.content });
 }
 
 export async function queryArtifact(userData: string, id: string, sql: unknown, params: unknown): Promise<Record<string, unknown>[]> {
@@ -186,19 +212,33 @@ export async function queryArtifact(userData: string, id: string, sql: unknown, 
   if (typeof sql !== "string" || !sql.trim()) throw new Error("A query is one SQL statement.");
   if (sql.length > MAX_ARTIFACT_SQL_CHARS) throw new Error(`A statement is at most ${MAX_ARTIFACT_SQL_CHARS} characters.`);
   const bound = bindable(params);
-  const database = new DatabaseSync(path.join(artifactDirectory(userData, id), ARTIFACT_DB_FILE));
+  if (activeQueries >= MAX_ACTIVE_QUERIES) throw new Error("Too many artifact queries are running. Try again when one finishes.");
+  activeQueries += 1;
   try {
-    const pageSize = Number((database.prepare("pragma page_size").get() as { page_size?: number } | undefined)?.page_size) || 4096;
-    database.prepare(`pragma max_page_count = ${Math.floor(MAX_ARTIFACT_DB_BYTES / pageSize)}`).run();
-    database.setAuthorizer((action) => action === constants.SQLITE_ATTACH || action === constants.SQLITE_DETACH ? constants.SQLITE_DENY : constants.SQLITE_OK);
-    const rows: Record<string, unknown>[] = [];
-    for (const row of database.prepare(sql).iterate(...bound)) {
-      if (rows.length >= MAX_ARTIFACT_ROWS) throw new Error(`That returned more than ${MAX_ARTIFACT_ROWS} rows. Add a LIMIT, or count in SQL rather than in the page.`);
-      rows.push({ ...(row as Record<string, unknown>) });
-    }
-    return rows;
+    return await new Promise<Record<string, unknown>[]>((resolve, reject) => {
+      const child = fork(path.join(__dirname, "artifact-sql.js"), [], {
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+        execArgv: [],
+        stdio: ["ignore", "ignore", "ignore", "ipc"],
+        serialization: "advanced",
+      });
+      let settled = false;
+      const finish = (error?: Error, rows?: Record<string, unknown>[]) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        child.kill("SIGKILL");
+        if (error) reject(error);
+        else resolve(rows ?? []);
+      };
+      const timer = setTimeout(() => finish(new Error("That query exceeded the 2 second time limit. Simplify the query and try again.")), MAX_QUERY_MS);
+      child.once("error", (error) => finish(error));
+      child.once("exit", () => finish(new Error("The artifact query process stopped before returning a result.")));
+      child.once("message", (reply: { error?: string; rows?: Record<string, unknown>[] }) => finish(reply.error ? new Error(reply.error) : undefined, reply.rows));
+      child.send({ file: path.join(artifactDirectory(userData, id), ARTIFACT_DB_FILE), sql, params: bound }, (error) => { if (error) finish(error); });
+    });
   } finally {
-    database.close();
+    activeQueries -= 1;
   }
 }
 
@@ -216,9 +256,11 @@ function bindable(value: unknown): (null | number | string)[] {
 }
 
 export async function deleteArtifact(userData: string, id: string): Promise<void> {
-  const directory = artifactDirectory(userData, id);
-  if (!await stat(directory).catch(() => undefined)) throw new Error(`There is no artifact called "${id}". List them with artifact {"action":"list"}.`);
-  await rm(directory, { recursive: true, force: true });
+  return mutate(userData, async () => {
+    const directory = artifactDirectory(userData, id);
+    if (!await stat(directory).catch(() => undefined)) throw new Error(`There is no artifact called "${id}". List them with artifact {"action":"list"}.`);
+    await rm(directory, { recursive: true, force: true });
+  });
 }
 
 function unique(slug: string, taken: readonly string[]) {
@@ -227,5 +269,5 @@ function unique(slug: string, taken: readonly string[]) {
   for (let suffix = 2; suffix <= MAX_ARTIFACTS; suffix += 1) {
     if (!taken.includes(`${stem}-${suffix}`)) return `${stem}-${suffix}`;
   }
-  throw new Error(`Emma already holds too many artifacts called "${slug}". Rewrite one of them instead.`);
+  throw new Error(`Shinbo already holds too many artifacts called "${slug}". Rewrite one of them instead.`);
 }

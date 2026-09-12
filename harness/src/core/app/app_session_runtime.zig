@@ -3638,7 +3638,7 @@ pub fn Runtime(comptime App: type) type {
                 .upgrade => |version| {
                     const body = try std.fmt.allocPrint(
                         app.alloc,
-                        "emma has been updated to v{s}",
+                        "shinbo has been updated to v{s}",
                         .{version},
                     );
                     defer app.alloc.free(body);
@@ -4777,6 +4777,11 @@ pub fn Runtime(comptime App: type) type {
             }
             const history = try app.session.snapshotHistory(app.alloc);
             errdefer session_runtime.freeHistoryTurnSlice(app.alloc, history);
+            const context_handoff = if (base_state.context_history_start == app.session.contextHistoryStart())
+                if (base_state.context_handoff) |handoff| try app.alloc.dupe(u8, handoff) else null
+            else
+                null;
+            errdefer if (context_handoff) |handoff| app.alloc.free(handoff);
             const permission_state = try app.session.snapshotPermissionState(app.alloc);
             errdefer {
                 var value = permission_state;
@@ -4798,6 +4803,7 @@ pub fn Runtime(comptime App: type) type {
                 .preferences = owned_preferences,
                 .history = history,
                 .context_history_start = app.session.contextHistoryStart(),
+                .context_handoff = context_handoff,
                 .total_input_tokens = app.total_input_tokens,
                 .total_output_tokens = app.total_output_tokens,
                 .permission_state = permission_state,
@@ -7454,7 +7460,7 @@ test "upgrade resume restores active session with the installed version notice" 
     try std.testing.expectEqualStrings("inspect file", context[1].assistant.user.text);
     try std.testing.expectEqualStrings("run server", context[2].background_command.user.text);
     try std.testing.expectEqual(@as(usize, 3), app.notices.items.len);
-    try std.testing.expectEqualStrings("● emma has been updated to v9.9.9", app.notices.items[0]);
+    try std.testing.expectEqualStrings("● shinbo has been updated to v9.9.9", app.notices.items[0]);
     try std.testing.expect(std.mem.find(u8, app.notices.items[1], "older context") != null);
     try std.testing.expect(std.mem.find(u8, app.notices.items[2], "Re-check runtime context") != null);
     try std.testing.expectEqual(@as(usize, 2), app.completed_tool_statuses.items.len);

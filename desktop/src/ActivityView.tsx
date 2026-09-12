@@ -50,7 +50,7 @@ function HistoryDialog({ days, peak, today, close }: { days: Record<string, numb
     onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
     <section className="agent-dialog activity-dialog">
       <header>
-        <div><span>Every day Emma has run</span><h2 id="activity-history-title">All time</h2></div>
+        <div><span>Every day Shinbo has run</span><h2 id="activity-history-title">All time</h2></div>
         <button type="button" onClick={close} aria-label="Close activity history">×</button>
       </header>
       {years.map((year) => {
@@ -84,7 +84,7 @@ function HeatPanel({ days }: { days: Record<string, number> }) {
 
   return <section className="skill-graph activity-heat">
     <header>
-      <h3>Every day<InfoDot>One square a day, darker the more messages that day carried. The week view is this week only; the year view is the last 53 weeks. All time opens every year Emma has a record of.</InfoDot></h3>
+      <h3>Every day<InfoDot>One square a day, darker the more messages that day carried. The week view is this week only; the year view is the last 53 weeks. All time opens every year Shinbo has a record of.</InfoDot></h3>
       <small>{total} {plural(total, "message")} · {active} active {plural(active, "day")} · {streak(days, now)} day streak</small>
       <button type="button" onClick={() => setSpan(span === "week" ? "year" : "week")}>{span === "week" ? "Year" : "Week"}</button>
       <button type="button" onClick={() => setHistory(true)}>All time</button>

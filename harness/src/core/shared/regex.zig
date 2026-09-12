@@ -605,7 +605,7 @@ test "regex keeps metacharacter-free patterns on the literal path" {
 test "regex matches every supported construct" {
     try expectMatch("stopTurn|pairBlocks|landed", "  pairBlocks(x)", true);
     try expectMatch("stopTurn|pairBlocks|landed", "  nothing here", false);
-    try expectMatch("systemPrompt\\(", "emma.systemPrompt(x)", true);
+    try expectMatch("systemPrompt\\(", "shinbo.systemPrompt(x)", true);
     try expectMatch("systemPrompt\\(", "systemPrompt = 1", false);
     try expectMatch("a.c", "xxabcxx", true);
     try expectMatch("a.c", "xxacxx", false);

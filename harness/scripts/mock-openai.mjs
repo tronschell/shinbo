@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// A stand-in OpenAI-compatible Chat Completions endpoint, so emma-cli's
-// transport can be proven end to end without a credential or a network call.
-//
-// It asserts the request shape Emma's provider is supposed to emit, then drives
-// one real tool round trip: the first turn asks for a `bash` call, the second
-// answers with text. Run it, point EMMA_PROVIDER_CHAT_URL at it, and any
-// mismatch shows up as a non-zero exit.
+
+
+
+
+
+
+
 
 import { createServer } from "node:http";
 
@@ -32,7 +32,7 @@ const server = createServer((req, res) => {
     }
 
     if (turn === 1) {
-      // OpenAI vocabulary, not Vercel AI SDK vocabulary.
+
       check(Array.isArray(body.messages), "messages[] missing");
       check(body.prompt === undefined, "AI SDK 'prompt' leaked into the body");
       check(body.toolChoice === undefined, "AI SDK 'toolChoice' leaked into the body");
@@ -55,7 +55,7 @@ const server = createServer((req, res) => {
                   {
                     id: "call_1",
                     type: "function",
-                    function: { name: "bash", arguments: JSON.stringify({ command: "echo emma" }) },
+                    function: { name: "bash", arguments: JSON.stringify({ command: "echo shinbo" }) },
                   },
                 ],
               },
@@ -68,7 +68,7 @@ const server = createServer((req, res) => {
       return;
     }
 
-    // The second turn must carry the assistant's call and its paired result.
+
     const roles = (body.messages ?? []).map((message) => message.role);
     check(roles.includes("assistant"), "assistant turn was not replayed");
     check(roles.includes("tool"), "tool result was not replayed");
@@ -89,8 +89,8 @@ process.on("SIGINT", () => finish());
 
 function finish() {
   server.close();
-  // A run that never reached the endpoint asserted nothing, so silence is a
-  // failure here rather than a pass with an empty checklist.
+
+
   if (turn < 2) problems.push(`expected 2 requests, got ${turn}`);
   if (problems.length) {
     console.error(`FAIL (${turn} requests):`);

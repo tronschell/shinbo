@@ -13,9 +13,9 @@ const Allocator = std.mem.Allocator;
 const ChatMessage = types.ChatMessage;
 
 const default_model = "google/gemini-2.5-flash";
-pub const model_env = "EMMA_VISION_MODEL";
-pub const chat_url_env = "EMMA_VISION_CHAT_URL";
-pub const api_key_env = "EMMA_VISION_API_KEY";
+pub const model_env = "SHINBO_VISION_MODEL";
+pub const chat_url_env = "SHINBO_VISION_CHAT_URL";
+pub const api_key_env = "SHINBO_VISION_API_KEY";
 
 fn configured(name: []const u8) ?[]const u8 {
     const raw = io_mod.getenv(name) orelse return null;
@@ -163,6 +163,11 @@ pub fn inspect(
         return error.ImageProviderUnavailable;
     }
     if (capture.failed) return error.OutOfMemory;
+    switch (types.classifyProviderCompletion(streamed.completion)) {
+        .completed => {},
+        .provider_failure => return error.ImageProviderUnavailable,
+        .length_limited, .interrupted, .invalid_completion => return error.InvalidProviderResponse,
+    }
 
     const tool_usage = types.ToolUsage{
         .input_tokens = streamed.completion.usage.input_tokens orelse 0,
@@ -251,4 +256,52 @@ test "a configured vision endpoint carries its own key while the session route s
     const model_only = routeFrom("vendor/seeing-model:free", null, "vision-key", "https://session.example/v1/chat/completions", "session-key");
     try std.testing.expectEqualStrings("https://session.example/v1/chat/completions", model_only.chat_url);
     try std.testing.expectEqualStrings("session-key", model_only.api_key);
+}
+
+test "image inspection rejects unsuccessful completions even when evidence is valid" {
+    const Fake = struct {
+        finish_reason: ?types.ProviderFinishReason,
+        streamed: bool,
+
+        fn build(_: ?*anyopaque, alloc: Allocator, _: agent_stream_provider.BuildRequest) anyerror![]u8 {
+            return alloc.dupe(u8, "{}");
+        }
+
+        fn stream(raw: ?*anyopaque, _: Allocator, request: agent_stream_provider.Request) anyerror!agent_stream_provider.Result {
+            const self: *@This() = @ptrCast(@alignCast(raw.?));
+            if (self.streamed) request.on_content_chunk(request.callback_ctx, "valid evidence");
+            return .{ .status = .ok, .completion = .{
+                .content = "valid evidence",
+                .finish_reason = self.finish_reason,
+            } };
+        }
+    };
+    const alloc = std.testing.allocator;
+    var cancel_flag = std.atomic.Value(bool).init(false);
+    for ([_]bool{ false, true }) |streamed| {
+        for ([_]?types.ProviderFinishReason{ .stop, .length, .content_filter, .provider_error, null }) |finish_reason| {
+            var fake = Fake{ .finish_reason = finish_reason, .streamed = streamed };
+            const request = Request{
+                .stream_provider = .{ .context = &fake, .build_fn = Fake.build, .stream_fn = Fake.stream },
+                .api_key = "key",
+                .retry_count = 1,
+                .chat_url = "https://example.test/chat",
+                .cancel_flag = &cancel_flag,
+                .trace_ctx = .{},
+                .capture_limit_bytes = 1024,
+                .response_format = .{ .name = "evidence", .description = "evidence", .schema_json = "{}" },
+            };
+            if (finish_reason == .stop) {
+                var result = try inspect(alloc, "system", "user", &.{}, request);
+                defer result.deinit(alloc);
+                try std.testing.expectEqualStrings("valid evidence", result.text);
+            } else {
+                const expected = if (finish_reason == .content_filter or finish_reason == .provider_error)
+                    error.ImageProviderUnavailable
+                else
+                    error.InvalidProviderResponse;
+                try std.testing.expectError(expected, inspect(alloc, "system", "user", &.{}, request));
+            }
+        }
+    }
 }

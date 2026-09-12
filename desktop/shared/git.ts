@@ -117,7 +117,7 @@ export type GitReady = "ready" | "no-git" | "no-repo";
 export type GitFileState = "new" | "modified" | "deleted" | "renamed" | "untracked" | "conflict";
 
 export function worktreeName(threadId: string): string {
-  return `emma-${threadId.replace(/[^A-Za-z0-9]/g, "").slice(0, 8) || "thread"}`;
+  return `shinbo-${threadId.replace(/[^A-Za-z0-9]/g, "").slice(0, 8) || "thread"}`;
 }
 
 export function fileState(entry: GitFileEntry): GitFileState {
@@ -132,11 +132,19 @@ export function fileState(entry: GitFileEntry): GitFileState {
 
 export function parseStatus(text: string): GitFileEntry[] {
   const entries: GitFileEntry[] = [];
-  for (const line of text.split("\n")) {
+  const nul = text.includes("\0");
+  const lines = text.split(nul ? "\0" : "\n");
+  for (let position = 0; position < lines.length; position += 1) {
+    const line = lines[position];
     if (line.length < 4) continue;
     const index = line[0] === "?" ? "?" : line[0];
     const work = line[1] === "?" ? "?" : line[1];
     const rest = line.slice(3);
+    if (nul) {
+      const from = index === "R" || index === "C" || work === "R" || work === "C" ? lines[++position] : undefined;
+      entries.push({ path: rest, index, work, ...(from === undefined ? {} : { from }) });
+      continue;
+    }
     const split = rest.indexOf(" -> ");
     if (split >= 0) entries.push({ path: rest.slice(split + 4), index, work, from: rest.slice(0, split) });
     else entries.push({ path: rest, index, work });

@@ -15,18 +15,18 @@ import { plural } from "./plural";
 import { Bars } from "./bars";
 import { day } from "./dates";
 
-const LOCAL_DEVICE = localDevice(typeof window === "undefined" ? "" : window.emma?.platform ?? "");
+const LOCAL_DEVICE = localDevice(typeof window === "undefined" ? "" : window.shinbo?.platform ?? "");
 const RIDGE_DAYS = 30;
 const SPARK_DAYS = 14;
 const RANKED_ROWS = 5;
 const TILE_THREADS = 6;
 const STATUS_PROJECTS = 4;
 const STEPS_TTL_MS = 6 * 60 * 60 * 1000;
-const STEPS_KEY = "emma.nextSteps.v1";
+const STEPS_KEY = "shinbo.nextSteps.v1";
 
 type Repo = { id: string; name: string; git: GitSnapshot };
 
-const HUES = ["rose", "orange", "lime", "teal", "blue", "violet"];
+const HUES = ["rose", "pink", "lime", "teal", "blue", "violet"];
 
 const dayLabel = (key: string) => {
   const [year, month, date] = key.split("-").map(Number);
@@ -133,7 +133,7 @@ export function Dashboard({ threads, folders, folderId, seed }: {
 
   useEffect(() => {
     let live = true;
-    void window.emma.capabilityUsage()
+    void window.shinbo.capabilityUsage()
       .then((rows) => { if (live) setUsage({ skills: rows.skills, models: rows.models ?? [] }); })
       .catch(() => undefined);
     return () => { live = false; };
@@ -147,7 +147,7 @@ export function Dashboard({ threads, folders, folderId, seed }: {
 
   useEffect(() => {
     let live = true;
-    void Promise.all(watched.map((grant) => window.emma.gitStatus(grant.id)
+    void Promise.all(watched.map((grant) => window.shinbo.gitStatus(grant.id, false)
       .then((git) => git ? { id: grant.id, name: grant.name, git } : null)
       .catch(() => null)))
       .then((found) => { if (live) setRepos(found.filter((repo): repo is Repo => !!repo)); });
@@ -173,7 +173,7 @@ export function Dashboard({ threads, folders, folderId, seed }: {
     if (cached || requested.current.has(signature)) return;
     requested.current.add(signature);
     let live = true;
-    void window.emma.nextSteps(state)
+    void window.shinbo.nextSteps(state)
       .then((found) => {
         if (!live) return;
         setAsked(signature);

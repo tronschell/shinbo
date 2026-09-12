@@ -10,7 +10,7 @@ export const TAG_BYTES = 16;
 
 export const LABEL_MAC_TO_PHONE = "mac->phone";
 export const LABEL_PHONE_TO_MAC = "phone->mac";
-export const LABEL_BRIDGE_AUTH = "emma-bridge-auth";
+export const LABEL_BRIDGE_AUTH = "shinbo-bridge-auth";
 
 export const MAX_ADDR_CHARS = 200;
 

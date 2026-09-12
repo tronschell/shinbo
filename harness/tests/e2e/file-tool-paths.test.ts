@@ -208,7 +208,7 @@ function gatewayEnv(
 ) {
   return {
     HOME: home,
-    EMMA_PROVIDER_API_KEY: "fake-file-paths-key",
+    SHINBO_PROVIDER_API_KEY: "fake-file-paths-key",
     FX_GATEWAY_BASE_URL: gateway.baseUrl,
     FX_GATEWAY_CHAT_URL: gateway.chatUrl,
     FX_E2E_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -248,7 +248,7 @@ type SubagentTurn = {
   execution?: { tool_steps?: Array<{ tool_results?: SubagentToolResult[] }> };
 };
 
-// Interrupted and completed child turns persist tool outcomes in different fields.
+
 function readSubagentChild(home: string) {
   const sessionsDir = join(home, ".fx", "sessions");
   const children = readdirSync(sessionsDir)
@@ -288,7 +288,7 @@ function readSubagentChild(home: string) {
   };
 }
 
-// Hold the parent open until the child read completes; the deadline prevents hangs.
+
 function createChildReadGate(deadlineMs: number) {
   const { promise: opened, resolve: release } = Promise.withResolvers<void>();
   let output: string | null = null;

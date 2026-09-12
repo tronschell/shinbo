@@ -959,7 +959,7 @@ function gatewayEnv(
 ) {
   return {
     HOME: root.home,
-    EMMA_PROVIDER_API_KEY: "fake-command-permission-key",
+    SHINBO_PROVIDER_API_KEY: "fake-command-permission-key",
     FX_GATEWAY_BASE_URL: gateway.baseUrl,
     FX_GATEWAY_CHAT_URL: gateway.chatUrl,
     FX_MODEL: MODEL,
@@ -4533,7 +4533,7 @@ describe("effect-aware command permissions", () => {
       let childInitialChecked = false;
       let childContinuationDeliveryChecked = false;
       const secondSeen: string[] = [];
-      // Only the root session writes progress to this process's stderr.
+
       const rootSubagentCallIds = new Set<string>();
       const childSubagentCallIds = new Set<string>();
       const secondRoute = (body: string) => {

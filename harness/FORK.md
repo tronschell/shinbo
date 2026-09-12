@@ -1,6 +1,6 @@
 # Fork provenance
 
-`emma-cli` is Emma's fork of [`vercel-labs/fx`](https://github.com/vercel-labs/fx),
+`shinbo-cli` is Shinbo's fork of [`vercel-labs/fx`](https://github.com/vercel-labs/fx),
 a coding agent harness written in Zig.
 
 | | |
@@ -19,7 +19,7 @@ renaming and rebranding, so it is not something the fork may drop.
 
 ## What this fork changes
 
-Emma keeps fx's agent loop, permission model, hooks, skills, subagents, tools,
+Shinbo keeps fx's agent loop, permission model, hooks, skills, subagents, tools,
 and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
 
 - **Model-scoped subagent context.** Native ACP children ask Electron for the
@@ -28,7 +28,14 @@ and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
   parent's settings. The request also records the child's skill context for
   run analysis. System prompt file reads allow 128 KiB to cover the desktop's
   character limit in UTF-8.
-- **Binary and package name.** `fx` becomes `emma-cli`. The `build.zig.zon`
+- **Child tool ownership.** App tool RPCs carry an explicit child ID so Electron
+  authorizes and executes them against the child's turn, including cancellation.
+  An empty model config selection restores the process's configured default
+  model instead of retaining a previous explicit session selection.
+- **App tool failure status.** The app tool bridge carries failed results and
+  their diagnostic text through to the native tool runtime, rather than marking
+  caught application errors as successful tool executions.
+- **Binary and package name.** `fx` becomes `shinbo-cli`. The `build.zig.zon`
   fingerprint is regenerated, because upstream's own comment on that field says
   a fork that keeps it is attempting to take over the original project's
   identity.
@@ -38,8 +45,8 @@ and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
   release manifest separately records the exact application source commit.
 - **Model transport.** Upstream talks to Vercel AI Gateway over the AI SDK
   language-model v3 protocol (`prompt`/`toolChoice` at `/v3/ai/language-model`).
-  Emma talks to any OpenAI-compatible Chat Completions endpoint, which is the
-  provider seam the rest of Emma already uses. Replies stream as
+  Shinbo talks to any OpenAI-compatible Chat Completions endpoint, which is the
+  provider seam the rest of Shinbo already uses. Replies stream as
   `text/event-stream` chat-completion chunks, and an endpoint that answers with
   anything else falls back to the buffered body path. Malformed tool-call
   replies and allocation failures release partially parsed calls and completion
@@ -57,15 +64,15 @@ and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
   interval and refusal and reset arrive under their own names. POSIX keeps the
   standard backend unchanged.
 - **Authentication.** Upstream's Vercel device OAuth, ChatGPT Codex OAuth, team
-  selection, and credit balance are removed. Emma supplies a base URL, a model,
+  selection, and credit balance are removed. Shinbo supplies a base URL, a model,
   and the *name* of an environment variable holding the credential; there is no
-  vendor login surface anywhere in Emma.
+  vendor login surface anywhere in Shinbo.
 - **Branding and hosted endpoints.** `fx.sh` docs links, feedback and upgrade
   URLs, and telemetry paths are removed rather than repointed.
 - **Terminal arguments.** Upstream's `terminal` tool rejects anything that is
   not the exact advertised shape, with one sentence that repeats no matter what
   is wrong, so a model that sends `{"command":"pwd"}` loops until the retry
-  guard stops the turn. Emma normalizes the two shapes models actually send —
+  guard stops the turn. Shinbo normalizes the two shapes models actually send —
   a lone `{"request":{...}}` envelope, and a call carrying only a command,
   which runs as `exec` — reads `"None"`/`"nil"`/`"undefined"` as the absent
   field they mean, and names what is wrong when it still cannot run the call.
@@ -86,12 +93,12 @@ and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
   promotes it to `.always` as the default search, and clears back to upstream's
   lexical ranker on an empty value.
 - **Generation activity.** ACP forwards real token-progress and tool-payload-start
-  events as a payload-free `_emma_activity` session update. Desktop refreshes run
+  events as a payload-free `_shinbo_activity` session update. Desktop refreshes run
   activity without changing answer text or exposing partial tool arguments.
 - **Tool call titles.** Upstream titles an ACP tool call with the tool's bare
   action label, so every shell call reads `Using terminal` and every read reads
   `Reading` with no path — a column of identical rows that hides what the turn
-  actually did. Emma titles each call with the same formatter the CLI already
+  actually did. Shinbo titles each call with the same formatter the CLI already
   used for its own activity lines, so the title carries the command, the path or
   the pattern, capped and with secrets masked.
 - **`cwd` instead of `cd`.** The `terminal` schema said only that `cwd` is the
@@ -106,7 +113,7 @@ and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
   search and says so in its own description, sending the model to `rg` through
   `terminal` for anything more; measured traces took that route, with
   forty-nine of seventy-nine shell `grep`/`rg` calls carrying a regular
-  expression, almost all of them plain alternation. Emma compiles the pattern
+  expression, almost all of them plain alternation. Shinbo compiles the pattern
   once and hands `git grep` `-E` instead of `-F` whenever it is not a literal,
   so the tracked-file path stays the one process it always was. The paths git
   grep never covers walk in Zig — untracked files always, single-file roots, a
@@ -123,8 +130,8 @@ and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
   refused at compile time because the parser recurses and the pattern is
   written by a model.
 - **Subagent advertisement.** Upstream hides the `subagent` tool behind
-  `search_tools` (`.advertisement = .on_select`); Emma advertises it whenever
-  the session supports children. Delegation is a first-class Emma feature — the
+  `search_tools` (`.advertisement = .on_select`); Shinbo advertises it whenever
+  the session supports children. Delegation is a first-class Shinbo feature — the
   app draws every child as a thread of its own — and a tool the model has to go
   looking for is one it does not use. The `subagent_available` gate is untouched.
 - **Workhorse advertisement.** The same reasoning, applied to the seven tools a
@@ -142,34 +149,34 @@ and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
   `search_tools` results, and `preselect`, a comma-separated list of `.on_select`
   tools advertised as if `.always` for that session. `.never` tools stay
   unreachable, unknown names are ignored, and an empty value clears either one.
-- **Lazy MCP startup.** Emma validates and retains ACP MCP configs at session
+- **Lazy MCP startup.** Shinbo validates and retains ACP MCP configs at session
   creation but defers process startup and discovery until the first MCP search,
   selection, or call. A turn that does not use MCP never starts those servers.
 - **Attached pictures.** Upstream's ACP server rejects every `image` prompt
-  block, because fx only ever attaches a picture through its own TUI. Emma is an
+  block, because fx only ever attaches a picture through its own TUI. Shinbo is an
   ACP client with a composer of its own, so a block naming a local `file://`
   image is loaded into the turn's attachment catalogue instead — the same
   catalogue `/image` fills — and snapshotted into the session's `images`
   directory the way every other surface snapshots one.
 - **Model catalogue shape.** Upstream reads `vision` and `file-input` off a
   Vercel AI Gateway model's `tags`. OpenRouter publishes neither; it publishes
-  `architecture.input_modalities`. Emma reads both shapes, so a model that can
+  `architecture.input_modalities`. Shinbo reads both shapes, so a model that can
   see is known to be able to.
 - **Native vision gate.** Upstream routes a picture to the model itself only
   when it reports both vision *and* file input, then falls back to the forced
-  `vision` tool. Emma gates on vision alone: the native part is an `image_url`,
+  `vision` tool. Shinbo gates on vision alone: the native part is an `image_url`,
   file input has nothing to do with it, and on OpenRouter a third of the models
   that can see do not claim it.
 - **Vision approval.** A `vision` call naming `image_ids` resolves only against
-  the catalogue the user themselves attached, so Emma admits it without a
+  the catalogue the user themselves attached, so Shinbo admits it without a
   prompt. A call naming `paths` is the model choosing a file, and keeps its
   per-path gate.
-- **Native Emma tools.** The twenty-seven tools Emma owns are appended to fx's
-  registry as `++ emma_tools.all` — specs in `src/builtins/emma_tools.zig` and
-  `src/builtins/emma/`, one shared implementation in
-  `src/tools/emma/bridge.zig`, and a new `ExecutorKind.emma`. The harness
-  advertises and dispatches them but never runs one: `callEmmaTool` in
-  `src/acp/prompt.zig` writes an outbound `_emma/callTool` request and blocks
+- **Native Shinbo tools.** The twenty-seven tools Shinbo owns are appended to fx's
+  registry as `++ shinbo_tools.all` — specs in `src/builtins/shinbo_tools.zig` and
+  `src/builtins/shinbo/`, one shared implementation in
+  `src/tools/shinbo/bridge.zig`, and a new `ExecutorKind.shinbo`. The harness
+  advertises and dispatches them but never runs one: `callShinboTool` in
+  `src/acp/prompt.zig` writes an outbound `_shinbo/callTool` request and blocks
   for the client's reply. They used to reach the model as a localhost MCP
   server, because MCP is the only door upstream leaves open for a tool it does
   not ship. `read_only_tool_names` in `src/builtins/tools.zig` had to gain them
@@ -180,7 +187,7 @@ and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
   accessibility state, and background actions against one exact app instance
   instead of global screenshots, pointer coordinates, and keyboard shortcuts.
   Mutations name an element from a single-use state snapshot. Calls still cross
-  `_emma/callTool`; Emma owns the app approval and enforces it only for the current
+  `_shinbo/callTool`; Shinbo owns the app approval and enforces it only for the current
   parent turn, regardless of full or auto mode. Child agents cannot use computer
   and must ask the parent to perform app actions. There is no
   activation, clipboard, or global-input fallback, and no Codex desktop runtime
@@ -197,22 +204,22 @@ and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
 - **Tool description cap.** `gateway_schema.description_max_bytes` was
   upstream's 1024 and is 4 KiB. `cappedDescriptionAlloc` truncates silently, so
   at 1024 `workflow` lost its last commands with nothing to
-  show for it. A test in `src/builtins/emma_tools.zig` fails the build if a
+  show for it. A test in `src/builtins/shinbo_tools.zig` fails the build if a
   description outgrows the cap.
 - **System prompt per process.** `builtins/context.zig` replaces the built-in
-  prompt sections with the file named by `EMMA_SYSTEM_PROMPT`, falling back to
+  prompt sections with the file named by `SHINBO_SYSTEM_PROMPT`, falling back to
   `$HOME/.fx/system-prompt.md`; the tool contract section is kept either way.
-  Emma runs one emma-cli per thread out of a single `HOME`, so each process is
+  Shinbo runs one shinbo-cli per thread out of a single `HOME`, so each process is
   given its own file rather than racing the shared name.
 
 - **Cancelling one child.** `session/cancel_child` is added beside upstream's
-  `session/steer_child`, so Emma can stop a single subagent without cancelling
+  `session/steer_child`, so Shinbo can stop a single subagent without cancelling
   the parent turn that spawned it.
 
 - **Multiple edits per `edit_file` call.** Upstream's `edit_file` takes one
   `old_string`/`new_string` pair, so five changes to one file cost five calls,
   five approvals, and five chances for the model to re-read stale content it
-  just rewrote. Emma's takes an `edits` array applied against a single
+  just rewrote. Shinbo's takes an `edits` array applied against a single
   preimage: every match is located first, overlapping edits are refused by
   name, and the survivors are spliced into one fresh buffer. The flat shape
   still decodes, into a one-element array, because models trained on the old
@@ -229,30 +236,30 @@ and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
 
 - **Tool search ranking.** Upstream ranks `search_tools` by keyword overlap,
   which cannot tell a name match from a body match and gives a rare term no
-  more weight than a common one. Emma ranks by BM25 over two fields, name
+  more weight than a common one. Shinbo ranks by BM25 over two fields, name
   weighted eight to one against description-plus-schema, with the tokenizer
   splitting on every non-alphanumeric byte so `grep_files` is found by `grep`.
   The index is rebuilt per call; twenty-odd tools do not earn a cache.
   Advertised tools are excluded from the index, which upstream leaves as an
-  empty result the model cannot learn from. Emma answers a query that is
+  empty result the model cannot learn from. Shinbo answers a query that is
   plainly reaching for one with `already_advertised` and a note to call it
   directly. The match is deliberately dumb — every token of at least three
   characters in the tool's name must appear in the query — because a false
   positive here teaches exactly the habit the field exists to break.
 - **Bounded parallelism.** Upstream spawns one thread per read-only call in a
-  batch and unwinds the whole batch if any spawn fails. Emma runs a fixed pool
+  batch and unwinds the whole batch if any spawn fails. Shinbo runs a fixed pool
   of eight against a work queue that hands out indices atomically, and the
   calling thread works the queue too, so a batch of thirty is thirty tasks over
   eight threads rather than thirty threads.
 - **Command timeout default.** Upstream leaves `terminal exec` unbounded.
-  Emma defaults to ten minutes — this is the path a real build or test suite
+  Shinbo defaults to ten minutes — this is the path a real build or test suite
   takes, so a ten-second ceiling would fail honest work — and the timeout
   message names `terminal action:"start"` with a `wait_ceiling_ms` as the way
   to run longer than that.
 - **Foreground output drain ceiling.** Upstream's post-signal drain loop bounds
   each read but not the loop. A descendant that escapes the process group with
   `setsid` holds the inherited pipes open, every read times out, and the loop
-  spins forever with the agent wedged behind it. Emma stops draining two
+  spins forever with the agent wedged behind it. Shinbo stops draining two
   seconds after the signal was sent.
 - **Step limit default.** `max_agent_steps` defaults to 1000 rather than
   upstream's 0. The enforcement and its notice already existed; only the
@@ -261,7 +268,7 @@ and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
 - **Repeated-call containment.** Upstream stops an agent on a repeating tool
   call cycle and on consecutive all-error steps; the migration dropped both,
   leaving the step cap as the only brake, and observed threads spent whole
-  steps re-reading a file already in context. Emma blocks the third identical
+  steps re-reading a file already in context. Shinbo blocks the third identical
   read-only call in a turn — same tool, byte-identical arguments — and returns
   a tool result saying so rather than stopping the agent. Any write between the
   repeats clears the count, so read, edit, re-read is untouched.
@@ -283,7 +290,7 @@ and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
   permission target that cannot be resolved as `Permission target resolution
   failed for <tool>: <error>`, so a path that simply does not exist is
   indistinguishable from one the user denied, and the model retries rather
-  than adapting. Emma splits the five cases apart, states that a missing or
+  than adapting. Shinbo splits the five cases apart, states that a missing or
   out-of-workspace path is not a permission denial, and names the next tool to
   reach for. The same reasoning was applied to the other measured retry loops:
   a range field that arrived as a quoted string says so rather than talking
@@ -297,7 +304,7 @@ and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
   than keep resending them with different values.
 
 - **Model-written compaction.** Upstream compacts history by deterministic
-  extraction. Emma asks the model for a structured handoff note — goal,
+  extraction. Shinbo asks the model for a structured handoff note — goal,
   constraints, progress, decisions, next steps — and updates that note
   iteratively as the session grows, carrying read and modified file lists
   across compactions. The call is bounded at thirty seconds against the turn's
@@ -333,7 +340,7 @@ and MCP client. It replaces the parts that tie fx to Vercel's hosted services:
 Commands and their plumbing: `login`, `logout`, `teams`, `credits`, `setup`, the
 ChatGPT/Codex OAuth flow (`src/core/auth/chatgpt_oauth.zig`), and `/feedback`.
 The credential model collapsed to a single source read from
-`EMMA_PROVIDER_API_KEY` (`src/core/auth/credentials.zig`), and
+`SHINBO_PROVIDER_API_KEY` (`src/core/auth/credentials.zig`), and
 `model_provider.ProviderId` to a single `gateway` variant.
 
 Modules deleted: `src/builtins/devbox.zig` and
@@ -347,21 +354,21 @@ went with them; the MCP OAuth half stays, because `src/core/mcp/` uses it.
 Release and hosting infrastructure: the Vercel Blob CDN workflows
 (`cdn-backfill.yml`, `release.yml`, `dev-release.yml`, `prepare-release.yml`,
 `publish-libfx.yml`). `upgrade_helpers.resolveCdnBase()` now returns `null`
-unless the loopback E2E override is set, because emma-cli ships inside the
+unless the loopback E2E override is set, because shinbo-cli ships inside the
 desktop app and has nothing to self-update from.
 
-`EMMA_PROVIDER_CHAT_URL` now also accepts any HTTPS endpoint, not just a
-loopback HTTP one. Emma points emma-cli at whichever provider host a plan or
+`SHINBO_PROVIDER_CHAT_URL` now also accepts any HTTPS endpoint, not just a
+loopback HTTP one. Shinbo points shinbo-cli at whichever provider host a plan or
 custom profile names, so the upstream loopback-only rule sent every one of them
 to OpenRouter instead. Cleartext HTTP is still refused off loopback, so the
 bearer token never travels unencrypted, and the credential is read from the same
 environment that sets this URL — anyone able to redirect the endpoint can
 already read the key.
 
-Renames: `AI_GATEWAY_API_KEY` → `EMMA_PROVIDER_API_KEY`,
-`FX_E2E_UPGRADE_BASE_URL` → `EMMA_UPGRADE_BASE_URL`, `fx` → `emma-cli` in help,
+Renames: `AI_GATEWAY_API_KEY` → `SHINBO_PROVIDER_API_KEY`,
+`FX_E2E_UPGRADE_BASE_URL` → `SHINBO_UPGRADE_BASE_URL`, `fx` → `shinbo-cli` in help,
 usage, and error text, `fx.shared_model_context.v1` →
-`emma.shared_model_context.v1`, and the `ai_gateway_*` web-search backend ids to
+`shinbo.shared_model_context.v1`, and the `ai_gateway_*` web-search backend ids to
 `perplexity_search`/`parallel_search` (local selector labels; the wire tool name
 was already unprefixed).
 
@@ -373,7 +380,7 @@ diagnostic instead of a silent fallback; `"VERCEL_OIDC_TOKEN="` in the
 dropping an entry only weakens redaction; the `~/.fx` config paths and `FX_*`
 environment variables, which are fx branding rather than Vercel and are
 user-settable; `sdk/`, upstream's `libfx` package, unrenamed and still pointing
-at `vercel-labs/fx`, because Emma neither builds nor ships it — `build.zig.zon`
+at `vercel-labs/fx`, because Shinbo neither builds nor ships it — `build.zig.zon`
 `.paths` does not list it and the WASM and N-API artifacts are opt-in build
 options; and inert fixture strings naming `vercel-labs/agent-skills`,
 `github.com/vercel-labs/fx` git remotes, and `vercel/v0` PR URLs.
@@ -387,15 +394,15 @@ header test is removed; the JavaScript-host request builder remains intact.
 
 Upstream is under active development, so this fork is a real maintenance cost —
 that was a deliberate, accepted trade. Keep changes minimal and localized so a
-future `git diff` against a newer upstream tag stays readable. Anything Emma
-adds that is not a de-Vercel change belongs in Emma's own code where possible,
+future `git diff` against a newer upstream tag stays readable. Anything Shinbo
+adds that is not a de-Vercel change belongs in Shinbo's own code where possible,
 not scattered through vendored files.
 
 Upstream is not merged wholesale. Between `580a0c5` and `c864c677` it landed 201
 commits over 295 files, and a trial three-way merge conflicted in 82 of them —
 almost all in the auth, provider, setup, and TUI surfaces this fork deleted.
 Upstream also grew a Grok and Codex OAuth surface, which contradicts the rule
-that there is no vendor login anywhere in Emma. So commits are taken one at a
+that there is no vendor login anywhere in Shinbo. So commits are taken one at a
 time, each one built and tested before the next.
 
 ### Taken from upstream since the fork point
@@ -428,31 +435,31 @@ here, so `git log` in this directory maps one to one.
 | `b199b8e` | Reduce MCP catalog memory |
 | `16aa069` | Use bounded MCP search match storage |
 
-Two carry Emma-side changes rather than a straight apply. `a585697` says a
+Two carry Shinbo-side changes rather than a straight apply. `a585697` says a
 terminal call must never pass an array; that sentence is kept, but the
-surrounding paragraph is still Emma's, because this fork also lets a call omit
+surrounding paragraph is still Shinbo's, because this fork also lets a call omit
 the fields its action does not use. `ec240ff` and `cbb7f19` are described
 below.
 
 ### Deliberately not taken
 
-- **`98be58b`, remove OS command sandboxing.** Emma keeps `sandbox-exec`. The
+- **`98be58b`, remove OS command sandboxing.** Shinbo keeps `sandbox-exec`. The
   permission-mode commits were written on top of that removal, so their
   `PermissionSnapshot` carries no `sandbox_backend` and drops the held turn
-  pair entirely. Emma keeps `active_permission_snapshot` and both call sites
+  pair entirely. Shinbo keeps `active_permission_snapshot` and both call sites
   in `app_agent_runtime.zig`, and takes only the live-mode sampling the
   orchestrator does at each action boundary. `setSandboxBackend` had to
   release `authority_mutex` before `syncQueuedPermissionSnapshot`, because
-  `ec240ff` made `livePermissionSnapshot` take that same lock and Emma is the
+  `ec240ff` made `livePermissionSnapshot` take that same lock and Shinbo is the
   only side that still calls one from inside the other.
 - **`3ad06b9`, bound terminal exec and retain command output**, and the two
   replay-hardening commits that build on it (`b129b6e`, `4c46572`). It makes a
   finite deadline mandatory on every `terminal exec` call, which is a tool
-  contract change, and it introduces a paged agent replay store Emma does not
+  contract change, and it introduces a paged agent replay store Shinbo does not
   have. The secret-boundary fixes protect only that store.
 - **`7e4bed4` and `956301e`, the automatic review rewrite.** It removes 593
   lines from the orchestrator and rewrites `auto_classifier` and
-  `tool_admission` against `src/acp/prompt.zig`, which is where `callEmmaTool`
+  `tool_admission` against `src/acp/prompt.zig`, which is where `callShinboTool`
   lives.
 - **`b0b855f` and `70511ff`, compact tool schema records.** Restructuring the
   property record ripples into all twenty-three native tool specs, and the
@@ -462,19 +469,19 @@ below.
 - Every Grok, Codex, Vercel OAuth, setup-hub, release-infrastructure, and
   TUI-presentation commit.
 
-Upstream's byte-exact tool schema oracles are never taken: Emma advertises a
+Upstream's byte-exact tool schema oracles are never taken: Shinbo advertises a
 different tool set, so those hashes cannot match by construction.
 
 ### Edit review metadata
 
-Pending `write_file` and `edit_file` ACP calls carry `_emma_filePath`, parsed
+Pending `write_file` and `edit_file` ACP calls carry `_shinbo_filePath`, parsed
 from their complete arguments before the 4 KiB display preview is truncated.
-Emma retains this path across status updates to capture before/after file
+Shinbo retains this path across status updates to capture before/after file
 contents for review and revert; history replay does not create new captures.
 
 ### Fresh context handoffs
 
-Emma adds an opt-in fresh-context mode to ACP compaction.
+Shinbo adds an opt-in fresh-context mode to ACP compaction.
 `core/session/fresh_context.zig` carries an explicit bounded handoff, or a
 bounded recovery record of user inputs when no handoff was supplied, without a
 model-written summary. Context experiments send a checkpoint near the compact

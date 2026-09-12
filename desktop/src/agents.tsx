@@ -13,8 +13,8 @@ import { reasonText } from "./errors";
 export function useAgents(): LiveAgent[] {
   const [agents, setAgents] = useState<LiveAgent[]>([]);
   useEffect(() => {
-    void window.emma.listAgents().then(setAgents).catch(() => undefined);
-    return window.emma.onAgents(setAgents);
+    void window.shinbo.listAgents().then(setAgents).catch(() => undefined);
+    return window.shinbo.onAgents(setAgents);
   }, []);
   return agents;
 }
@@ -92,9 +92,9 @@ const publishAsks = (next: PermissionAsk[]) => { askQueue = next; for (const lis
 const subscribeAsks = (listener: () => void) => {
   if (!permissionEventsWired) {
     permissionEventsWired = true;
-    window.emma.onPermissionAsk((ask) => publishAsks([...askQueue, ask]));
-    window.emma.onPermissionResolved(({ id }) => publishAsks(askQueue.filter((ask) => ask.id !== id)));
-    void window.emma.listAsks()
+    window.shinbo.onPermissionAsk((ask) => publishAsks([...askQueue, ask]));
+    window.shinbo.onPermissionResolved(({ id }) => publishAsks(askQueue.filter((ask) => ask.id !== id)));
+    void window.shinbo.listAsks()
       .then((asks) => publishAsks([...askQueue, ...asks.filter((ask) => !askQueue.some((held) => held.id === ask.id))]))
       .catch(() => undefined);
   }
@@ -110,12 +110,12 @@ export function usePermissionAsk(threadId: string, agents: LiveAgent[]): Permiss
 export function PermissionPrompt({ ask, agents }: { ask: PermissionAsk; agents: LiveAgent[] }) {
   const from = agents.find((agent) => agent.threadId === ask.threadId);
   const answer = (allowed: boolean) => {
-    window.emma.answerPermission({ id: ask.id, allowed });
+    window.shinbo.answerPermission({ id: ask.id, allowed });
     publishAsks(askQueue.filter((item) => item.id !== ask.id));
   };
   return <section className="permission-inline" aria-labelledby="permission-title" onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); answer(false); } }}>
     <header>
-      <div><span>{from ? from.title : "Emma"} · {permissionModeNames[from?.mode ?? "ask"]}</span><h2 id="permission-title">{ask.summary}</h2></div>
+      <div><span>{from ? from.title : "Shinbo"} · {permissionModeNames[from?.mode ?? "ask"]}</span><h2 id="permission-title">{ask.summary}</h2></div>
       {from && <i className="agent-dot" style={{ background: from.color }} aria-hidden="true" />}
     </header>
     <pre className="permission-detail">{ask.detail}</pre>
@@ -152,12 +152,12 @@ export function BackgroundRail() {
   const [tasks, setTasks] = useState<BackgroundTask[]>([]);
   const [open, setOpen] = useState("");
   const [output, setOutput] = useState("");
-  const reload = () => void window.emma.listBackground().then(setTasks).catch(() => undefined);
-  useEffect(() => { reload(); return window.emma.onBackground(reload); }, []);
+  const reload = () => void window.shinbo.listBackground().then(setTasks).catch(() => undefined);
+  useEffect(() => { reload(); return window.shinbo.onBackground(reload); }, []);
   useEffect(() => {
     if (!open) return;
     let live = true;
-    const read = () => void window.emma.readBackground(open).then((found) => {
+    const read = () => void window.shinbo.readBackground(open).then((found) => {
       if (!live) return;
       setOutput(found?.output ?? "");
       if (!found || found.task.status === "exited") clearInterval(timer);
@@ -177,7 +177,7 @@ export function BackgroundRail() {
           <span className="nav-label">{task.command.split("\n")[0]}</span>
           <small className="nav-label">{task.id} · {task.status === "running" ? task.folder || "running" : `exit ${task.exitCode ?? "—"}`}</small>
         </button>
-        {task.status === "running" && <button type="button" className="agent-button nav-label" onClick={() => void window.emma.stopBackground(task.id).then(reload)}>Stop</button>}
+        {task.status === "running" && <button type="button" className="agent-button nav-label" onClick={() => void window.shinbo.stopBackground(task.id).then(reload)}>Stop</button>}
       </div>
       {task.id === open && <pre className="background-output">{output.trim() || "(no output yet)"}</pre>}
     </div>)}
@@ -225,7 +225,7 @@ export function AgentPanel({ agent, transcript }: { agent: LiveAgent; transcript
     if (!text) return;
     setMessage("");
     setError("");
-    void window.emma.steerAgent({ threadId: agent.threadId, text }).catch((reason: unknown) => setError(reasonText(reason)));
+    void window.shinbo.steerAgent({ threadId: agent.threadId, text }).catch((reason: unknown) => setError(reasonText(reason)));
   };
   const rate = tokensPerSecond(agent);
   const seconds = elapsed(agent);
@@ -234,7 +234,7 @@ export function AgentPanel({ agent, transcript }: { agent: LiveAgent; transcript
       <h2><i className="agent-dot" style={{ background: agent.color }} aria-hidden="true" /> {agent.title}</h2>
       <div className="thread-actions">
         <span className={`agent-status ${agent.status}`}>{agent.status}</span>
-        {alive(agent) && <button type="button" className="agent-button" onClick={() => window.emma.stopAgent(agent.threadId)}>Stop</button>}
+        {alive(agent) && <button type="button" className="agent-button" onClick={() => window.shinbo.stopAgent(agent.threadId)}>Stop</button>}
       </div>
     </header>
     <dl className="agent-stats">
@@ -275,8 +275,8 @@ export function ThreadCard({ id, title, onOpen }: { id: string; title: string; o
     setError("");
     setSent(live ? "Sent into the run already going there." : "Sent; this thread is working on it.");
     const delivery = live
-      ? window.emma.steerAgent({ threadId: id, text })
-      : window.emma.request<unknown>("sendMessage", { threadId: id, content: text });
+      ? window.shinbo.steerAgent({ threadId: id, text })
+      : window.shinbo.request<unknown>("sendMessage", { threadId: id, content: text });
     void delivery.catch((reason: unknown) => { setSent(""); setError(reasonText(reason)); });
   };
   return <article className="thread-card">
@@ -285,7 +285,7 @@ export function ThreadCard({ id, title, onOpen }: { id: string; title: string; o
       <strong>{title}</strong>
       <span className={`agent-status ${agent?.status ?? "idle"}`}>{agent?.status ?? "idle"}</span>
       <button type="button" className="agent-button" onClick={() => onOpen(id)}>Open</button>
-      {live && <button type="button" className="agent-button" onClick={() => window.emma.stopAgent(id)}>Stop</button>}
+      {live && <button type="button" className="agent-button" onClick={() => window.shinbo.stopAgent(id)}>Stop</button>}
     </header>
     <small>{agent?.activity || "Nothing is running in this thread."}</small>
     <form onSubmit={send}>
@@ -331,7 +331,7 @@ export function ChangesPanel({ changes, busy, onReverted }: { changes: FileChang
   const stat = useMemo(() => diffStat(changes), [changes]);
   const revert = (change: FileChange) => {
     setError("");
-    void window.emma.revertChange({ folderId: change.folderId, path: change.path, before: change.before ?? "" })
+    void window.shinbo.revertChange({ folderId: change.folderId, path: change.path, before: change.before ?? "" })
       .then(onReverted)
       .catch((reason: unknown) => setError(reasonText(reason)));
   };
@@ -349,7 +349,7 @@ export function ChangesPanel({ changes, busy, onReverted }: { changes: FileChang
           <ChangeCount stat={diffStat([change])} />
           <OpenIn folderId={change.folderId} path={change.path} />
           <ReadMarkdown folderId={change.folderId} path={change.path} />
-          <button type="button" disabled={busy || change.before === null} title={change.before === null ? "Emma created this file — delete it yourself if you don't want it" : "Restore the text from before this turn"} onClick={() => revert(change)}>Revert</button>
+          <button type="button" disabled={busy || change.before === null} title={change.before === null ? "Shinbo created this file — delete it yourself if you don't want it" : "Restore the text from before this turn"} onClick={() => revert(change)}>Revert</button>
         </header>
         <pre className="diff">{diffLines(change.before ?? "", change.after).map((line, index) => <span key={index} className={line.kind === "+" ? "added" : line.kind === "-" ? "removed" : undefined}>{line.kind}{line.text}{"\n"}</span>)}</pre>
       </article>)}

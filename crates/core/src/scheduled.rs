@@ -1,4 +1,6 @@
 use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
     error::Error,
     fmt,
     fs::{self, OpenOptions},
@@ -135,6 +137,7 @@ impl ScheduledJob {
             return Err(ValidationError::new("scheduled job graph is too large"));
         }
         validate_schedule(&schedule)?;
+        let schedule = schedule.split_whitespace().collect::<Vec<_>>().join(" ");
         if source_domains.len() > MAX_SCHEDULED_SOURCE_DOMAINS {
             return Err(ValidationError::new(format!(
                 "scheduled job cannot have more than {MAX_SCHEDULED_SOURCE_DOMAINS} source domains"
@@ -219,7 +222,7 @@ impl ScheduledJob {
     }
 
     pub fn to_markdown(&self) -> String {
-        let mut output = String::from("---\nemma-scheduled-job-format: 4\n");
+        let mut output = String::from("---\nshinbo-scheduled-job-format: 4\n");
         field(&mut output, "id", self.id.as_str());
         field(&mut output, "title", &self.title);
         field(&mut output, "schedule", &self.schedule);
@@ -263,11 +266,15 @@ impl ScheduledJob {
     pub fn from_markdown(markdown: &str) -> Result<Self, ValidationError> {
         let mut lines = markdown.lines();
         exact(&mut lines, "---")?;
-        let format = match prefixed(&mut lines, "emma-scheduled-job-format: ")? {
-            "1" => 1,
-            "2" => 2,
-            "3" => 3,
-            "4" => 4,
+        let format = lines.next().and_then(|line| {
+            line.strip_prefix("shinbo-scheduled-job-format: ")
+                .or_else(|| line.strip_prefix("emma-scheduled-job-format: "))
+        });
+        let format = match format {
+            Some("1") => 1,
+            Some("2") => 2,
+            Some("3") => 3,
+            Some("4") => 4,
             _ => {
                 return Err(ValidationError::new(
                     "scheduled job format is not supported",
@@ -414,30 +421,56 @@ fn validate_schedule(value: &str) -> Result<(), ValidationError> {
 }
 
 fn next_run(schedule: &str, after: Timestamp) -> Result<Timestamp, ValidationError> {
+    let fields = schedule.split_ascii_whitespace().collect::<Vec<_>>();
+    if fields.len() != 5 {
+        return Err(ValidationError::new("schedule must have five cron fields"));
+    }
+    let ranges = [(0, 59), (0, 23), (1, 31), (1, 12), (0, 7)];
+    let allowed: [u64; 5] = std::array::from_fn(|index| {
+        let (min, max) = ranges[index];
+        (min..=max)
+            .filter(|&value| field_matches(fields[index], value, min, max))
+            .fold(0, |mask, value| mask | (1 << value))
+    });
+    let matches = |index: usize, value: u32| allowed[index] & (1 << value) != 0;
+    let wildcard_day = fields[2].starts_with('*') || fields[4].starts_with('*');
+    if wildcard_day
+        && !(1..=12).any(|month| {
+            matches(3, month)
+                && (1..=crate::record::days_in_month(2000, month).unwrap())
+                    .any(|day| matches(2, day))
+        })
+    {
+        return Err(ValidationError::new(
+            "schedule has no possible calendar date",
+        ));
+    }
     let start = after.unix_seconds().div_euclid(60) * 60 + 60;
-    for minute in 0..527_040 {
-        let candidate = Timestamp::from_unix_seconds(start + minute * 60);
-        if schedule_matches(schedule, candidate) {
+    let end = start.saturating_add(146_097 * 86_400);
+    let mut seconds = start;
+    while seconds < end {
+        let candidate = Timestamp::from_unix_seconds(seconds);
+        let (hour, minute, day, month, weekday) = candidate.utc_components();
+        let day_matches = matches(2, day);
+        let weekday_matches = matches(4, weekday) || (weekday == 0 && matches(4, 7));
+        let date_matches = if wildcard_day {
+            day_matches && weekday_matches
+        } else {
+            day_matches || weekday_matches
+        };
+        if !matches(3, month) || !date_matches {
+            seconds += i64::from((24 - hour) * 60 - minute) * 60;
+        } else if !matches(1, hour) {
+            seconds += i64::from(60 - minute) * 60;
+        } else if matches(0, minute) {
             return Ok(candidate);
+        } else {
+            seconds += 60;
         }
     }
     Err(ValidationError::new(
-        "schedule has no occurrence in the next year",
+        "schedule has no occurrence in the Gregorian calendar cycle",
     ))
-}
-
-fn schedule_matches(schedule: &str, timestamp: Timestamp) -> bool {
-    let fields = schedule.split_ascii_whitespace().collect::<Vec<_>>();
-    if fields.len() != 5 {
-        return false;
-    }
-    let (hour, minute, day, month, weekday) = timestamp.utc_components();
-    field_matches(fields[0], minute, 0, 59)
-        && field_matches(fields[1], hour, 0, 23)
-        && field_matches(fields[2], day, 1, 31)
-        && field_matches(fields[3], month, 1, 12)
-        && (field_matches(fields[4], weekday, 0, 7)
-            || (weekday == 0 && field_matches(fields[4], 7, 0, 7)))
 }
 
 fn field_matches(field: &str, value: u32, min: u32, max: u32) -> bool {
@@ -453,7 +486,10 @@ fn field_matches(field: &str, value: u32, min: u32, max: u32) -> bool {
         } else if let Some((start, end)) = range.split_once('-') {
             start.parse().ok().zip(end.parse().ok())
         } else {
-            range.parse().ok().map(|exact| (exact, exact))
+            range
+                .parse()
+                .ok()
+                .map(|start| (start, if part.contains('/') { max } else { start }))
         };
         let Some((start, end)) = bounds else {
             return false;
@@ -467,13 +503,24 @@ fn field_matches(field: &str, value: u32, min: u32, max: u32) -> bool {
 }
 
 #[derive(Debug)]
+struct ParsedJob {
+    modified: SystemTime,
+    length: u64,
+    job: ScheduledJob,
+}
+
+#[derive(Debug)]
 pub struct ScheduledJobStore {
     root: PathBuf,
+    parsed: RefCell<HashMap<ScheduledJobId, ParsedJob>>,
 }
 
 impl ScheduledJobStore {
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self {
+            root,
+            parsed: RefCell::new(HashMap::new()),
+        }
     }
 
     pub fn save(&self, job: &ScheduledJob) -> Result<(), ScheduledJobStoreError> {
@@ -506,18 +553,45 @@ impl ScheduledJobStore {
         if result.is_err() {
             let _ = fs::remove_file(&temporary);
         }
+        self.parsed.borrow_mut().remove(&job.id);
         result.map_err(ScheduledJobStoreError::Io)
     }
 
     pub fn load(&self, id: &ScheduledJobId) -> Result<ScheduledJob, ScheduledJobStoreError> {
         let path = self.path_for(id);
-        let job = ScheduledJob::from_markdown(&fs::read_to_string(&path)?)
-            .map_err(|error| ScheduledJobStoreError::Malformed(path.clone(), error.to_string()))?;
+        let metadata = fs::metadata(&path)?;
+        let stamp = metadata
+            .modified()
+            .ok()
+            .map(|modified| (modified, metadata.len()));
+        if let Some(cached) = self.parsed.borrow().get(id)
+            && stamp == Some((cached.modified, cached.length))
+        {
+            return Ok(cached.job.clone());
+        }
+        self.parsed.borrow_mut().remove(id);
+        let bytes = fs::read(&path)?;
+        let job = std::str::from_utf8(&bytes)
+            .map_err(|error| error.to_string())
+            .and_then(|markdown| {
+                ScheduledJob::from_markdown(markdown).map_err(|error| error.to_string())
+            })
+            .map_err(|reason| ScheduledJobStoreError::Malformed(path.clone(), reason))?;
         if &job.id != id {
             return Err(ScheduledJobStoreError::Malformed(
                 path,
                 "job ID does not match filename".into(),
             ));
+        }
+        if let Some((modified, length)) = stamp {
+            self.parsed.borrow_mut().insert(
+                id.clone(),
+                ParsedJob {
+                    modified,
+                    length,
+                    job: job.clone(),
+                },
+            );
         }
         Ok(job)
     }
@@ -536,6 +610,7 @@ impl ScheduledJobStore {
     }
 
     pub fn delete(&self, id: &ScheduledJobId) -> Result<(), ScheduledJobStoreError> {
+        self.parsed.borrow_mut().remove(id);
         match fs::remove_file(self.path_for(id)) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
@@ -547,7 +622,10 @@ impl ScheduledJobStore {
         let mut listing = ScheduledJobListing::default();
         let entries = match fs::read_dir(&self.root) {
             Ok(entries) => entries,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(listing),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                self.parsed.borrow_mut().clear();
+                return Ok(listing);
+            }
             Err(error) => return Err(error.into()),
         };
         for entry in entries {
@@ -576,6 +654,10 @@ impl ScheduledJobStore {
                 Err(error) => return Err(error),
             }
         }
+        let present: HashSet<_> = listing.jobs.iter().map(|job| &job.id).collect();
+        self.parsed
+            .borrow_mut()
+            .retain(|id, _| present.contains(id));
         listing.jobs.sort_by(|left, right| {
             right
                 .created_at
@@ -663,6 +745,58 @@ mod tests {
     }
 
     #[test]
+    fn cron_skips_preserve_calendar_and_field_semantics() {
+        let after: Timestamp = "2025-01-02T12:34:56Z".parse().unwrap();
+        for (schedule, expected) in [
+            ("0 0 1 1 *", "2026-01-01T00:00:00Z"),
+            ("*/15 13 * * *", "2025-01-02T13:00:00Z"),
+            ("45 12 * * *", "2025-01-02T12:45:00Z"),
+            ("0 0 * * 7", "2025-01-05T00:00:00Z"),
+            ("0 0 * * 0", "2025-01-05T00:00:00Z"),
+            ("0 0 5 * 1", "2025-01-05T00:00:00Z"),
+            ("0,30 12-14/2 * * *", "2025-01-02T14:00:00Z"),
+        ] {
+            assert_eq!(
+                next_run(schedule, after).unwrap(),
+                expected.parse().unwrap()
+            );
+        }
+        assert!(next_run("0 0 31 2 *", after).is_err());
+        let before: Timestamp = "2024-02-28T23:59:59Z".parse().unwrap();
+        assert_eq!(
+            next_run("0 0 29 2 *", before).unwrap(),
+            "2024-02-29T00:00:00Z".parse().unwrap()
+        );
+    }
+
+    #[test]
+    fn scheduled_cache_reuses_records_and_observes_external_changes() {
+        let root = std::env::temp_dir().join(format!("shinbo-job-cache-{}", std::process::id()));
+        let store = ScheduledJobStore::new(root.clone());
+        let mut saved = job("manual");
+        store.save(&saved).unwrap();
+        assert_eq!(store.list().unwrap().jobs, vec![saved.clone()]);
+        let address = store.parsed.borrow()[&saved.id].job.prompt.as_ptr();
+        assert_eq!(store.load(&saved.id).unwrap(), saved);
+        assert_eq!(
+            store.parsed.borrow()[&saved.id].job.prompt.as_ptr(),
+            address
+        );
+        saved.title = "Externally edited title".into();
+        fs::write(store.path_for(&saved.id), saved.to_markdown()).unwrap();
+        assert_eq!(store.load(&saved.id).unwrap(), saved);
+        fs::write(store.path_for(&saved.id), "malformed").unwrap();
+        assert_eq!(store.list().unwrap().malformed.len(), 1);
+        assert!(store.parsed.borrow().is_empty());
+        store.save(&saved).unwrap();
+        store.load(&saved.id).unwrap();
+        store.delete(&saved.id).unwrap();
+        assert!(store.parsed.borrow().is_empty());
+        assert!(store.list().unwrap().jobs.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn scheduled_job_round_trips_and_rejects_invalid_cron() {
         let job = job("0 9 * * 1");
         assert_eq!(
@@ -695,8 +829,8 @@ mod tests {
         let unpinned = job
             .to_markdown()
             .replacen(
-                "emma-scheduled-job-format: 4",
-                "emma-scheduled-job-format: 3",
+                "shinbo-scheduled-job-format: 4",
+                "shinbo-scheduled-job-format: 3",
                 1,
             )
             .replace("model: \"\"\n", "");
@@ -713,8 +847,8 @@ mod tests {
         let older = job
             .to_markdown()
             .replacen(
-                "emma-scheduled-job-format: 4",
-                "emma-scheduled-job-format: 1",
+                "shinbo-scheduled-job-format: 4",
+                "shinbo-scheduled-job-format: 1",
                 1,
             )
             .replace("permission-mode: \"full\"\n", "")

@@ -129,9 +129,15 @@ pub fn executeCopy(
 fn executeCaptured(
     input: Input,
     call: types.ToolCall,
-    captured_operation: ?change_tracker.FileOperation,
+    captured_operation: anyerror!?change_tracker.FileOperation,
 ) tool_dispatch.DispatchError!tool_dispatch.DispatchResult {
-    var operation = captured_operation;
+    var operation = captured_operation catch |err| {
+        if (err == error.OutOfMemory) return error.OutOfMemory;
+        return .{
+            .status = .failure,
+            .body = try std.fmt.allocPrint(input.dispatch_ctx.allocator, "{s} failed: undo backup could not be saved ({s}); no file changes were made", .{ call.name, @errorName(err) }),
+        };
+    };
     errdefer freeCapturedOperation(operation);
 
     const result = try tool_dispatch.dispatchAuthorizedToolCallDefault(
@@ -161,13 +167,17 @@ fn executeCaptured(
 fn captureDelete(
     tracker: ?*change_tracker.ChangeTracker,
     path: []const u8,
-) ?change_tracker.FileOperation {
+) !?change_tracker.FileOperation {
     if (tracker == null) return null;
-    const owned_path = std.heap.c_allocator.dupe(u8, path) catch return null;
+    const owned_path = try std.heap.c_allocator.dupe(u8, path);
+    errdefer std.heap.c_allocator.free(owned_path);
+    const stat = try std.Io.Dir.cwd().statFile(io_mod.getIo(), path, .{});
+    const previous_directory = stat.kind == .directory;
     return .{
         .kind = .delete,
         .path = owned_path,
-        .previous_content = change_tracker.ChangeTracker.captureFileState(
+        .previous_directory = previous_directory,
+        .previous_content = if (previous_directory) null else try change_tracker.ChangeTracker.captureFileState(
             std.heap.c_allocator,
             path,
         ),
@@ -179,14 +189,22 @@ fn captureRename(
     tracker: ?*change_tracker.ChangeTracker,
     old_path: []const u8,
     new_path: []const u8,
-) ?change_tracker.FileOperation {
+) !?change_tracker.FileOperation {
     if (tracker == null) return null;
-    const owned_old_path = std.heap.c_allocator.dupe(u8, old_path) catch return null;
-    const owned_new_path = std.heap.c_allocator.dupe(u8, new_path) catch null;
+    const owned_old_path = try std.heap.c_allocator.dupe(u8, old_path);
+    errdefer std.heap.c_allocator.free(owned_old_path);
+    const owned_new_path = try std.heap.c_allocator.dupe(u8, new_path);
+    errdefer std.heap.c_allocator.free(owned_new_path);
+    const stat = std.Io.Dir.cwd().statFile(io_mod.getIo(), new_path, .{}) catch |err| switch (err) {
+        error.FileNotFound => null,
+        else => return err,
+    };
+    const previous_directory = if (stat) |entry| entry.kind == .directory else false;
     return .{
         .kind = .rename,
         .path = owned_old_path,
-        .previous_content = change_tracker.ChangeTracker.captureFileState(
+        .previous_directory = previous_directory,
+        .previous_content = if (previous_directory) null else try change_tracker.ChangeTracker.captureFileState(
             std.heap.c_allocator,
             new_path,
         ),
@@ -198,13 +216,14 @@ fn captureRename(
 fn captureCopy(
     tracker: ?*change_tracker.ChangeTracker,
     destination: []const u8,
-) ?change_tracker.FileOperation {
+) !?change_tracker.FileOperation {
     if (tracker == null) return null;
-    const owned_path = std.heap.c_allocator.dupe(u8, destination) catch return null;
+    const owned_path = try std.heap.c_allocator.dupe(u8, destination);
+    errdefer std.heap.c_allocator.free(owned_path);
     return .{
         .kind = .write,
         .path = owned_path,
-        .previous_content = change_tracker.ChangeTracker.captureFileState(
+        .previous_content = try change_tracker.ChangeTracker.captureFileState(
             std.heap.c_allocator,
             destination,
         ),
@@ -508,7 +527,7 @@ test "tracked copy preserves destination on failed atomic replacement" {
         testCall("copy_file", "{\"source\":\"source.txt\",\"destination\":\"dest\",\"overwrite\":true}"),
     );
     try std.testing.expectEqual(tool_dispatch.DispatchResult.Status.failure, copied.status);
-    try std.testing.expectEqualStrings("copy_file failed: source.txt", copied.body);
+    try std.testing.expect(std.mem.indexOf(u8, copied.body, "undo backup could not be saved") != null);
     const stat = try tmp.dir.statFile(io_mod.getIo(), "workspace/dest", .{});
     try std.testing.expectEqual(std.Io.File.Kind.directory, stat.kind);
     try std.testing.expectEqual(@as(usize, 0), tracker.stack.items.len);
@@ -746,4 +765,66 @@ fn createSymlinkOrSkip(tmp: *std.testing.TmpDir, target_path: []const u8, link_p
         }
         return err;
     };
+}
+
+test "tracked mutations leave existing files untouched when undo capture exceeds its bound" {
+    const alloc = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try writeTestFile(tmp.dir, "workspace/source.txt", "source");
+    try writeTestFile(tmp.dir, "workspace/large.txt", "");
+    var large = try tmp.dir.openFile(io_mod.getIo(), "workspace/large.txt", .{ .mode = .read_write });
+    defer large.close(io_mod.getIo());
+    try large.setLength(io_mod.getIo(), 10 * 1024 * 1024 + 1);
+    const workspace = try workspaceRoot(alloc, tmp);
+    defer alloc.free(workspace);
+    var tracker: change_tracker.ChangeTracker = .{};
+    defer tracker.deinit(std.heap.c_allocator);
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    const input = testInput(arena_state.allocator(), workspace, &tracker);
+    const results = [_]tool_dispatch.DispatchResult{
+        try executeCopy(input, testCall("copy_file", "{\"source\":\"source.txt\",\"destination\":\"large.txt\"}")),
+        try executeRename(input, testCall("rename_file", "{\"old_path\":\"source.txt\",\"new_path\":\"large.txt\"}")),
+        try executeDelete(input, testCall("delete_file", "{\"path\":\"large.txt\"}")),
+    };
+    for (results) |result| {
+        try std.testing.expectEqual(tool_dispatch.DispatchResult.Status.failure, result.status);
+        try std.testing.expect(std.mem.indexOf(u8, result.body, "undo backup could not be saved") != null);
+    }
+    try std.testing.expectEqual(@as(usize, 0), tracker.stack.items.len);
+    const stat = try tmp.dir.statFile(io_mod.getIo(), "workspace/large.txt", .{});
+    try std.testing.expectEqual(@as(u64, 10 * 1024 * 1024 + 1), stat.size);
+    const source = try readFileAlloc(arena_state.allocator(), tmp.dir, "workspace/source.txt");
+    try std.testing.expectEqualStrings("source", source);
+}
+
+test "tracked directory deletion and overwrite rename remain undoable" {
+    const alloc = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(io_mod.getIo(), "workspace/empty");
+    try tmp.dir.createDirPath(io_mod.getIo(), "workspace/source");
+    try writeTestFile(tmp.dir, "workspace/source/child.txt", "source");
+    const workspace = try workspaceRoot(alloc, tmp);
+    defer alloc.free(workspace);
+    var tracker: change_tracker.ChangeTracker = .{};
+    defer tracker.deinit(std.heap.c_allocator);
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    const input = testInput(arena_state.allocator(), workspace, &tracker);
+    const deleted = try executeDelete(input, testCall("delete_file", "{\"path\":\"empty\"}"));
+    try std.testing.expectEqual(tool_dispatch.DispatchResult.Status.success, deleted.status);
+    const restored_delete = tracker.undoLast(std.heap.c_allocator);
+    try std.testing.expect(restored_delete == .restored);
+    std.heap.c_allocator.free(restored_delete.restored);
+    const renamed = try executeRename(input, testCall("rename_file", "{\"old_path\":\"source\",\"new_path\":\"empty\"}"));
+    try std.testing.expectEqual(tool_dispatch.DispatchResult.Status.success, renamed.status);
+    const restored_rename = tracker.undoLast(std.heap.c_allocator);
+    try std.testing.expect(restored_rename == .restored);
+    std.heap.c_allocator.free(restored_rename.restored);
+    const source = try readFileAlloc(arena_state.allocator(), tmp.dir, "workspace/source/child.txt");
+    try std.testing.expectEqualStrings("source", source);
+    const empty_stat = try tmp.dir.statFile(io_mod.getIo(), "workspace/empty", .{});
+    try std.testing.expectEqual(std.Io.File.Kind.directory, empty_stat.kind);
 }

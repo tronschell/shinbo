@@ -1,10 +1,10 @@
 {
-  "name": "emma-desktop",
+  "name": "shinbo-desktop",
   "version": "0.1.0",
   "private": true,
   "main": "dist-main/main/main.js",
   "scripts": {
-    "build:host": "cargo build --locked -p emma-host && npm run build:harness",
+    "build:host": "cargo build --locked -p shinbo-host && npm run build:harness",
     "build:harness": "(cd ../harness && zig build)",
     "build:renderer": "vite build",
     "build:main": "node -e \"require('node:fs').rmSync('dist-main', { recursive: true, force: true })\" && tsc -p tsconfig.main.json",

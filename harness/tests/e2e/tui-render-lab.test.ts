@@ -644,7 +644,7 @@ describe.skipIf(SKIP)("tui: render lab", () => {
     () => {
       outDir = mkdtempSync(join(tmpdir(), "fx-render-lab-test-"));
       const env = { ...process.env };
-      delete env.EMMA_PROVIDER_API_KEY;
+      delete env.SHINBO_PROVIDER_API_KEY;
 
       const output = execFileSync(
         "bun",
@@ -766,7 +766,7 @@ function runScenarioArtifacts(scenario: string): {
 } {
   outDir = mkdtempSync(join(tmpdir(), "fx-render-lab-overflow-test-"));
   const env = { ...process.env };
-  delete env.EMMA_PROVIDER_API_KEY;
+  delete env.SHINBO_PROVIDER_API_KEY;
   const output = execFileSync(
     "bun",
     ["run", "render-lab", "--", "--scenario", scenario, "--runs", "1", "--out", outDir],

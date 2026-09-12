@@ -87,13 +87,14 @@ function tinyfishReadyAt(now: number): number {
   return Math.max(local, tinyfishBlockedUntil);
 }
 
-async function ask(settings: WebSearchSource, search: string, limit: number, credential: string, label: string): Promise<SearchResult[]> {
+async function ask(settings: WebSearchSource, search: string, limit: number, credential: string, label: string, signal?: AbortSignal): Promise<SearchResult[]> {
   const { url, init, read } = query(settings, search, limit, credential);
   let response: Response;
   try {
-    response = await net.fetch(url, { credentials: "omit", signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS), ...init });
+    response = await net.fetch(url, { credentials: "omit", ...init, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(SEARCH_TIMEOUT_MS)]) : AbortSignal.timeout(SEARCH_TIMEOUT_MS) });
   } catch {
-    throw new Error(`Emma could not reach ${label} at ${settings.endpoint}.`);
+    signal?.throwIfAborted();
+    throw new Error(`Shinbo could not reach ${label} at ${settings.endpoint}.`);
   }
   if (response.status === 429) throw new SearchRateLimit(`${label} returned its rate limit.`);
   if (!response.ok) throw new Error(`${label} returned ${response.status}.`);
@@ -105,17 +106,18 @@ async function ask(settings: WebSearchSource, search: string, limit: number, cre
     .map((item) => ({ title: item.title.slice(0, 200), url: item.url.slice(0, 2048), snippet: item.snippet.replace(/\s+/g, " ").trim().slice(0, MAX_SNIPPET_CHARS) }));
 }
 
-async function askSource(settings: WebSearchSource, search: string, limit: number, credential: string): Promise<SearchResult[]> {
+async function askSource(settings: WebSearchSource, search: string, limit: number, credential: string, signal?: AbortSignal): Promise<SearchResult[]> {
   const provider = webSearchProvider(settings.provider);
   try {
-    return await ask(settings, search, limit, credential, provider.label);
+    return await ask(settings, search, limit, credential, provider.label, signal);
   } catch (error) {
+    signal?.throwIfAborted();
     if (settings.provider !== "fourget" || settings.endpoint === FOURGET_FALLBACK) throw error;
-    return await ask({ ...settings, endpoint: FOURGET_FALLBACK }, search, limit, credential, `${provider.label} (${FOURGET_FALLBACK})`);
+    return await ask({ ...settings, endpoint: FOURGET_FALLBACK }, search, limit, credential, `${provider.label} (${FOURGET_FALLBACK})`, signal);
   }
 }
 
-async function searchSource(settings: WebSearchSource, search: string, limit: number, credential: string, now: number): Promise<{ results: SearchResult[]; cached: boolean }> {
+async function searchSource(settings: WebSearchSource, search: string, limit: number, credential: string, now: number, signal?: AbortSignal): Promise<{ results: SearchResult[]; cached: boolean }> {
   const key = JSON.stringify([settings.provider, settings.endpoint, limit, search]);
   const hit = cache.get(key);
   if (hit && now - hit.at < CACHE_TTL_MS) return { results: hit.results, cached: true };
@@ -124,7 +126,8 @@ async function searchSource(settings: WebSearchSource, search: string, limit: nu
     if (retryAt > now) throw new SearchRateLimit("TinyFish is cooling down.", retryAt);
     tinyfishUses.push(now);
   }
-  const results = await askSource(settings, search, limit, credential);
+  const results = await askSource(settings, search, limit, credential, signal);
+  signal?.throwIfAborted();
   cache.set(key, { at: now, results });
   for (const stale of cache.keys()) {
     if (cache.size <= MAX_CACHED_SEARCHES) break;
@@ -136,7 +139,8 @@ async function searchSource(settings: WebSearchSource, search: string, limit: nu
 const reason = (error: unknown) => error instanceof Error ? error.message : String(error);
 const seconds = (retryAt: number, now: number) => Math.max(1, Math.ceil((retryAt - now) / 1000));
 
-export async function webSearch(settings: WebSearchSettings, search: string, limit: number, credential: (env: string) => string = () => "", now = Date.now()): Promise<SearchResponse> {
+export async function webSearch(settings: WebSearchSettings, search: string, limit: number, credential: (env: string) => string = () => "", now = Date.now(), signal?: AbortSignal): Promise<SearchResponse> {
+  signal?.throwIfAborted();
   const failures: string[] = [];
   for (let at = 0; at < settings.providers.length; at += 1) {
     const source = settings.providers[at];
@@ -147,15 +151,17 @@ export async function webSearch(settings: WebSearchSettings, search: string, lim
       continue;
     }
     try {
-      const found = await searchSource(source, search, limit, key, now);
+      const found = await searchSource(source, search, limit, key, now, signal);
+      signal?.throwIfAborted();
       const route = `Provider: ${provider.label}${at ? `, fallback ${at + 1} of ${settings.providers.length}` : ""}.`;
       const quota = source.provider === "tinyfish"
-        ? ` TinyFish Search is free; Emma has used ${tinyfishUsage(now)} of ${TINYFISH_SEARCH_LIMIT} requests in the last minute. TinyFish Fetch is separately free up to ${TINYFISH_FETCH_LIMIT} URLs per minute.`
+        ? ` TinyFish Search is free; Shinbo has used ${tinyfishUsage(now)} of ${TINYFISH_SEARCH_LIMIT} requests in the last minute. TinyFish Fetch is separately free up to ${TINYFISH_FETCH_LIMIT} URLs per minute.`
         : "";
       const skipped = failures.length ? ` ${failures.join(" ")}` : "";
-      const cached = found.cached ? " Served from Emma's cache." : "";
+      const cached = found.cached ? " Served from Shinbo's cache." : "";
       return { results: found.results, provider: source.provider, notice: `${route}${quota}${skipped}${cached}` };
     } catch (error) {
+      signal?.throwIfAborted();
       if (source.provider === "tinyfish" && error instanceof SearchRateLimit) {
         const retryAt = error.retryAt || now + RATE_WINDOW_MS;
         tinyfishBlockedUntil = Math.max(tinyfishBlockedUntil, retryAt);

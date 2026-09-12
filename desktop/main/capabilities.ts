@@ -13,10 +13,10 @@ const MAX_SKILLS_PER_ROOT = 128;
 export const MAX_SKILL_RESULTS = 64;
 const MAX_TOOL_BYTES = 64 * 1024;
 const MAX_TOOL_DESCRIPTION_BYTES = 1024;
-const MAX_EMMA_TOOLS = 64;
+const MAX_SHINBO_TOOLS = 64;
 const MAX_MCP_FILES = 16;
 const MAX_MCP_SERVERS = 32;
-const MIRRORED_SKILL_MARKER = ".emma-mirrored";
+const MIRRORED_SKILL_MARKER = ".shinbo-mirrored";
 const INSTALLED_SKILL_SOURCE = "installed";
 
 type ImportedSource = {
@@ -109,10 +109,10 @@ export function learnedMcpFile(userData: string) {
   return path.join(userData, "mcp.json");
 }
 
-function withEmmaSource(userData: string, manifest: ImportManifest): ImportManifest {
+function withShinboSource(userData: string, manifest: ImportManifest): ImportManifest {
   return {
     version: 1,
-    sources: [...manifest.sources.filter((source) => source.id !== "emma"), { id: "emma", skillRoots: [learnedSkillRoot(userData)], mcpFiles: [learnedMcpFile(userData)] }],
+    sources: [...manifest.sources.filter((source) => source.id !== "shinbo"), { id: "shinbo", skillRoots: [learnedSkillRoot(userData)], mcpFiles: [learnedMcpFile(userData)] }],
   };
 }
 
@@ -124,10 +124,10 @@ async function withPluginSources(userData: string, manifest: ImportManifest): Pr
 async function loadManifest(userData: string) {
   try {
     const text = await readBounded(path.join(userData, "imports.json"), MAX_MANIFEST_BYTES);
-    return await withPluginSources(userData, withEmmaSource(userData, parseManifest(JSON.parse(text))));
+    return await withPluginSources(userData, withShinboSource(userData, parseManifest(JSON.parse(text))));
   } catch (error) {
-    if (error && typeof error === "object" && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") return await withPluginSources(userData, withEmmaSource(userData, { version: 1, sources: [] }));
-    throw new Error("Emma's imported-skill list (imports.json) could not be read — run /import again to rebuild it.", { cause: error });
+    if (error && typeof error === "object" && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") return await withPluginSources(userData, withShinboSource(userData, { version: 1, sources: [] }));
+    throw new Error("Shinbo's imported-skill list (imports.json) could not be read — run /import again to rebuild it.", { cause: error });
   }
 }
 
@@ -144,7 +144,7 @@ export async function writeLearnedSkill(userData: string, name: unknown, instruc
   const directory = path.join(root, slug);
   let existing: string[];
   try { existing = (await readdir(root)).slice(0, MAX_SKILLS_PER_ROOT + 1); } catch { existing = []; }
-  if (!existing.includes(slug) && existing.length >= MAX_SKILLS_PER_ROOT) throw new Error("Emma already holds the maximum number of learned skills");
+  if (!existing.includes(slug) && existing.length >= MAX_SKILLS_PER_ROOT) throw new Error("Shinbo already holds the maximum number of learned skills");
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const temporary = path.join(directory, `.SKILL.md.${randomUUID()}.tmp`);
   try {
@@ -154,24 +154,24 @@ export async function writeLearnedSkill(userData: string, name: unknown, instruc
     await rm(temporary, { force: true });
     throw error;
   }
-  return { id: skillId("emma", 0, slug), source: "emma", name: slug } satisfies ImportedSkill;
+  return { id: skillId("shinbo", 0, slug), source: "shinbo", name: slug } satisfies ImportedSkill;
 }
 
-export type EmmaTool = { name: string; description: string; run: string };
+export type ShinboTool = { name: string; description: string; run: string };
 
-export function emmaToolRoot(userData: string) {
+export function shinboToolRoot(userData: string) {
   return path.join(userData, "tools");
 }
 
-export async function writeEmmaTool(userData: string, name: unknown, description: unknown, code: unknown): Promise<EmmaTool> {
+export async function writeShinboTool(userData: string, name: unknown, description: unknown, code: unknown): Promise<ShinboTool> {
   const slug = learnedSkillSlug(name);
   const about = boundedString(description, MAX_TOOL_DESCRIPTION_BYTES, "Tool description");
   const body = boundedString(code, MAX_TOOL_BYTES, "Tool code");
   if (!body.startsWith("#!")) throw new Error("Tool code must start with a #! line naming its interpreter");
-  const root = emmaToolRoot(userData);
+  const root = shinboToolRoot(userData);
   let existing: string[];
-  try { existing = (await readdir(root)).slice(0, MAX_EMMA_TOOLS + 1); } catch { existing = []; }
-  if (!existing.includes(slug) && existing.length >= MAX_EMMA_TOOLS) throw new Error("Emma already holds the maximum number of tools");
+  try { existing = (await readdir(root)).slice(0, MAX_SHINBO_TOOLS + 1); } catch { existing = []; }
+  if (!existing.includes(slug) && existing.length >= MAX_SHINBO_TOOLS) throw new Error("Shinbo already holds the maximum number of tools");
   const directory = path.join(root, slug);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const temporary = path.join(directory, `.run.${randomUUID()}.tmp`);
@@ -186,11 +186,11 @@ export async function writeEmmaTool(userData: string, name: unknown, description
   return { name: slug, description: about, run: path.join(directory, "run") };
 }
 
-export async function listEmmaTools(userData: string): Promise<EmmaTool[]> {
-  const root = emmaToolRoot(userData);
+export async function listShinboTools(userData: string): Promise<ShinboTool[]> {
+  const root = shinboToolRoot(userData);
   let entries: string[];
-  try { entries = (await readdir(root)).slice(0, MAX_EMMA_TOOLS); } catch { return []; }
-  const tools: EmmaTool[] = [];
+  try { entries = (await readdir(root)).slice(0, MAX_SHINBO_TOOLS); } catch { return []; }
+  const tools: ShinboTool[] = [];
   for (const name of entries) {
     try {
       const description = await readBounded(path.join(root, name, "about.txt"), MAX_TOOL_DESCRIPTION_BYTES);
@@ -214,7 +214,7 @@ export async function seedBuiltinSkills(builtinRoot: string, userData: string, h
       await writeFile(path.join(directory, "SKILL.md"), content, { encoding: "utf8", mode: 0o600 });
       seeded.push(slug);
     } catch (error) {
-      console.warn(`Emma skipped the built-in skill ${name}:`, error instanceof Error ? error.message : error);
+      console.warn(`Shinbo skipped the built-in skill ${name}:`, error instanceof Error ? error.message : error);
     }
   }
   return seeded;
@@ -234,8 +234,12 @@ export async function mirrorSkillsToHarness(userData: string, harnessHome: strin
       if (skill.managed) {
         const directory = path.join(root, skill.name);
         await mkdir(directory, { recursive: true, mode: 0o700 });
-        await writeFile(path.join(directory, "SKILL.md"), withFrontmatter(skill.name, content), { encoding: "utf8", mode: 0o600 });
-        await writeFile(path.join(directory, MIRRORED_SKILL_MARKER), "", { encoding: "utf8", mode: 0o600 });
+        const file = path.join(directory, "SKILL.md");
+        const next = withFrontmatter(skill.name, content);
+        if (await readBounded(file, MAX_SKILL_BYTES + 512).catch(() => null) !== next) {
+          await writeFile(file, next, { encoding: "utf8", mode: 0o600 });
+        }
+        if (!await isMirroredSkill(root, skill.name)) await writeFile(path.join(directory, MIRRORED_SKILL_MARKER), "", { encoding: "utf8", mode: 0o600 });
       }
       mirrored.push(skill.name);
     } catch { continue; }
@@ -260,11 +264,12 @@ function skillId(source: string, rootIndex: number, name: string) {
 
 type LocatedSkill = ImportedSkill & { root: string; managed: boolean };
 
-async function skillsAtRoot(source: string, rootIndex: number, root: string, managed: boolean) {
+async function skillsAtRoot(source: string, rootIndex: number, root: string, managed: boolean, name?: string) {
   const skills: LocatedSkill[] = [];
   let entries;
   try { entries = (await readdir(root, { withFileTypes: true })).slice(0, MAX_SKILLS_PER_ROOT); } catch { return skills; }
   for (const entry of entries) {
+    if (name !== undefined && entry.name !== name) continue;
     if (!entry.isDirectory() && !entry.isSymbolicLink() || !/^[a-zA-Z0-9._-]{1,96}$/.test(entry.name)) continue;
     try {
       const handle = await open(path.join(root, entry.name, "SKILL.md"), "r");
@@ -288,16 +293,16 @@ async function isMirroredSkill(root: string, name: string) {
   } catch { return false; }
 }
 
-async function enumerateSkills(manifest: ImportManifest, installedRoot?: string) {
+async function enumerateSkills(manifest: ImportManifest, installedRoot?: string, name?: string) {
   const skills: LocatedSkill[] = [];
   for (const source of manifest.sources) {
     for (const [rootIndex, root] of source.skillRoots.slice(0, MAX_SKILL_ROOTS).entries()) {
-      skills.push(...await skillsAtRoot(source.id, rootIndex, root, true));
+      skills.push(...await skillsAtRoot(source.id, rootIndex, root, true, name));
     }
   }
   if (installedRoot) {
     const known = new Set(skills.map((skill) => skill.name));
-    for (const skill of await skillsAtRoot(INSTALLED_SKILL_SOURCE, 0, installedRoot, false)) {
+    for (const skill of await skillsAtRoot(INSTALLED_SKILL_SOURCE, 0, installedRoot, false, name)) {
       if (!known.has(skill.name) && !await isMirroredSkill(installedRoot, skill.name)) skills.push(skill);
     }
   }
@@ -320,16 +325,30 @@ export async function searchImportedSkills(userData: string, query: string, limi
   return skills.filter((skill) => searchText(query, skill.name, skill.source)).slice(0, limit).map(toSkillMetadata);
 }
 
-export async function loadImportedSkill(userData: string, id: string) {
-  boundedString(id, 256, "skill selection");
-  const skill = (await enumerateSkills(await loadManifest(userData), path.join(userData, "harness", ".fx", "skills"))).find((candidate) => candidate.id === id);
-  if (!skill) throw new Error("That skill is no longer installed — run /import again to bring it back.");
+async function readLocatedSkill(skill: LocatedSkill) {
   const root = await realpath(skill.root);
   const directory = await realpath(path.join(skill.root, skill.name));
   if (!pathInside(root, directory)) throw new Error("Selected skill is outside its imported root");
-  const instructions = await readBounded(path.join(directory, "SKILL.md"), MAX_SKILL_BYTES);
+  const file = path.join(directory, "SKILL.md");
+  const instructions = await readBounded(file, MAX_SKILL_BYTES);
   if (!instructions.trim()) throw new Error("Selected skill is empty");
+  return { file, instructions };
+}
+
+export async function loadImportedSkill(userData: string, id: string) {
+  boundedString(id, 256, "skill selection");
+  const skill = (await enumerateSkills(await loadManifest(userData), path.join(userData, "harness", ".fx", "skills"), id.split(":").at(-1))).find((candidate) => candidate.id === id);
+  if (!skill) throw new Error("That skill is no longer installed — run /import again to bring it back.");
+  const { instructions } = await readLocatedSkill(skill);
   return { ...toSkillMetadata(skill), instructions };
+}
+
+export async function previewImportedSkill(userData: string, name: string) {
+  boundedString(name, 96, "skill preview");
+  const skill = (await enumerateSkills(await loadManifest(userData), path.join(userData, "harness", ".fx", "skills"), name)).find((candidate) => candidate.name === name);
+  if (!skill) return null;
+  const { file, instructions } = await readLocatedSkill(skill);
+  return { path: file, text: instructions };
 }
 
 function stripJsonComments(text: string) {
@@ -470,15 +489,15 @@ function configRoots(value: Record<string, unknown>) {
     if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) return candidate as Record<string, unknown>;
   }
   const entries = Object.entries(value);
-  // A keyless file is only claimed when every entry looks declared: a command, or a url with the
-  // transport a real remote entry always names. {name: {url}} alone is a shape too much unrelated
-  // JSON has, and claiming it would dial endpoints the user never offered as MCP servers.
+
+
+
   if (entries.length && entries.every(([, item]) => item && typeof item === "object" && !Array.isArray(item) && ("command" in (item as object) || ("url" in (item as object) && "type" in (item as object))))) return value;
   return {};
 }
 
-// Mirrors streamable_http.zig: isReservedHeader (plus its "mcp-param-" prefix) and the bytes
-// isValidHeaderValue refuses.
+
+
 const RESERVED_HEADERS = new Set(["accept", "accept-encoding", "connection", "content-length", "content-type", "host", "last-event-id", "mcp-method", "mcp-name", "mcp-protocol-version", "mcp-session-id", "transfer-encoding"]);
 // eslint-disable-next-line no-control-regex
 const CONTROL_BYTE = /[\u0000-\u0008\u000a-\u001f\u007f]/;
@@ -489,19 +508,19 @@ function parseMcpServer(source: string, fileIndex: number, name: string, raw: un
   const value = raw as Record<string, unknown>;
   const id = `mcp:${source}:${fileIndex}:${name}`;
   if (typeof value.url === "string" && value.type !== "stdio") {
-    // https only. A remote entry's headers are how it authenticates, so plaintext http would
-    // put the user's bearer token on the wire; the harness would take loopback http, we do not.
+
+
     if (value.url.length > 4096 || !URL.canParse(value.url) || new URL(value.url).protocol !== "https:") return undefined;
-    // The harness parses this same string with std.Uri and refuses userinfo or a fragment. A
-    // refusal there is not a dropped entry: parse() propagates it and session/new fails for every
-    // thread on the Mac, naming neither server nor file. So nothing it refuses leaves here.
+
+
+
     const authority = value.url.slice(value.url.indexOf("//") + 2).split(/[/?#]/)[0];
     if (authority.includes("@") || value.url.includes("#")) return undefined;
     const supplied = value.headers ?? {};
     if (!supplied || typeof supplied !== "object" || Array.isArray(supplied)) return undefined;
-    // A reserved name is the one bad header worth surviving: the transport writes these itself,
-    // and a Content-Type sitting in an imported Cursor config is ordinary enough that taking the
-    // whole entry down for it would cost more than dropping the header does.
+
+
+
     const offered = Object.entries(supplied).filter(([key]) => !RESERVED_HEADERS.has(key.toLowerCase()) && !key.toLowerCase().startsWith("mcp-param-"));
     const headers = offered.filter(([key, item]) => /^[A-Za-z0-9-]{1,128}$/.test(key) && typeof item === "string" && item.length <= 8192 && !CONTROL_BYTE.test(item));
     if (headers.length !== offered.length || headers.length > 32) return undefined;
@@ -549,7 +568,7 @@ export async function writeLearnedMcpServer(userData: string, server: McpServerD
   } catch { servers = {}; }
   servers[server.name] = { command: server.command, args: server.args, env: server.env };
   const text = `${JSON.stringify({ mcpServers: servers }, null, 2)}\n`;
-  const written = parseMcpConfig(text, "mcp.json", "emma", 0).find((candidate) => candidate.name === server.name);
+  const written = parseMcpConfig(text, "mcp.json", "shinbo", 0).find((candidate) => candidate.name === server.name);
   if (!written) throw new Error("That MCP server definition is not valid.");
   await mkdir(userData, { recursive: true });
   const temporary = `${file}.${randomUUID()}.tmp`;
@@ -586,9 +605,9 @@ function serverMetadata(server: InternalMcpServer): McpServer {
     if (/^@?[a-z0-9][a-z0-9._/-]*$/i.test(value) && (value.includes("/") || /\.(?:cjs|js|mjs|py|rb|sh)$/i.test(value))) return value;
     return `[argument ${index + 1} redacted]`;
   });
-  // A remote server has no command; the origin of its endpoint stands in so a row still names
-  // something the user recognises. Hosted MCP carries its token in the path or query as often as
-  // in a header (Zapier, Smithery), so the rest of the url stays main-side along with them.
+
+
+
   const origin = server.url ? new URL(server.url).origin : undefined;
   return {
     id: server.id,
@@ -611,8 +630,8 @@ export async function harnessMcpServers(userData: string, disabled: readonly str
   const blocked = new Set(disabled);
   const servers = (await enumerateMcpServers(await loadManifest(userData))).filter((server) => !blocked.has(server.id));
   const resolved = await Promise.all(servers.map(async (server) => {
-    // The harness answers MissingHeaders when the key is absent, so a remote entry always
-    // carries one even with nothing in it. Its url is validated harness-side on the way in.
+
+
     if (server.url) return { name: server.name, type: server.type, url: server.url, headers: server.headers ?? [] };
     const command = server.command ? await absoluteCommand(server.command) : undefined;
     if (!command) return undefined;
@@ -648,6 +667,7 @@ export class ImportedCapabilityRuntime {
 
   searchSkills(query: string, limit = 16) { return searchImportedSkills(this.userData, query, limit); }
   selectSkill(id: string) { return loadImportedSkill(this.userData, id); }
+  previewSkill(name: string) { return previewImportedSkill(this.userData, name); }
   listMcpServers() { return listImportedMcpServers(this.userData); }
 
   async installMcpServer(definition: McpServerDefinition) {

@@ -77,13 +77,8 @@ p, h1, h2, h3, dl, dd { margin: 0; }
 :where(i:empty) { display: inline-block; width: 6px; height: 6px; background: var(--accent); }
 .brand-image { padding: 2px; object-fit: contain; }
 
-.emma-mark { position: relative; display: block; flex: 0 0 auto; line-height: 0; }
-.emma-mark img { display: block; width: 100%; height: auto; }
-.emma-mark .emma-lid { position: absolute; inset: 0; opacity: 0; }
-.emma-mark.blinks img:not(.emma-lid) { animation: emma-open 7s infinite; }
-.emma-mark.blinks .emma-lid { animation: emma-shut 7s infinite; }
-@keyframes emma-open { 0%, 97% { opacity: 1 } 97.01%, 99% { opacity: 0 } 99.01%, 100% { opacity: 1 } }
-@keyframes emma-shut { 0%, 97% { opacity: 0 } 97.01%, 99% { opacity: 1 } 99.01%, 100% { opacity: 0 } }
+.shinbo-mark { display: block; flex: 0 0 auto; line-height: 0; }
+.shinbo-mark svg { display: block; width: 100%; height: auto; }
 
 @media (prefers-reduced-motion: reduce) {
 *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }

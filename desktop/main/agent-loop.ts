@@ -67,7 +67,7 @@ export function refuseBenchTurn(threadId: string) {
   }
 }
 
-function startedBy(threads: readonly SnapshotThread[], sender: string, thread: string): boolean {
+function startedBy(threads: readonly LibraryThread[], sender: string, thread: string): boolean {
   const parents = new Map(threads.map((item) => [item.id, item.parentThreadId ?? ""]));
   const seen = new Set<string>();
   for (let at = parents.get(thread) ?? ""; at && !seen.has(at); at = parents.get(at) ?? "") {
@@ -112,9 +112,10 @@ export type LoopDeps = {
   answered(id: string, allowed: boolean): void;
 
   stopped?(threadId: string): void;
+  steer?(threadId: string, text: string): Promise<void>;
   verify(request: VerifierRequest, threadId: string): Promise<VerifierReview>;
 
-  advise(transcript: string): Promise<Advice>;
+  advise(transcript: string, signal?: AbortSignal): Promise<Advice>;
 
   spawnTurn(turn: TurnRequest, owner?: string): Promise<unknown> | void;
 
@@ -127,13 +128,15 @@ type Run = Omit<LiveAgent, "tool"> & {
   traceContext: Record<string, string>;
   goal: string;
   stopped: boolean;
+  abort: AbortController;
   depth: number;
   changes: FileChange[];
   awaited: number;
   waiting: number;
   waitingSince: number;
 
-  tools: Set<string>;
+  tools: Map<string, TraceSpan>;
+  modelSpan?: TraceSpan;
 
   spans: TraceSpan[];
   said: number;
@@ -176,6 +179,10 @@ export class AgentRuntime {
     return !!run && !run.stopped && run.endedAt === undefined && (run.status === "running" || run.status === "waiting");
   }
 
+  signalFor(threadId: string): AbortSignal | undefined {
+    return this.runs.get(threadId)?.abort.signal;
+  }
+
   spans(): Record<string, TraceSpan[]> {
     const trees: Record<string, TraceSpan[]> = {};
     for (const run of this.runs.values()) {
@@ -198,11 +205,12 @@ export class AgentRuntime {
     if (!thinking) run.said += text.length;
     run.outputTokens += Math.ceil(text.length / CHARS_PER_TOKEN);
     run.generationMs = Date.now() - run.startedAt - run.awaited;
-    if (run.adopted && !run.spans.some((span) => span.kind === "model" && span.endedAt === undefined)) {
-      run.spans.push({ id: `model:${run.threadId}:${run.spans.length}`, parentId: run.spans[0].id, name: "model", kind: "model", model: run.model, startedAt: Date.now(), status: "running" });
+    if (run.adopted && !run.modelSpan) {
+      run.modelSpan = { id: `model:${run.threadId}:${run.spans.length}`, parentId: run.spans[0].id, name: "model", kind: "model", model: run.model, startedAt: Date.now(), status: "running" };
+      run.spans.push(run.modelSpan);
       this.deps.changed();
     }
-    const answering = run.spans.find((span) => span.kind === "model" && span.endedAt === undefined);
+    const answering = run.modelSpan;
     if (answering) answering.tokens = (answering.tokens ?? 0) + Math.ceil(text.length / CHARS_PER_TOKEN);
     const now = Date.now();
     if (now - this.streamedAt >= LIVE_REFRESH_MS) {
@@ -213,14 +221,15 @@ export class AgentRuntime {
   }
 
   private closeModelSpan(run: Run, at = Date.now()) {
-    const span = run.spans.find((candidate) => candidate.kind === "model" && candidate.endedAt === undefined);
+    const span = run.modelSpan;
     if (!span) return;
     span.endedAt = Math.max(at, span.startedAt);
     span.status = "ok";
+    run.modelSpan = undefined;
   }
 
   async runThreadTool(args: AnyToolArgs, turn: TurnRequest): Promise<string> {
-    if (!ownedHere(args)) throw new Error(`${args.name} is not one of Emma's thread tools.`);
+    if (!ownedHere(args)) throw new Error(`${args.name} is not one of Shinbo's thread tools.`);
     return await this.runOwnTool(args, turn, this.runs.get(turn.threadId));
   }
 
@@ -237,17 +246,19 @@ export class AgentRuntime {
   }
 
   private async runAgentsTool(args: Extract<LoopArgs, { name: "agents" }>, turn: TurnRequest): Promise<string> {
-    if (args.message !== undefined) this.steer(args.agent!, args.message);
-    if (args.stop) {
+    if (args.message !== undefined || args.stop) {
       const sender = turn.parentThreadId ?? turn.threadId;
       if (turn.bench && args.agent !== sender && !startedBy(await this.library(), sender, args.agent!)) {
-        throw new Error(`${args.agent} is the user's own thread, and this turn is a measured bench replay. A replay stops only itself and the threads it started, so it cannot stop that one. Leave it alone and say so in your answer.`);
+        throw new Error(`${args.agent} is the user's own thread, and this turn is a measured bench replay. A replay steers or stops only itself and the threads it started. Leave that thread alone and say so in your answer.`);
       }
+    }
+    if (args.message !== undefined) await this.steer(args.agent!, args.message);
+    if (args.stop) {
       this.stop(args.agent!);
       return `Stopped ${args.agent} and anything running under it.`;
     }
     const live = this.list();
-    if (!live.length) return "Nothing is running. Emma clears finished agents when a new turn starts, so an empty list is normal between turns.";
+    if (!live.length) return "Nothing is running. Shinbo clears finished agents when a new turn starts, so an empty list is normal between turns.";
     return live
       .map((agent) => {
         const under = agent.parentThreadId ? ` under ${agent.parentThreadId}` : "";
@@ -278,9 +289,10 @@ export class AgentRuntime {
     this.deps.changed();
   }
 
-  steer(threadId: string, _text: string) {
-    if (!this.runs.has(threadId)) throw new Error("That agent is no longer running.");
-    throw new Error("Emma could not reach the turn that is running on this thread. Wait for it to finish, then send it again.");
+  steer(threadId: string, text: string): Promise<void> {
+    if (!this.isLive(threadId)) throw new Error("That agent is no longer running.");
+    if (this.deps.steer) return this.deps.steer(threadId, text);
+    throw new Error("Shinbo could not reach the turn that is running on this thread. Wait for it to finish, then send it again.");
   }
 
   setMode(threadId: string, mode: PermissionMode) {
@@ -309,6 +321,7 @@ export class AgentRuntime {
   private stopRun(run: Run) {
     if (run.stopped) return;
     run.stopped = true;
+    run.abort.abort();
     this.dismissAsks(run);
     this.deps.stopped?.(run.threadId);
   }
@@ -379,12 +392,13 @@ export class AgentRuntime {
       effort: turn.effort ?? "",
       goal: towardGoal(turn, turn.content),
       stopped: this.runs.get(turn.parentThreadId ?? "")?.stopped ?? false,
+      abort: new AbortController(),
       depth,
       changes: [],
       awaited: 0,
       waiting: 0,
       waitingSince: 0,
-      tools: new Set(),
+      tools: new Map(),
       spans: [],
       said: 0,
       cacheRead: 0,
@@ -394,6 +408,7 @@ export class AgentRuntime {
       traced: false,
       traceContext: turn.traceContext ?? {},
     };
+    if (run.stopped) run.abort.abort();
     run.spans.push({
       id: `agent:${run.threadId}`,
       parentId: turn.parentSpanId,
@@ -476,7 +491,7 @@ export class AgentRuntime {
     });
     if (!trace) return;
     void this.deps.request("recordTrace", { threadId: run.threadId, trace })
-      .catch((error: unknown) => console.error("Emma: could not record the turn's trace", error));
+      .catch((error: unknown) => console.error("Shinbo: could not record the turn's trace", error));
   }
 
   adopt(turn: TurnRequest): void {
@@ -488,7 +503,7 @@ export class AgentRuntime {
     if (!run || !model.trim()) return;
     run.model = normalizeModel(model);
     run.spans[0].model = run.model;
-    const answering = run.spans.find((span) => span.kind === "model" && span.endedAt === undefined);
+    const answering = run.modelSpan;
     if (answering) answering.model = run.model;
     this.deps.changed();
   }
@@ -519,7 +534,7 @@ export class AgentRuntime {
     if (usage.outputTokens > 0) run.outputTokens = usage.outputTokens;
     if ((usage.cacheReadTokens ?? 0) > 0) run.cacheRead = usage.cacheReadTokens!;
     if ((usage.costMicroUsd ?? 0) > 0) run.cost = usage.costMicroUsd!;
-    const answering = run.spans.find((span) => span.kind === "model" && span.endedAt === undefined);
+    const answering = run.modelSpan;
     if (answering) answering.tokens = usage.inputTokens + usage.outputTokens;
     this.deps.changed();
   }
@@ -530,10 +545,9 @@ export class AgentRuntime {
     run.activity = activity;
     if (!run.tools.has(toolCallId)) {
       this.closeModelSpan(run, step?.at ?? Date.now());
-      run.tools.add(toolCallId);
       run.toolCalls += 1;
       run.steps += 1;
-      run.spans.push({
+      const span: TraceSpan = {
         id: `call:${toolCallId}`,
         parentId: run.spans[0].id,
         name: step?.title || activity || "tool call",
@@ -543,9 +557,11 @@ export class AgentRuntime {
         startedAt: step?.at ?? Date.now(),
         status: "running",
         said: run.said,
-      });
+      };
+      run.tools.set(toolCallId, span);
+      run.spans.push(span);
     }
-    const span = run.spans.find((candidate) => candidate.id === `call:${toolCallId}`);
+    const span = run.tools.get(toolCallId);
     if (!span) return;
     if (step?.title) span.name = step.title;
     if (step?.input) span.input = step.input;
@@ -572,6 +588,7 @@ export class AgentRuntime {
     run.activity = error ?? "finished";
     run.error = error;
     run.endedAt = Date.now();
+    run.abort.abort();
     this.dismissAsks(run);
     run.generationMs = Math.max(run.generationMs, run.endedAt - run.startedAt - run.awaited, 1);
     const ended: TraceStatus = run.stopped ? "cancelled" : error ? "failed" : "ok";
@@ -581,6 +598,7 @@ export class AgentRuntime {
       span.endedAt = run.endedAt;
       span.status = span.id.startsWith("call:") ? "cancelled" : ended;
     }
+    run.modelSpan = undefined;
     this.flushTrace(run);
     this.deps.changed();
   }
@@ -590,7 +608,7 @@ export class AgentRuntime {
     const traces = Array.isArray(result) ? result : [];
     const end = Math.max(0, traces.length - offset);
     const recent = traces.slice(Math.max(0, end - Math.min(limit, MAX_TRACES_READ)), end);
-    if (!recent.length) return offset ? "No older traces remain at this offset." : "That thread has no recorded traces. Emma stores one when a turn ends, so the turn you are in now is not in there yet.";
+    if (!recent.length) return offset ? "No older traces remain at this offset." : "That thread has no recorded traces. Shinbo stores one when a turn ends, so the turn you are in now is not in there yet.";
     return `Read ${recent.length} of ${traces.length} stored traces; ${end > recent.length ? `next offset ${offset + recent.length}` : "no older traces remain"}.\n\n` + recent
       .map((entry) => {
         const text = String((entry as { text?: unknown }).text ?? "");
@@ -604,18 +622,19 @@ export class AgentRuntime {
   private async readThread(thread: string | undefined, limit: number): Promise<string> {
     const entries = await this.library();
     if (!thread) {
-      if (!entries.length) return "Emma has no threads yet.";
+      if (!entries.length) return "Shinbo has no threads yet.";
       return entries
         .map((item) => {
           const owned = item.parentThreadId ? ` under ${item.parentThreadId}` : "";
           const archived = item.archivedAt ? " · archived" : "";
           const run = this.runs.get(item.id);
           const working = run && (run.status === "running" || run.status === "waiting") ? ` · ${run.status}: ${run.activity}` : "";
-          return `${item.id} · ${item.kind ?? "main"}${owned}${archived} · ${item.messages?.length ?? 0} messages · updated ${item.updatedAt}${working}\n  ${item.title}`;
+          return `${item.id} · ${item.kind ?? "main"}${owned}${archived} · ${item.messages ?? 0} messages · updated ${item.updatedAt}${working}\n  ${item.title}`;
         })
         .join("\n");
     }
-    const found = this.findThread(await this.library(), thread);
+    const summary = this.findThread(entries, thread);
+    const found = await this.deps.request("thread", { threadId: summary.id }) as Omit<LibraryThread, "messages"> & { messages?: { role: string; content: string; timestamp: string }[] };
     const messages = found.messages ?? [];
     const recent = messages.slice(-limit);
     const older = messages.length - recent.length;
@@ -626,13 +645,14 @@ export class AgentRuntime {
 
   private async consultAdvisor(run: Run, turn: TurnRequest, question: string | undefined): Promise<string> {
     const history = await this.readThread(turn.threadId, 20).catch(() => "(this thread's earlier messages could not be read)");
+    run.abort.signal.throwIfAborted();
     const transcript = [
       `The user asked, this turn: ${turn.content}`,
       question ? `\nThe agent is asking you specifically: ${question}` : "",
       `\n--- earlier in this thread\n${history}`,
       `\n--- what the agent has done so far this turn\n${renderTrace(run.spans, Date.now()) || "(nothing yet)"}`,
     ].filter(Boolean).join("\n");
-    const advice = await this.deps.advise(transcript);
+    const advice = await this.deps.advise(transcript, run.abort.signal);
     if (advice.error) return advice.text;
     return `Advice from ${advice.model || "the advisor"}:\n\n${advice.text}`;
   }
@@ -651,11 +671,11 @@ export class AgentRuntime {
     const owner = turn.parentThreadId ?? turn.threadId;
     const working = [...this.runs.values()].filter((run) => !run.parentThreadId && (run.status === "running" || run.status === "waiting")).length;
     if (prompt && working >= MAX_LIVE_THREADS) {
-      return `Emma already has ${MAX_LIVE_THREADS} threads working. Wait for one to finish, or spawn this one without a prompt so the user can start it.`;
+      return `Shinbo already has ${MAX_LIVE_THREADS} threads working. Wait for one to finish, or spawn this one without a prompt so the user can start it.`;
     }
     const created = await this.deps.request("createThread", { parentThreadId: owner, title });
     const threadId = (created as { id?: unknown }).id;
-    if (typeof threadId !== "string") throw new Error("Emma returned an invalid thread");
+    if (typeof threadId !== "string") throw new Error("Shinbo returned an invalid thread");
     const mark = `[threads:${threadId}:${title}]`;
     if (!prompt) {
       return `Started the thread "${title}" (${threadId}), in this project and owned by this thread. ${mark}\n\nIt is empty and nothing is running in it, so tell the user it is there and what it is for.`;
@@ -670,9 +690,10 @@ export class AgentRuntime {
     if (thread === sender) throw new Error("That is the thread you are in. Say it in your answer instead.");
     const library = await this.library();
     const found = this.findThread(library, thread);
+    if (turn.bench && !startedBy(library, sender, thread)) throw new Error("A measured bench replay sends messages only to the threads it started.");
     const run = this.runs.get(thread);
     if (run && (run.status === "running" || run.status === "waiting")) {
-      this.steer(thread, text);
+      await this.steer(thread, text);
       return `Sent to "${found.title}" (${thread}). A turn was already running there, so this went into that turn rather than starting one; read it back with threads read ${thread}.`;
     }
     this.start({ threadId: thread, content: fromThread(sender, towardGoal(turn, text)), mode: this.mode(turn.threadId), model: turn.model, title: found.title }, sender);
@@ -680,20 +701,20 @@ export class AgentRuntime {
   }
 
   private start(turn: TurnRequest, owner?: string): void {
-    void Promise.resolve(this.deps.spawnTurn({ ...turn, nested: true }, owner)).catch((error: unknown) => console.error("Emma: a thread's own turn failed", error));
+    void Promise.resolve(this.deps.spawnTurn({ ...turn, nested: true }, owner)).catch((error: unknown) => console.error("Shinbo: a thread's own turn failed", error));
   }
 
-  private findThread(library: readonly SnapshotThread[], thread: string): SnapshotThread {
+  private findThread(library: readonly LibraryThread[], thread: string): LibraryThread {
     const found = library.find((item) => item.id === thread);
-    if (!found) throw new Error(`Emma has no thread with the ID ${thread}. Call threads with action list to see the ones it does have.`);
+    if (!found) throw new Error(`Shinbo has no thread with the ID ${thread}. Call threads with action list to see the ones it does have.`);
     return found;
   }
 
-  private async library(): Promise<SnapshotThread[]> {
-    const result = await this.deps.request("snapshot", {});
+  private async library(): Promise<LibraryThread[]> {
+    const result = await this.deps.request("threadSummaries", {});
     const threads = (result as { threads?: unknown })?.threads;
-    if (!Array.isArray(threads)) throw new Error("Emma returned an invalid library");
-    return threads as SnapshotThread[];
+    if (!Array.isArray(threads)) throw new Error("Shinbo returned an invalid library");
+    return threads as LibraryThread[];
   }
 
   private async renameThread(turn: TurnRequest, title: string): Promise<string> {
@@ -829,14 +850,14 @@ export class AgentRuntime {
 
 }
 
-type SnapshotThread = {
+type LibraryThread = {
   id: string;
   title: string;
   kind?: string;
   parentThreadId?: string | null;
   archivedAt?: string | null;
   updatedAt?: string;
-  messages?: { role: string; content: string; timestamp: string }[];
+  messages?: number;
 };
 
 const TRUNCATION_NOTICE = "\n[truncated]";
