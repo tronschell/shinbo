@@ -387,10 +387,11 @@ export function moveNote(vault: VaultChoice, relative: string, into: unknown): s
   const folder = name ? path.join(root, name) : root;
   if (!isDirectory(folder)) throw new Error(`Your knowledge base has no folder called ${name}.`);
   const to = path.join(folder, path.basename(relative));
-  if (to === from) return path.relative(root, to);
+  const moved = path.relative(root, to).split(path.sep).join("/");
+  if (to === from) return moved;
   if (!realPathInside(root, to) || existsSync(to)) throw new Error("A note by that name is already filed there.");
   renameSync(from, to);
-  return path.relative(root, to);
+  return moved;
 }
 
 export function applyNoteTags(notePath: string, title: string, tags: readonly string[]): void {

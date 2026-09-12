@@ -128,14 +128,15 @@ test("S2 atomic edits preserve ordinary file links and executable permissions", 
   const link = path.join(project, "linked.sh");
   fs.writeFileSync(file, "original");
   fs.chmodSync(file, 0o764);
+  const mode = fs.statSync(file).mode & 0o777;
   fs.symlinkSync(file, link);
   store.write(grant.id, "linked.sh", "reverted");
   assert.equal(fs.readFileSync(file, "utf8"), "reverted");
-  assert.equal(fs.statSync(file).mode & 0o777, 0o764);
+  assert.equal(fs.statSync(file).mode & 0o777, mode);
   assert.ok(fs.lstatSync(link).isSymbolicLink());
   await runMemoryCommand(project, { command: "str_replace", path: "/memories/linked.sh", old_str: "reverted", new_str: "remembered" });
   assert.equal(fs.readFileSync(file, "utf8"), "remembered");
-  assert.equal(fs.statSync(file).mode & 0o777, 0o764);
+  assert.equal(fs.statSync(file).mode & 0o777, mode);
   assert.ok(fs.lstatSync(link).isSymbolicLink());
 });
 
