@@ -104,13 +104,12 @@ export function PreviewHost() {
     onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
     <section className="agent-dialog preview-dialog">
       <header>
+        <h2 id="preview-title">{called}</h2>
         <div>
-          <span>File preview</span>
-          <h2 id="preview-title">{called}</h2>
+          {toggleable && <button type="button" className="preview-toggle" onClick={() => setSource((current) => !current)}>{source ? "Rendered" : "Source"}</button>}
+          {file && <OpenIn path={shown} label />}
+          <button type="button" className="preview-close" onClick={close} aria-label="Close preview">×</button>
         </div>
-        {toggleable && <button type="button" className="preview-toggle" onClick={() => setSource((current) => !current)}>{source ? "Rendered" : "Source"}</button>}
-        {file && <OpenIn path={shown} label />}
-        <button type="button" onClick={close} aria-label="Close preview">×</button>
       </header>
       <button type="button" className="preview-location" title="Reveal in the file manager" onClick={() => void window.shinbo.revealPath(shown)}>{shown}</button>
       {error && <p className="dialog-error">{error}</p>}

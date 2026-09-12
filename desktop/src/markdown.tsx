@@ -1,9 +1,12 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { FileMark } from "./git";
 import { GlobeIcon } from "./icons";
 import { parseBlocks, type Item, type Row, type Span } from "./markdown-parse";
 import { openPreview } from "./preview";
 import { CodeBlock } from "./run-block";
+import { highlightSegments } from "../shared/slash";
+
+export const SkillNames = createContext<string[]>([]);
 
 function PathSpan({ path, text }: { path: string; text: string }) {
   return <code className="md-path" role="button" tabIndex={0} title={`Open ${path}`}
@@ -42,6 +45,13 @@ function Picture({ path, alt }: { path: string; alt: string }) {
     : <PathSpan path={path} text={alt} />}</span>;
 }
 
+function TextSpan({ text }: { text: string }) {
+  const skills = useContext(SkillNames);
+  return <>{highlightSegments(text, skills).map((segment, index) => segment.hue === undefined || !segment.text.startsWith("/")
+    ? <span key={index}>{segment.text}</span>
+    : <a key={index} href={segment.text} title={`Open ${segment.text.slice(1)} skill`} onClick={(event) => { event.preventDefault(); openPreview(segment.text, segment.text.slice(1)); }}>{segment.text}</a>)}</>;
+}
+
 function Spans({ spans }: { spans: Span[] }) {
   return <>{spans.map((span, index) => {
     if (span.href) return <a key={index} href={span.href} target="_blank" rel="noreferrer"><span className="git-type" aria-hidden="true"><GlobeIcon /></span>{span.text}</a>;
@@ -51,7 +61,7 @@ function Spans({ spans }: { spans: Span[] }) {
     if (span.bold) return <strong key={index}>{span.text}</strong>;
     if (span.strike) return <del key={index}>{span.text}</del>;
     if (span.italic) return <em key={index}>{span.text}</em>;
-    return <span key={index}>{span.text}</span>;
+    return <TextSpan key={index} text={span.text} />;
   })}</>;
 }
 

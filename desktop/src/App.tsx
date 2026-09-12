@@ -30,7 +30,7 @@ import { charLabel, CHARS_PER_TOKEN, type ContextUse } from "../shared/usage";
 import { formatDuration } from "../shared/trace";
 import { ContextBarSettings, ContextWidgets, readContextPage, useContextLedger, useThreadCalls, writeContextPage } from "./context-bar";
 import { type ContextPage } from "../shared/context-bar";
-import { Markdown } from "./markdown";
+import { Markdown, SkillNames } from "./markdown";
 import { RunContext } from "./run-block";
 import { openPreview, PreviewHost } from "./preview";
 import { ArtifactCard, ArtifactPane, ArtifactsView } from "./artifacts";
@@ -2126,6 +2126,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
   const [stallSwap, setStallSwap] = useState(false);
   const [skill, setSkill] = useState<ImportedSkill | null>(null);
   const [commands, setCommands] = useState<SlashCommand[]>([]);
+  const [messageSkills, setMessageSkills] = useState<string[]>([]);
   const [artifacts, setArtifacts] = useState<ArtifactMeta[]>([]);
   const [folders, setFolders] = useState<FolderGrant[]>([]);
   const threadId = thread?.id;
@@ -2215,10 +2216,12 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
   useEffect(() => {
     let active = true;
     const load = () => {
-      const skills = window.shinbo.searchImportedSkills({ query: commandSkillQuery, limit: 32 }).catch(() => [] as ImportedSkill[]);
+      const available = window.shinbo.searchImportedSkills({ query: "", limit: 64 }).catch(() => [] as ImportedSkill[]);
+      const skills = commandSkillQuery ? window.shinbo.searchImportedSkills({ query: commandSkillQuery, limit: 32 }).catch(() => [] as ImportedSkill[]) : available;
       const servers = window.shinbo.listImportedMcpServers().catch(() => [] as ImportedMcpServer[]);
-      void Promise.all([skills, servers]).then(([imported, mcp]) => {
+      void Promise.all([skills, servers, available]).then(([imported, mcp, all]) => {
         if (!active) return;
+        setMessageSkills(all.map((item) => item.name));
         setCommands([
           ...BUILTIN_COMMANDS,
           ...imported.map((item) => ({ id: item.id, name: item.name, kind: "skill" as const, detail: `${item.source} · skill` })),
@@ -2667,13 +2670,14 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
       <div className="transcript-wrap">
       <TranscriptRail messages={thread.messages} scroller={transcript} />
       <div className="transcript" ref={transcript} onScroll={transcriptScroll}>
+        <SkillNames.Provider value={messageSkills}>
         <RunContext.Provider value={runFences}>
         {(!thread.messages.length && echo === null && !sending) || <ProjectRules folder={folders.find((grant) => grant.id === folderIds[0])} />}
         {!thread.messages.length && echo === null && !sending && <Dashboard threads={snapshot.threads} folders={folders} folderId={folderIds[0] ?? ""} seed={(prompt) => { setMessage(prompt); setCaret(prompt.length); queueMicrotask(() => { input.current?.focus(); input.current?.setSelectionRange(prompt.length, prompt.length); }); }} />}
         {thread.messages.map((item, index) => <Fragment key={`${item.timestamp}-${index}`}>{cleared > 0 && index === cleared && <ContextCut />}{switches.filter((mark) => mark.at === index).map((mark) => <ModelCut key={`model-${mark.at}`} mark={mark} />)}<Turn item={item} blocks={landedBlocks[index]} index={index} attached={attachedTurns[index]} spawned={spawned.turns.get(index)} /></Fragment>)}
         {cleared > 0 && cleared === thread.messages.length && <ContextCut />}
         {switches.filter((mark) => mark.at === thread.messages.length).map((mark) => <ModelCut key={`model-${mark.at}`} mark={mark} />)}
-        {echo !== null && <article className="message user pending"><MessageTray attached={echoTray} /><div className="message-body"><p>{echo}</p></div></article>}
+        {echo !== null && <article className="message user pending"><MessageTray attached={echoTray} /><Body content={echo} /></article>}
         {councilOpen && <CouncilPanel threadId={thread.id} mode={mode} question={message.trim() || lastAsked(thread.messages)}
           seed={councilSeed(readSettings())}
           picker={(model, onPick, label) => <TaskModelPicker model={model} onChange={(key) => onPick(key)} busy={locked} label={label} inherit="Pick a model" codex={false} />}
@@ -2686,6 +2690,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
         {sending && run.activeAt > 0 && <Stalled since={run.activeAt} blocks={run.blocks} recovery={run.recovery} onSwap={() => { setStallSwap(true); setModelsOpen(true); }} />}
         {!sending && run.stopped && <p className="waiting stopped" role="status">Agent stopped. Ask Shinbo to continue where it left off.</p>}
         </RunContext.Provider>
+        </SkillNames.Provider>
       </div>
       <SelectionQuote scroller={transcript} onQuote={addContext} onThread={(quote) => newThread(`${quote}\n\n`)} />
       {!atEnd && <button type="button" className="transcript-tail" onClick={toEnd} aria-label="Scroll to the latest message" title="Jump to the end">↓</button>}
