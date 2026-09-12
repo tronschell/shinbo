@@ -289,13 +289,11 @@ function Stalled({ since, blocks, recovery, onSwap }: { since: number; blocks: B
     return () => clearInterval(timer);
   }, []);
   const activity = runActivity(blocks, since, now, recovery);
-  if (activity.phase === "tools") return <p className="inline-activity" data-running role="status">
+  if (!activity.stalled && activity.phase !== "recovery") return null;
+  if (activity.phase === "tools") return <p className="inline-activity run-wait" role="status">
     Waiting for {activity.outstanding.length === 1 ? activity.outstanding[0].title.trim() || activity.outstanding[0].kind.trim() || "tool call" : `${activity.outstanding.length} tools`} · last update <b>{clock(activity.quiet)}</b> ago
   </p>;
-  if (activity.phase === "model" && !activity.stalled) return <p className="inline-activity" data-running role="status">
-    Waiting for response · last update <b>{clock(activity.quiet)}</b> ago
-  </p>;
-  return <p className="context-cut context-notice stalled" role="status">
+  return <p className="context-cut context-notice stalled run-wait" role="status">
     <span>{recovery ? keyed(recovery) : <>Waiting for model response · no update for <b>{clock(activity.quiet)}</b></>}</span>
     {activity.canSwap && <button type="button" onClick={onSwap}>Try another model</button>}
   </p>;
@@ -366,11 +364,11 @@ const Step = memo(function Step({ step }: { step: ThreadStep }) {
     {stepActive(step) && <LoaderCircle className="tool-activity-indicator" size={12} aria-label="Tool call active" />}
     {step.kind === "verifier" ? <Review step={step} />
       : step.edit ? <EditStep step={step} edit={step.edit} />
-      : <>
-        <StepMark step={step} />
-        <StepTitle step={step} />
-      </>}
-    {step.status === "cancelled" && <span className="step-note">interrupted</span>}
+      : <details className="step-review">
+        <summary><StepMark step={step} /><StepTitle step={step} /></summary>
+        <pre>{step.title}</pre>
+      </details>}
+    {(step.status === "cancelled" || step.status === "failed") && <span className="step-note">{step.status === "failed" ? "failed" : "interrupted"}</span>}
     {made && <ArtifactCard id={made} onOpen={openArtifactPane} />}
     {started && <ThreadCard id={started.id} title={started.title} onOpen={openThreadPage} />}
     {goal && <GoalCard threadId={goal} onOpen={openGoalPage} />}
@@ -544,21 +542,18 @@ function App() {
   if (query.has("annotation")) return <ScreenAnnotation />;
   if (query.has("hotspot")) return <NotchHotspot />;
   if (query.has("radial")) return <RadialCommands />;
-  if (query.has("run")) return <ComputerRunBanner task={query.get("task") ?? ""} maxSteps={Number(query.get("maxSteps")) || 0} />;
+  if (query.has("run")) return <ComputerRunBanner />;
   if (query.has("computerCursor")) return <ComputerActivityCursor />;
   return query.has("overlay") ? <Overlay /> : <Workspace />;
 }
 
-function ComputerRunBanner({ task, maxSteps }: { task: string; maxSteps: number }) {
+function ComputerRunBanner() {
   const [progress, setProgress] = useState<ComputerRunProgress>({ step: 0, action: "Starting", actions: 0 });
   useEffect(() => window.shinbo.onComputerRunProgress((value) => { if (validComputerProgress(value)) setProgress(value); }), []);
-  return <div className="run-banner" role="status">
-    <span className="run-banner-pulse" aria-hidden="true" />
-    <div className="run-banner-body">
-      <strong>Shinbo · {progress.action}{progress.app ? ` in ${progress.app}` : ""}</strong>
-      <small>Step {progress.step}/{maxSteps} · {progress.actions} action{progress.actions === 1 ? "" : "s"} · {task}</small>
-    </div>
-    <button type="button" onClick={() => window.shinbo.stopComputerRun()}>Stop · esc</button>
+  const status = `Shinbo is using the computer · ${progress.action}${progress.app ? ` in ${progress.app}` : ""}`;
+  return <div className="run-banner">
+    <span className="run-banner-icon" role="status" aria-label={status} title={status}><Monitor size={16} aria-hidden="true" /></span>
+    <button type="button" aria-label="Stop computer use" title="Stop computer use (Esc). The agent keeps running." onClick={() => window.shinbo.stopComputerRun()}>Stop</button>
   </div>;
 }
 
@@ -789,6 +784,7 @@ function Workspace() {
   const { notes, notesError, reloadNotes } = useNotes();
   const [artifactPick, setArtifactPick] = useState({ id: "", at: 0 });
   const [artifactPaneId, setArtifactPaneId] = useState("");
+  const [reviewPane, setReviewPane] = useState<"changes" | "git" | "">("");
   useEffect(() => {
     const open = (requested: string) => {
       if (!settingsPages.some((item) => item.id === requested)) return;
@@ -898,6 +894,8 @@ function Workspace() {
   const inspectorBefore = useRef<boolean | null>(null);
   const showBrowser = useCallback((open: boolean) => {
     if (open) {
+      setArtifactPaneId("");
+      setReviewPane("");
       inspectorBefore.current ??= layout.inspectorCollapsed;
       pane({ browserOpen: true, inspectorCollapsed: true });
       return;
@@ -908,6 +906,7 @@ function Workspace() {
   }, [layout.inspectorCollapsed, pane]);
   const showArtifact = useCallback((id: string) => {
     if (id) {
+      setReviewPane("");
       inspectorBefore.current ??= layout.inspectorCollapsed;
       setArtifactPaneId(id);
       setView("threads");
@@ -919,6 +918,18 @@ function Workspace() {
     setArtifactPaneId("");
     if (before === false) pane({ inspectorCollapsed: false });
   }, [layout.inspectorCollapsed, pane]);
+  const showReview = useCallback((next: "changes" | "git" | "") => {
+    setReviewPane(next);
+    if (next) {
+      inspectorBefore.current ??= layout.inspectorCollapsed;
+      setArtifactPaneId("");
+      pane({ browserOpen: false, inspectorCollapsed: true });
+      return;
+    }
+    const before = inspectorBefore.current;
+    inspectorBefore.current = null;
+    if (before === false) pane({ inspectorCollapsed: false });
+  }, [layout.inspectorCollapsed, pane]);
   useEffect(() => {
     const open = (event: Event) => showArtifact((event as CustomEvent<string>).detail);
     addEventListener(OPEN_ARTIFACT_PANE_EVENT, open);
@@ -927,7 +938,7 @@ function Workspace() {
   useEffect(() => window.shinbo.onBrowserShow((shown) => {
     if (shown.threadId === thread?.id) { setArtifactPaneId(""); showBrowser(true); }
   }), [thread?.id, showBrowser]);
-  const fitted = fitPaneLayout(artifactPaneId ? { ...layout, browserOpen: true } : layout, window.innerWidth);
+  const fitted = fitPaneLayout(artifactPaneId || reviewPane ? { ...layout, browserOpen: true } : layout, window.innerWidth);
   const shellStyle = {
     "--sidebar-width": `${fitted.sidebarWidth}px`,
     "--inspector-width": `${fitted.inspectorCollapsed ? 0 : fitted.inspectorWidth}px`,
@@ -1245,7 +1256,7 @@ function Workspace() {
       </aside>
       </Region>
       <main id="content" className="content">
-        {view === "threads" ? thread ? <ThreadView key={thread.id} thread={thread} loadedSubthread={loadedSubthread} loadThread={loadThread} threadLoadError={threadLoadError} clearThreadLoadError={() => setThreadLoadError(undefined)} snapshot={snapshot} notes={notes} busy={uiBusy} act={act} reload={load} agents={agents} tab={tab} setTab={setTab} newThread={(seed?: string) => { setError(""); void createThread(undefined, seed); }} onSendingChange={setInteractionLocked} onModelChanged={(next) => { if (selectedIdRef.current === thread.id) parentRequest.current = ""; setLoadedThread((current) => current?.id === thread.id ? { ...current, context: { ...current.context, model: next.selectedModel, effort: next.thinkingLevel } } : current); }} onContextChanged={(context) => { if (selectedIdRef.current === thread.id) parentRequest.current = ""; setLoadedThread((current) => current?.id === thread.id ? { ...current, context } : current); }} onManageModels={() => { setView("settings"); setSettingsPage("models"); }} onManageImports={() => { setView("settings"); setSettingsPage("imports"); }} modelKey={threadModelKey} modelLabel={threadModelLabel} modelBrand={threadModelBrand} thinkingLevel={thread.context.effort} reviewOffered={settings.review.enabled && !!settings.review.model.trim()} contextTokens={contextTokens} contextPages={settings.contextPages} onContextPages={(contextPages) => setSettings(persistSettings({ ...settings, contextPages }))} layout={layout} pane={pane} showBrowser={showBrowser} artifactPaneId={artifactPaneId} setArtifactPaneId={showArtifact} editArtifact={editArtifact} /> : <ThreadLoading loading={snapshotLoading || !!selectedSummary} error={threadLoadError?.id === selectedId ? threadLoadError.text : ""} busy={uiBusy} retry={() => { setError(""); setThreadLoadError(undefined); void loadThread(selectedId); }} newThread={() => { setError(""); void createThread(); }} /> : view === "knowledge" ? <NotesView notes={notes} notesError={notesError} busy={uiBusy} reload={reloadNotes} hues={settings.folderHues} setHues={(folderHues) => setSettings(persistSettings({ ...settings, folderHues }))} /> : view === "artifacts" ? <ArtifactsView key={artifactPick.at} busy={uiBusy} select={artifactPick.id} openArtifact={(artifact) => void editArtifact(artifact)} /> : view === "agent" ? <Suspense fallback={<AgentLoading />}><AgentView snapshot={snapshot} act={act} busy={uiBusy} openThread={openThread} projectName={projectName} mode={settings.defaultPermissionMode} model={settings.selectedModel} pickers={{ run: (model, effort, onPick, busy) => <BenchRunPicker model={model} effort={effort} onPick={onPick} onSettingsChanged={setSettings} busy={busy} />, judge: (draft, onChange, busy) => <SecondModelPicker label="Judge model" off="Tagger model · scores with your tagger" draft={draft ?? { ...settings.tagger, model: "" }} providers={settings.providers} routers={settings.routers} busy={busy} onChange={(next) => onChange(next.model ? next : undefined)} />, describe: (key) => ({ label: modelKeyLabel(settings, key), brand: modelKeyBrand(settings, key)?.id ?? "" }) }} /></Suspense> : view === "scheduled" ? <ScheduledView snapshot={snapshot} act={act} busy={uiBusy} openThread={openThread} /> : view === "plugins" ? <Suspense fallback={<AgentLoading copy="Loading plugins…" />}><PluginsView busy={uiBusy} tools={settings.tools} onTools={saveToolSettings} /></Suspense> : view === "archive" ? <ArchiveView threads={archivedThreads} projectName={projectName} busy={uiBusy} restore={(id) => void setArchived(id, false)} /> : <SettingsView page={settingsPage} onSelectPage={setSettingsPage} act={act} busy={uiBusy} onModelChanged={setSettings} onAttach={attachComponent} />}
+        {view === "threads" ? thread ? <ThreadView key={thread.id} thread={thread} loadedSubthread={loadedSubthread} loadThread={loadThread} threadLoadError={threadLoadError} clearThreadLoadError={() => setThreadLoadError(undefined)} snapshot={snapshot} notes={notes} busy={uiBusy} act={act} reload={load} agents={agents} tab={tab} setTab={setTab} newThread={(seed?: string) => { setError(""); void createThread(undefined, seed); }} onSendingChange={setInteractionLocked} onModelChanged={(next) => { if (selectedIdRef.current === thread.id) parentRequest.current = ""; setLoadedThread((current) => current?.id === thread.id ? { ...current, context: { ...current.context, model: next.selectedModel, effort: next.thinkingLevel } } : current); }} onContextChanged={(context) => { if (selectedIdRef.current === thread.id) parentRequest.current = ""; setLoadedThread((current) => current?.id === thread.id ? { ...current, context } : current); }} onManageModels={() => { setView("settings"); setSettingsPage("models"); }} onManageImports={() => { setView("settings"); setSettingsPage("imports"); }} modelKey={threadModelKey} modelLabel={threadModelLabel} modelBrand={threadModelBrand} thinkingLevel={thread.context.effort} reviewOffered={settings.review.enabled && !!settings.review.model.trim()} contextTokens={contextTokens} contextPages={settings.contextPages} onContextPages={(contextPages) => setSettings(persistSettings({ ...settings, contextPages }))} layout={layout} pane={pane} showBrowser={showBrowser} reviewPane={reviewPane} showReview={showReview} artifactPaneId={artifactPaneId} setArtifactPaneId={showArtifact} editArtifact={editArtifact} /> : <ThreadLoading loading={snapshotLoading || !!selectedSummary} error={threadLoadError?.id === selectedId ? threadLoadError.text : ""} busy={uiBusy} retry={() => { setError(""); setThreadLoadError(undefined); void loadThread(selectedId); }} newThread={() => { setError(""); void createThread(); }} /> : view === "knowledge" ? <NotesView notes={notes} notesError={notesError} busy={uiBusy} reload={reloadNotes} hues={settings.folderHues} setHues={(folderHues) => setSettings(persistSettings({ ...settings, folderHues }))} /> : view === "artifacts" ? <ArtifactsView key={artifactPick.at} busy={uiBusy} select={artifactPick.id} openArtifact={(artifact) => void editArtifact(artifact)} /> : view === "agent" ? <Suspense fallback={<AgentLoading />}><AgentView snapshot={snapshot} act={act} busy={uiBusy} openThread={openThread} projectName={projectName} mode={settings.defaultPermissionMode} model={settings.selectedModel} pickers={{ run: (model, effort, onPick, busy) => <BenchRunPicker model={model} effort={effort} onPick={onPick} onSettingsChanged={setSettings} busy={busy} />, judge: (draft, onChange, busy) => <SecondModelPicker label="Judge model" off="Tagger model · scores with your tagger" draft={draft ?? { ...settings.tagger, model: "" }} providers={settings.providers} routers={settings.routers} busy={busy} onChange={(next) => onChange(next.model ? next : undefined)} />, describe: (key) => ({ label: modelKeyLabel(settings, key), brand: modelKeyBrand(settings, key)?.id ?? "" }) }} /></Suspense> : view === "scheduled" ? <ScheduledView snapshot={snapshot} act={act} busy={uiBusy} openThread={openThread} /> : view === "plugins" ? <Suspense fallback={<AgentLoading copy="Loading plugins…" />}><PluginsView busy={uiBusy} tools={settings.tools} onTools={saveToolSettings} /></Suspense> : view === "archive" ? <ArchiveView threads={archivedThreads} projectName={projectName} busy={uiBusy} restore={(id) => void setArchived(id, false)} /> : <SettingsView page={settingsPage} onSelectPage={setSettingsPage} act={act} busy={uiBusy} onModelChanged={setSettings} onAttach={attachComponent} />}
       </main>
       {(error || snapshot.warnings.length > 0) && <div className="notice" role="status"><button aria-label="Dismiss notice" onClick={() => setError("")}>×</button>{error || snapshot.warnings[0]}</div>}
       {threadMenu && menuThread && <div className="thread-menu-scrim" onClick={(event) => { if (event.target === event.currentTarget) setThreadMenu(null); }} onContextMenu={(event) => { event.preventDefault(); if (event.target === event.currentTarget) setThreadMenu(null); }}>
@@ -1843,7 +1854,7 @@ function NotesView({ notes, notesError, busy, reload, hues, setHues }: { notes: 
   </section>;
 }
 
-type PaneProps = { layout: PaneLayout; pane: (change: Partial<PaneLayout>) => void; showBrowser: (open: boolean) => void; artifactPaneId: string; setArtifactPaneId: (id: string) => void; editArtifact: (artifact: Artifact) => void };
+type PaneProps = { reviewPane: "changes" | "git" | ""; showReview: (next: "changes" | "git" | "") => void; layout: PaneLayout; pane: (change: Partial<PaneLayout>) => void; showBrowser: (open: boolean) => void; artifactPaneId: string; setArtifactPaneId: (id: string) => void; editArtifact: (artifact: Artifact) => void };
 
 const kindLabel = (kind: ContextPick["kind"]) => kind === "note" ? KIND_LABELS.page : kind === "attachment" ? KIND_LABELS.file : KIND_LABELS[kind];
 
@@ -2102,7 +2113,7 @@ const threadName = (thread: Thread) => threadLabel(thread, THREAD_NAME_MAX);
 
 const COMPOSER_MAX = 65_536;
 
-function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clearThreadLoadError, snapshot, notes, busy, act, reload, agents, tab, setTab, newThread, onSendingChange, onModelChanged, onContextChanged, onManageModels, onManageImports, modelKey, modelLabel, modelBrand, thinkingLevel, reviewOffered, contextTokens, contextPages, onContextPages, layout, pane, showBrowser, artifactPaneId, setArtifactPaneId, editArtifact }: { thread: Thread & { context: ThreadContext }; loadedSubthread?: Thread; loadThread: (id: string) => Promise<void>; threadLoadError?: { id: string; text: string }; clearThreadLoadError: () => void; snapshot: Snapshot; notes: KeptNote[]; busy: boolean; act: (method: string, params?: Record<string, string>) => Promise<unknown>; reload: () => unknown; agents: LiveAgent[]; tab: string; setTab: (tab: string) => void; newThread: (seed?: string) => void; onSendingChange: (busy: boolean) => void; onModelChanged: (settings: UserSettings) => void; onContextChanged: (context: ThreadContext) => void; onManageModels: () => void; onManageImports: () => void; modelKey: string; modelLabel: string; modelBrand?: BrandDefinition; thinkingLevel: ThinkingLevel; reviewOffered: boolean; contextTokens: number; contextPages: ContextPage[]; onContextPages: (pages: ContextPage[]) => void } & PaneProps) {
+function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clearThreadLoadError, snapshot, notes, busy, act, reload, agents, tab, setTab, newThread, onSendingChange, onModelChanged, onContextChanged, onManageModels, onManageImports, modelKey, modelLabel, modelBrand, thinkingLevel, reviewOffered, contextTokens, contextPages, onContextPages, layout, pane, showBrowser, reviewPane, showReview, artifactPaneId, setArtifactPaneId, editArtifact }: { thread: Thread & { context: ThreadContext }; loadedSubthread?: Thread; loadThread: (id: string) => Promise<void>; threadLoadError?: { id: string; text: string }; clearThreadLoadError: () => void; snapshot: Snapshot; notes: KeptNote[]; busy: boolean; act: (method: string, params?: Record<string, string>) => Promise<unknown>; reload: () => unknown; agents: LiveAgent[]; tab: string; setTab: (tab: string) => void; newThread: (seed?: string) => void; onSendingChange: (busy: boolean) => void; onModelChanged: (settings: UserSettings) => void; onContextChanged: (context: ThreadContext) => void; onManageModels: () => void; onManageImports: () => void; modelKey: string; modelLabel: string; modelBrand?: BrandDefinition; thinkingLevel: ThinkingLevel; reviewOffered: boolean; contextTokens: number; contextPages: ContextPage[]; onContextPages: (pages: ContextPage[]) => void } & PaneProps) {
   const [message, setMessage] = useState(() => takeComposerSeed(thread.id) || threadDraft(thread.id).text);
   useEffect(() => { if (composerSeed.threadId === thread.id) composerSeed = { threadId: "", text: "" }; }, [thread.id]);
   const context = thread.context;
@@ -2296,9 +2307,8 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
   const [raw, setRaw] = useState<string[]>([]);
   const [floated, setFloated] = useState<string[]>([]);
   const [browserFloat, setBrowserFloat] = useState(false);
-  const [gitOpen, setGitOpen] = useState(false);
   useEffect(() => {
-    if (tab === "thread" || tab === "changes" || tab === "git" || tab === "goal") return;
+    if (tab === "thread" || tab === "goal") return;
     if (!subagents.some((agent) => agent.threadId === tab) && !cliRuns.some((run) => run.id === tab)
       && !snapshot.threads.some((item) => item.id === tab && item.kind === "subagent")) setTab("thread");
   }, [subagents, cliRuns, snapshot.threads, tab, setTab]);
@@ -2330,10 +2340,10 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
     return () => window.shinbo.offChanged(listener);
   }, [reloadChanges]);
   useEffect(() => {
-    const open = () => { if (changes.length) setTab("changes"); };
+    const open = () => showReview("changes");
     addEventListener(OPEN_CHANGES_EVENT, open);
     return () => removeEventListener(OPEN_CHANGES_EVENT, open);
-  }, [changes.length, setTab]);
+  }, [showReview]);
   useEffect(() => {
     const open = (event: Event) => {
       const id = (event as CustomEvent<string>).detail;
@@ -2559,8 +2569,6 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
       closable: run.status !== "running",
     })),
     ...(thread.goal ? [{ id: "goal", label: `Goal · ${GOAL_LABELS[thread.goal.status]}`, closable: false }] : []),
-    ...(changes.length ? [{ id: "changes", label: "Changes", closable: false }] : []),
-    ...(gitOpen && folderIds[0] ? [{ id: "git", label: git ? `Git · ${git.branch}` : "Git", closable: true }] : []),
   ];
   const toTerminal = (cli: string) => {
     pane({ terminalOpen: true });
@@ -2608,14 +2616,12 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
   const panel = subagentLoading ? <AgentTranscriptLoading error={subagentError} busy={locked} retry={() => { clearThreadLoadError(); void loadThread(subagentId); }} />
     : openCli ? <CliPanel run={openCli} busy={locked} onOpenRun={openCliRun} onFloat={() => { setFloated((current) => [...current, openCli.id]); setTab("thread"); }} />
     : tab === "goal" ? <GoalView thread={thread} busy={locked} reload={reload} onOpenThread={openThreadPage} />
-    : tab === "changes" ? <ChangesPanel changes={changes} busy={locked} onReverted={reloadChanges} />
-    : tab === "git" && gitOpen && folderIds[0] ? (git ? <GitPage snapshot={git} folderId={folderIds[0]} brand={modelBrand} /> : <GitSetup ready={gitState.ready} folderId={folderIds[0]} />)
     : openAgent ? <AgentPanel agent={openAgent} transcript={<AgentTranscript threadId={openAgent.threadId} thread={agentThread} />} />
     : pastAgent ? <PastAgentPanel thread={pastAgent} />
     : null;
   return <GoalThreads.Provider value={snapshot.threads}><div className="thread-layout">
     <div className="thread-column">
-      <TabStrip tabs={tabs} active={tab} onPick={(id) => { if (threadTabs.has(id)) openThreadPage(id); else setTab(id); }} onClose={(id) => { if (id === "git") setGitOpen(false); if (tab === id) setTab("thread"); }} />
+      <TabStrip tabs={tabs} active={tab} onPick={(id) => { if (threadTabs.has(id)) openThreadPage(id); else setTab(id); }} onClose={(id) => { if (tab === id) setTab("thread"); }} />
       <div className="thread-stage">
       {notice && <div className={`pick-toast ${notice.tone} ${notice.funds ? "funds" : ""}`} role={notice.tone === "error" ? "alert" : "status"} key={notice.id}>
         <span>{notice.funds ? `OpenRouter would not run that turn — out of credit, or over what a free key is allowed. ${notice.text}` : notice.text}</span>
@@ -2648,9 +2654,10 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
         }}
       /><button type="button" className="page-info-button" aria-label="Show thread details" aria-haspopup="dialog" onClick={() => setAgentOpen(true)}>i</button><TagPicker threadId={thread.id} /><div className="thread-actions">
         {folderIds[0] && (!!git?.diff.trim() || changes.length > 0) && <OpenIn folderId={folderIds[0]} label />}
-        {folderIds[0] && <button type="button" className="pane-toggle" aria-pressed={gitOpen && tab === "git"}
-          aria-label={git ? `Open the Git page, on branch ${git.branch}` : "Open the Git page"} title={git ? `Git · ${git.branch}` : "Git"}
-          onClick={() => { setGitOpen(true); setTab("git"); }}><BranchIcon /></button>}
+        {changes.length > 0 && <button type="button" className="changes-open" aria-label="Open changes pane" aria-pressed={reviewPane === "changes"} onClick={() => showReview(reviewPane === "changes" ? "" : "changes")}><ChangeCount stat={diffStat(changes)} /></button>}
+        {folderIds[0] && <button type="button" className="pane-toggle" aria-pressed={reviewPane === "git"}
+          aria-label={git ? `Open the Git pane, on branch ${git.branch}` : "Open the Git pane"} title={git ? `Git · ${git.branch}` : "Git"}
+          onClick={() => showReview(reviewPane === "git" ? "" : "git")}><BranchIcon /></button>}
         <PaneSwitch open={layout.terminalOpen}
           running={() => window.shinbo.listTerminals(thread.id).then((tabs) => tabs.some((tab) => tab.running))}
           onOpen={() => pane({ terminalOpen: true })}
@@ -2660,7 +2667,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
           hideNote="Keeps every shell running where it is" closeNote="Ends every shell and frees what it holds"><TerminalIcon /></PaneSwitch>
         <PaneSwitch open={layout.browserOpen}
           running={() => window.shinbo.browserStatus(thread.id).then((status) => status.running)}
-          onOpen={() => { setArtifactPaneId(""); showBrowser(true); }}
+          onOpen={() => showBrowser(true)}
           onHide={() => showBrowser(false)}
           onClose={() => { showBrowser(false); void window.shinbo.browserNav({ threadId: thread.id, action: "close" }).catch(() => undefined); }}
           openLabel="Open the browser pane" closeLabel="Close the browser pane"
@@ -2688,7 +2695,6 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
         {streaming === null && spawned.loose.length > 0 && <SubagentChips spawned={spawned.loose} onOpen={openSubagentTab} />}
         {sending && streaming === null && run.activeAt <= 0 && <p className="waiting" role="status"><Mark /> {agents.find((agent) => agent.threadId === thread.id)?.activity || "getting started"}…</p>}
         {sending && run.activeAt > 0 && <Stalled since={run.activeAt} blocks={run.blocks} recovery={run.recovery} onSwap={() => { setStallSwap(true); setModelsOpen(true); }} />}
-        {!sending && run.stopped && <p className="waiting stopped" role="status">Agent stopped. Ask Shinbo to continue where it left off.</p>}
         </RunContext.Provider>
         </SkillNames.Provider>
       </div>
@@ -2722,13 +2728,23 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
         {contextPages.length > 1 ? <span className="inspector-tabs" role="tablist" aria-label="Context bar pages">
           {contextPages.map((item) => <button key={item.id} type="button" role="tab" aria-selected={item.id === page.id} title={`${item.name} — ${item.widgets.length} ${plural(item.widgets.length, "component")}`} onClick={() => setContextPage(item.id)}>{item.name}</button>)}
         </span> : <span>{page.name}</span>}
-        {changes.length > 0 && <button type="button" className="changes-open" title={`${changes.length} ${plural(changes.length, "file")} changed — open the diff`} onClick={() => setTab("changes")}><ChangeCount stat={diffStat(changes)} /></button>}</header>
+        {changes.length > 0 && <button type="button" className="changes-open" title={`${changes.length} ${plural(changes.length, "file")} changed — open the diff`} onClick={() => showReview("changes")}><ChangeCount stat={diffStat(changes)} /></button>}</header>
       {inspected && inspectedId !== thread.id && <button type="button" className="inspector-subject" title={`Reading ${threadLabel(inspected)} — back to ${threadLabel(thread)}`} onClick={() => setTab("thread")}>
         <i className="agent-dot" style={{ background: agents.find((agent) => agent.threadId === inspectedId)?.color ?? "var(--text-3)" }} aria-hidden="true" />
         <span>{threadLabel(inspected)}</span><em>×</em>
       </button>}
-      <ContextWidgets page={page} context={{ ledger, messages: carried?.messages ?? NO_MESSAGES, threadId: inspectedId || thread.id, sending, subagents, subthreads, agents, onOpenThread: openThreadPage, tab, onPick: setTab, git, onOpenGit: () => setTab("git") }} onChange={(widgets) => onContextPages(contextPages.map((item) => item.id === page.id ? { ...item, widgets } : item))} /></div>}
+      <ContextWidgets page={page} context={{ ledger, messages: carried?.messages ?? NO_MESSAGES, threadId: inspectedId || thread.id, sending, subagents, subthreads, agents, onOpenThread: openThreadPage, tab, onPick: setTab, git, onOpenGit: () => showReview("git") }} onChange={(widgets) => onContextPages(contextPages.map((item) => item.id === page.id ? { ...item, widgets } : item))} /></div>}
     </aside></Region>
+    {reviewPane && <div className="browser-column">
+      <ResizeHandle label={`Resize ${reviewPane}`} value={layout.browserWidth} min={MIN_BROWSER_WIDTH} max={720} direction={-1} onChange={(browserWidth) => pane({ browserWidth })} />
+      <section className="review-pane artifact-pane" aria-label={reviewPane === "git" ? "Git pane" : "Changes pane"}>
+        <header><div><h2>{reviewPane === "git" ? "Git" : "Changes"}</h2></div>{reviewPane === "changes" && <ChangeCount stat={diffStat(changes)} />}
+          <button type="button" className="artifact-icon" aria-label={layout.browserWidth >= WIDE_BROWSER_WIDTH ? "Narrow pane" : "Widen pane"} aria-pressed={layout.browserWidth >= WIDE_BROWSER_WIDTH} onClick={() => pane({ browserWidth: layout.browserWidth >= WIDE_BROWSER_WIDTH ? MIN_BROWSER_WIDTH : WIDE_BROWSER_WIDTH })}><InspectorIcon /></button>
+          <button type="button" className="artifact-icon" aria-label="Close pane" onClick={() => showReview("")}><CloseIcon /></button>
+        </header>
+        {reviewPane === "changes" ? <ChangesPanel changes={changes} busy={locked} onReverted={reloadChanges} /> : folderIds[0] ? (git ? <GitPage key={folderIds[0]} snapshot={git} folderId={folderIds[0]} brand={modelBrand} /> : <GitSetup ready={gitState.ready} folderId={folderIds[0]} />) : <p className="project-empty">Connect a folder to use Git.</p>}
+      </section>
+    </div>}
     {artifactPaneId ? <div className="artifact-column">
       <ResizeHandle label="Resize artifact" value={layout.browserWidth} min={MIN_BROWSER_WIDTH} max={720} direction={-1} onChange={(browserWidth) => pane({ browserWidth })} />
       <ArtifactPane id={artifactPaneId} busy={locked} close={() => setArtifactPaneId("")} edit={(artifact) => { setArtifactPaneId(""); void editArtifact(artifact); }} />
@@ -2794,11 +2810,12 @@ function readSettings(): UserSettings {
 const accentValue = (accent: string) => (accent.startsWith("#") ? accent : `var(--${accent})`);
 const previewAccent = (accent: string) => document.documentElement.style.setProperty("--accent", accentValue(accent));
 
-function applyAppearance({ interfaceFont, agentFont, accent, navIconColors, navHues, uiScale, conversationWidth }: UserSettings) {
+function applyAppearance({ interfaceFont, agentFont, accent, tabColor, navIconColors, navHues, uiScale, conversationWidth }: UserSettings) {
   const root = document.documentElement;
   root.style.setProperty("--font-mono", fontStack(interfaceFont));
   root.style.setProperty("--font", fontStack(agentFont));
   root.style.setProperty("--accent", accentValue(accent));
+  root.style.setProperty("--tab-color", accentValue(tabColor));
   for (const view of NAV_VIEWS) {
     const hue = navIconColors ? navHues[view] ?? navHueDefaults[view] : "";
     if (hue) root.style.setProperty(`--nav-${view}`, hue.startsWith("#") ? hue : `var(--${hue})`);
@@ -3411,6 +3428,7 @@ function SettingsBody({ page, act, busy, onModelChanged, onAttach }: { page: Set
     <header><span>Settings / appearance</span><h2>Appearance</h2><p>Make Shinbo comfortable to read and easy to navigate.</p></header>
     <div className="settings-lines">
       <section><div><h3>Accent</h3><p>Buttons, focus rings, and selected controls.</p></div><div className="accent-values">{ACCENT_CHOICES.map((hue) => <button key={hue} type="button" className={`accent-swatch ${settings.accent === hue ? "active" : ""}`} style={{ "--swatch": `var(--${hue})` } as CSSProperties} title={hue} aria-label={hue} aria-pressed={settings.accent === hue} disabled={busy} onPointerEnter={() => !busy && previewAccent(hue)} onPointerLeave={() => previewAccent(settings.accent)} onFocus={() => !busy && previewAccent(hue)} onBlur={() => previewAccent(settings.accent)} onClick={() => saveAppearance({ accent: hue })} />)}<ColorPicker className={`accent-swatch accent-custom ${settings.accent.startsWith("#") ? "active" : ""}`} label="Any colour" value={accentHex} disabled={busy} onChange={(hex) => saveAppearance({ accent: hex as AccentChoice })} /><small>{accentHex}</small></div></section>
+      <section><div><h3>Tab color</h3><p>Conversation underlines and context bar tabs.</p></div><ColorPicker className="accent-swatch accent-custom" label="Tab color" value={settings.tabColor.startsWith("#") ? settings.tabColor : getComputedStyle(document.documentElement).getPropertyValue(`--${settings.tabColor}`).trim()} disabled={busy} onChange={(hex) => saveAppearance({ tabColor: hex as AccentChoice })} /></section>
       <section><div><h3>Interface scale</h3><p>Resize text, controls, and spacing together.</p></div><div className="font-values"><label>Scale · {settings.uiScale}%<input type="range" min={MIN_UI_SCALE} max={MAX_UI_SCALE} step={5} value={settings.uiScale} disabled={busy} onChange={(event) => saveAppearance({ uiScale: Number(event.target.value) })} /></label></div></section>
       <section><div><h3>Conversation width</h3><p>Set the reading width of thread messages.</p></div><div className="font-values"><label>Column<select value={settings.conversationWidth} disabled={busy} onChange={(event) => saveAppearance({ conversationWidth: event.target.value as ConversationWidth })}>{CONVERSATION_WIDTHS.map((width) => <option key={width.id} value={width.id}>{width.label} · {width.detail}</option>)}</select></label></div></section>
     </div>

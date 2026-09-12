@@ -18,15 +18,21 @@ function workspace() {
   const project = path.join(root, "project");
   mkdirSync(path.join(project, "notes"), { recursive: true });
   mkdirSync(path.join(project, "node_modules"), { recursive: true });
+  mkdirSync(path.join(project, "dist-main"), { recursive: true });
+  mkdirSync(path.join(project, "dist-renderer"), { recursive: true });
+  mkdirSync(path.join(project, "zig-out"), { recursive: true });
   writeFileSync(path.join(project, "readme.md"), "# hello");
   writeFileSync(path.join(project, "notes", "plan.txt"), "plan");
   writeFileSync(path.join(project, "photo.heic"), "binary");
   writeFileSync(path.join(project, "node_modules", "dep.js"), "skip me");
+  writeFileSync(path.join(project, "dist-main", "main.js"), "skip me");
+  writeFileSync(path.join(project, "dist-renderer", "bundle.js"), "skip me");
+  writeFileSync(path.join(project, "zig-out", "helper.js"), "skip me");
   writeFileSync(path.join(root, "secret.md"), "outside the grant");
   return { root, project, store: new FolderStore(root) };
 }
 
-test("a grant lists its text files and skips vendored and non-text ones", async () => {
+test("a grant lists its text files and skips generated, vendored, and non-text ones", async () => {
   const { project, store } = workspace();
   const [grant] = store.add(project);
   assert.deepEqual((await store.files(grant.id)).files.map((file) => file.path), [path.join("notes", "plan.txt"), "readme.md"]);

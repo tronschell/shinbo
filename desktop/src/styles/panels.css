@@ -29,7 +29,7 @@
 
 .inspector { position: relative; min-width: 0; border-left: 1px solid var(--border-strong); background: var(--chrome); }
 .inspector .resize-handle { position: absolute; z-index: 8; top: 0; left: -10px; right: auto; width: 12px; height: 100%; padding: 0; cursor: col-resize; background: transparent; }
-.inspector .resize-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.inspector .resize-handle:focus-visible { outline: 2px solid var(--text-2); outline-offset: 2px; }
 .inspector-body { height: 100%; overflow-y: auto; padding: var(--s-4); }
 
 .inspector-body > header { display: grid; gap: 0; margin: calc(var(--s-4) * -1) calc(var(--s-4) * -1) var(--s-4); padding: 0; border-bottom: 1px solid var(--border); }
@@ -120,7 +120,7 @@
 .evidence-table :not(.info-dot) > summary::before { content: "▸"; color: var(--text-3); }
 .evidence-table details[open]:not(.info-dot) > summary::before { content: "▾"; }
 .evidence-table :not(.info-dot) > summary:hover { background: var(--surface-2); }
-.evidence-table :not(.info-dot) > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.evidence-table :not(.info-dot) > summary:focus-visible { outline: 2px solid var(--text-2); outline-offset: -2px; }
 .evidence-table summary span { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: baseline; gap: var(--s-3); min-width: 0; }
 .evidence-table summary strong { color: var(--teal); font: var(--fs-xs)/1.4 var(--font-mono); font-weight: 400; letter-spacing: var(--ls-caps); text-transform: uppercase; }
 .evidence-table summary small { min-width: 0; overflow: hidden; color: var(--text-3); font: var(--fs-2xs)/1.4 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
@@ -270,7 +270,7 @@
 .tasks-rail button { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 0 var(--s-2); min-height: 44px; padding: var(--s-2) var(--s-3); border: 0; border-bottom: 1px solid var(--border); background: transparent; text-align: left; transition: background-color var(--t); }
 .tasks-rail button:hover:not(:disabled) { background: var(--surface-2); }
 .tasks-rail button.active { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--accent); }
-.tasks-rail button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tasks-rail button:focus-visible { outline: 2px solid var(--text-2); outline-offset: -2px; }
 .tasks-rail button > span { min-width: 0; overflow: hidden; color: var(--text); font: var(--fs-xs)/1.4 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .tasks-rail button > small { grid-column: 1; min-width: 0; overflow: hidden; color: var(--violet); font-size: var(--fs-2xs); line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: 0; }
 .tasks-rail button > b { grid-row: 1 / span 2; grid-column: 2; align-self: center; color: var(--text-3); font: var(--fs-2xs)/1.4 var(--font-mono); font-weight: 400; letter-spacing: var(--ls-caps); text-transform: uppercase; }
@@ -301,7 +301,7 @@
 .schedule-edit { margin-left: auto; color: var(--text-3); font-size: var(--fs-2xs); }
 .schedule-edit::after { content: " ▾"; }
 .schedule-disclosure[open] .schedule-edit::after { content: " ▴"; }
-.schedule-disclosure > summary:focus-visible, .task-advanced > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.schedule-disclosure > summary:focus-visible, .task-advanced > summary:focus-visible { outline: 2px solid var(--text-2); outline-offset: -2px; }
 .schedule-disclosure > .trigger-picker { padding: var(--s-4); border-top: 1px solid var(--border); }
 .schedule-hint { margin-top: var(--s-2); color: var(--text-3); font: var(--fs-2xs)/1.5 var(--font-mono); }
 .task-advanced > summary { color: var(--text-3); cursor: pointer; font: var(--fs-2xs)/1.5 var(--font-mono); }
@@ -362,7 +362,7 @@
 .picker-trigger > span[aria-hidden] { color: var(--text-3); }
 .picker-menu { top: calc(100% + var(--s-1)); bottom: auto; width: max-content; min-width: 100%; max-width: min(300px, 92vw); padding: 0; }
 .picker-row { align-items: center; min-height: 32px; }
-.picker-row:focus, .picker-row:focus-visible { background: var(--surface-3); outline: 2px solid var(--accent); outline-offset: -2px; }
+.picker-row:focus, .picker-row:focus-visible { background: var(--surface-3); outline: 2px solid var(--text-2); outline-offset: -2px; }
 .picker-row[aria-selected="true"] { background: var(--surface-3); }
 .picker-row > em { margin-left: auto; padding-left: var(--s-3); color: var(--accent); font: var(--fs-2xs)/1 var(--font-mono); font-style: normal; letter-spacing: var(--ls-caps); text-transform: uppercase; }
 .trigger-repeats .picker { width: 220px; }
@@ -391,7 +391,7 @@
 .graph-node { position: absolute; display: grid; align-content: start; gap: 2px; padding: var(--s-2); border: 1px solid var(--border); border-left: 2px solid var(--node-hue, var(--border-strong)); background: var(--bg); text-align: left; transition: border-color var(--t), background-color var(--t); }
 .graph-node:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-3); }
 .graph-node.active { border-color: var(--accent); background: var(--accent-soft); }
-.graph-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.graph-node:focus-visible { outline: 2px solid var(--text-2); outline-offset: 2px; }
 .graph-kind { color: var(--node-hue, var(--text-3)); font: var(--fs-2xs)/1.4 var(--font-mono); letter-spacing: var(--ls-caps); text-transform: uppercase; }
 .graph-node b { overflow: hidden; color: var(--text); font: var(--fs-2xs)/1.4 var(--font-mono); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .graph-text { display: -webkit-box; overflow: hidden; color: var(--text-2); font: var(--fs-2xs)/1.35 var(--font-mono); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
@@ -421,7 +421,7 @@
 .task-nodes summary::-webkit-details-marker { display: none; }
 .task-nodes summary::before { content: "▸ "; }
 .task-nodes[open] summary::before { content: "▾ "; }
-.task-nodes summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.task-nodes summary:focus-visible { outline: 2px solid var(--text-2); outline-offset: 2px; }
 .task-nodes textarea { display: block; width: 100%; margin-top: var(--s-2); font-family: var(--font-code); font-size: var(--fs-xs); }
 .task-nodes > p { max-width: 78ch; margin-top: var(--s-2); color: var(--text-3); font: var(--fs-xs)/1.6 var(--font); }
 .task-nodes > p b { color: var(--text-2); font-family: var(--font-code); font-weight: 400; }
@@ -602,7 +602,7 @@
 .kb-folder.over .kb-folder-front { border-style: dashed; }
 .source-popover.kb-menu { top: calc(100% - var(--s-3)); bottom: auto; left: var(--s-3); display: grid; gap: var(--s-2); width: max-content; padding: var(--s-2); }
 .kb-menu input { width: 148px; min-height: 26px; padding: 0 var(--s-2); border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); font: var(--fs-sm)/1 var(--font-mono); }
-.kb-menu input:focus-visible { outline: none; border-color: var(--kind); }
+.kb-menu input:focus-visible { outline: none; border-color: var(--text-2); }
 .kb-hues { display: flex; gap: 3px; }
 .kb-hue { width: 14px; height: 14px; min-height: 0; padding: 0; border: 1px solid var(--border); background: var(--swatch); }
 .kb-hue:hover:not(:disabled) { border-color: var(--text); }

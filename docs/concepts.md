@@ -269,13 +269,12 @@ open. See [jobs.md](jobs.md).
 **Shinbo operating an approved app on this computer.** The agent loop asks;
 Electron main executes, because it is the process that owns the screen. The
 `computer` tool requires a separate approval for the named running app in every
-permission mode. Every ceiling applies in *every* mode:
-`MAX_RUN_STEPS` 20, `MAX_RUN_ACTIONS` 400, `MIN_ACTION_INTERVAL_MS` 40,
-`MAX_RUN_MS` 10 minutes, `MAX_TYPED_CHARACTERS` 4096, `MAX_WAIT_SECONDS` 300,
-`MAX_KEY_REPEAT` 32, `HELPER_TIMEOUT_MS` 5000 — plus the always-on-top banner,
-the per-action log line, and Escape as a system-wide kill switch registered only
-for the life of a run. Screenshots stay in Shinbo's process and the tool answers in
-text; `vision` is the deliberate exception that posts an image to a model. See
+permission mode. Computer calls have no fixed step cap. Access expires after ten
+minutes, app actions are at least 40 ms apart, text input is limited to 4096
+characters, and helper replies time out after ten seconds. A compact monitor
+icon and Stop button stay at the top right. Stop and the global Escape shortcut
+revoke computer access for the turn while leaving the agent running. The tool
+returns accessibility text without screenshots or clipboard access. See
 [computer-use.md](computer-use.md).
 
 ## Skill · MCP server · tool

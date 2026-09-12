@@ -71,7 +71,7 @@
 
 .artifact-column { position: relative; display: grid; grid-template-rows: minmax(0, 1fr); min-width: 0; }
 .artifact-column > .resize-handle { position: absolute; z-index: 8; top: 0; left: -10px; right: auto; width: 12px; height: 100%; padding: 0; cursor: col-resize; background: transparent; }
-.artifact-column > .resize-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.artifact-column > .resize-handle:focus-visible { outline: 2px solid var(--text-2); outline-offset: 2px; }
 .artifact-pane { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; min-width: 0; border-left: 1px solid var(--border); background: var(--surface); }
 .artifact-pane > header { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-3); border-bottom: 1px solid var(--border); }
 .artifact-pane > header > div { flex: 1; min-width: 0; margin-right: auto; }

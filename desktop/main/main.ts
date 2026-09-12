@@ -52,7 +52,7 @@ import { machineFacts, machineSample } from "./machine";
 import { transcribe, validateUtterance, validateVoiceSettings, voiceStatus } from "./voice";
 import { contextBlock, MAX_FILE_BYTES, MAX_TURN_IMAGES, mergeSkillContext } from "../shared/folders";
 import { BUILTIN_COMMANDS, mentions, pathName } from "../shared/slash";
-import { captureDisplay, compressScreenFrame, ComputerUseRuntime, MAX_RUN_STEPS } from "./computer";
+import { captureDisplay, compressScreenFrame, ComputerUseRuntime } from "./computer";
 import { CODEX_MODEL_ID, CODEX_PREFIX, cliPlan, codexSlug, isEnvName, MODEL_PLANS, providerCredentials, routerKey, webSearchProvider, FREE_ROUTER_ID, planForModel, planForProfile, MIN_UI_SCALE, MAX_UI_SCALE, defaultHarnessExperiments, defaultReview, defaultSettings, defaultTagger, defaultToolSettings, defaultVerifier, routerChain, routerIdFor, validateRouters, holdBindings, isCursorCommand, isThinkingLevel, isKeybindAction, keybindCommands, normalizeAccelerator, providerChatUrl, validateProviders, validateKeybinds, validateOverlayPreferences, validateHarnessExperiments, validateReview, validateTagger, validateToolSettings, validateVerifier, FREE_ROUTER_MODELS, OPENROUTER_CHAT_ENDPOINT, skippedLinks, type Keybind, type KeybindAction, type Keybinds, type HarnessExperiments, type OverlayPreferences, type ModelRouter, type ProviderProfile, type ReviewSettings, type TaggerSettings, type ThinkingLevel, type ToolSettings, type VerifierSettings } from "../shared/settings";
 import { nameThread } from "./thread-namer";
 import { suggestNextSteps } from "./next-steps";
@@ -1629,7 +1629,7 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
             ? `${target.target}\n\nAllow Shinbo to start this installed app and then read and control it in the background for this turn. Delegated agents cannot use this grant. Other apps require their own approval. Access ends when this turn ends or you press Stop. Application text is sent to this turn's model; screenshots and the clipboard are not used.`
             : `${target.id}\n${target.path}\nProcess ${target.pid}\n\nAllow Shinbo to read and control this app in the background for this turn. Delegated agents cannot use this grant. Other apps require their own approval. Access ends when this turn ends or you press Stop. Application text is sent to this turn's model; screenshots and the clipboard are not used.`,
         }, { humanOnly: true, signal });
-        if (answer === "allowed" && !signal.aborted) openRunBanner(turn.threadId, `${target.name} · background app control`);
+        if (answer === "allowed" && !signal.aborted) openRunBanner();
         return answer;
       });
       return said;
@@ -2239,7 +2239,7 @@ function harnessClient(cwd: string, key = cwd, route?: ProviderRoute): Harness {
       const turn = withTrialArm({ threadId, parentThreadId, title: "Subagent", content: "", mode: parent?.mode ?? agents!.mode(parentThreadId), model }, model);
       const childTurn = harnessTurns.get(threadId);
       if (childTurn) harnessTurns.set(threadId, { ...childTurn, model: parent?.model?.startsWith("provider:") || codexSlug(parent?.model) ? parent?.model : `openrouter:${model}` });
-      const systemPrompt = resolveHarnessPrompt({ model, addition: turn.promptAddition, workspace: cwd, mode: turn.mode, disabledTools: toolSettings.disabledTools });
+      const systemPrompt = resolveHarnessPrompt({ model, addition: turn.promptAddition, workspace: cwd, mode: turn.mode, disabledTools: toolSettings.disabledTools, advisorConfigured: !!toolSettings.advisor.model.trim() });
       const experiments = { ...harnessExperiments, ...turn.knobs };
       agents!.noteModel(threadId, model);
       agents!.noteContext(threadId, {
@@ -2751,7 +2751,7 @@ async function runOnHarness(client: Harness, cwd: string, turn: TurnRequest, key
   if (spent) turnSpend.set(turn.threadId, { ...spent, output: 0 });
   else if (goalPursuing(goals.get(turn.threadId))) turnSpend.set(turn.threadId, { output: 0, total: 0 });
   const home = path.join(app.getPath("userData"), "harness");
-  const systemPrompt = writeHarnessPrompt(home, { model: modelName(turn.model), addition: turn.promptAddition, workspace: cwd, mode: turn.mode, disabledTools: toolSettings.disabledTools }, harnessPromptFile(home, key));
+  const systemPrompt = writeHarnessPrompt(home, { model: modelName(turn.model), addition: turn.promptAddition, workspace: cwd, mode: turn.mode, disabledTools: toolSettings.disabledTools, advisorConfigured: !!toolSettings.advisor.model.trim() }, harnessPromptFile(home, key));
   turn = { ...turn, traceContext: {
     ...turn.traceContext,
     systemPrompt,
@@ -4135,19 +4135,19 @@ async function workflowTool(args: Extract<ToolArgs, { name: "workflow" }>): Prom
   }
 }
 
-function openRunBanner(threadId: string, task: string) {
+function openRunBanner() {
   closeRunBanner();
-  if (!globalShortcut.register("Escape", () => stopThread(threadId))) {
-    stopThread(threadId);
+  if (!globalShortcut.register("Escape", () => computerRuntime?.abort())) {
+    computerRuntime?.abort("could not register the Escape shortcut");
     throw new Error("Shinbo could not register the computer-use Escape stop shortcut");
   }
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const width = Math.min(520, display.workArea.width - 40);
+  const width = 108;
   const window = secureWindow({
-    x: display.workArea.x + Math.round((display.workArea.width - width) / 2),
-    y: display.workArea.y + 16,
+    x: display.workArea.x + display.workArea.width - width - 12,
+    y: display.workArea.y + 12,
     width,
-    height: 76,
+    height: 44,
     frame: false,
     transparent: true,
     backgroundColor: "#00000000",
@@ -4162,7 +4162,7 @@ function openRunBanner(threadId: string, task: string) {
   runBanner = window;
   pinWindow(window);
   window.on("closed", () => { if (runBanner === window) runBanner = null; });
-  void load(window, "run", { threadId, task: task.slice(0, 200), maxSteps: String(MAX_RUN_STEPS) });
+  void load(window, "run");
   openComputerCursor();
 }
 
@@ -4284,7 +4284,6 @@ function handleSquirrelEvent(): boolean {
   if (!event) return false;
   const update = path.resolve(path.dirname(process.execPath), "..", "Update.exe");
   if (event === "install" || event === "updated") spawn(update, ["--createShortcut", "Shinbo.exe"], { detached: true, stdio: "ignore", windowsHide: true }).unref();
-  // An install made under the old name keeps its Emma shortcuts, which point at an Emma.exe stub that no longer resolves.
   if (event === "updated") for (const link of windowsShortcutFiles(process.env, "Emma")) rmSync(link, { force: true });
   if (event === "uninstall") {
     spawn(update, ["--removeShortcut", "Shinbo.exe"], { detached: true, stdio: "ignore", windowsHide: true }).unref();
@@ -4455,7 +4454,7 @@ if (primaryInstance) app.whenReady().then(() => {
   });
   powerMonitor.on("resume", () => void resumeAfterSleep().catch((error: unknown) => console.error("Shinbo: could not pick a turn back up after sleep", error)));
   const stopComputerForLock = () => {
-    if (computerRuntime?.threadId) stopThread(computerRuntime.threadId);
+    computerRuntime?.abort("stopped because the computer locked or suspended");
   };
   powerMonitor.on("suspend", stopComputerForLock);
   powerMonitor.on("lock-screen", stopComputerForLock);
@@ -4826,7 +4825,7 @@ if (primaryInstance) app.whenReady().then(() => {
   });
   ipcMain.on("shinbo:stop-computer-run", (event) => {
     if (event.senderFrame !== event.sender.mainFrame || ![mainWindow?.webContents, runBanner?.webContents].includes(event.sender)) return;
-    if (computerRuntime?.threadId) stopThread(computerRuntime.threadId);
+    computerRuntime?.abort();
   });
   ipcMain.handle("shinbo:set-providers", (event, value: unknown) => {
     mainWindowSender(event);

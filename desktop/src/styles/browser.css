@@ -29,7 +29,7 @@
 .browser-address:hover { color: var(--text); background: var(--surface-3); }
 .browser-address > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .browser-address-field { justify-content: flex-start; color: var(--text); background: var(--surface-3); font-family: var(--font-mono); text-align: left; }
-.browser-address-field:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
+.browser-address-field:focus { outline: 1px solid var(--text-2); outline-offset: -1px; }
 .browser-address-field::placeholder { color: var(--text-3); }
 
 .browser-loading { width: 10px; height: 10px; flex: 0 0 auto; border: 1.5px solid var(--border-strong); border-top-color: var(--accent); border-radius: var(--r-full); animation: browser-spin 700ms linear infinite; }

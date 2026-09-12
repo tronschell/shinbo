@@ -112,7 +112,7 @@
 .marketplace-dialog label > span { color: var(--text-2); font: var(--fs-2xs)/1.4 var(--font-mono); letter-spacing: var(--ls-caps); text-transform: uppercase; }
 .marketplace-dialog input, .marketplace-dialog textarea { min-height: 30px; padding: var(--s-1) var(--s-2); border: 1px solid var(--border); background: transparent; color: var(--text); font: var(--fs-sm)/1.5 var(--font-mono); resize: vertical; transition: border-color var(--t); }
 .marketplace-dialog input:hover, .marketplace-dialog textarea:hover { border-color: var(--border-strong); }
-.marketplace-dialog input:focus-visible, .marketplace-dialog textarea:focus-visible { border-color: var(--accent); }
+.marketplace-dialog input:focus-visible, .marketplace-dialog textarea:focus-visible { border-color: var(--text-2); }
 .marketplace-dialog .marketplace-actions { display: flex; justify-content: flex-end; gap: var(--s-2); }
 .marketplace-dialog .marketplace-actions button:not(.plugin-install) { min-height: 26px; padding: 0 var(--s-3); border: 1px solid var(--border); background: transparent; color: var(--text-2); font: var(--fs-2xs)/1 var(--font-mono); letter-spacing: var(--ls-caps); text-transform: uppercase; transition: color var(--t), border-color var(--t); }
 .marketplace-dialog .marketplace-actions button:not(.plugin-install):hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); }

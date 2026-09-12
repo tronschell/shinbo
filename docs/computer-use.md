@@ -37,9 +37,10 @@ controlled while a prompt is unanswered.
 
 The grant lives only in memory. The helper checks the bundle identity, path, PID
 and kernel process birth timestamp before acting; quitting or relaunching an app
-requires a new turn and approval. Stop, the run banner's Escape shortcut, screen
+requires a new turn and approval. Stop, the indicator's Escape shortcut, screen
 lock, suspend, turn completion and Shinbo quitting revoke access and stop helpers.
-After a stop, further calls cannot restart computer use in the same turn. A stop
+Stop and Escape stop computer control only; the agent continues and can use its
+other tools. Further calls cannot restart computer use in the same turn. A stop
 does not undo actions already dispatched.
 
 App approval permits access to that app; it is not approval for a purchase,
@@ -207,12 +208,15 @@ Windows, the helper uses UI Automation and has no equivalent macOS TCC grant.
 Screen Recording is not needed for this tool; it remains separate for screen
 annotation.
 
-Only one computer turn runs at a time. Limits are 20 tool calls and ten minutes per
-run, with at least 40 ms between app actions and a ten-second helper reply timeout.
-A timed-out mutation may already have happened; do not automatically retry it.
-The always-on-top run banner identifies the app, shows progress and provides Stop.
-Escape is registered globally while the banner is open; failure to register it
-stops the turn. Calls also appear in the thread's execution trace.
+Only one computer turn runs at a time. There is no computer-tool call count cap.
+Computer access still expires after ten minutes, with at least 40 ms between app
+actions and a ten-second helper reply timeout. A timed-out mutation may already
+have happened; do not automatically retry it.
+A compact monitor icon and Stop button sit at the top right of the active display
+without taking focus. Hover over the icon for the current action and app. Escape
+is registered globally while the indicator is open; failure to register it
+revokes computer access without cancelling the agent. Calls also appear in the
+thread's execution trace.
 
 ## Activity cursor
 
@@ -232,14 +236,14 @@ The cue expires after 1.4 seconds and disappears immediately on Stop or turn end
 A post-action check also clears it when the action changes or closes the target
 window/control. It marks the last action, not continuous tracking: manual window
 moves or asynchronous layout changes after that check can leave the old location
-visible for the remainder of the short cue lifetime. The run banner remains the
+visible for the remainder of the short cue lifetime. The top-right indicator remains the
 continuous status and Stop control.
 
 Implementation: [computer.ts](../desktop/main/computer.ts) owns grants and helper
 lifetime; [computer.m](../desktop/native/computer.m) and
 [computer_win.cpp](../desktop/native/computer_win.cpp) enforce app identity and
 platform accessibility actions; [main.ts](../desktop/main/main.ts) connects human
-approval, turn lifecycle and the banner. [harness.ts](../desktop/main/harness.ts)
+approval, turn lifecycle and the indicator. [harness.ts](../desktop/main/harness.ts)
 accepts computer calls only from the active parent turn's current tool-call IDs,
 never from delegated agents. Settings → Tools → Computer use can disable the
 tool in every mode.
@@ -254,6 +258,15 @@ and separately describes [custom computer-use harnesses](https://developers.open
 Shinbo follows the custom-tool approach, not a dependency on Codex's private runtime.
 
 ## Verification
+
+On 2026-09-12, an isolated macOS development app rendered the compact indicator
+at 108 × 44 pixels near the top-right corner. Its real preload Stop path closed
+the indicator, unregistered Escape and revoked computer access while the adopted
+fixture agent stayed running. No model or target-app action was involved in that
+fixture. Runtime tests exercised 25 approved app-state calls, revocation and
+approval on the next turn; IPC tests covered trusted senders and computer-only
+cancellation. Desktop checks passed. Physical global Escape, VoiceOver,
+multi-display placement and Windows were not manually verified for this change.
 
 The macOS development build was exercised on 2026-08-28 with isolated Shinbo data,
 a localhost model fixture and two disposable native apps. The real approval dialog

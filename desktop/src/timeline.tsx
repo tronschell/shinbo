@@ -263,10 +263,10 @@ function TimelineDialog({ turns, agentMs, axis, total, format, now, close, child
   if (!stats) return null;
 
   const wall = stats.to - stats.from;
-  return <dialog ref={dialog} className="modal-backdrop" aria-labelledby="timeline-title" onClose={close} onCancel={(event) => { event.preventDefault(); dismiss(); }} onMouseDown={(event) => { if (event.target === event.currentTarget) dismiss(); }}>
+  return <dialog ref={dialog} className="modal-backdrop" aria-label="Timeline" onClose={close} onCancel={(event) => { event.preventDefault(); dismiss(); }} onMouseDown={(event) => { if (event.target === event.currentTarget) dismiss(); }}>
     <section className="agent-dialog trace-dialog">
 
-      <header><div><h2 id="timeline-title">Timeline</h2><span>{new Date(stats.from).toLocaleString()} → {new Date(stats.to).toLocaleTimeString()}</span></div><button type="button" onClick={dismiss} aria-label="Close timeline">×</button></header>
+      <header><div><span>{new Date(stats.from).toLocaleString()} → {new Date(stats.to).toLocaleTimeString()}</span></div><button type="button" onClick={dismiss} aria-label="Close timeline">×</button></header>
 
       <dl>
         <div><dt>Turns</dt><dd>{turns.length}</dd></div>

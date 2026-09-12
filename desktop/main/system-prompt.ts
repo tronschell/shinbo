@@ -29,6 +29,7 @@ export interface PromptContext {
   workspace?: string;
   mode?: PermissionMode;
   disabledTools?: readonly string[];
+  advisorConfigured?: boolean;
 }
 
 function promptVariables(context: PromptContext): PromptVariables {
@@ -47,7 +48,7 @@ function promptVariables(context: PromptContext): PromptVariables {
 }
 
 export const resolveHarnessPrompt = (context: PromptContext) =>
-  systemPromptBlock([resolvePrompt(prompt, presets, context.model ?? "", promptVariables(context)), context.addition].filter(Boolean).join("\n\n"));
+  systemPromptBlock([resolvePrompt(prompt, presets, context.model ?? "", promptVariables(context)), context.addition, context.advisorConfigured === false ? "Advisor is not configured for this run. Do not search for, select, or call advisor; proceed directly without consultation." : ""].filter(Boolean).join("\n\n"));
 
 const arms = new Map<string, Arm>();
 const forced = new Map<string, { arm: Arm; at: number }>();
@@ -135,7 +136,7 @@ export function goalBlock(goal: Goal): string {
     "Treat completion as unproven until you have checked it against the current state of the thing itself. Intent, partial progress, memory of earlier work and a plausible-looking answer are none of them proof. Marking the goal complete claims the full objective is finished and would survive being read back requirement by requirement, so send it only with evidence of the real end state: what you ran, what it printed, what changed. If the evidence is indirect, partial, merely consistent with being done, or leaves one requirement unverified, keep working instead.",
     "Never call it complete because the budget is nearly gone or because you are stopping. A budget that runs out is budgetLimited, and asking the user to extend it is the honest move.",
     `Report status blocked only when the same blocking condition has stopped you on ${tokens(GOAL_BLOCKED_TURNS)} consecutive goal turns, counting the turn the user asked for and every continuation since. The first two times, record the blocker and carry on working around it. Once it has repeated ${tokens(GOAL_BLOCKED_TURNS)} times, do report it rather than staying active while saying you are stuck. A goal picked back up after being blocked starts its count fresh.`,
-    "When what is left is more than one subagent's worth of work, write a plan with the plan tool and fan it out. That is how a goal makes progress in parallel instead of one small step per turn.",
+    "Use parallel subagents only for substantial independent tasks while you perform useful, non-overlapping work, or when the user or repository instructions require delegation. Handle bounded work directly; a goal does not itself require a plan or subagent.",
     "Any thread or subagent you start toward this goal has to be told the objective in its brief. It cannot see this.",
     "When the goal is done, tell the user what it cost: the turns it took and the tokens against the budget.",
   ].filter(Boolean).join("\n");

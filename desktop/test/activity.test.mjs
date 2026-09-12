@@ -30,28 +30,26 @@ for (const tool of ["advisor", "terminal", "browser", "subagent", "artifact", "r
 test("active tool status uses the actual action title without warning decoration or model recovery", (t) => {
   t.mock.method(Date, "now", () => 61000);
   const html = renderActivity([block({ ...step("terminal"), title: "Run focused activity tests" })], "Retrying model", 1000);
-  assert.match(html, /class="inline-activity" data-running="true" role="status"/);
+  assert.match(html, /class="inline-activity run-wait" role="status"/);
   assert.match(html, /Waiting for Run focused activity tests/);
   assert.match(html, /last update <b>60000ms<\/b> ago/);
   assert.doesNotMatch(html, /context-cut|context-notice|stalled|tool-activity-indicator|<svg|Retrying model|Try another model/);
-  assert.match(renderActivity([block(step("terminal"))]), /last update <b>0ms<\/b> ago/);
-  assert.match(renderActivity([block({ ...step("terminal"), title: " " })]), /Waiting for tool/);
+  assert.equal(renderActivity([block(step("terminal"))]), "");
+  assert.match(renderActivity([block({ ...step("terminal"), title: " " })], "", 1000), /Waiting for tool/);
 });
 
 test("active status counts outstanding calls, not completed calls or duplicate updates", () => {
-  const html = renderActivity([block(step("one", "pending")), block(step("one")), block(step("two")), block(step("three", "completed"))]);
+  const html = renderActivity([block(step("one", "pending")), block(step("one")), block(step("two")), block(step("three", "completed"))], "", Date.now() - 60000);
   assert.match(html, /Waiting for 2 tools/);
   assert.doesNotMatch(html, /Try another model/);
 });
 
-test("model phase pulses before silence even with existing text and settled tools", (t) => {
+test("normal activity stays hidden before silence, including outstanding tools", (t) => {
   t.mock.method(Date, "now", () => 61000);
-  for (const blocks of [[], [{ kind: "text", text: "Working" }], [block(step("edit_file", "completed")), { kind: "text", text: "Working" }]]) {
+  for (const blocks of [[], [block(step("terminal"))], [{ kind: "text", text: "Working" }], [block(step("edit_file", "completed")), { kind: "text", text: "Working" }]]) {
     for (const quiet of [0, 59999]) {
       const html = renderActivity(blocks, "", 61000 - quiet);
-      assert.match(html, /class="inline-activity" data-running="true" role="status"/);
-      assert.ok(html.includes(`Waiting for response · last update <b>${quiet}ms</b> ago`));
-      assert.doesNotMatch(html, /context-cut|context-notice|stalled|<svg|Try another model|edit_file|%/);
+      assert.equal(html, "");
     }
   }
   assert.match(app, /sending && streaming === null && run\.activeAt <= 0 && <p className="waiting"/);
@@ -60,7 +58,7 @@ test("model phase pulses before silence even with existing text and settled tool
 test("model recovery retains its static notice immediately", (t) => {
   t.mock.method(Date, "now", () => 61000);
   const html = renderActivity([], "Retrying");
-  assert.match(html, /class="context-cut context-notice stalled"/);
+  assert.match(html, /class="context-cut context-notice stalled run-wait"/);
   assert.match(html, /Retrying/);
   assert.match(html, /Try another model/);
   assert.doesNotMatch(html, /data-running|inline-activity|Waiting for response/);
@@ -70,7 +68,7 @@ test("model silence and recovery retain neutral warning and swap action", (t) =>
   t.mock.method(Date, "now", () => 61000);
   for (const recovery of ["", "Retrying"]) {
     const html = renderActivity([], recovery, 1000);
-    assert.match(html, /class="context-cut context-notice stalled"/);
+    assert.match(html, /class="context-cut context-notice stalled run-wait"/);
     assert.match(html, recovery ? /Retrying/ : /Waiting for model response · no update for <b>60000ms<\/b>/);
     assert.match(html, /Try another model/);
     assert.doesNotMatch(html, /data-running|inline-activity/);

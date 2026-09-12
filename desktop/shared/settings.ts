@@ -450,6 +450,7 @@ export interface UserSettings {
   systemPrompt: string;
   prompts: PromptPreset[];
   accent: AccentChoice;
+  tabColor: AccentChoice;
   navIconColors: boolean;
   navHues: Record<string, AccentChoice>;
   folderHues: Record<string, AccentChoice>;
@@ -680,7 +681,6 @@ export type AccentChoice = (typeof ACCENT_CHOICES)[number] | `#${string}`;
 export const MIN_UI_SCALE = 80;
 export const MAX_UI_SCALE = 150;
 
-/** Settings saved before the pink accent still say "orange"; read them as the pink they now render. */
 export const legacyHue = (value: unknown): unknown => (value === "orange" ? "pink" : value);
 
 export function isAccentChoice(value: unknown): value is AccentChoice {
@@ -1063,7 +1063,8 @@ export const defaultSettings: UserSettings = {
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   prompts: [],
   accent: "pink",
-  navIconColors: true,
+  tabColor: "#ffffff",
+  navIconColors: false,
   navHues: {},
   folderHues: {},
   uiScale: 100,
@@ -1149,12 +1150,13 @@ export function validateSettings(value: unknown, platform = "darwin"): UserSetti
   if (typeof systemPrompt !== "string" || systemPrompt.length > MAX_SYSTEM_PROMPT_CHARS) throw new Error(`Keep the system prompt under ${MAX_SYSTEM_PROMPT_CHARS} characters`);
   const prompts = validatePrompts(settings.prompts, MAX_SYSTEM_PROMPT_CHARS);
   const accent = legacyHue(settings.accent) ?? defaultSettings.accent;
+  const tabColor = settings.tabColor ?? defaultSettings.tabColor;
   const navIconColors = settings.navIconColors ?? defaultSettings.navIconColors;
   const navHues = validateNavHues(settings.navHues);
   const folderHues = validateFolderHues(settings.folderHues);
   const uiScale = settings.uiScale ?? defaultSettings.uiScale;
   const conversationWidth = settings.conversationWidth ?? defaultSettings.conversationWidth;
-  if (!isAccentChoice(accent) || typeof navIconColors !== "boolean" || !CONVERSATION_WIDTHS.some((width) => width.id === conversationWidth) || !Number.isInteger(uiScale) || uiScale < MIN_UI_SCALE || uiScale > MAX_UI_SCALE) throw new Error("Appearance settings are invalid");
+  if (!isAccentChoice(accent) || !isAccentChoice(tabColor) || typeof navIconColors !== "boolean" || !CONVERSATION_WIDTHS.some((width) => width.id === conversationWidth) || !Number.isInteger(uiScale) || uiScale < MIN_UI_SCALE || uiScale > MAX_UI_SCALE) throw new Error("Appearance settings are invalid");
   const interfaceFont = settings.interfaceFont ?? defaultSettings.interfaceFont;
   const agentFont = settings.agentFont ?? defaultSettings.agentFont;
   if (!isFontChoice(interfaceFont) || !isFontChoice(agentFont)) throw new Error("Font settings are invalid");
@@ -1162,7 +1164,7 @@ export function validateSettings(value: unknown, platform = "darwin"): UserSetti
   if (!isThinkingLevel(thinkingLevel)) throw new Error("The thinking level is invalid");
   const keybinds = validateKeybinds(settings.keybinds, platform);
   const contextPages = validateContextPages(settings.contextPages);
-  return { accent, navIconColors, navHues, folderHues, uiScale, conversationWidth, interfaceFont, agentFont, thinkingLevel, keybinds, contextPages, quickActions, cursorOrbs: [...cursorOrbs], cursorOrbsEnabled, notchCommandsEnabled, notchGap, notchModel, notchConcurrency, transcriptionEnabled: settings.transcriptionEnabled, transcriptionEngine, transcriptionEndpoint: settings.transcriptionEndpoint, transcriptionModel: settings.transcriptionModel, voiceHoldMs, voiceCleanup, voiceCleanupEndpoint, voiceCleanupModel, providers, selectedModel, defaultPermissionMode, verifier, tagger, tools, harnessExperiments, review, favoriteModels: favoriteModels.map(legacyModelKey), routers, requireZeroRetention, systemPrompt, prompts };
+  return { accent, tabColor, navIconColors, navHues, folderHues, uiScale, conversationWidth, interfaceFont, agentFont, thinkingLevel, keybinds, contextPages, quickActions, cursorOrbs: [...cursorOrbs], cursorOrbsEnabled, notchCommandsEnabled, notchGap, notchModel, notchConcurrency, transcriptionEnabled: settings.transcriptionEnabled, transcriptionEngine, transcriptionEndpoint: settings.transcriptionEndpoint, transcriptionModel: settings.transcriptionModel, voiceHoldMs, voiceCleanup, voiceCleanupEndpoint, voiceCleanupModel, providers, selectedModel, defaultPermissionMode, verifier, tagger, tools, harnessExperiments, review, favoriteModels: favoriteModels.map(legacyModelKey), routers, requireZeroRetention, systemPrompt, prompts };
 }
 
 export function toggleFavoriteModel(settings: UserSettings, key: string): UserSettings {

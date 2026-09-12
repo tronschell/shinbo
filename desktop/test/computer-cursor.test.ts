@@ -31,10 +31,10 @@ test("cursor and progress validation rejects malformed or unbounded metadata", (
     { ...cursor, bounds: { ...cursor.bounds, width: 0 } }, { ...cursor, bounds: { ...cursor.bounds, height: 16_385 } },
     { ...cursor, bounds: { ...cursor.bounds, scaleFactor: 2 } },
   ]) assert.equal(validComputerCursor(value), false, JSON.stringify(value));
-  for (const value of [progress, { ...progress, cursor: null }, { ...progress, cursor: undefined }]) assert.ok(validComputerProgress(value));
+  for (const value of [progress, { ...progress, step: 25, actions: 25 }, { ...progress, cursor: null }, { ...progress, cursor: undefined }]) assert.ok(validComputerProgress(value));
   for (const value of [
-    null, [], {}, { ...progress, step: -1 }, { ...progress, step: 21 }, { ...progress, actions: 1.5 },
-    { ...progress, actions: 21 }, { ...progress, action: 1 }, { ...progress, action: "x".repeat(81) },
+    null, [], {}, { ...progress, step: -1 }, { ...progress, step: Number.MAX_SAFE_INTEGER + 1 }, { ...progress, actions: 1.5 },
+    { ...progress, actions: Infinity }, { ...progress, action: 1 }, { ...progress, action: "x".repeat(81) },
     { ...progress, app: "x".repeat(257) }, { ...progress, cursor: {} },
   ]) assert.equal(validComputerProgress(value), false, JSON.stringify(value));
 });
@@ -113,6 +113,7 @@ test("overlay waits for readiness, stays target-relative and cannot reshow after
     };
   }
   type ReadyEvent = { sender: ReturnType<typeof makeWindow>["webContents"]; senderFrame: object };
+  let escape: () => void = () => assert.fail("Missing Escape shortcut");
   let ready: (event: ReadyEvent) => void = () => assert.fail("Missing readiness listener");
   const context = {
     isMac: simulated.isMac,
@@ -128,17 +129,17 @@ test("overlay waits for readiness, stays target-relative and cannot reshow after
     computerProgress: undefined,
     computerCursorProgress: undefined,
     computerCursorAt: 0,
-    computerRuntime: { active: true },
+    computerRuntime: { active: true, abort: () => { context.computerRuntime.active = false; api.closeRunBanner(); } },
+    stopThread: () => assert.fail("Computer Stop must not stop the agent"),
     runBanner: null,
     computer_1: { roundComputerCursor, COMPUTER_CURSOR_MS },
-    computer_2: { MAX_RUN_STEPS: 20 },
     Date: { now: () => now },
     setTimeout: (callback: () => void, milliseconds: number) => (timeout = { callback, milliseconds }),
     clearTimeout: () => { timeout = undefined; },
     secureWindow: (options: Record<string, unknown>) => { const window = makeWindow(options); windows.push(window); return window; },
     load: (_window: unknown, mode: string) => loads.push(mode),
     electron_1: {
-      globalShortcut: { register: () => true, unregister: () => {} },
+      globalShortcut: { register: (_key: string, callback: () => void) => { escape = callback; return true; }, unregister: () => {} },
       screen: {
         getCursorScreenPoint: () => ({ x: 0, y: 0 }),
         getDisplayNearestPoint: (point: unknown) => { nearestPoints.push(point); return { bounds: display, workArea: display, scaleFactor: 2 }; },
@@ -149,17 +150,21 @@ test("overlay waits for readiness, stays target-relative and cannot reshow after
   const functions = [
     extract(/function reportRunProgress\(progress\) \{[\s\S]*?(?=\nconst BRIDGE_EVENTS)/),
     extract(/function pinWindow\(window\) \{[\s\S]*?(?=\nconst floating)/),
-    extract(/function openRunBanner\(threadId, task\) \{[\s\S]*?(?=\nfunction startAnnotation\()/),
+    extract(/function openRunBanner\(\) \{[\s\S]*?(?=\nfunction startAnnotation\()/),
     extract(/electron_1\.ipcMain\.on\("shinbo:computer-run-ready",[\s\S]*?(?=\n\s*electron_1\.ipcMain\.handle)/),
   ].join("\n");
   const api = runInNewContext(`${functions}\n({ openRunBanner, closeRunBanner, reportRunProgress, reportBrowserCursor })`, context) as {
-    openRunBanner: (threadId: string, task: string) => void;
+    openRunBanner: () => void;
     closeRunBanner: () => void;
     reportRunProgress: (value: ComputerRunProgress) => void;
     reportBrowserCursor: (value: ComputerRunProgress | null) => void;
   };
-  api.openRunBanner("thread", "task");
+  api.openRunBanner();
   const [banner, overlay] = windows;
+  assert.equal(banner.options.width, 108);
+  assert.equal(banner.options.height, 44);
+  assert.equal(banner.options.x, display.x + display.width - 120);
+  assert.equal(banner.options.y, display.y + 12);
   assert.deepEqual(loads, ["run", "computerCursor"]);
   assert.equal(overlay.options.focusable, false);
   assert.notEqual(overlay.options.alwaysOnTop, true);
@@ -233,7 +238,8 @@ test("overlay waits for readiness, stays target-relative and cannot reshow after
   api.reportBrowserCursor({ step: 0, actions: 3, action: "typing", cursor });
   assert.equal(overlay.calls.filter((call) => call === "showInactive").length, 5);
   context.computerRuntime.active = true;
-  api.closeRunBanner();
+  escape();
+  assert.equal(context.computerRuntime.active, false);
   assert.equal(overlay.isDestroyed(), true);
   assert.equal(banner.isDestroyed(), true);
   assert.equal(context.computerProgress, undefined);
@@ -294,4 +300,24 @@ test("sandboxed preload loads with only Electron and registers progress before r
   assert.deepEqual(received, [progress]);
   unsubscribe();
   assert.equal(calls.at(-1), "remove:shinbo:computer-run-progress");
+});
+
+
+test("computer Stop accepts only trusted main frames and does not stop the agent", () => {
+  const webContents = { mainFrame: {} };
+  const bannerContents = { mainFrame: {} };
+  let stopped = 0;
+  let stop!: (event: { sender: object; senderFrame: object }) => void;
+  runInNewContext(extract(/electron_1\.ipcMain\.on\("shinbo:stop-computer-run",[\s\S]*?(?=\n\s*electron_1\.ipcMain\.handle)/), {
+    electron_1: { ipcMain: { on: (_name: string, callback: typeof stop) => { stop = callback; } } },
+    mainWindow: { webContents }, runBanner: { webContents: bannerContents },
+    computerRuntime: { abort: () => { stopped++; } },
+    stopThread: () => assert.fail("Computer Stop must not stop the agent"),
+  });
+  stop({ sender: webContents, senderFrame: {} });
+  stop({ sender: { mainFrame: webContents.mainFrame }, senderFrame: webContents.mainFrame });
+  assert.equal(stopped, 0);
+  stop({ sender: webContents, senderFrame: webContents.mainFrame });
+  stop({ sender: bannerContents, senderFrame: bannerContents.mainFrame });
+  assert.equal(stopped, 2);
 });
