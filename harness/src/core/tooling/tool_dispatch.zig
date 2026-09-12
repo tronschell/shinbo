@@ -117,23 +117,16 @@ pub const VisionProvider = struct {
     }
 };
 
-/// Runs a tool the ACP client owns rather than the harness.
-///
-/// Emma's own tools live in the Electron host: they read and write its durable
-/// stores, so the harness cannot execute them and does not try. It advertises
-/// them, decodes nothing, and hands the raw arguments back over the wire. A
-/// tool that fails answers with text; the error set here is the transport's.
-pub const EmmaToolResponder = struct {
+pub const ShinboToolResponder = struct {
     context: *anyopaque,
-    call_fn: *const fn (*anyopaque, Allocator, []const u8, []const u8) anyerror![]u8,
+    call_fn: *const fn (*anyopaque, Allocator, []const u8, []const u8) anyerror!ToolResult,
 
-    /// Returns the tool's own text output, allocated with `alloc`.
     pub fn call(
-        self: EmmaToolResponder,
+        self: ShinboToolResponder,
         alloc: Allocator,
         name: []const u8,
         arguments_json: []const u8,
-    ) anyerror![]u8 {
+    ) anyerror!ToolResult {
         return self.call_fn(self.context, alloc, name, arguments_json);
     }
 };
@@ -146,28 +139,23 @@ pub const SelectedDynamicToolSinkFn = *const fn (
 
 pub const ContextNoticeSinkFn = *const fn (?*anyopaque, []const u8) error{OutOfMemory}!void;
 
-/// Erased, owned typed input decoded by a concrete tool.
 pub const ToolInput = struct {
     ptr: *anyopaque,
     deinit_fn: *const fn (ptr: *anyopaque, alloc: Allocator) void,
 
-    /// Casts the erased input back to the tool's concrete input type.
     pub fn as(self: ToolInput, comptime T: type) *T {
         return @ptrCast(@alignCast(self.ptr));
     }
 
-    /// Frees the concrete input through the tool-provided destructor.
     pub fn deinit(self: ToolInput, alloc: Allocator) void {
         self.deinit_fn(self.ptr, alloc);
     }
 };
 
-/// Owned success or failure text returned by a tool call.
 pub const ToolResult = union(enum) {
     success: []u8,
     failure: []u8,
 
-    /// Frees the owned result text.
     pub fn deinit(self: ToolResult, alloc: Allocator) void {
         switch (self) {
             .success => |body| alloc.free(body),
@@ -176,13 +164,11 @@ pub const ToolResult = union(enum) {
     }
 };
 
-/// Result of decoding a raw JSON argument buffer into a typed input.
 pub const DecodeResult = union(enum) {
     input: ToolInput,
     failure: []u8,
 };
 
-/// Errors that stop local dispatch before a model-recoverable result is built.
 pub const DispatchError = std.json.ParseError(std.json.Scanner) || error{
     OutOfMemory,
     InvalidToolArguments,
@@ -194,7 +180,6 @@ pub const DispatchError = std.json.ParseError(std.json.Scanner) || error{
     Cancelled,
 };
 
-/// Core-owned execution backend used by the registered run_command callback.
 pub const RunCommandRequest = struct {
     command: []const u8,
     resolved_cwd: []const u8,
@@ -220,7 +205,6 @@ pub const RunCommandBackend = struct {
     }
 };
 
-/// Context shared by core tool dispatch, validation, and execution.
 pub const DispatchContext = struct {
     allocator: Allocator,
     permission_mode: permission_gate.PermissionMode = .ask,
@@ -281,9 +265,8 @@ pub const DispatchContext = struct {
     mcp_call_feature: ?tool_mcp_runtime.FeatureCallFn = null,
     mcp_access: tool_mcp_runtime.Access = .unrestricted,
     mcp_input_responder: ?tool_mcp_runtime.InputResponder = null,
-    emma_tool_responder: ?EmmaToolResponder = null,
-    /// The set a tool may look itself up in. `CallFn` never sees the registry
-    /// the call was dispatched from, and search and select are about the set.
+    shinbo_tool_responder: ?ShinboToolResponder = null,
+
     tool_registry: Registry = .{},
     mcp_call_options: tool_mcp_runtime.CallOptions = .{},
     mcp_call_status_sink: ?*?tool_mcp_runtime.CallStatus = null,
@@ -300,17 +283,14 @@ pub const DispatchContext = struct {
     tool_result_memory_sink: ?*?core_types.ToolResultMemory = null,
 };
 
-/// Function pointer used by ask_user_question to request live user answers.
 pub const AskQuestionBatchFn = *const fn (
     ?*anyopaque,
     Allocator,
     []const core_types.QuestionBatchEntry,
 ) anyerror!?[][]u8;
 
-/// Function pointer used to override permission decisions in tests and callers.
 pub const PermissionDecider = *const fn (*const Tool, ToolInput, DispatchContext) permission_gate.Decision;
 
-/// Rule-engine lookup function carried through dispatch for test injection.
 pub const PermissionRuleLookup = *const fn (
     Allocator,
     core_types.PermissionRuleSet,
@@ -320,31 +300,23 @@ pub const PermissionRuleLookup = *const fn (
     PermissionTargetKind,
 ) anyerror!core_permissions.RuleDecision;
 
-/// Permission state shared by a noninteractive turn.
 pub const PermissionContext = struct {
     rules: ?*const core_types.PermissionRuleSet = null,
     rule_lookup: PermissionRuleLookup = core_permissions.ruleDecisionFor,
 };
 
-/// Function pointer that decodes JSON arguments into a concrete input.
 pub const DecodeFn = *const fn (DispatchContext, []const u8) DispatchError!DecodeResult;
 
-/// Optional pure validation step run before the permission gate.
 pub const ValidateFn = *const fn (DispatchContext, ToolInput) DispatchError!?[]u8;
 
-/// Function pointer that executes a validated and allowed tool input.
 pub const CallFn = *const fn (DispatchContext, ToolInput) DispatchError!ToolResult;
 
-/// Optional Core adapter selected by a registered tool descriptor when the
-/// ordinary decode/validate/call path needs a focused lifecycle wrapper.
 pub const AuthorizedCallAdapterFn = *const fn (
     DispatchContext,
     Registry,
     message.ToolCall,
 ) DispatchError!DispatchResult;
 
-/// Optional Core mapper selected by a registered tool descriptor after an
-/// authorized call has produced its structured dispatch result.
 pub const AuthorizedResultMapperFn = *const fn (
     Allocator,
     DispatchResult,
@@ -352,22 +324,17 @@ pub const AuthorizedResultMapperFn = *const fn (
 
 pub const RunCommandCompatibility = struct {
     matches: *const fn ([]const u8) bool,
-    /// Returns success or failure text owned by `ctx.allocator`.
+
     execute: *const fn (DispatchContext, []const u8) DispatchError!ToolResult,
 };
 
-/// Consumes a decoded tool input and transfers its owned fields into Core's
-/// canonical file-mutation contract. The caller owns the returned input and
-/// must not deinitialize the consumed ToolInput.
 pub const TakeFileMutationInputFn = *const fn (
     ToolInput,
     Allocator,
 ) file_mutation_contract.FileMutationInput;
 
-/// Function pointer classifying whether an input is read-only.
 pub const ReadsOnlyFn = *const fn (ToolInput) bool;
 
-/// Function pointer classifying whether an input is irreversible.
 pub const IrreversibleFn = *const fn (ToolInput) bool;
 
 pub const GatewayAdvertisementError = std.mem.Allocator.Error || std.Io.Writer.Error || error{
@@ -427,13 +394,13 @@ pub const ExecutorKind = enum {
     mcp_search_tools,
     mcp_select_tool,
     mcp_features,
-    /// The native twin of the MCP discovery pair. See `tool_native_dispatch`.
+
     search_tools,
     select_tool,
     ask_user_question,
     vision,
-    /// Executed by the ACP client, not here. See `EmmaToolResponder`.
-    emma,
+
+    shinbo,
 };
 
 pub const ApprovalPolicy = enum {
@@ -465,27 +432,16 @@ pub const CallPresentation = struct {
     label_arg_default: []const u8,
 };
 
-/// Optional call-aware presentation override. Returned strings must outlive the
-/// parsed arguments supplied to the callback.
 pub const PresentationFn = *const fn (std.json.ObjectMap) ?CallPresentation;
 
-/// Descriptor for a core tool's model-facing metadata and runtime callbacks.
 pub const Tool = struct {
     name: []const u8,
     description: []const u8,
     gateway_schema: gateway_schema.FunctionSchema,
     write_gateway_advertisement_fn: ?WriteGatewayAdvertisementFn = null,
-    /// Set when the provider runs the tool instead of fx dispatch. Such a tool
-    /// never reaches a call-time permission check, so advertisement is its only
-    /// enforcement point and requires an already-settled allow.
+
     provider_executed: bool = false,
-    /// Where this tool's schema enters the prompt. `.always` is every tool that
-    /// predates lazy discovery. `.on_select` is found through `search_tools` and
-    /// spliced in by `select_tool`. `.never` is reachable only by name.
-    ///
-    /// This is a prompt-cost mechanism, not a security boundary: a hidden tool
-    /// is still registered, so a model that names one without selecting it runs
-    /// it, under exactly the permission rules it would have had when advertised.
+
     advertisement: Advertisement = .always,
     executor_kind: ExecutorKind = .list_files,
     activity_kind: core_types.ToolActivityKind = .read,
@@ -521,7 +477,6 @@ pub const ProgressLabelKind = enum {
     completed,
 };
 
-/// Classifies rendered tool progress through the registered presentation labels.
 pub fn classifyProgressLabel(registry: Registry, text: []const u8) ProgressLabelKind {
     for (registry.tools) |tool| {
         if (startsWithProgressLabel(text, tool.action_label)) return .started;
@@ -653,7 +608,6 @@ fn optionalStringArg(args: std.json.ObjectMap, key: []const u8) ?[]const u8 {
     return value.string;
 }
 
-/// Side-effect-free admission result for a registered tool call.
 pub const ValidationResult = union(enum) {
     not_registered,
     valid,
@@ -669,7 +623,6 @@ const ValidatedToolCall = union(enum) {
     },
 };
 
-/// Decodes and validates registered input without resolving permission or executing the tool.
 pub fn validateRegisteredToolCall(ctx: DispatchContext, registry: Registry, call: message.ToolCall) DispatchError!ValidationResult {
     const validated = try decodeAndValidateRegisteredToolCall(ctx, registry, call);
     return switch (validated) {
@@ -708,7 +661,6 @@ fn decodeAndValidateToolCall(
     };
 }
 
-/// A registered call that passed local availability and permission admission.
 pub const AdmittedToolCall = struct {
     tool: *const Tool,
     input: ToolInput,
@@ -722,14 +674,12 @@ pub const AdmittedToolCall = struct {
     }
 };
 
-/// Result of generic tool lookup, validation, availability, and permission admission.
 pub const AdmissionResult = union(enum) {
     not_registered,
     failure: []u8,
     admitted: AdmittedToolCall,
 };
 
-/// Admits one model-requested registered call without executing it.
 pub fn admitToolCall(ctx: DispatchContext, registry: Registry, call: message.ToolCall) DispatchError!AdmissionResult {
     var call_ctx = ctx;
     const validated = try decodeAndValidateRegisteredToolCall(call_ctx, registry, call);
@@ -809,7 +759,6 @@ pub fn admitToolCall(ctx: DispatchContext, registry: Registry, call: message.Too
     }
 }
 
-/// Owned tool-result message body produced by dispatch.
 pub const DispatchResult = struct {
     status: Status,
     body: []u8,
@@ -819,20 +768,17 @@ pub const DispatchResult = struct {
     web_fetch_completion: ?core_types.WebFetchCompletion = null,
     tool_result_memory: ?core_types.ToolResultMemory = null,
 
-    /// Tool-result status used only by tests and diagnostics.
     pub const Status = enum {
         success,
         failure,
     };
 
-    /// Frees the owned tool-result body and optional diagnostic detail.
     pub fn deinit(self: DispatchResult, alloc: Allocator) void {
         alloc.free(self.body);
         if (self.status_detail) |detail| alloc.free(detail);
     }
 };
 
-/// Runs one model-requested tool call through lookup, validation, gate, and call.
 pub fn dispatchToolCall(ctx: DispatchContext, registry: Registry, call: message.ToolCall) DispatchError!DispatchResult {
     var captured_usage: ?core_types.ToolUsage = null;
     var captured_web_search_completion: ?core_types.WebSearchCompletion = null;
@@ -878,7 +824,6 @@ pub fn dispatchToolCall(ctx: DispatchContext, registry: Registry, call: message.
     }
 }
 
-/// Runs one already-authorized registered tool call through lookup, validation, and call.
 pub fn dispatchAuthorizedToolCall(ctx: DispatchContext, registry: Registry, call: message.ToolCall) DispatchError!DispatchResult {
     const tool = registry.lookup(call.name) orelse return failure(
         try std.fmt.allocPrint(ctx.allocator, "unknown tool: {s}", .{call.name}),
@@ -896,9 +841,6 @@ pub fn dispatchAuthorizedToolCall(ctx: DispatchContext, registry: Registry, call
     return result;
 }
 
-/// Runs the ordinary authorized decode/validate/call path without consulting a
-/// descriptor's lifecycle adapter. Focused adapters use this to wrap one call
-/// without recursively selecting themselves again.
 pub fn dispatchAuthorizedToolCallDefault(ctx: DispatchContext, registry: Registry, call: message.ToolCall) DispatchError!DispatchResult {
     var captured_usage: ?core_types.ToolUsage = null;
     var captured_web_search_completion: ?core_types.WebSearchCompletion = null;

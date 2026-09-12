@@ -73,7 +73,7 @@ test("machine facts coalesce initialization, retry failures, and preserve the co
 
 function loadRendererMachine(
   document: { hidden: boolean; addEventListener: (type: string, listener: () => void) => void; removeEventListener: (type: string, listener: () => void) => void },
-  window: { emma: { machineSample: () => Promise<typeof SAMPLE> } },
+  window: { shinbo: { machineSample: () => Promise<typeof SAMPLE> } },
   setInterval: (callback: () => void, delay: number) => unknown,
   clearInterval: (timer: unknown) => void,
   cleanups: (() => void)[],
@@ -139,7 +139,7 @@ test("machine sampling pauses once while hidden and resumes once when shown", as
     return interval as unknown as ReturnType<typeof setInterval>;
   };
   const clearIntervalMock = (interval: unknown) => { (interval as { cleared: boolean }).cleared = true; };
-  const useMachine = loadRendererMachine(documentMock, { emma: { machineSample: () => { calls++; return Promise.resolve(SAMPLE); } } }, setIntervalMock, clearIntervalMock, cleanups);
+  const useMachine = loadRendererMachine(documentMock, { shinbo: { machineSample: () => { calls++; return Promise.resolve(SAMPLE); } } }, setIntervalMock, clearIntervalMock, cleanups);
   const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
   useMachine();
   await settle();

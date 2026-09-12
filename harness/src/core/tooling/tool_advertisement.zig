@@ -656,9 +656,6 @@ const test_mirror_provider_tool = blk: {
     break :blk spec;
 };
 
-/// Owns the effective tools JSON and any separate guidance required by
-/// included custom advertisements. The caller must deinitialize the result
-/// with the allocator passed to the builder.
 pub const EffectiveToolProjection = struct {
     tools_json: []u8,
     custom_guidance: []u8,
@@ -914,9 +911,6 @@ fn writeCustomGuidance(guidance_writer: *std.Io.Writer, first_custom_guidance: *
     try guidance_writer.writeAll(text);
 }
 
-/// A provider-executed tool is never dispatched locally, so an unsettled `ask`
-/// hides it exactly like a `deny`. The tool name doubles as the target pattern
-/// because the provider owns the call and fx never sees its arguments.
 fn providerExecutionIsAllowed(tool_name: []const u8, rules: types.PermissionRuleSet) bool {
     const permission = permissions.permissionNameForTool(tool_name);
     return switch (permissions.ruleDecisionForPermissionPattern(rules, permission, tool_name, .none)) {
@@ -1324,8 +1318,6 @@ test "full advertisement uses active structured builtin schemas" {
         builtin_count += 1;
     }
 
-    // Minus vision, which is `.never`, and web_search, whose provider schema is
-    // swapped in by its own advertisement writer.
     try std.testing.expectEqual(test_all_tools.len - 2, builtin_count);
 }
 
@@ -1333,9 +1325,9 @@ test "a tool hidden behind search never enters a projection it was not selected 
     const alloc = std.testing.allocator;
     const hidden = blk: {
         var spec = test_read_file;
-        spec.name = "emma_hidden";
+        spec.name = "shinbo_hidden";
         spec.description = "Hidden until selected.";
-        spec.gateway_schema = .{ .name = "emma_hidden", .description = spec.description };
+        spec.gateway_schema = .{ .name = "shinbo_hidden", .description = spec.description };
         spec.advertisement = .on_select;
         break :blk spec;
     };
@@ -1349,7 +1341,7 @@ test "a tool hidden behind search never enters a projection it was not selected 
             .{ .subagent_available = true },
         );
         defer projection.deinit(alloc);
-        try std.testing.expect(std.mem.find(u8, projection.tools_json, "emma_hidden") == null);
+        try std.testing.expect(std.mem.find(u8, projection.tools_json, "shinbo_hidden") == null);
     }
 }
 
@@ -1357,10 +1349,10 @@ test "a selected native tool reaches the advertisement through the dynamic schem
     const alloc = std.testing.allocator;
     const hidden = blk: {
         var spec = test_read_file;
-        spec.name = "emma_hidden";
+        spec.name = "shinbo_hidden";
         spec.description = "Hidden until selected.";
         spec.gateway_schema = .{
-            .name = "emma_hidden",
+            .name = "shinbo_hidden",
             .description = spec.description,
             .input_schema = .{
                 .properties = &.{
@@ -1381,8 +1373,6 @@ test "a selected native tool reaches the advertisement through the dynamic schem
     );
     defer projection.deinit(alloc);
 
-    // `select_tool` reports exactly this schema, and the sink it reports through
-    // is the one MCP selection already uses. Nothing downstream reads the name.
     const selected_schema = try gateway_schema.builtinFunctionSchemaJsonAlloc(alloc, hidden.gateway_schema);
     defer alloc.free(selected_schema);
     const json = try buildGatewayToolsJsonWithSelectedDynamicSchemas(
@@ -1394,8 +1384,8 @@ test "a selected native tool reaches the advertisement through the dynamic schem
 
     var names = try collectToolNames(alloc, json);
     defer freeNames(alloc, &names);
-    try expectContainsName(names.items, "emma_hidden");
-    try std.testing.expectEqual(@as(usize, 1), countName(names.items, "emma_hidden"));
+    try expectContainsName(names.items, "shinbo_hidden");
+    try std.testing.expectEqual(@as(usize, 1), countName(names.items, "shinbo_hidden"));
     try std.testing.expect(std.mem.find(u8, json, "\"path\"") != null);
 }
 
@@ -1526,14 +1516,14 @@ test "preselect advertises an on_select tool and cannot reach a route-filtered o
     const alloc = std.testing.allocator;
     const hidden = blk: {
         var spec = test_read_file;
-        spec.name = "emma_hidden";
+        spec.name = "shinbo_hidden";
         spec.description = "Hidden until selected.";
-        spec.gateway_schema = .{ .name = "emma_hidden", .description = spec.description };
+        spec.gateway_schema = .{ .name = "shinbo_hidden", .description = spec.description };
         spec.advertisement = .on_select;
         break :blk spec;
     };
     const tools = test_all_tools ++ [_]tool_dispatch.Tool{hidden};
-    const preselect = [_][]const u8{ "emma_hidden", "vision", "no_such_tool" };
+    const preselect = [_][]const u8{ "shinbo_hidden", "vision", "no_such_tool" };
 
     var projection = try buildTestGatewayToolProjectionForRegistry(alloc, tools[0..], .{
         .overrides = .{ .preselect = preselect[0..] },
@@ -1542,13 +1532,13 @@ test "preselect advertises an on_select tool and cannot reach a route-filtered o
 
     var names = try collectToolNames(alloc, projection.tools_json);
     defer freeNames(alloc, &names);
-    try expectContainsName(names.items, "emma_hidden");
-    try std.testing.expectEqual(@as(usize, 1), countName(names.items, "emma_hidden"));
+    try expectContainsName(names.items, "shinbo_hidden");
+    try std.testing.expectEqual(@as(usize, 1), countName(names.items, "shinbo_hidden"));
     try expectNotContainsName(names.items, "vision");
 
     var cleared = try buildTestGatewayToolProjectionForRegistry(alloc, tools[0..], .{});
     defer cleared.deinit(alloc);
     var cleared_names = try collectToolNames(alloc, cleared.tools_json);
     defer freeNames(alloc, &cleared_names);
-    try expectNotContainsName(cleared_names.items, "emma_hidden");
+    try expectNotContainsName(cleared_names.items, "shinbo_hidden");
 }

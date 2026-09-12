@@ -6,7 +6,7 @@ import { runFx } from "../evals/eval-helpers";
 
 const TIMEOUT = 15_000;
 const NO_GATEWAY_AUTH = {
-  EMMA_PROVIDER_API_KEY: undefined,
+  SHINBO_PROVIDER_API_KEY: undefined,
   FX_DISABLE_KEYCHAIN: "1",
 };
 
@@ -43,7 +43,7 @@ describe("web_fetch permission progress", () => {
       ]);
 
       expect(result.code).toBe(1);
-      expect(result.stderr).toContain("emma-cli has no provider credential. Set EMMA_PROVIDER_API_KEY.");
+      expect(result.stderr).toContain("shinbo-cli has no provider credential. Set SHINBO_PROVIDER_API_KEY.");
       expectNoFetchProgress(result.stderr);
     },
     TIMEOUT,

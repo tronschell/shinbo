@@ -28,7 +28,7 @@ skill and it survives.
 
 ## Installing an MCP server
 
-`install_mcp` writes the server into Emma's own config. Take the command straight
+`install_mcp` writes the server into Shinbo's own config. Take the command straight
 from the server's README — it is the same `command`/`args`/`env` every other
 agent's config uses:
 
@@ -86,7 +86,7 @@ that says when to use it. The description is what makes it findable later.
 ## Writing a tool of your own
 
 A skill is a lesson and an MCP server is someone else's program. `write_tool` is
-the third case: one script of yours, kept in Emma's own folder, callable by name
+the third case: one script of yours, kept in Shinbo's own folder, callable by name
 from any thread afterwards.
 
 ```json
@@ -115,7 +115,7 @@ already exists — a script that reimplements someone's API client is a liabilit
 
 `write_plugin` is `write_skill` for a set: it writes a real ChatGPT/Codex plugin
 — `.codex-plugin/plugin.json` plus one `skills/<name>/SKILL.md` per skill —
-installs it, and lists it on the Plugins page under "Written by Emma".
+installs it, and lists it on the Plugins page under "Written by Shinbo".
 
 ```json
 { "name": "invoice-ops", "description": "Everything for turning receipts into a monthly invoice.", "category": "Productivity",
@@ -125,7 +125,7 @@ installs it, and lists it on the Plugins page under "Written by Emma".
 - **A plugin is a set, a skill is one lesson.** One procedure is `write_skill`.
   Reach here when three related ones only make sense together, or when the user
   wants something they can hand to a teammate — the folder it writes is a valid
-  plugin for any agent that reads the format, not just Emma.
+  plugin for any agent that reads the format, not just Shinbo.
 - **Write each skill's `instructions` exactly as you would a `SKILL.md` body.**
   Frontmatter is added for you unless your text already opens with `---`.
 - **Live on the next turn, not this one.** Its skills are searchable then; say

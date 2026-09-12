@@ -1,6 +1,6 @@
 const std = @import("std");
 const debug_trace = @import("../../core/shared/debug_trace.zig");
-const emma_openai = @import("../../gateway/emma_openai.zig");
+const shinbo_openai = @import("../../gateway/shinbo_openai.zig");
 const gateway_client = @import("../../gateway/client.zig");
 const gateway_json = @import("../../core/gateway/gateway_json.zig");
 const io_mod = @import("../../core/shared/io.zig");
@@ -86,7 +86,7 @@ fn summarize(raw_ctx: *anyopaque, alloc: Allocator, request: session.SummaryRequ
         .raw = .fromMilliseconds(config.timeout_ms),
     });
 
-    const payload = try emma_openai.provider.build(alloc, .{
+    const payload = try shinbo_openai.provider.build(alloc, .{
         .model = config.model,
         .serialized_tools = "[]",
         .messages = &messages,
@@ -111,6 +111,7 @@ fn summarize(raw_ctx: *anyopaque, alloc: Allocator, request: session.SummaryRequ
         return err;
     };
     defer gateway_json.freeGatewayCompletion(alloc, completion);
+    if (types.classifyProviderCompletion(completion) != .completed) return error.InvalidProviderResponse;
     const content = completion.content orelse return error.EmptyCompactionSummary;
     return alloc.dupe(u8, content);
 }
@@ -264,4 +265,26 @@ test "gateway compaction summarizer forwards the previous summary for an iterati
     defer alloc.free(text);
     try std.testing.expect(std.mem.indexOf(u8, fake.seen_payload, "earlier goal") != null);
     try std.testing.expect(std.mem.indexOf(u8, fake.seen_payload, "PRESERVE all existing information") != null);
+}
+
+test "gateway compaction rejects incomplete and failed model summaries" {
+    const alloc = std.testing.allocator;
+    var cancel_flag = std.atomic.Value(bool).init(false);
+    for ([_]?[]const u8{ "length", "content_filter", "error", null }) |finish_reason| {
+        const choice = .{ .message = .{ .content = "## Goal\nPartial summary" }, .finish_reason = finish_reason };
+        const body = try std.json.Stringify.valueAlloc(alloc, .{ .choices = .{choice} }, .{});
+        defer alloc.free(body);
+        var fake = FakePost{ .body = body };
+        defer if (fake.seen_payload.len > 0) alloc.free(fake.seen_payload);
+        var config = Config{
+            .api_key = "key",
+            .chat_url = "https://example.test/chat",
+            .model = "openai/gpt-5",
+            .cancel_flag = &cancel_flag,
+            .post_fn = FakePost.execute,
+            .post_ctx = &fake,
+        };
+        try std.testing.expectError(error.InvalidProviderResponse, summarize(&config, alloc, .{ .conversation = "Original constraint" }));
+        try std.testing.expectEqual(@as(usize, 1), fake.calls);
+    }
 }

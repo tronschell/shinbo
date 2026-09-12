@@ -1,6 +1,6 @@
 import { isEnvName } from "./settings";
 
-export const COMPONENT_SCHEME = "emma-component";
+export const COMPONENT_SCHEME = "shinbo-component";
 export const MAX_COMPONENT_CHARS = 64 * 1024;
 export const MAX_COMPONENT_TITLE_CHARS = 80;
 export const MAX_COMPONENTS = 64;
@@ -57,7 +57,7 @@ export function componentSlug(title: string): string {
 export function parseVariables(value: unknown): string[] {
   if (value === undefined || value === null) return [];
   const list = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[\s,]+/) : undefined;
-  if (!list) throw new Error('"variables" is a list of environment variable names the user fills in Settings → Built by Emma, like ["LINEAR_API_KEY"].');
+  if (!list) throw new Error('"variables" is a list of environment variable names the user fills in Settings → Built by Shinbo, like ["LINEAR_API_KEY"].');
   const names = [...new Set(list.map((entry) => (typeof entry === "string" ? entry.trim() : "")).filter(Boolean))];
   if (names.length > MAX_COMPONENT_VARIABLES) throw new Error(`A component asks for at most ${MAX_COMPONENT_VARIABLES} variables.`);
   for (const name of names) {

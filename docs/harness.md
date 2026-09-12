@@ -1,13 +1,13 @@
 # The harness
 
-`emma-cli` is the coding agent that runs every Emma turn. It is a Zig program in
+`shinbo-cli` is the coding agent that runs every Shinbo turn. It is a Zig program in
 [`harness/`](../harness), driven over the Agent Client Protocol from
 [`desktop/main/harness.ts`](../desktop/main/harness.ts). There is no second
 agent loop; a missing binary is a broken install, not a fallback.
 
 ## Attribution
 
-**`emma-cli` is a fork of [vercel-labs/fx](https://github.com/vercel-labs/fx),
+**`shinbo-cli` is a fork of [vercel-labs/fx](https://github.com/vercel-labs/fx),
 Copyright Vercel, Inc. and fx contributors, Apache License 2.0.**
 
 | | |
@@ -28,9 +28,9 @@ client, and ACP server are upstream's. The fork's divergences, in short:
 
 | Area | Change |
 | --- | --- |
-| Name | `fx` → `emma-cli`; `build.zig.zon` fingerprint regenerated |
+| Name | `fx` → `shinbo-cli`; `build.zig.zon` fingerprint regenerated |
 | Transport | Vercel AI Gateway language-model v3 → OpenAI-compatible Chat Completions |
-| Auth | All Vercel and ChatGPT OAuth removed; one env var, `EMMA_PROVIDER_API_KEY` |
+| Auth | All Vercel and ChatGPT OAuth removed; one env var, `SHINBO_PROVIDER_API_KEY` |
 | Branding | `fx.sh` links, feedback, upgrade, and telemetry endpoints removed |
 | `terminal` args | Two real-world call shapes normalized; per-action required fields |
 | `terminal` failures | A non-zero exit reports `stdout` beside `stderr`; test runners print their failure report on stdout |
@@ -46,17 +46,17 @@ file.
 ## Who owns what
 
 The harness owns the agent loop, tool execution, permission gating, hooks,
-skills, subagents, and the MCP client for one turn. Emma owns the window, the
+skills, subagents, and the MCP client for one turn. Shinbo owns the window, the
 Markdown thread, and the answer to every permission question.
 
-Four things Emma keeps away from the harness:
+Four things Shinbo keeps away from the harness:
 
 | | Why |
 | --- | --- |
 | The granted folder | The harness resolves `../` and `~` itself and mutates whatever its policy allows. `callEscapesWorkspace` checks every path-shaped argument against the workspace root first: paths are realpath'd, a path that does not exist yet resolves to its deepest existing ancestor, and anything unresolvable is an escape. Denied in every mode |
-| Permission modes | All four of Emma's modes map to the harness's `ask` (`HARNESS_MODE_ID`), so every decision comes back over the wire. Mapping `acceptEdits` → `auto` skipped the folder check; `full` → `yolo` left no floor at all |
+| Permission modes | All four of Shinbo's modes map to the harness's `ask` (`HARNESS_MODE_ID`), so every decision comes back over the wire. Mapping `acceptEdits` → `auto` skipped the folder check; `full` → `yolo` left no floor at all |
 | The model | Re-applied every turn rather than trusted to persist in harness settings |
-| The context window | The harness recognises a handful of model-id prefixes; Emma has the real number from the OpenRouter catalog |
+| The context window | The harness recognises a handful of model-id prefixes; Shinbo has the real number from the OpenRouter catalog |
 
 [`agent-loop.ts`](../desktop/main/agent-loop.ts) is not a loop: it starts and
 tracks a run, keeps the durable traces, owns the permission channel and Auto
@@ -75,7 +75,7 @@ Registered in [`builtins/tools.zig`](../harness/src/builtins/tools.zig):
 `mcp_features`, `ask_user_question`, `read_tool_result`, `search_tools`,
 `select_tool`, `vision`.
 
-Emma delegates file reading, writing, search, and shell entirely — she ships no
+Shinbo delegates file reading, writing, search, and shell entirely — she ships no
 `bash` of her own. `lsp` asks a real language server about one file: nine
 actions (`diagnostics`, `definition`, `type_definition`, `implementation`,
 `references`, `hover`, `document_symbols`, `workspace_symbols`, `servers`) over
@@ -85,38 +85,38 @@ a registry of about fifty servers in
 `symbol` finds the column, converted to LSP's 0-based UTF-16 positions on the
 way out.
 
-### Emma's, appended natively
+### Shinbo's, appended natively
 
-Emma's 27 tools are appended to the same registry as `++ emma_tools.all`, so the
+Shinbo's 27 tools are appended to the same registry as `++ shinbo_tools.all`, so the
 harness advertises and dispatches them and Electron runs them. One shared
-implementation, [`tools/emma/bridge.zig`](../harness/src/tools/emma/bridge.zig);
+implementation, [`tools/shinbo/bridge.zig`](../harness/src/tools/shinbo/bridge.zig);
 only the spec differs per tool.
 
 | Group | File | Tools |
 | --- | --- | --- |
-| Threads and agents | [`emma/threads.zig`](../harness/src/builtins/emma/threads.zig) | `threads`, `context`, `plan`, `goal`, `agents`, `read_trace` |
-| Task list | [`emma/task_list.zig`](../harness/src/builtins/emma/task_list.zig) | `task_list` — the one Emma tool advertised without a `select_tool` |
-| Knowledge | [`emma/knowledge.zig`](../harness/src/builtins/emma/knowledge.zig) | `keep`, `artifact`, `component`, `workflow`, `visualize` |
-| System | [`emma/system.zig`](../harness/src/builtins/emma/system.zig) | `cli`, `cli_runs`, `advisor`, `install_mcp`, `computer`, `secret` |
-| Extensions | [`emma/extensions.zig`](../harness/src/builtins/emma/extensions.zig) | `write_tool`, `run_tool`, `write_skill`, `write_plugin` |
-| Browser | [`emma/browser.zig`](../harness/src/builtins/emma/browser.zig) | `browser` |
-| Shortcuts | [`emma/shortcuts.zig`](../harness/src/builtins/emma/shortcuts.zig) | `shortcut` |
-| Name collisions | [`emma/overrides.zig`](../harness/src/builtins/emma/overrides.zig) | `memory`, `look_at_image`, `web_search` |
+| Threads and agents | [`shinbo/threads.zig`](../harness/src/builtins/shinbo/threads.zig) | `threads`, `context`, `plan`, `goal`, `agents`, `read_trace` |
+| Task list | [`shinbo/task_list.zig`](../harness/src/builtins/shinbo/task_list.zig) | `task_list` — the one Shinbo tool advertised without a `select_tool` |
+| Knowledge | [`shinbo/knowledge.zig`](../harness/src/builtins/shinbo/knowledge.zig) | `keep`, `artifact`, `component`, `workflow`, `visualize` |
+| System | [`shinbo/system.zig`](../harness/src/builtins/shinbo/system.zig) | `cli`, `cli_runs`, `advisor`, `install_mcp`, `computer`, `secret` |
+| Extensions | [`shinbo/extensions.zig`](../harness/src/builtins/shinbo/extensions.zig) | `write_tool`, `run_tool`, `write_skill`, `write_plugin` |
+| Browser | [`shinbo/browser.zig`](../harness/src/builtins/shinbo/browser.zig) | `browser` |
+| Shortcuts | [`shinbo/shortcuts.zig`](../harness/src/builtins/shinbo/shortcuts.zig) | `shortcut` |
+| Name collisions | [`shinbo/overrides.zig`](../harness/src/builtins/shinbo/overrides.zig) | `memory`, `look_at_image`, `web_search` |
 
 `Registry.lookup` returns the first match, so a duplicate name is a bug.
-`memory` goes to Emma (fx's is one `~/.fx/memories.json`; Emma's is a directory
+`memory` goes to Shinbo (fx's is one `~/.fx/memories.json`; Shinbo's is a directory
 tree under `<userData>/memories`) and so does `web_search` (fx's is dead on the
 ACP path — `.web_search_runtime_ready = false`). `web_fetch` stays fx's, already
 wired with an artifact store and progress. `vision` stays fx's because the
 gateway looks it up **by name** and forces it when a model that cannot see is
 handed an image; its advertisement is `.never`. It calls the route in
-`EMMA_VISION_*`, which is Emma's own Vision setting — the same model
-`look_at_image` asks. Emma's image tool is therefore
-`look_at_image`, mapped back to Emma's internal `vision` by
+`SHINBO_VISION_*`, which is Shinbo's own Vision setting — the same model
+`look_at_image` asks. Shinbo's image tool is therefore
+`look_at_image`, mapped back to Shinbo's internal `vision` by
 `HARNESS_TOOL_NAMES` in [`main.ts`](../desktop/main/main.ts).
 
-A native tool is registered process-wide, so Emma cannot hide one by omitting it
-from a per-turn list. `runEmmaTool` re-applies `toolGate(turn.mode, name,
+A native tool is registered process-wide, so Shinbo cannot hide one by omitting it
+from a per-turn list. `runShinboTool` re-applies `toolGate(turn.mode, name,
 disabledTools)` before running anything, and `whyUnavailable` answers in words
 the model can read — "`cli` needs a connected folder", or that computer use is
 not available on this platform.
@@ -146,7 +146,7 @@ for.
   names. Each named `.on_select` tool is advertised as if it were `.always` from
   the next step on, in addition to the base set. Unknown names are ignored,
   `.never` tools cannot be promoted, and an empty value clears the list. Both
-  options are per session, and Emma re-sends them every turn so an experiment
+  options are per session, and Shinbo re-sends them every turn so an experiment
   arm cannot leak into the next one.
 
 This is a prompt-cost mechanism, **not** a security boundary. A hidden tool is
@@ -158,10 +158,10 @@ Settings → Harness → zvec-grep mode is an experiment. Off, `semantic_search`
 is the harness's lexical ranker, hidden behind `search_tools`. On, every turn
 sends `session/set_config_option {configId: "semantic_grep"}` whose value is
 one stdio MCP-server-shaped entry (`{name, command, args, env}`): the command
-is Emma's own binary run as Node (`ELECTRON_RUN_AS_NODE=1`) on the downloaded
+is Shinbo's own binary run as Node (`ELECTRON_RUN_AS_NODE=1`) on the downloaded
 `@zvec/zvec-grep` CLI, and `env` carries `ZVEC_GREP_EMBEDDING` plus
-`ZVEC_GREP_HOME` = `~/.zvec-grep`. That home is passed to every `zg` Emma runs
-because the harness child's `HOME` is Emma's own `<userData>/harness`, and
+`ZVEC_GREP_HOME` = `~/.zvec-grep`. That home is passed to every `zg` Shinbo runs
+because the harness child's `HOME` is Shinbo's own `<userData>/harness`, and
 without it the harness would query a second, empty index home. With that set
 the harness advertises `semantic_search` always, with a schema and description
 that name it the default search covering both of zvec-grep's routes, and adds
@@ -188,7 +188,7 @@ to narrow the pattern or page with `grep_files`. On success, a
 appends one line saying how much of the tree the index covers and that no hits
 is not proof the code is absent. An empty value clears the option.
 
-Emma owns the index: the first turn in a connected folder runs
+Shinbo owns the index: the first turn in a connected folder runs
 `zg index <folder> --embedding <model> --embedding-concurrency 4` in the
 background (`--device metal` on Apple Silicon for the llama.cpp models), writes
 `<folder>/.zvec-grep/.gitignore` containing `*` so the index hides itself in
@@ -206,11 +206,11 @@ folders. Changing the model clears that memory and rebuilds on the next turn.
 Toggling on starts the `zg` daemon so queries are fast; changing the model
 restarts it with the new environment, kills any index still running, and
 revokes the workspace grants when the new model is local.
-Before `zg server on` Emma writes 48 random hex to `~/.zvec-grep/daemon/token`
+Before `zg server on` Shinbo writes 48 random hex to `~/.zvec-grep/daemon/token`
 (mode 0600, only when missing) and points the daemon at it with
 `ZVEC_GREP_SERVER_TOKEN_FILE`, because a daemon started without a token accepts
 every request on 127.0.0.1:7999; `zg` clients resolve that same path from
-`ZVEC_GREP_HOME`, so Emma's queries and a terminal on the same account keep
+`ZVEC_GREP_HOME`, so Shinbo's queries and a terminal on the same account keep
 working. The daemon and the index children get an allow-listed environment
 (`PATH`, `HOME`, `TMPDIR`, `ELECTRON_RUN_AS_NODE`, and `ZVEC_GREP_*`) so no
 provider key sits in a detached process. Toggling off or quitting stops it.
@@ -219,7 +219,7 @@ The picker's "Hosted" group (`hosted/…` ids in `HOSTED_EMBEDDING_MODELS`)
 covers OpenRouter's embeddings endpoint plus direct OpenAI and Gemini. zvec-grep
 knows one remote backend, `qwen/text-embedding-v4`, which posts an
 OpenAI-shaped request to whatever `ZVEC_GREP_ENDPOINT` names and expects 1024 floats
-back, so Emma's main process runs a loopback proxy: an `http` server on
+back, so Shinbo's main process runs a loopback proxy: an `http` server on
 127.0.0.1 at a port derived from the data directory (a stable port, because
 zvec-grep refuses to reuse an index whose endpoint changed), guarded by a
 per-launch bearer token. It rewrites `model` to the upstream id, keeps
@@ -236,9 +236,9 @@ is world-readable. If the proxy cannot bind its port the option stays empty and
 the folder fails with the bind error, so the harness never queries whatever
 else answers there. A hosted model whose key is missing leaves
 the option empty (the agent keeps keyword search) and marks the folder
-"Needs <KEY>"; Emma never substitutes another model.
+"Needs <KEY>"; Shinbo never substitutes another model.
 
-zvec-grep is not shipped inside Emma. Settings → Harness downloads
+zvec-grep is not shipped inside Shinbo. Settings → Harness downloads
 `zvec-grep-<version>-<platform>-<arch>.tar.gz` from the `zvec-grep-v<version>`
 GitHub release, checks it against the `.sha256` asset beside it, unpacks it with
 `zlib` and a tar reader that refuses absolute paths, `..` segments and links,
@@ -248,9 +248,9 @@ then deletes every other version. That directory is outside the app bundle, so a
 Squirrel or macOS update finds it already installed and downloads nothing; the
 index homes were already per-user and do not move
 (`~/.zvec-grep` for the daemon, `<folder>/.zvec-grep/` per folder), so upgrading
-Emma never rebuilds a vector index. Downloading is required in both modes,
+Shinbo never rebuilds a vector index. Downloading is required in both modes,
 because a hosted model still indexes through the same local tool. The card in
-Settings shows the phase, the bytes and a Cancel button, and `EMMA_TOOLS_URL`
+Settings shows the phase, the bytes and a Cancel button, and `SHINBO_TOOLS_URL`
 repoints the origin for a local rehearsal.
 `scripts/pack-zvec-grep.mjs` vendors the tree with `scripts/vendor-zvec-grep.mjs`,
 pruned to the host platform's onnxruntime binaries, and packs those two assets;
@@ -260,26 +260,26 @@ app both read, and the third-party licences travel inside the tarball.
 
 ## The ACP wire
 
-Newline-delimited JSON-RPC 2.0 over the child's stdio. Emma spawns `emma-cli
+Newline-delimited JSON-RPC 2.0 over the child's stdio. Shinbo spawns `shinbo-cli
 acp` once per workspace directory, at most `MAX_HARNESSES = 4` alive at once
 (least-recently-used; `reapHarnesses` never closes one with a call in flight).
 
 - `cwd` is the workspace. The harness derives its workspace root from its own
   cwd at startup and ignores the per-session `cwd`, so the **process** is what a
   run is confined to; `prompt()` refuses a turn whose `cwd` does not match.
-- `HOME` is `<userData>/harness`, a profile of Emma's own, so the harness never
+- `HOME` is `<userData>/harness`, a profile of Shinbo's own, so the harness never
   reads the user's `~/.fx`.
-- `AI_GATEWAY_API_KEY` and `EMMA_PROVIDER_API_KEY` are both set from Emma's
+- `AI_GATEWAY_API_KEY` and `SHINBO_PROVIDER_API_KEY` are both set from Shinbo's
   `OPENROUTER_API_KEY`; both names, while the Vercel vocabulary is being removed.
-- `EMMA_VISION_MODEL`, `EMMA_VISION_CHAT_URL` and `EMMA_VISION_API_KEY` carry
+- `SHINBO_VISION_MODEL`, `SHINBO_VISION_CHAT_URL` and `SHINBO_VISION_API_KEY` carry
   Settings → Tools → Vision to the forced `vision` tool, which would otherwise
   ask the session's own endpoint for a model that endpoint has never heard of.
   Unset, the tool keeps its built-in default on the session route. The key
   travels only with its own URL, so a session credential never reaches another
   host. Saving tool settings recycles the idle processes that hold the old
   values.
-- `EMMA_REVIEWER_MODEL`, `EMMA_REVIEWER_CHAT_URL` and `EMMA_REVIEWER_API_KEY` do
-  the same for the automatic permission reviewer behind `emma-cli --auto`, whose
+- `SHINBO_REVIEWER_MODEL`, `SHINBO_REVIEWER_CHAT_URL` and `SHINBO_REVIEWER_API_KEY` do
+  the same for the automatic permission reviewer behind `shinbo-cli --auto`, whose
   built-in slug is an OpenRouter one; on another provider every reviewed call
   would fail the review and be denied. The same pairing rule applies: the key
   travels only with its own URL.
@@ -290,7 +290,7 @@ the process is wedged, so the whole client is failed and closed rather than left
 holding a turn no reply will ever end: `harnessClient` then spawns a fresh one
 and `session/resume` brings the thread back, the same recovery suspend uses.
 
-Those timers count only the time Emma was awake, which is why suspend needs its
+Those timers count only the time Shinbo was awake, which is why suspend needs its
 own path. When the operating system suspends the process and takes the model's
 socket with it, neither end reads the end of that stream, so the turn would sit
 at "searching" for as long as the machine slept. On Electron's `resume`,
@@ -302,7 +302,7 @@ process, `session/resume` brings the same session back off disk, and the turn is
 prompted to carry on from its last finished step. A run the user stopped is left
 stopped.
 
-### Methods Emma calls
+### Methods Shinbo calls
 
 `AcpMethod.parse` in [`acp/server.zig`](../harness/src/acp/server.zig) accepts
 fourteen:
@@ -317,7 +317,7 @@ fourteen:
 | `session/prompt` | Runs one turn |
 | `session/compact` | Folds history. An optional `handoff` string (≤ 20 000 chars) becomes the next window's opening record when `fresh_context=1` is set. Refused mid-turn |
 | `session/set_config_option` | `model`, `mode`, `context_window`, `reasoning_effort`, `context_experiments`, `semantic_grep`, `tool_hints`, `preselect`, `agent_step_limit`, `image_input` |
-| `session/set_mode` | `modeId` from [`builtins/modes.zig`](../harness/src/builtins/modes.zig): `plan`, `ask`, `acceptEdits`, `full`. Emma always sends `ask` |
+| `session/set_mode` | `modeId` from [`builtins/modes.zig`](../harness/src/builtins/modes.zig): `plan`, `ask`, `acceptEdits`, `full`. Shinbo always sends `ask` |
 | `session/cancel` | A notification, not a request — cancellation has no reply and must not hang on a wedged peer |
 | `session/steer` | Cuts into the running turn: the tool call or model stream in flight is aborted, and the same turn carries on with `content` as its next user message. Refused when no turn is running, over 16 KiB, or more than 8 deep |
 | `session/steer_child` | Queues a message for one running subagent by `childId`, not queued behind the active prompt |
@@ -337,7 +337,7 @@ before prompting its thread again, and runs one turn at a time per process.
 Notifications on `session/update`, written by
 [`acp/types.zig`](../harness/src/acp/types.zig):
 
-| `sessionUpdate` | Emma does |
+| `sessionUpdate` | Shinbo does |
 | --- | --- |
 | `agent_message_chunk` | `onDelta` — the answer, streamed |
 | `agent_thought_chunk` | `onThought` — reasoning, on its own channel |
@@ -349,7 +349,7 @@ Notifications on `session/update`, written by
 
 Subagents ride the parent's stream — ACP has no nested sessions. A child tags
 its updates with `_meta.fx.child` (`{id, title, state}`) and `childTag` fans
-them onto an Emma thread of the child's own. Untagged, a child's words would
+them onto a Shinbo thread of the child's own. Untagged, a child's words would
 land in the parent's durable answer.
 
 A child's `session/request_permission` carries the same tag, so its question is
@@ -364,15 +364,15 @@ hit a gated call sat in `awaiting_approval` forever with nothing on screen.
 1. `session/set_mode`, then `session/set_config_option` for `model`,
    `context_window`, and `context_experiments`. Experiments go out every turn
    even when all off — the harness holds them per session.
-2. `session/compact` if Emma asked for one last turn, carrying the `handoff`
+2. `session/compact` if Shinbo asked for one last turn, carrying the `handoff`
    the model gave the `context` tool. Best effort.
 3. `session/prompt` with content blocks. Skills, folders, files, and notes ride
    as a separate leading text block, not glued to the user's words.
-4. Updates stream; permission requests and Emma-tool calls come back as
+4. Updates stream; permission requests and Shinbo-tool calls come back as
    requests.
 5. Resolves with `{stopReason, usage: {inputTokens, outputTokens}}`. `usage` is
-   an Emma extension — upstream ACP has no such field, and it is the only place
-   a turn's real token counts exist on Emma's side.
+   a Shinbo extension — upstream ACP has no such field, and it is the only place
+   a turn's real token counts exist on Shinbo's side.
 
 Stop reasons: `end_turn`, `cancelled`, `refused`, `max_output_tokens`,
 `max_model_turns`. `failedTurn` treats `refused` as a failure, because the
@@ -393,17 +393,17 @@ compact advance; the canonical history on disk is untouched. What differs:
   nested inside a later one. The record starts with "Context window starts
   here" and names `threads`, `read_trace`, `goal`, `task_list` and `keep` as
   the way back to what was dropped.
-- `_emma_compacted` carries `fresh: true` and the `handoff` text, and
+- `_shinbo_compacted` carries `fresh: true` and the `handoff` text, and
   `modelWritten` means the model wrote the handoff rather than the harness
   recording one.
 - Once a step's projection is within 10 % of the compact mark, the step's
   request gains a `[checkpoint]` user message telling the model to save its
   state and call `context` with `compact: true` and a `handoff`. It rides the
-  `contextExperiment` info update as `checkpoint`; Emma shows the first one per
+  `contextExperiment` info update as `checkpoint`; Shinbo shows the first one per
   window as a steer.
 
 The handoff lives in the harness process only until the next prompt builds the
-compacted turn, which is the very next request Emma sends; a restart between
+compacted turn, which is the very next request Shinbo sends; a restart between
 the two falls back to the automatic record.
 
 ### Permission
@@ -411,7 +411,7 @@ the two falls back to the automatic record.
 `requestAcpPermission` in [`acp/prompt.zig`](../harness/src/acp/prompt.zig)
 sends `session/request_permission` with the tool call and three options —
 `allow_once`, `allow_always`, `reject_once` — and the prompt thread blocks.
-Emma answers `{"outcome": {"outcome": "selected", "optionId": "..."}}` or
+Shinbo answers `{"outcome": {"outcome": "selected", "optionId": "..."}}` or
 `{"outcome": {"outcome": "cancelled"}}`. `parsePermissionDecision` maps
 `allow_once` → once, `allow_always` → always, `reject_once` and `cancelled` →
 deny, and **anything unparseable → deny**. At most 32 outbound requests may be
@@ -431,22 +431,22 @@ upstream would turn "Allow once" into a session-wide grant. A denial picks
 A permission dialog titled `file_mutation` is retitled with the path
 (`describePath` reads `path`, `new_path`, `destination`, `old_path`, `source`).
 
-### `_emma/callTool`
+### `_shinbo/callTool`
 
-Emma's tools read and write Electron's durable stores, so the harness never
+Shinbo's tools read and write Electron's durable stores, so the harness never
 executes one. It advertises the tool, checks the arguments are a JSON object,
-and writes `_emma/callTool` with `{sessionId, toolCallId, name, arguments}` on
+and writes `_shinbo/callTool` with `{sessionId, toolCallId, name, arguments}` on
 the same outbound registry permission and elicitation use, then blocks. There is
 no deadline — connecting a folder or running a thread can take minutes — and the
 only way out other than a reply is the user cancelling.
 
 Arguments are embedded rather than re-encoded, so the client sees exactly what
-the model wrote. Emma replies with `{"output": "..."}` and nothing else. A tool
+the model wrote. Shinbo replies with `{"output": "..."}` and nothing else. A tool
 that refuses or throws answers with `output` **text**, not a JSON-RPC error: the
 model recovers from the first and treats the second as a broken channel. The
 error path is only for a request that never named a live thread
-(`-32602 Unknown session or tool`). Run plain `emma-cli` with no responder and
-an Emma tool answers `This tool is only available inside Emma.`, so the turn
+(`-32602 Unknown session or tool`). Run plain `shinbo-cli` with no responder and
+a Shinbo tool answers `This tool is only available inside Shinbo.`, so the turn
 survives.
 
 This replaced a localhost MCP server (`desktop/main/bridge.ts`, deleted) that
@@ -482,12 +482,12 @@ map is dropped; clearing the reverse routing would silence the running turn.
 ## Watching the wire
 
 The status line in the sidebar foot is the door onto the harness. It is a
-button: it opens a dialog holding every process Emma is keeping, the JSON-RPC
+button: it opens a dialog holding every process Shinbo is keeping, the JSON-RPC
 traffic in both directions, and the two things to do when something is wrong.
 
 `Harness` reports each message it writes or reads through the `onLog` dep,
 along with stderr and the reason a process stopped. `main.ts` keeps the last
-500 lines in a ring buffer and broadcasts each one, so what Emma hands the
+500 lines in a ring buffer and broadcasts each one, so what Shinbo hands the
 agent is readable while a turn runs rather than only after it fails.
 
 Streamed answer chunks (`agent_message_chunk`, `agent_thought_chunk`) are the
@@ -502,7 +502,7 @@ The dot reads four states, from `harnessHealth` in
 | Ready | No process yet. The next turn starts one |
 | Online | A process is up and answering |
 | Stalled | A turn is in flight and the process has said nothing for two minutes |
-| Offline | Every process is dead of something Emma did not ask for. A close Emma performed itself — the reaper, quitting — is `ready`, not a fault |
+| Offline | Every process is dead of something Shinbo did not ask for. A close Shinbo performed itself — the reaper, quitting — is `ready`, not a fault |
 
 Two actions sit under the log. **Restart agent** closes every process and clears
 the pool, so the next turn spawns a fresh one; a turn in flight is dropped, and
@@ -578,7 +578,7 @@ turns; one on the last durable-history message before the turn's prompt, which
 is the same bytes for every step of the turn; and one on the last cacheable
 message before the overlay, which moves forward each step. Nothing after a
 `no_cache` message is ever marked. For OpenAI-shaped hosts that cache automatically (OpenRouter,
-`api.openai.com`, any loopback gateway including Emma's ChatGPT relay) the
+`api.openai.com`, any loopback gateway including Shinbo's ChatGPT relay) the
 request carries a
 `prompt_cache_key` derived from the session id, the same opaque hash as the
 `x-session-id` affinity header, so consecutive steps land on the same cache.
@@ -640,7 +640,7 @@ stops sending it for the life of the process.
 | Tool description, to the model | 4 KiB, then `... [truncated]` | `description_max_bytes`, [`gateway_schema.zig`](../harness/src/core/tooling/gateway_schema.zig) |
 | Tool result, to the model | 64 KiB | `default_max_tool_result_bytes`, [`tool_result_limits.zig`](../harness/src/core/tooling/tool_result_limits.zig) |
 | Tool output in a `tool_call_update` | 200 bytes, UTF-8 safe | `toolUpdateContentText`, [`acp/prompt.zig`](../harness/src/acp/prompt.zig) |
-| Emma tool output over `_emma/callTool` | 64 KiB | `MAX_TOOL_OUTPUT_BYTES`, [`harness.ts`](../desktop/main/harness.ts) |
+| Shinbo tool output over `_shinbo/callTool` | 64 KiB | `MAX_TOOL_OUTPUT_BYTES`, [`harness.ts`](../desktop/main/harness.ts) |
 | One JSON-RPC line | 8 MiB | `MAX_LINE_BYTES`, [`harness.ts`](../desktop/main/harness.ts) |
 | Tool arguments kept for the transcript | 4096 chars | `rawInput`, [`harness.ts`](../desktop/main/harness.ts) |
 | Pending outbound requests | 32 | `max_pending_outbound`, [`acp/server.zig`](../harness/src/acp/server.zig) |
@@ -652,22 +652,22 @@ The description cap was fx's 1024 and is now 4 KiB, matching
 `MAX_TOOL_DESCRIPTION_BYTES` in [`tools.ts`](../desktop/main/tools.ts).
 `cappedDescriptionAlloc` truncates silently, and at 1024 `plan` lost its
 `update` and `delete` lines. A test in
-[`emma_tools.zig`](../harness/src/builtins/emma_tools.zig) fails the build if
-any Emma description grows past the cap.
+[`shinbo_tools.zig`](../harness/src/builtins/shinbo_tools.zig) fails the build if
+any Shinbo description grows past the cap.
 
 Binary or non-UTF-8 output becomes `binary or non-utf8 tool output omitted`. A
 permission-denied result is sent whole, not previewed.
 
 ## Standing instructions
 
-Emma does not send her system prompt over the wire. `writeHarnessPrompt` in
+Shinbo does not send her system prompt over the wire. `writeHarnessPrompt` in
 [`system-prompt.ts`](../desktop/main/system-prompt.ts) writes a file instead,
 read by [`builtins/context.zig`](../harness/src/builtins/context.zig) out of
-the `HOME` Emma gives the child:
+the `HOME` Shinbo gives the child:
 
 | File | Is |
 | --- | --- |
-| `.fx/system-prompt-<hash>.md`, named in `EMMA_SYSTEM_PROMPT` | The resolved Settings prompt, in place of the agent's own. `systemPrompt()` reads it at the top of each turn and appends its `# Tools and verification` section back under it — that section is not replaceable, because an agent never told to call `search_tools` cannot reach a single tool. An empty or missing file leaves the built-in prompt whole. `.fx/system-prompt.md` is the fallback when the variable is unset. |
+| `.fx/system-prompt-<hash>.md`, named in `SHINBO_SYSTEM_PROMPT` | The resolved Settings prompt, in place of the agent's own. `systemPrompt()` reads it at the top of each turn and appends its `# Tools and verification` section back under it — that section is not replaceable, because an agent never told to call `search_tools` cannot reach a single tool. An empty or missing file leaves the built-in prompt whole. `.fx/system-prompt.md` is the fallback when the variable is unset. |
 | `.fx/AGENTS.md` | Written empty. Kept improvements loaded here as `<global-rules>` until they moved into the prompt file. |
 
 It is rewritten per turn, so a kept improvement, a scoped preset and a per-turn
@@ -681,14 +681,14 @@ Skills work the same way — see
 | Directory | Owns |
 | --- | --- |
 | `acp/` | The JSON-RPC server: `server.zig` (dispatch, session state, outbound registry), `prompt.zig` (one turn), `sessions.zig`, `types.zig`, `jsonrpc.zig`, `mcp_servers.zig` |
-| `builtins/` | The registries: `tools.zig`, `emma_tools.zig` + `emma/`, `modes.zig`, `skills.zig`, `hooks.zig`, `mcp.zig`, `commands.zig`, `context.zig` (the built-in prompt, `system-prompt.md` and `AGENTS.md`) |
+| `builtins/` | The registries: `tools.zig`, `shinbo_tools.zig` + `shinbo/`, `modes.zig`, `skills.zig`, `hooks.zig`, `mcp.zig`, `commands.zig`, `context.zig` (the built-in prompt, `system-prompt.md` and `AGENTS.md`) |
 | `core/` | Everything with state: `agent/runtime/` (the loop), `tooling/`, `permissions/`, `session/`, `mcp/`, `lsp/`, `skills/`, `hooks/`, `subagent/`, `workspace/`, `terminal/`, `execution/` |
-| `gateway/` | Provider transport only. `emma_openai.zig` holds `default_chat_url` and `chat_url_env` |
+| `gateway/` | Provider transport only. `shinbo_openai.zig` holds `default_chat_url` and `chat_url_env` |
 | `tools/` | Implementations. Specs live in `builtins/tools.zig`, not here |
-| `ui/` | The terminal front end. Emma never sees any of it |
+| `ui/` | The terminal front end. Shinbo never sees any of it |
 
 `main.zig` is the composition root. The `wasm_*` and `napi_*` entry points serve
-upstream's `libfx` package in [`harness/sdk/`](../harness/sdk), which Emma
+upstream's `libfx` package in [`harness/sdk/`](../harness/sdk), which Shinbo
 neither builds nor ships.
 
 ## Building and testing
@@ -702,12 +702,12 @@ npm --prefix desktop run build:harness   # the one script
 (cd harness && zig build test)           # the only Zig test suite in the repo
 ```
 
-`build:host` chains it after `emma-host` — so `npm run dev` and `npm start`
+`build:host` chains it after `shinbo-host` — so `npm run dev` and `npm start`
 reach it that way — and the package scripts run `zig build -Doptimize=ReleaseSafe`
-inline. Nothing else builds `emma-cli`: `npm run build` and `npm run check` do
-not, so a stale binary survives both. A checkout uses `harness/zig-out/bin/emma-cli` on macOS or
-`harness/zig-out/bin/emma-cli.exe` on Windows (`DEV_BINARIES` in `main.ts`); a
-packaged app has it in its resources directory (`Emma.app/Contents/Resources/`
+inline. Nothing else builds `shinbo-cli`: `npm run build` and `npm run check` do
+not, so a stale binary survives both. A checkout uses `harness/zig-out/bin/shinbo-cli` on macOS or
+`harness/zig-out/bin/shinbo-cli.exe` on Windows (`DEV_BINARIES` in `main.ts`); a
+packaged app has it in its resources directory (`Shinbo.app/Contents/Resources/`
 on macOS, `resources/` on Windows).
 
 ### Against a fake provider
@@ -719,20 +719,20 @@ network:
 
 ```sh
 node harness/scripts/mock-openai.mjs 8099 &
-EMMA_PROVIDER_API_KEY=anything \
-EMMA_PROVIDER_CHAT_URL=http://127.0.0.1:8099/v1/chat/completions \
-  harness/zig-out/bin/emma-cli acp
+SHINBO_PROVIDER_API_KEY=anything \
+SHINBO_PROVIDER_CHAT_URL=http://127.0.0.1:8099/v1/chat/completions \
+  harness/zig-out/bin/shinbo-cli acp
 ```
 
-On Windows, use `harness/zig-out/bin/emma-cli.exe acp`.
+On Windows, use `harness/zig-out/bin/shinbo-cli.exe acp`.
 
 | Variable | Effect |
 | --- | --- |
-| `EMMA_PROVIDER_API_KEY` | The only credential source. There is no sign-in surface |
-| `EMMA_PROVIDER_CHAT_URL` | Read by `chatUrl()` in [`gateway/emma_openai.zig`](../harness/src/gateway/emma_openai.zig). Unset falls back to `https://openrouter.ai/api/v1/chat/completions`. Also points at a local llama-server |
-| `EMMA_OPENROUTER_ZDR` | Any non-empty value adds OpenRouter's `data_collection: "deny"` and `zdr: true`. Opt-in, because most free endpoints offer neither |
-| `EMMA_UPGRADE_BASE_URL` | Loopback E2E override only; emma-cli ships inside the app and has nothing to self-update from |
-| `EMMA_STREAM_SILENCE_MS` | How long a provider call in [`gateway/emma_openai.zig`](../harness/src/gateway/emma_openai.zig) may deliver nothing at all before the attempt is abandoned with `error.Timeout`, which reaches the recovery policy as an interrupted response and is retried like any other. Default 180000; `0` waits forever |
+| `SHINBO_PROVIDER_API_KEY` | The only credential source. There is no sign-in surface |
+| `SHINBO_PROVIDER_CHAT_URL` | Read by `chatUrl()` in [`gateway/shinbo_openai.zig`](../harness/src/gateway/shinbo_openai.zig). Unset falls back to `https://openrouter.ai/api/v1/chat/completions`. Also points at a local llama-server |
+| `SHINBO_OPENROUTER_ZDR` | Any non-empty value adds OpenRouter's `data_collection: "deny"` and `zdr: true`. Opt-in, because most free endpoints offer neither |
+| `SHINBO_UPGRADE_BASE_URL` | Loopback E2E override only; shinbo-cli ships inside the app and has nothing to self-update from |
+| `SHINBO_STREAM_SILENCE_MS` | How long a provider call in [`gateway/shinbo_openai.zig`](../harness/src/gateway/shinbo_openai.zig) may deliver nothing at all before the attempt is abandoned with `error.Timeout`, which reaches the recovery policy as an interrupted response and is retried like any other. Default 180000; `0` waits forever |
 
 Larger suites: [`harness/tests/e2e/`](../harness/tests/e2e) (TypeScript, `bun
 test`, spawns the built binary with a fake key and never reaches a provider;
@@ -743,8 +743,8 @@ or CI rejects it), [`harness/tests/evals/`](../harness/tests/evals)
 
 ## See also
 
-- [architecture.md](architecture.md) — how the harness sits beside `emma-host`
+- [architecture.md](architecture.md) — how the harness sits beside `shinbo-host`
 - [permissions.md](permissions.md) — the modes the harness maps onto
-- [tools.md](tools.md) — what each of Emma's tools does
+- [tools.md](tools.md) — what each of Shinbo's tools does
 - [plugins.md](plugins.md) — skills, MCP, and the plugin format
-- [credits.md](credits.md) — everything Emma is built on
+- [credits.md](credits.md) — everything Shinbo is built on

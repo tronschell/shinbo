@@ -33,10 +33,10 @@ import {
 
 const TIMEOUT = 15_000;
 const NO_GATEWAY_AUTH = {
-  EMMA_PROVIDER_API_KEY: undefined,
+  SHINBO_PROVIDER_API_KEY: undefined,
 };
 const MISSING_AUTH_MESSAGE =
-  "emma-cli has no provider credential. Set EMMA_PROVIDER_API_KEY.";
+  "shinbo-cli has no provider credential. Set SHINBO_PROVIDER_API_KEY.";
 
 function maxLineWidth(text: string): number {
   return Math.max(...text.split(/\r?\n/).map((line) => Bun.stringWidth(line)));
@@ -121,7 +121,7 @@ describe("cli: help", () => {
       expect(r.stdout).not.toContain("\x1b[");
       expect(r.stdout).not.toContain("\x1b]2;");
       expect(r.stdout).toStartWith(
-        `emma v${sourceVersion()}\nFast, native coding agent for the terminal.\n`,
+        `shinbo v${sourceVersion()}\nFast, native coding agent for the terminal.\n`,
       );
       expect(r.stdout).toContain("Commands:\n");
       expect(r.stdout).toContain("Run one noninteractive request");
@@ -337,7 +337,7 @@ describe("cli: status", () => {
       try {
         const env = {
           HOME: realpathSync(home),
-          EMMA_PROVIDER_API_KEY: "mcp-config-diagnostic-key",
+          SHINBO_PROVIDER_API_KEY: "mcp-config-diagnostic-key",
           FX_DISABLE_KEYCHAIN: "1",
           FX_AUTO_UPGRADE: "0",
           FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -1220,7 +1220,7 @@ describe("cli: doctor", () => {
   );
 });
 
-// The file backend is only selected off macOS, so these run on Linux CI.
+
 describe("cli: read-only no-create matrix", () => {
   const probes = [
     { args: ["status", "--json"], code: 0, kind: "status" },
@@ -1296,7 +1296,7 @@ describe("cli: missing durable home", () => {
 
         const status = await runFx(["status", "--json"], {
           cwd,
-          env: { ...baseEnv, EMMA_PROVIDER_API_KEY: undefined },
+          env: { ...baseEnv, SHINBO_PROVIDER_API_KEY: undefined },
           timeoutMs: TIMEOUT,
         });
         expect(status.code).toBe(0);
@@ -1306,7 +1306,7 @@ describe("cli: missing durable home", () => {
 
         const listed = await runFx(["sessions", "--json"], {
           cwd,
-          env: { ...baseEnv, EMMA_PROVIDER_API_KEY: undefined },
+          env: { ...baseEnv, SHINBO_PROVIDER_API_KEY: undefined },
           timeoutMs: TIMEOUT,
         });
         expect(listed.code).toBe(0);
@@ -1323,7 +1323,7 @@ describe("cli: missing durable home", () => {
             cwd,
             env: {
               ...baseEnv,
-              EMMA_PROVIDER_API_KEY: "missing-home-key",
+              SHINBO_PROVIDER_API_KEY: "missing-home-key",
               FX_GATEWAY_BASE_URL: gateway.baseUrl,
               FX_GATEWAY_CHAT_URL: gateway.chatUrl,
               FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -2300,7 +2300,7 @@ function writeBackgroundSession(args: {
 
 function modelsGatewayEnv(home: string, modelsUrl: string) {
   return {
-    EMMA_PROVIDER_API_KEY: SEEDED_GATEWAY_TOKEN,
+    SHINBO_PROVIDER_API_KEY: SEEDED_GATEWAY_TOKEN,
     HOME: home,
     FX_DISABLE_KEYCHAIN: "1",
     FX_AUTO_UPGRADE: "0",
@@ -2320,7 +2320,7 @@ describe("cli: models", () => {
       name: "an ordinary public empty catalog",
       authenticated: false,
       expected:
-        "[models] no models returned by gateway\n[models] Using the public model catalog; set EMMA_PROVIDER_API_KEY for provider-private models.\n",
+        "[models] no models returned by gateway\n[models] Using the public model catalog; set SHINBO_PROVIDER_API_KEY for provider-private models.\n",
     },
     {
       name: "a rejected credential empty fallback catalog",
@@ -2411,7 +2411,7 @@ describe("cli: models", () => {
           const events = catalogTraceEvents(trace);
           expect(events).toHaveLength(1);
           expect(events[0]).toContain(
-            `requested_access=authenticated credential_source=emma_provider_api_key effective_access=public_only public_only_reason=authenticated_credential_rejected anonymous_fallback=true outcome=loaded failure_category=authentication http_status=${rejectedStatus} retryable=false`,
+            `requested_access=authenticated credential_source=shinbo_provider_api_key effective_access=public_only public_only_reason=authenticated_credential_rejected anonymous_fallback=true outcome=loaded failure_category=authentication http_status=${rejectedStatus} retryable=false`,
           );
           for (const secret of [SEEDED_GATEWAY_TOKEN]) {
             expect(trace).not.toContain(secret);
@@ -2594,7 +2594,7 @@ describe("cli: models", () => {
           env: {
             HOME: home,
             FX_DISABLE_KEYCHAIN: "1",
-            EMMA_PROVIDER_API_KEY: "redirect-proof-key",
+            SHINBO_PROVIDER_API_KEY: "redirect-proof-key",
             FX_E2E_GATEWAY_MODELS_URL: `http://127.0.0.1:${redirectServer.port}/v1/models`,
           },
         });
@@ -2616,7 +2616,7 @@ describe("cli: models", () => {
     TIMEOUT,
   );
 
-  // Mirror the gateway's credential handling for private model catalogs.
+
   for (const scenario of [
     {
       name: "uses the anonymous public catalog without a credential",
@@ -2628,11 +2628,11 @@ describe("cli: models", () => {
     },
     {
       name: "sends an API key so the catalog includes team-private models",
-      authEnv: { EMMA_PROVIDER_API_KEY: SEEDED_GATEWAY_TOKEN },
+      authEnv: { SHINBO_PROVIDER_API_KEY: SEEDED_GATEWAY_TOKEN },
       expectAuthHeader: true,
       expectPrivate: true,
       expectedTrace:
-        "requested_access=authenticated credential_source=emma_provider_api_key effective_access=authenticated public_only_reason=none anonymous_fallback=false outcome=loaded failure_category=none http_status=none retryable=none",
+        "requested_access=authenticated credential_source=shinbo_provider_api_key effective_access=authenticated public_only_reason=none anonymous_fallback=false outcome=loaded failure_category=none http_status=none retryable=none",
     },
   ]) {
     test(
@@ -2787,7 +2787,7 @@ describe("cli: ask input validation", () => {
           env: {
             ...NO_GATEWAY_AUTH,
             HOME: realpathSync(home),
-            EMMA_PROVIDER_API_KEY: "invalid-utf8-proof-key",
+            SHINBO_PROVIDER_API_KEY: "invalid-utf8-proof-key",
             FX_DISABLE_KEYCHAIN: "1",
             FX_E2E_GATEWAY_CHAT_URL: `http://127.0.0.1:${server.port}/ai/v1/chat/completions`,
           },
@@ -2922,7 +2922,7 @@ describe("cli: ask success", () => {
             cwd: realpathSync(workspace),
             env: {
               HOME: realpathSync(home),
-              EMMA_PROVIDER_API_KEY: "fake-explicit-skill-key",
+              SHINBO_PROVIDER_API_KEY: "fake-explicit-skill-key",
               FX_GATEWAY_BASE_URL: gateway.baseUrl,
               FX_GATEWAY_CHAT_URL: gateway.chatUrl,
               FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -2977,7 +2977,7 @@ describe("cli: ask success", () => {
               cwd: realpathSync(workspace),
               env: {
                 HOME: home,
-                EMMA_PROVIDER_API_KEY: "fake-large-stdin-key",
+                SHINBO_PROVIDER_API_KEY: "fake-large-stdin-key",
                 FX_GATEWAY_BASE_URL: gateway.baseUrl,
                 FX_GATEWAY_CHAT_URL: gateway.chatUrl,
                 FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3071,7 +3071,7 @@ describe("cli: ask success", () => {
             cwd: realpathSync(workspace),
             env: {
               HOME: home,
-              EMMA_PROVIDER_API_KEY: "fake-portable-ask-key",
+              SHINBO_PROVIDER_API_KEY: "fake-portable-ask-key",
               FX_GATEWAY_BASE_URL: gateway.baseUrl,
               FX_GATEWAY_CHAT_URL: gateway.chatUrl,
               FX_E2E_GATEWAY_MODELS_URL: `${gateway.baseUrl}/coding-agent/v1/models`,
@@ -3193,7 +3193,7 @@ describe("cli: ask success", () => {
             cwd: workspaceRoot,
             env: {
               HOME: realpathSync(savedHome),
-              EMMA_PROVIDER_API_KEY: "fake-ask-persistence-key",
+              SHINBO_PROVIDER_API_KEY: "fake-ask-persistence-key",
               FX_GATEWAY_BASE_URL: gateway.baseUrl,
               FX_GATEWAY_CHAT_URL: gateway.chatUrl,
               FX_E2E_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -3233,7 +3233,7 @@ describe("cli: ask success", () => {
             cwd: workspaceRoot,
             env: {
               HOME: realpathSync(savedHome),
-              EMMA_PROVIDER_API_KEY: "fake-ask-persistence-key",
+              SHINBO_PROVIDER_API_KEY: "fake-ask-persistence-key",
               FX_GATEWAY_BASE_URL: gateway.baseUrl,
               FX_GATEWAY_CHAT_URL: gateway.chatUrl,
               FX_E2E_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -3271,7 +3271,7 @@ describe("cli: ask success", () => {
             cwd: workspaceRoot,
             env: {
               HOME: realpathSync(noSaveHome),
-              EMMA_PROVIDER_API_KEY: "fake-ask-persistence-key",
+              SHINBO_PROVIDER_API_KEY: "fake-ask-persistence-key",
               FX_GATEWAY_BASE_URL: gateway.baseUrl,
               FX_GATEWAY_CHAT_URL: gateway.chatUrl,
               FX_E2E_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -3318,7 +3318,7 @@ describe("cli: ask success", () => {
         const workspaceRoot = realpathSync(workspace);
         const env = {
           HOME: realpathSync(home),
-          EMMA_PROVIDER_API_KEY: "fake-session-cache-contention-key",
+          SHINBO_PROVIDER_API_KEY: "fake-session-cache-contention-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_E2E_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -3503,7 +3503,7 @@ describe("cli: error handling", () => {
         mkdirSync(workspace);
         const env = {
           HOME: realpathSync(home),
-          EMMA_PROVIDER_API_KEY: "ask-options-key",
+          SHINBO_PROVIDER_API_KEY: "ask-options-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3579,7 +3579,7 @@ describe("cli: error handling", () => {
         mkdirSync(workspace);
         const env = {
           HOME: realpathSync(home),
-          EMMA_PROVIDER_API_KEY: "ask-conflict-key",
+          SHINBO_PROVIDER_API_KEY: "ask-conflict-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: FAKE_GATEWAY_MODEL,

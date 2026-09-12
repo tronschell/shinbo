@@ -30,7 +30,6 @@ pub const FailureSnapshot = struct {
         };
     }
 
-    /// Returns owned, detail-free text. The caller owns the returned slice.
     pub fn renderText(self: FailureSnapshot, alloc: Allocator) ![]u8 {
         var out: std.Io.Writer.Allocating = .init(alloc);
         defer out.deinit();
@@ -48,7 +47,6 @@ pub const FailureSnapshot = struct {
         return try out.toOwnedSlice();
     }
 
-    /// Returns owned JSON containing only the shared auth-failure facts.
     pub fn renderJson(self: FailureSnapshot, alloc: Allocator) ![]u8 {
         var out: std.Io.Writer.Allocating = .init(alloc);
         defer out.deinit();
@@ -89,7 +87,6 @@ pub const StatusSnapshot = struct {
         };
     }
 
-    /// Returns owned doctor status text containing no credential bytes.
     pub fn formatDoctorDetail(self: StatusSnapshot, alloc: Allocator) ![]u8 {
         if (self.missingHelp(.cli)) |help| return alloc.dupe(u8, help);
         return std.fmt.allocPrint(alloc, "{s} is configured", .{self.activeSourceLabel()});
@@ -116,8 +113,6 @@ pub const GatewayCredential = struct {
     source: credentials.Source,
 };
 
-/// Owns the one credential for the process. Emma injects it through the
-/// environment, so there is nothing to pick, refresh, or sign in to.
 pub const Runtime = struct {
     const Self = @This();
 
@@ -134,7 +129,6 @@ pub const Runtime = struct {
         self.* = .{};
     }
 
-    /// Borrows the current credential until this runtime replaces or releases it.
     pub fn gatewayCredential(self: *const Self) ?GatewayCredential {
         const credential = self.selected_credential orelse return null;
         return .{ .api_key = credential.token, .source = credential.source };
@@ -177,14 +171,13 @@ pub const Runtime = struct {
     pub fn refreshSourceInventory(self: *Self, alloc: Allocator) !void {
         _ = alloc;
         var detected: SourceSet = .empty;
-        if (credentials.sourceExists(.emma_provider_api_key)) {
-            detected.insert(.emma_provider_api_key);
+        if (credentials.sourceExists(.shinbo_provider_api_key)) {
+            detected.insert(.shinbo_provider_api_key);
         }
         if (self.credentialSource()) |source| detected.insert(source);
         self.source_inventory = detected;
     }
 
-    /// Moves the credential into this session and returns whether it changed.
     pub fn adoptCredential(self: *Self, alloc: Allocator, credential: *credentials.Credential) bool {
         const changed = if (self.selected_credential) |selected|
             selected.source != credential.source or
@@ -207,7 +200,6 @@ pub const Runtime = struct {
         return self.adoptCredential(alloc, &credential);
     }
 
-    /// Re-reads the environment after the credential was rejected.
     pub fn reselectByPrecedence(self: *Self, alloc: Allocator) !bool {
         const previous = self.credentialSource();
         if (self.selected_credential) |*credential| credential.deinit(alloc);
@@ -215,17 +207,17 @@ pub const Runtime = struct {
         self.credential_refresh_failure_source = null;
 
         try self.refreshSourceInventory(alloc);
-        if (try self.selectSource(alloc, .emma_provider_api_key) != null) {
+        if (try self.selectSource(alloc, .shinbo_provider_api_key) != null) {
             return self.credentialSource() != previous;
         }
-        self.source_inventory.remove(.emma_provider_api_key);
+        self.source_inventory.remove(.shinbo_provider_api_key);
         debug_trace.logf("auth", "no credential in {s}", .{credentials.api_key_env});
         return previous != null;
     }
 };
 
 test "auth failure snapshot names the selected source without exposing styling" {
-    const snapshot = FailureSnapshot.fromHttp(.unauthorized, .emma_provider_api_key).?;
+    const snapshot = FailureSnapshot.fromHttp(.unauthorized, .shinbo_provider_api_key).?;
     const text = try snapshot.renderText(std.testing.allocator);
     defer std.testing.allocator.free(text);
     try std.testing.expectEqualStrings(
@@ -237,7 +229,7 @@ test "auth failure snapshot names the selected source without exposing styling" 
     defer std.testing.allocator.free(json);
     try std.testing.expect(std.mem.find(u8, json, "\"http_unauthorized\"") != null);
 
-    try std.testing.expect(FailureSnapshot.fromHttp(.ok, .emma_provider_api_key) == null);
+    try std.testing.expect(FailureSnapshot.fromHttp(.ok, .shinbo_provider_api_key) == null);
     try std.testing.expect(FailureSnapshot.fromHttp(.unauthorized, null) == null);
 }
 
@@ -248,16 +240,16 @@ test "auth runtime adopts credential ownership and reports it once" {
 
     var credential = credentials.Credential{
         .token = try alloc.dupe(u8, "token"),
-        .source = .emma_provider_api_key,
+        .source = .shinbo_provider_api_key,
     };
     defer credential.deinit(alloc);
 
     try std.testing.expect(runtime.adoptCredential(alloc, &credential));
     try std.testing.expectEqualStrings("token", runtime.apiKey().?);
-    try std.testing.expectEqual(credentials.Source.emma_provider_api_key, runtime.credentialSource().?);
+    try std.testing.expectEqual(credentials.Source.shinbo_provider_api_key, runtime.credentialSource().?);
     try std.testing.expect(runtime.modelCatalogAccess().publicOnlyReason() == null);
 
-    runtime.recordCredentialRefreshFailure(.emma_provider_api_key);
+    runtime.recordCredentialRefreshFailure(.shinbo_provider_api_key);
     try std.testing.expectEqual(
         credentials.CatalogPublicOnlyReason.credential_refresh_failed,
         runtime.modelCatalogAccess().publicOnlyReason().?,
@@ -270,7 +262,7 @@ test "auth status snapshot reports the missing-credential help per surface" {
     try std.testing.expect(missing.missingHelp(.cli) != null);
     try std.testing.expect(missing.missingHelp(.interactive) != null);
 
-    const present = StatusSnapshot{ .active_source = .emma_provider_api_key };
+    const present = StatusSnapshot{ .active_source = .shinbo_provider_api_key };
     try std.testing.expect(present.missingHelp(.cli) == null);
     const detail = try present.formatDoctorDetail(std.testing.allocator);
     defer std.testing.allocator.free(detail);

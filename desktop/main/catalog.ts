@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { catalogSeed } from "./catalog-seed";
 import { DEEPSEEK_BALANCE_URL, MODEL_ID, providerChatUrl, providerModelsUrl, type KeyBalance } from "../shared/settings";
@@ -107,7 +108,7 @@ export async function fetchOpenRouterCatalog(timeoutMs = 30_000): Promise<Catalo
       completionMicroUsdPerMtok: microUsdPerMtok(pricing.completion),
     });
   }
-  if (!models.length) throw new Error("OpenRouter listed no models Emma can use — check your connection and try again");
+  if (!models.length) throw new Error("OpenRouter listed no models Shinbo can use — check your connection and try again");
   models.sort((left, right) => left.name.localeCompare(right.name));
   return { models };
 }
@@ -173,8 +174,8 @@ export class CatalogCache {
     const current = new Set(models.map((model) => model.id));
     this.models = models;
     this.fetchedAt = new Date().toISOString();
-    try { writeFileSync(this.file, JSON.stringify({ fetchedAt: this.fetchedAt, models }), { mode: 0o600 }); }
-    catch (error) { console.warn("Emma could not cache the model catalog", error); }
+    try { await writeFile(this.file, JSON.stringify({ fetchedAt: this.fetchedAt, models }), { mode: 0o600 }); }
+    catch (error) { console.warn("Shinbo could not cache the model catalog", error); }
     return {
       selectedModel: catalog.selectedModel,
       models,
@@ -194,7 +195,7 @@ const PROBE_TIMEOUT_MS = 20_000;
 const PROBE_TOOL = {
   type: "function",
   function: {
-    name: "emma_probe",
+    name: "shinbo_probe",
     description: "Report the weather. Call this tool to answer.",
     parameters: { type: "object", properties: { city: { type: "string" } }, required: ["city"] },
   },
@@ -290,11 +291,14 @@ export function readDeepSeekBalance(body: unknown): KeyBalance {
 
 export async function probeProvider(baseUrl: string, key: string, model: string): Promise<ProviderProbe> {
   const probe: ProviderProbe = { models: [], tools: false, error: "" };
-  try { probe.models = await listProviderModels(baseUrl, key); }
-  catch (reason) { probe.error = reason instanceof Error ? reason.message : String(reason); }
-  if (!model) return probe;
-  try { probe.tools = await probeProviderTools(baseUrl, key, model); }
-  catch (reason) { if (!probe.error) probe.error = reason instanceof Error ? reason.message : String(reason); }
+  const [models, tools] = await Promise.allSettled([
+    listProviderModels(baseUrl, key),
+    model ? probeProviderTools(baseUrl, key, model) : Promise.resolve(false),
+  ]);
+  if (models.status === "fulfilled") probe.models = models.value;
+  if (tools.status === "fulfilled") probe.tools = tools.value;
+  const failure = models.status === "rejected" ? models : tools.status === "rejected" ? tools : undefined;
+  if (failure) probe.error = failure.reason instanceof Error ? failure.reason.message : String(failure.reason);
   return probe;
 }
 

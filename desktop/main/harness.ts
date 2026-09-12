@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { writeAtomicSync } from "./write-atomic";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { BoundedLines } from "./ndjson";
@@ -10,7 +11,7 @@ import type { PermissionAsk, ThreadStep } from "../shared/agents";
 import type { PermissionMode } from "../shared/permissions";
 import type { RunnableHookEvent } from "../shared/plugins";
 import { missingFolderMessage } from "../shared/folders";
-import { CLOSED_BY_EMMA, MAX_LOG_BODY, type HarnessFlow, type HarnessLogLine, type HarnessState } from "../shared/harness-log";
+import { CLOSED_BY_SHINBO, MAX_LOG_BODY, type HarnessFlow, type HarnessLogLine, type HarnessState } from "../shared/harness-log";
 import type { HarnessExperiments } from "../shared/settings";
 import { decodeSpans, encodeSpans, traceHeader, type TraceSpan } from "../shared/trace";
 
@@ -121,7 +122,7 @@ export type Compaction = { removedTurns: number; summaryChars: number; modelWrit
 const MAX_HANDOFF_TEXT = 20_000;
 
 export function compactionReported(update: Record<string, unknown>): Compaction | undefined {
-  if (update.sessionUpdate !== "_emma_compacted") return undefined;
+  if (update.sessionUpdate !== "_shinbo_compacted") return undefined;
   const removedTurns = count(update.removedTurns);
   if (!removedTurns) return undefined;
   const fresh = update.fresh === true;
@@ -197,7 +198,7 @@ export const HARNESS_MODE_ID = "ask";
 export const harnessKey = (cwd: string, nestedThreadId?: string, providerId?: string) =>
   [cwd, ...(nestedThreadId ? [nestedThreadId] : []), ...(providerId ? [`@${providerId}`] : [])].join("\u0000");
 
-const SESSION_INDEX = "emma-sessions.json";
+const SESSION_INDEX = "shinbo-sessions.json";
 const MAX_CHECKPOINT_BYTES = 8 * 1024 * 1024;
 const SESSION_ID = /^[A-Za-z0-9._-]{1,200}$/;
 
@@ -208,28 +209,32 @@ function sessionIndex(home: string) {
   if (loaded) return loaded;
   const known = new Map<string, string>();
   try {
-    const raw: unknown = JSON.parse(readFileSync(path.join(home, SESSION_INDEX), "utf8"));
+    const current = path.join(home, SESSION_INDEX);
+    const raw: unknown = JSON.parse(readFileSync(existsSync(current) ? current : path.join(home, "emma-sessions.json"), "utf8"));
     if (raw && typeof raw === "object" && !Array.isArray(raw)) {
       for (const [threadId, sessionId] of Object.entries(raw as Record<string, unknown>)) {
         if (typeof sessionId === "string" && sessionId.length > 0) known.set(threadId, sessionId);
       }
     }
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") console.error("Emma: could not read the harness session index", error);
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") console.error("Shinbo: could not read the harness session index", error);
   }
   sessionIndexes.set(home, known);
   return known;
 }
 
-function saveSessionIndex(home: string) {
-  const known = sessionIndexes.get(home);
-  if (!known) return;
-  try {
-    mkdirSync(home, { recursive: true });
-    writeFileSync(path.join(home, SESSION_INDEX), JSON.stringify(Object.fromEntries(known)));
-  } catch (error) {
-    console.error("Emma: could not save the harness session index", error);
-  }
+function saveSessionIndex(home: string, known: Map<string, string>) {
+  mkdirSync(home, { recursive: true });
+  writeAtomicSync(path.join(home, SESSION_INDEX), JSON.stringify(Object.fromEntries(known)));
+  sessionIndexes.set(home, known);
+}
+
+export function forgetHarnessSession(home: string, threadId: string) {
+  const known = sessionIndex(home);
+  if (!known.has(threadId)) return;
+  const next = new Map(known);
+  next.delete(threadId);
+  saveSessionIndex(home, next);
 }
 
 export type StoredThreadTrace = { timestamp: string; text: string };
@@ -330,8 +335,8 @@ export function recoveredSessionTraces(home: string, threadId: string, traces: S
   if (!turns.length) return traces;
   const merged = traces.map((trace) => ({ ...trace }));
   const claimed = new Set<number>();
+  const decoded = merged.map((trace) => decodeSpans(trace.text));
   for (const turn of turns) {
-    const decoded = merged.map((trace) => decodeSpans(trace.text));
     const known = new Set(decoded.flatMap((spans) => spans.filter((span) => span.id.startsWith("call:")).map((span) => span.id)));
     if (turn.calls.every((call) => known.has(call.id))) continue;
     let target = -1;
@@ -365,10 +370,12 @@ export function recoveredSessionTraces(home: string, threadId: string, traces: S
         output: call.output,
         tokens: call.output ? Math.ceil(call.output.length / 4) : undefined,
       }));
+      const spans: TraceSpan[] = [{ id: rootId, name: "This thread", kind: "agent", startedAt: start, endedAt: turn.at, status: "ok" }, ...calls];
       merged.push({
         timestamp: new Date(turn.at).toISOString(),
-        text: encodeSpans([{ id: rootId, name: "This thread", kind: "agent", startedAt: start, endedAt: turn.at, status: "ok" }, ...calls], { thread: threadId, recovered: "session" }),
+        text: encodeSpans(spans, { thread: threadId, recovered: "session" }),
       });
+      decoded.push(decodeSpans(merged[merged.length - 1].text));
       claimed.add(merged.length - 1);
       continue;
     }
@@ -396,7 +403,9 @@ export function recoveredSessionTraces(home: string, threadId: string, traces: S
     const recoveredIds = new Set(recovered.map((span) => span.id));
     const extras = spans.filter((span) => span.id.startsWith("call:") && !recoveredIds.has(span.id));
     const frame = { ...root, startedAt: Math.min(root.startedAt, start), endedAt: Math.max(root.endedAt ?? turn.at, turn.at) };
-    merged[target].text = encodeSpans([frame, ...spans.filter((span) => span.id !== root.id && !span.id.startsWith("call:")), ...recovered, ...extras], traceHeader(merged[target].text));
+    decoded[target] = [frame, ...spans.filter((span) => span.id !== root.id && !span.id.startsWith("call:")), ...recovered, ...extras];
+    merged[target].text = encodeSpans(decoded[target], traceHeader(merged[target].text));
+    decoded[target] = decodeSpans(merged[target].text);
   }
   return merged.sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
 }
@@ -406,9 +415,9 @@ type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => vo
 export const RESTARTED_BY_YOU = "Harness restarted";
 
 const FAILURE_EXPLANATIONS: Record<string, string> = {
-  [CLOSED_BY_EMMA]: "Emma was closed while it was in flight. Send Continue to pick it back up",
+  [CLOSED_BY_SHINBO]: "Shinbo was closed while it was in flight. Send Continue to pick it back up",
   [RESTARTED_BY_YOU]: "You restarted the agent while this run was in flight. Send Continue to pick it back up",
-  RequestTooLarge: "the conversation outgrew what this model accepts, even after older tool results were pruned. Emma will compact it on your next message; send Continue",
+  RequestTooLarge: "the conversation outgrew what this model accepts, even after older tool results were pruned. Shinbo will compact it on your next message; send Continue",
 };
 
 export function explainFailure(detail: string): string {
@@ -440,6 +449,7 @@ export class Harness {
   private rebind = false;
 
   private cancelled = new Set<string>();
+  private readonly cancelledChildren = new Set<string>();
   readonly paused = new Map<string, { message: string; cause?: string; requiredAction?: string }>();
   private readonly permissionChecks = new Set<{ threadId: string; childId?: string; cancelled: boolean }>();
   private failure: Error | undefined;
@@ -486,12 +496,12 @@ export class Harness {
       throw gone;
     }
 
-    const key = this.deps.apiKey ? { AI_GATEWAY_API_KEY: this.deps.apiKey, EMMA_PROVIDER_API_KEY: this.deps.apiKey } : {};
-    const route = this.deps.chatUrl ? { EMMA_PROVIDER_CHAT_URL: this.deps.chatUrl } : {};
+    const key = this.deps.apiKey ? { AI_GATEWAY_API_KEY: this.deps.apiKey, SHINBO_PROVIDER_API_KEY: this.deps.apiKey } : {};
+    const route = this.deps.chatUrl ? { SHINBO_PROVIDER_CHAT_URL: this.deps.chatUrl } : {};
     const vision = this.deps.vision
-      ? { EMMA_VISION_MODEL: this.deps.vision.model, EMMA_VISION_CHAT_URL: this.deps.vision.chatUrl, EMMA_VISION_API_KEY: this.deps.vision.apiKey }
-      : { EMMA_VISION_MODEL: undefined, EMMA_VISION_CHAT_URL: undefined, EMMA_VISION_API_KEY: undefined };
-    const prompt = this.deps.promptFile ? { EMMA_SYSTEM_PROMPT: this.deps.promptFile } : {};
+      ? { SHINBO_VISION_MODEL: this.deps.vision.model, SHINBO_VISION_CHAT_URL: this.deps.vision.chatUrl, SHINBO_VISION_API_KEY: this.deps.vision.apiKey }
+      : { SHINBO_VISION_MODEL: undefined, SHINBO_VISION_CHAT_URL: undefined, SHINBO_VISION_API_KEY: undefined };
+    const prompt = this.deps.promptFile ? { SHINBO_SYSTEM_PROMPT: this.deps.promptFile } : {};
     const child = spawn(this.deps.binaryPath, this.deps.args ?? ["acp"], {
       cwd: this.deps.cwd,
       stdio: ["pipe", "pipe", "pipe"],
@@ -521,7 +531,7 @@ export class Harness {
     child.stderr.on("data", (data) => {
       const text = String(data).trim();
       this.stderrTail = `${this.stderrTail}\n${text}`.slice(-MAX_STDERR_TAIL);
-      console.error(`emma-cli: ${text}`);
+      console.error(`shinbo-cli: ${text}`);
       this.log("err", "stderr", text);
     });
     child.stdin.on("error", (error: Error) => this.fail(error));
@@ -566,11 +576,9 @@ export class Harness {
     this.phase(threadId, "setting up the session");
     await this.request("session/set_mode", { sessionId, modeId: HARNESS_MODE_ID });
 
-    if (model) await this.request("session/set_config_option", { sessionId, configId: "model", value: model });
+    await this.request("session/set_config_option", { sessionId, configId: "model", value: model ?? "" });
 
-    if (extra.contextWindow) {
-      await this.request("session/set_config_option", { sessionId, configId: "context_window", value: String(extra.contextWindow) });
-    }
+    await this.request("session/set_config_option", { sessionId, configId: "context_window", value: String(extra.contextWindow ?? 0) });
 
     if (extra.effort) {
       await this.request("session/set_config_option", { sessionId, configId: "reasoning_effort", value: effortOption(extra.effort) });
@@ -602,7 +610,7 @@ export class Harness {
 
     if (extra.compact) {
       this.phase(threadId, "compacting the context");
-      await this.request("session/compact", { sessionId, ...(extra.handoff ? { handoff: extra.handoff } : {}) }).catch((error: unknown) => console.error("Emma: the harness would not compact", error));
+      await this.request("session/compact", { sessionId, ...(extra.handoff ? { handoff: extra.handoff } : {}) }).catch((error: unknown) => console.error("Shinbo: the harness would not compact", error));
     }
     const prompt = extra.continueRecovery ? [] : [
       { type: "text", text },
@@ -613,6 +621,7 @@ export class Harness {
     this.phase(threadId, "sending the prompt");
     this.paused.delete(threadId);
     await this.lifecycle("UserPromptSubmit", threadId, sessionId, mode, model, { prompt: text });
+    if (this.cancelled.has(threadId)) throw new Error("This turn was stopped before it reached the model.");
     this.phase(threadId, "waiting for the model");
     const result = (await this.request("session/prompt", {
       sessionId,
@@ -645,7 +654,7 @@ export class Harness {
       permission_mode: mode,
       model: model ?? "",
       ...extra,
-    }).catch((error: unknown) => console.error(`Emma: a ${event} plugin hook could not be run`, error));
+    }).catch((error: unknown) => console.error(`Shinbo: a ${event} plugin hook could not be run`, error));
   }
 
   async cancel(threadId: string) {
@@ -653,9 +662,9 @@ export class Harness {
     this.sweepCalls(threadId);
     if (this.computerTurn?.threadId === threadId) this.computerTurn = undefined;
     for (const check of this.permissionChecks.values()) if (check.threadId === threadId) check.cancelled = true;
-    const sessionId = this.sessions.get(threadId);
+    const sessionId = this.active;
 
-    if (!sessionId || sessionId !== this.active || !this.running) return;
+    if (!sessionId || this.threadsBySession.get(sessionId) !== threadId || !this.running) return;
 
     this.send({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId } });
   }
@@ -670,8 +679,8 @@ export class Harness {
   }
 
   async steer(threadId: string, content: string) {
-    const sessionId = this.sessions.get(threadId);
-    if (!sessionId || sessionId !== this.active || !this.running) return false;
+    const sessionId = this.active;
+    if (!sessionId || this.threadsBySession.get(sessionId) !== threadId || !this.running) return false;
     for (const check of this.permissionChecks.values()) if (check.threadId === threadId && !check.childId) check.cancelled = true;
     await this.request("session/steer", { sessionId, content });
     this.sweepCalls(threadId);
@@ -683,6 +692,7 @@ export class Harness {
   }
 
   async cancelChild(childId: string) {
+    this.cancelledChildren.add(childId);
     for (const check of this.permissionChecks.values()) if (check.childId === childId) check.cancelled = true;
     await this.request("session/cancel_child", { childId });
   }
@@ -691,10 +701,10 @@ export class Harness {
     const said = this.stderrTail.split("\n").map((line) => line.trim()).filter(Boolean);
     const detail = said.find((line) => /panic|unreachable|error:/i.test(line)) ?? said.at(-1);
     const how = signal ? `was killed by ${signal}` : `exited with code ${code ?? "unknown"}`;
-    return `emma-cli ${how}${detail ? `: ${detail}` : ""}`;
+    return `shinbo-cli ${how}${detail ? `: ${detail}` : ""}`;
   }
 
-  async close(reason = CLOSED_BY_EMMA) {
+  async close(reason = CLOSED_BY_SHINBO) {
     this.fail(new Error(reason));
     if (this.deps.promptFile) rmSync(this.deps.promptFile, { force: true });
     const child = this.child;
@@ -715,8 +725,9 @@ export class Harness {
     return sessionIndex(this.deps.home);
   }
 
-  private remember() {
-    saveSessionIndex(this.deps.home);
+  private remember(threadId: string, sessionId: string) {
+    const next = new Map(this.sessions).set(threadId, sessionId);
+    saveSessionIndex(this.deps.home, next);
   }
 
   private async servers(threadId: string) {
@@ -734,10 +745,10 @@ export class Harness {
       this.rebind = false;
       return sessionId;
     } catch (error) {
-      console.error("Emma: could not resume the harness session for this thread, starting a new one", error);
-      this.sessions.delete(threadId);
+      if (!(error instanceof Error) || error.message !== "Session not found" || (error as Error & { code?: number }).code !== -32602) throw error;
+      console.error("Shinbo: could not resume the harness session for this thread, starting a new one", error);
+      this.forgetSession(threadId);
       this.threadsBySession.delete(sessionId);
-      this.remember();
       return await this.session(threadId, cwd);
     }
   }
@@ -751,17 +762,15 @@ export class Harness {
     const result = await this.request("session/new", { cwd, mcpServers: await this.servers(threadId) });
     const sessionId = (result as { sessionId?: unknown } | null)?.sessionId;
     if (typeof sessionId !== "string" || sessionId.length === 0) throw new Error("Harness returned no session id");
-    this.sessions.set(threadId, sessionId);
+    this.remember(threadId, sessionId);
     this.threadsBySession.set(sessionId, threadId);
-    this.remember();
     this.active = sessionId;
     return sessionId;
   }
 
   forgetSession(threadId: string) {
-    this.sessions.delete(threadId);
+    forgetHarnessSession(this.deps.home, threadId);
     this.trialOptions.delete(threadId);
-    this.remember();
   }
 
   rebindServers() {
@@ -782,12 +791,17 @@ export class Harness {
         if (!this.pending.has(id)) return;
         if (this.permissionChecks.size > 0) return void timer.refresh();
         for (const call of this.calls.values()) if (call.status === "in_progress") return void timer.refresh();
-        this.fail(new Error(`emma-cli stopped answering while ${method} was in flight. Emma restarted the agent; send the turn again.`));
+        this.fail(new Error(`shinbo-cli stopped answering while ${method} was in flight. Shinbo restarted the agent; send the turn again.`));
         void this.close();
       }, idleMs);
       timer.unref?.();
-      this.pending.set(id, { resolve, reject, touch: () => timer.refresh() });
-      this.send({ jsonrpc: "2.0", id, method, params });
+      this.pending.set(id, {
+        resolve: (value) => { clearTimeout(timer); resolve(value); },
+        reject: (error) => { clearTimeout(timer); reject(error); },
+        touch: () => timer.refresh(),
+      });
+      try { this.send({ jsonrpc: "2.0", id, method, params }); }
+      catch (error) { this.fail(error instanceof Error ? error : new Error(String(error))); }
     });
   }
 
@@ -822,7 +836,7 @@ export class Harness {
     if (message.error) {
       const detail = (message.error as { message?: string }).message ?? "Harness call failed";
       const paused = turnThreadId ? this.paused.get(turnThreadId)?.message : undefined;
-      pending.reject(new Error(paused ?? explainFailure(detail)));
+      pending.reject(Object.assign(new Error(paused ?? explainFailure(detail)), { code: (message.error as { code?: unknown }).code }));
       return;
     }
     pending.resolve(message.result ?? null);
@@ -840,7 +854,7 @@ export class Harness {
       await this.handlePermission(message.id, params);
       return;
     }
-    if (method === "_emma/callTool" && typeof message.id === "number") {
+    if (method === "_shinbo/callTool" && typeof message.id === "number") {
       await this.handleToolRequest(message.id, params);
       return;
     }
@@ -895,7 +909,7 @@ export class Harness {
 
   private applyUpdate(threadId: string, update: Record<string, unknown>) {
     switch (update.sessionUpdate) {
-      case "_emma_activity":
+      case "_shinbo_activity":
         this.deps.onActivity?.(threadId);
         return;
       case "agent_message_chunk":
@@ -918,12 +932,12 @@ export class Harness {
           toolCallId,
           title: toolCallText(update.title) ?? known?.title ?? "",
           kind: toolCallText(update.kind) ?? known?.kind ?? "other",
-          toolName: toolCallText(update._emma_toolName) ?? known?.toolName,
+          toolName: toolCallText(update._shinbo_toolName) ?? known?.toolName,
           status: (update.status as HarnessToolCall["status"]) ?? known?.status ?? "pending",
 
           input: rawInput(update.rawInput) ?? known?.input,
-          filePath: update._emma_filePath === undefined ? known?.filePath
-            : typeof update._emma_filePath === "string" && update._emma_filePath.length > 0 && !update._emma_filePath.includes("\0") ? update._emma_filePath : undefined,
+          filePath: update._shinbo_filePath === undefined ? known?.filePath
+            : typeof update._shinbo_filePath === "string" && update._shinbo_filePath.length > 0 && !update._shinbo_filePath.includes("\0") ? update._shinbo_filePath : undefined,
 
           output: toolOutput(update.content) ?? known?.output,
           at: Date.now(),
@@ -932,7 +946,7 @@ export class Harness {
         this.deps.onToolCall(call);
         return;
       }
-      case "_emma_compacted": {
+      case "_shinbo_compacted": {
         const compacted = compactionReported(update);
         if (compacted) this.deps.onCompacted(threadId, compacted);
         return;
@@ -1036,11 +1050,17 @@ export class Harness {
       return;
     }
     let output: string;
+    let isError = false;
     try {
+      const childId = params.childId;
+      if (childId !== undefined && (typeof childId !== "string" || !childId || childId.length > 256)) throw new Error("Invalid child tool request");
+      if (name !== "computer" && typeof params.toolCallId === "string" && this.children.has(`${threadId}/${params.toolCallId}`) && childId !== params.toolCallId) throw new Error("Invalid child tool request");
       if (name === "_model_context") {
-        const { model, childId, title, skills } = args;
-        if (!this.deps.onModelContext || typeof model !== "string" || !model.trim() || model.length > 256 || /[\s\0]/.test(model) || typeof childId !== "string" || !childId || childId.length > 256 || typeof skills !== "string" || skills.length > 128 * 1024) throw new Error("Invalid model context request");
+        const { model, title, skills } = args;
+        if (!this.deps.onModelContext || typeof model !== "string" || !model.trim() || model.length > 256 || /[\s\0]/.test(model) || typeof childId !== "string" || args.childId !== childId || typeof skills !== "string" || skills.length > 128 * 1024 || this.cancelled.has(threadId)) throw new Error("Invalid model context request");
+        if (this.children.get(`${threadId}/${childId}`)?.ended || this.cancelledChildren.has(childId)) throw new Error("This subagent is no longer running.");
         const childThreadId = await this.childThread(threadId, { id: childId, title: typeof title === "string" ? title.slice(0, 120) : "Subagent", ended: false });
+        if (this.cancelled.has(threadId) || this.children.get(`${threadId}/${childId}`)?.ended || this.cancelledChildren.has(childId)) throw new Error("This subagent is no longer running.");
         output = JSON.stringify(this.deps.onModelContext(threadId, childThreadId, model, skills));
         this.send({ jsonrpc: "2.0", id, result: { output } });
         return;
@@ -1048,15 +1068,20 @@ export class Harness {
       if (name === "computer") {
         const turn = this.computerTurn;
         const toolCallId = typeof params.toolCallId === "string" ? params.toolCallId : "";
-        if (!turn || turn.threadId !== threadId || turn.sessionId !== params.sessionId || childTag(params) || this.children.has(`${threadId}/${toolCallId}`) || !turn.calls.delete(toolCallId)) {
+        if (!turn || turn.threadId !== threadId || turn.sessionId !== params.sessionId || childId !== undefined || childTag(params) || this.children.has(`${threadId}/${toolCallId}`) || !turn.calls.delete(toolCallId)) {
           throw new Error("Computer use must be performed by the parent turn with a current tool call.");
         }
       }
-      output = await this.deps.onToolRequest(threadId, name, args);
+      const child = typeof childId === "string" ? this.children.get(`${threadId}/${childId}`) : undefined;
+      if (typeof childId === "string" && (!child || child.ended || this.cancelledChildren.has(childId))) throw new Error("This subagent is no longer running.");
+      const owner = child ? await child.thread : threadId;
+      if (this.cancelled.has(threadId) || child?.ended || typeof childId === "string" && this.cancelledChildren.has(childId) || this.failure) throw new Error("This turn is no longer running.");
+      output = await this.deps.onToolRequest(owner, name, args);
     } catch (error) {
       output = error instanceof Error ? error.message : String(error);
+      isError = true;
     }
-    this.send({ jsonrpc: "2.0", id, result: { output: output.slice(0, MAX_TOOL_OUTPUT_BYTES) } });
+    this.send({ jsonrpc: "2.0", id, result: { output: output.slice(0, MAX_TOOL_OUTPUT_BYTES), isError } });
   }
 
   private fail(error: Error) {

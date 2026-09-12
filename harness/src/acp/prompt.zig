@@ -188,7 +188,7 @@ const AcpContext = struct {
         var out: std.Io.Writer.Allocating = .init(self.alloc);
         defer out.deinit();
         out.writer.print(
-            "{{\"sessionUpdate\":\"_emma_compacted\",\"removedTurns\":{d},\"summaryChars\":{d},\"historyChars\":{d},\"modelWritten\":{s},\"fresh\":{s},\"handoff\":",
+            "{{\"sessionUpdate\":\"_shinbo_compacted\",\"removedTurns\":{d},\"summaryChars\":{d},\"historyChars\":{d},\"modelWritten\":{s},\"fresh\":{s},\"handoff\":",
             .{ event.removed_turns, summary.len, summary.len + retained.len, if (model_written) "true" else "false", if (fresh) "true" else "false" },
         ) catch return;
         jsonrpc.writeJsonStr(summary, &out.writer) catch return;
@@ -443,7 +443,7 @@ test "edit metadata survives bounded arguments and preserves complete paths" {
         defer out.deinit();
         try acp_types.writeToolCallWithPath(&out.writer, call.id, name, .edit, .pending, boundedArguments(args), editFilePath(alloc, call), call.name);
         const wire = try std.json.parseFromSliceLeaky(std.json.Value, alloc, out.writer.buffered(), .{});
-        try std.testing.expectEqualStrings(file_path, wire.object.get("_emma_filePath").?.string);
+        try std.testing.expectEqualStrings(file_path, wire.object.get("_shinbo_filePath").?.string);
         try std.testing.expect(wire.object.get("rawInput").?.string.len <= max_raw_input_bytes);
     }
     for ([_][]const u8{ "{}", "[]", "{", "{\"path\":2}", "{\"path\":\"\"}", "{\"path\":\"a\\u0000b\"}" }) |invalid| {
@@ -504,28 +504,28 @@ const AcpElicitationResponderContext = struct {
     }
 };
 
-const AcpEmmaToolResponderContext = struct {
+const AcpShinboToolResponderContext = struct {
     acp: *AcpContext,
     tool_call_id: []const u8,
     operation_cancel_flag: ?*const std.atomic.Value(bool),
 
-    fn responder(self: *AcpEmmaToolResponderContext) tool_dispatch.EmmaToolResponder {
-        return .{ .context = @ptrCast(self), .call_fn = callEmmaTool };
+    fn responder(self: *AcpShinboToolResponderContext) tool_dispatch.ShinboToolResponder {
+        return .{ .context = @ptrCast(self), .call_fn = callShinboTool };
     }
 };
 
-const AcpEmmaToolWait = union(enum) {
+const AcpShinboToolWait = union(enum) {
     response: ?server.OutboundResponse,
     cancelled: anyerror!void,
 };
 
-fn callEmmaTool(
+fn callShinboTool(
     raw_ctx: *anyopaque,
     out_alloc: Allocator,
     name: []const u8,
     arguments_json: []const u8,
-) anyerror![]u8 {
-    const self: *AcpEmmaToolResponderContext = @ptrCast(@alignCast(raw_ctx));
+) anyerror!tool_dispatch.ToolResult {
+    const self: *AcpShinboToolResponderContext = @ptrCast(@alignCast(raw_ctx));
     const state = self.acp.state;
     const alloc = state.alloc;
 
@@ -534,10 +534,11 @@ fn callEmmaTool(
     var awaiting = true;
     defer if (awaiting) server.cancelOutboundRequest(state, outbound_id);
 
-    const params = try emmaToolParamsJson(
+    const params = try shinboToolParamsJson(
         alloc,
         self.acp.session_id,
         self.tool_call_id,
+        if (self.acp.child) |child| child.id else null,
         name,
         arguments_json,
     );
@@ -545,24 +546,25 @@ fn callEmmaTool(
     try state.writer.writeRequest(
         alloc,
         .{ .integer = @intCast(outbound_id) },
-        "_emma/callTool",
+        "_shinbo/callTool",
         params,
     );
 
-    const maybe_response = try awaitEmmaToolResponse(state, outbound_id, self.operation_cancel_flag);
+    const maybe_response = try awaitShinboToolResponse(state, outbound_id, self.operation_cancel_flag);
     awaiting = false;
     var response = maybe_response orelse return error.Cancelled;
     defer response.deinit(alloc);
     if (response.cancelled) return error.Cancelled;
-    if (response.error_json != null) return error.EmmaToolFailed;
-    const result_json = response.result_json orelse return error.EmmaToolFailed;
-    return emmaToolOutput(out_alloc, result_json);
+    if (response.error_json != null) return error.ShinboToolFailed;
+    const result_json = response.result_json orelse return error.ShinboToolFailed;
+    return shinboToolOutput(out_alloc, result_json);
 }
 
-fn emmaToolParamsJson(
+fn shinboToolParamsJson(
     alloc: Allocator,
     session_id: []const u8,
     tool_call_id: []const u8,
+    child_id: ?[]const u8,
     name: []const u8,
     arguments_json: []const u8,
 ) ![]u8 {
@@ -572,6 +574,10 @@ fn emmaToolParamsJson(
     try std.json.Stringify.value(session_id, .{}, &out.writer);
     try out.writer.writeAll(",\"toolCallId\":");
     try std.json.Stringify.value(tool_call_id, .{}, &out.writer);
+    if (child_id) |child| {
+        try out.writer.writeAll(",\"childId\":");
+        try std.json.Stringify.value(child, .{}, &out.writer);
+    }
     try out.writer.writeAll(",\"name\":");
     try std.json.Stringify.value(name, .{}, &out.writer);
     try out.writer.writeAll(",\"arguments\":");
@@ -580,23 +586,51 @@ fn emmaToolParamsJson(
     return try out.toOwnedSlice();
 }
 
-fn emmaToolOutput(alloc: Allocator, result_json: []const u8) ![]u8 {
-    var parsed = std.json.parseFromSlice(std.json.Value, alloc, result_json, .{}) catch
-        return error.EmmaToolFailed;
-    defer parsed.deinit();
-    if (parsed.value != .object) return error.EmmaToolFailed;
-    const output = parsed.value.object.get("output") orelse return error.EmmaToolFailed;
-    if (output != .string) return error.EmmaToolFailed;
-    return alloc.dupe(u8, output.string);
+test "Shinbo app tool requests preserve explicit child ownership" {
+    const alloc = std.testing.allocator;
+    const parent = try shinboToolParamsJson(alloc, "session", "call", null, "context", "{}");
+    defer alloc.free(parent);
+    try std.testing.expectEqualStrings("{\"sessionId\":\"session\",\"toolCallId\":\"call\",\"name\":\"context\",\"arguments\":{}}", parent);
+    const child = try shinboToolParamsJson(alloc, "session", "child", "child", "context", "{}");
+    defer alloc.free(child);
+    try std.testing.expectEqualStrings("{\"sessionId\":\"session\",\"toolCallId\":\"child\",\"childId\":\"child\",\"name\":\"context\",\"arguments\":{}}", child);
 }
 
-fn awaitEmmaToolResponse(
+fn shinboToolOutput(alloc: Allocator, result_json: []const u8) !tool_dispatch.ToolResult {
+    var parsed = std.json.parseFromSlice(std.json.Value, alloc, result_json, .{}) catch
+        return error.ShinboToolFailed;
+    defer parsed.deinit();
+    if (parsed.value != .object) return error.ShinboToolFailed;
+    const output = parsed.value.object.get("output") orelse return error.ShinboToolFailed;
+    if (output != .string) return error.ShinboToolFailed;
+    const failed = if (parsed.value.object.get("isError")) |value|
+        if (value == .bool) value.bool else return error.ShinboToolFailed
+    else
+        false;
+    const body = try alloc.dupe(u8, output.string);
+    return if (failed) .{ .failure = body } else .{ .success = body };
+}
+
+test "Shinbo app tool failures preserve their diagnostic and failed status" {
+    const alloc = std.testing.allocator;
+    const failed = try shinboToolOutput(alloc, "{\"output\":\"ENOSPC: note could not be written\",\"isError\":true}");
+    defer failed.deinit(alloc);
+    try std.testing.expectEqualStrings("ENOSPC: note could not be written", failed.failure);
+    for ([_][]const u8{ "{\"output\":\"done\",\"isError\":false}", "{\"output\":\"done\"}" }) |value| {
+        const result = try shinboToolOutput(alloc, value);
+        defer result.deinit(alloc);
+        try std.testing.expectEqualStrings("done", result.success);
+    }
+    try std.testing.expectError(error.ShinboToolFailed, shinboToolOutput(alloc, "{\"output\":\"bad\",\"isError\":\"true\"}"));
+}
+
+fn awaitShinboToolResponse(
     state: *server.ServerState,
     id: u64,
     operation_cancel_flag: ?*const std.atomic.Value(bool),
 ) !?server.OutboundResponse {
     const Cleanup = struct {
-        fn drain(state_alloc: Allocator, select: *std.Io.Select(AcpEmmaToolWait)) void {
+        fn drain(state_alloc: Allocator, select: *std.Io.Select(AcpShinboToolWait)) void {
             while (select.cancel()) |item| switch (item) {
                 .response => |maybe_response| if (maybe_response) |owned| {
                     var response = owned;
@@ -607,8 +641,8 @@ fn awaitEmmaToolResponse(
         }
     };
 
-    var select_buffer: [2]AcpEmmaToolWait = undefined;
-    var select: std.Io.Select(AcpEmmaToolWait) = .init(io_mod.getIo(), &select_buffer);
+    var select_buffer: [2]AcpShinboToolWait = undefined;
+    var select: std.Io.Select(AcpShinboToolWait) = .init(io_mod.getIo(), &select_buffer);
     try select.concurrent(.response, server.awaitOutboundResponse, .{ state, id, server.OutboundKind.client_tool });
     select.concurrent(.cancelled, waitForAcpElicitationCancellation, .{
         @as(?*const std.atomic.Value(bool), null),
@@ -874,16 +908,14 @@ pub fn handlePrompt(
     defer session.session_rt.compaction_observer = null;
     session.session_rt.projection_compaction_percent = 0;
     if (!prompt_input.continue_recovery and session.session_rt.shouldAutoCompact(session.context_experiments.auto_compact_percent)) {
-        _ = try compactAcpSession(alloc, session);
+        _ = try compactAcpSession(state.alloc, session, null);
     }
+    fresh_config.handoff = session.fresh_handoff;
+    const handoff_prefix = session.session_rt.history.items[0..session.session_rt.contextHistoryStart()];
+    fresh_config.handoff_prefix = if (handoff_prefix.len > 0 and handoff_prefix[0] == .compacted_summary) handoff_prefix[1..] else handoff_prefix;
     const context_history = try session.session_rt.snapshotContextHistory(alloc);
     defer types.freeHistoryTurnSlice(alloc, context_history);
     ctx.sendCompacted(context_history);
-    if (session.fresh_handoff) |handoff| {
-        state.alloc.free(handoff);
-        session.fresh_handoff = null;
-        fresh_config.handoff = null;
-    }
     var context_snapshot = try state.context_snapshot.dupe(alloc);
     defer context_snapshot.deinit(alloc);
     const root_user_intent_context = try auto_classifier_context.buildCanonicalRootUserContext(
@@ -973,7 +1005,7 @@ pub fn handlePrompt(
             if (err == error.NonInteractivePermissionRequired) {
                 ctx.stop_reason = .refused;
             } else {
-                if (err == error.RequestTooLarge) _ = compactAcpSession(alloc, session) catch false;
+                if (err == error.RequestTooLarge) _ = compactAcpSession(state.alloc, session, null) catch false;
                 return err;
             }
         };
@@ -1093,7 +1125,7 @@ pub fn runSubagentChild(
         state.context_limits,
     ) catch return error.OutOfMemory;
     defer explicit_skills.deinit(alloc);
-    var emma_responder = AcpEmmaToolResponderContext{
+    var shinbo_responder = AcpShinboToolResponderContext{
         .acp = &ctx,
         .tool_call_id = if (turn.child_id) |child_id| child_id else session_id,
         .operation_cancel_flag = cancel,
@@ -1101,15 +1133,16 @@ pub fn runSubagentChild(
     var child_arena = std.heap.ArenaAllocator.init(alloc);
     defer child_arena.deinit();
     const child_alloc = child_arena.allocator();
-    const model_context = if (io_mod.getenv("EMMA_SYSTEM_PROMPT") != null and turn.child_id != null) context: {
+    const model_context = if (io_mod.getenv("SHINBO_SYSTEM_PROMPT") != null and turn.child_id != null) context: {
         const args = std.json.Stringify.valueAlloc(child_alloc, .{
             .model = admission.model,
             .childId = turn.child_id.?,
             .title = childTitle(message.content),
             .skills = std.fmt.allocPrint(child_alloc, "{s}\n\n{s}", .{ bounded_skills.text, explicit_skills.text }) catch return error.OutOfMemory,
         }, .{}) catch return error.OutOfMemory;
-        const output = callEmmaTool(@ptrCast(&emma_responder), child_alloc, "_model_context", args) catch return error.ProviderFailed;
-        break :context parseChildModelContext(child_alloc, output) catch return error.ProviderFailed;
+        const output = callShinboTool(@ptrCast(&shinbo_responder), child_alloc, "_model_context", args) catch return error.ProviderFailed;
+        if (output == .failure) return error.ProviderFailed;
+        break :context parseChildModelContext(child_alloc, output.success) catch return error.ProviderFailed;
     } else null;
     var child_projection = state.cfg.mode_registry.buildGatewayToolProjection(
         alloc,
@@ -1126,7 +1159,7 @@ pub fn runSubagentChild(
     ) catch return error.OutOfMemory;
     defer child_projection.deinit(alloc);
     var child_tool_context = ctx.toolContext();
-    child_tool_context.emma_tool_responder = emma_responder.responder();
+    child_tool_context.shinbo_tool_responder = shinbo_responder.responder();
     if (model_context) |config| {
         child_tool_context.tool_overrides = config.overrides();
         child_tool_context.command_timeout_ms = config.command_timeout_ms;
@@ -2050,12 +2083,12 @@ fn executeToolCall(
     };
     defer elicitation_responder.deinit();
     tool_ctx.mcp_input_responder = elicitation_responder.responder();
-    var emma_responder = AcpEmmaToolResponderContext{
+    var shinbo_responder = AcpShinboToolResponderContext{
         .acp = ctx,
         .tool_call_id = acp_id,
         .operation_cancel_flag = tool_ctx.cancel_flag,
     };
-    tool_ctx.emma_tool_responder = emma_responder.responder();
+    tool_ctx.shinbo_tool_responder = shinbo_responder.responder();
     tool_ctx.root_user_intent_context = request.root_user_intent_context;
     tool_ctx.root_user_messages = request.root_user_messages;
     tool_ctx.root_user_evidence_complete = request.root_user_evidence_complete;
@@ -2429,6 +2462,9 @@ fn currentAcpState(
     types.freeHistoryTurnSlice(alloc, state.history);
     state.history = history;
     state.context_history_start = session.session_rt.contextHistoryStart();
+    const context_handoff = if (session.fresh_handoff) |handoff| try alloc.dupe(u8, handoff) else null;
+    if (state.context_handoff) |old| alloc.free(old);
+    state.context_handoff = context_handoff;
     const permission_state = try session.session_rt.snapshotPermissionState(alloc);
     state.permission_state.deinit(alloc);
     state.permission_state = permission_state;
@@ -2465,14 +2501,19 @@ fn commitAcpStateReplacement(
     }
 }
 
-fn compactAcpSession(alloc: Allocator, session: *server.ActiveSessionState) !bool {
+fn compactAcpSession(alloc: Allocator, session: *server.ActiveSessionState, handoff: ?[]const u8) !bool {
     const before = session.session_rt.contextHistoryStart();
     session.session_rt.forceCompaction();
-    const compacted = session.session_rt.contextHistoryStart() != before;
-    if (compacted) {
-        if (session.writable) |*writable| try commitAcpStateReplacement(alloc, session, writable, false);
-    }
-    return compacted;
+    if (session.session_rt.contextHistoryStart() == before) return false;
+    errdefer session.session_rt.context_history_start = before;
+    const next_handoff = if (handoff) |text| try alloc.dupe(u8, text) else null;
+    errdefer if (next_handoff) |text| alloc.free(text);
+    const previous_handoff = session.fresh_handoff;
+    session.fresh_handoff = next_handoff;
+    errdefer session.fresh_handoff = previous_handoff;
+    if (session.writable) |*writable| try commitAcpStateReplacement(alloc, session, writable, false);
+    if (previous_handoff) |text| alloc.free(text);
+    return true;
 }
 
 pub fn handleCompact(
@@ -2486,9 +2527,8 @@ pub fn handleCompact(
     const handoff = parseCompactHandoff(state.alloc, msg.params_raw) catch {
         return state.writer.writeError(alloc, msg.id, .{ .code = ErrorCode.invalid_params, .message = "Invalid handoff" });
     };
-    if (session.fresh_handoff) |previous| state.alloc.free(previous);
-    session.fresh_handoff = handoff;
-    const compacted = try compactAcpSession(alloc, session);
+    defer if (handoff) |text| state.alloc.free(text);
+    const compacted = try compactAcpSession(state.alloc, session, if (session.context_experiments.fresh_context) handoff else null);
     const start = session.session_rt.contextHistoryStart();
     const total = session.session_rt.historyLen();
     var out: std.Io.Writer.Allocating = .init(alloc);
@@ -2512,7 +2552,7 @@ fn pushEvent(raw_ctx: *anyopaque, event: worker_runtime.WorkerEvent) !void {
     const ctx: *AcpContext = @ptrCast(@alignCast(raw_ctx));
     defer worker_runtime.freeWorkerEvent(std.heap.c_allocator, event);
     switch (event) {
-        .turn_token_update, .tool_payload_started => try ctx.sendUpdate("{\"sessionUpdate\":\"_emma_activity\"}"),
+        .turn_token_update, .tool_payload_started => try ctx.sendUpdate("{\"sessionUpdate\":\"_shinbo_activity\"}"),
         .clear_route_recovery_status => try ctx.clearModelRecoveryStatus(),
         else => {},
     }
@@ -2630,7 +2670,7 @@ fn pushContextExperiment(raw_ctx: *anyopaque, outcome: context_experiments.Outco
     ctx.sendUpdate(out.writer.buffered()) catch {};
 }
 
-const max_compact_handoff_chars: usize = 20_000;
+const max_compact_handoff_chars = session_codec.max_context_handoff_bytes;
 
 fn parseCompactHandoff(owner: Allocator, params_raw: ?[]const u8) !?[]u8 {
     const params = params_raw orelse return null;
@@ -2664,7 +2704,7 @@ test "ACP compaction publishes the resulting summary and retained history withou
         session.session_rt.compaction_observer = .{ .context = &ctx, .notify_fn = notifyCompacted };
         try session.session_rt.appendAssistantHistoryTurn(alloc, "Build the \"notice\"\nthen test", "Earlier answer");
         try session.session_rt.appendAssistantHistoryTurn(alloc, "Keep this turn", "Latest answer");
-        try std.testing.expect(try compactAcpSession(alloc, session));
+        try std.testing.expect(try compactAcpSession(alloc, session, null));
         const projected = try session.session_rt.snapshotContextHistory(alloc);
         defer types.freeHistoryTurnSlice(alloc, projected);
         ctx.sendCompacted(projected);
@@ -2683,7 +2723,7 @@ test "ACP compaction publishes the resulting summary and retained history withou
         var parsed = try std.json.parseFromSlice(std.json.Value, alloc, lines.next().?, .{});
         defer parsed.deinit();
         const update = parsed.value.object.get("params").?.object.get("update").?.object;
-        try std.testing.expectEqualStrings("_emma_compacted", update.get("sessionUpdate").?.string);
+        try std.testing.expectEqualStrings("_shinbo_compacted", update.get("sessionUpdate").?.string);
         try std.testing.expectEqualStrings(summary, update.get("handoff").?.string);
         try std.testing.expectEqual(fresh, update.get("fresh").?.bool);
         try std.testing.expectEqual(@as(i64, @intCast(summary.len + retained.len)), update.get("historyChars").?.integer);
@@ -4097,7 +4137,7 @@ test "ACP generation events emit activity without text or arguments" {
         const params = parsed.value.object.get("params").?.object;
         try std.testing.expectEqualStrings("session_1", params.get("sessionId").?.string);
         const update = params.get("update").?.object;
-        try std.testing.expectEqualStrings("_emma_activity", update.get("sessionUpdate").?.string);
+        try std.testing.expectEqualStrings("_shinbo_activity", update.get("sessionUpdate").?.string);
         try std.testing.expectEqual(@as(usize, 1), update.count());
         count += 1;
     }
@@ -4114,14 +4154,14 @@ test "ACP auth failure emits a valid detail-free JSON-RPC notification" {
     var state = try initTestAcpState(alloc, "/tmp/workspace", .ask);
     defer state.deinit();
     state.writer = .{ .stdout = capture };
-    state.active_session.?.credential_source = .emma_provider_api_key;
+    state.active_session.?.credential_source = .shinbo_provider_api_key;
     var ctx = AcpContext{
         .alloc = alloc,
         .state = &state,
         .session_id = "session_1",
     };
     try std.testing.expectEqual(
-        types.CredentialSource.emma_provider_api_key,
+        types.CredentialSource.shinbo_provider_api_key,
         ctx.toolContext().credential_source.?,
     );
 
@@ -4317,7 +4357,7 @@ fn initTestAcpState(alloc: Allocator, workspace_root: []const u8, mode: Permissi
         .writer = jsonrpc.Writer.init(),
         .workspace_root = owned_workspace,
         .api_key = api_key,
-        .credential_source = .emma_provider_api_key,
+        .credential_source = .shinbo_provider_api_key,
         .sandbox_backend = selected_backend,
         .web_search_runtime = @import("../core/tooling/web_search_runtime.zig").Runtime.init(.{
             .provider = cfg.gateway_provider.web_search,
@@ -4328,7 +4368,7 @@ fn initTestAcpState(alloc: Allocator, workspace_root: []const u8, mode: Permissi
             .mode = "normal",
             .workspace_root = owned_workspace,
             .api_key = api_key,
-            .credential_source = .emma_provider_api_key,
+            .credential_source = .shinbo_provider_api_key,
             .agent_step_limit = 4,
             .max_tool_result_bytes = 1024 * 1024,
             .fast_mode = false,
@@ -4412,7 +4452,7 @@ test "ACP pending tool_call updates keep provider ids stable and dedupe" {
         try std.testing.expect(std.mem.find(u8, line, "\"sessionUpdate\":\"tool_call\"") != null);
         const wire = try std.json.parseFromSliceLeaky(std.json.Value, alloc, line, .{});
         const update = wire.object.get("params").?.object.get("update").?.object;
-        try std.testing.expectEqualStrings("nested/" ** 50 ++ "file.txt", update.get("_emma_filePath").?.string);
+        try std.testing.expectEqualStrings("nested/" ** 50 ++ "file.txt", update.get("_shinbo_filePath").?.string);
         try std.testing.expect(update.get("rawInput").?.string.len <= max_raw_input_bytes);
         pending_count += 1;
     }
@@ -5230,4 +5270,20 @@ test "the published image input answer overlays vision for the session model onl
 
     session.image_input = null;
     try std.testing.expect(!availableModelCapabilities(&ctx, session.model).supports_vision);
+}
+
+test "ACP compaction retains its handoff until another prefix replaces it" {
+    const alloc = std.testing.allocator;
+    var state = try initTestAcpState(alloc, "/tmp/workspace", .ask);
+    defer state.deinit();
+    const session = &state.active_session.?;
+    try session.session_rt.appendAssistantHistoryTurn(alloc, "Start work", "Done");
+    try session.session_rt.appendAssistantHistoryTurn(alloc, "Continue", "Done");
+    try std.testing.expect(try compactAcpSession(alloc, session, "Verified progress"));
+    try std.testing.expectEqualStrings("Verified progress", session.fresh_handoff.?);
+    try std.testing.expect(!try compactAcpSession(alloc, session, null));
+    try std.testing.expectEqualStrings("Verified progress", session.fresh_handoff.?);
+    try session.session_rt.appendAssistantHistoryTurn(alloc, "More work", "Done");
+    try std.testing.expect(try compactAcpSession(alloc, session, null));
+    try std.testing.expect(session.fresh_handoff == null);
 }

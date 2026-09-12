@@ -5,7 +5,7 @@ const types = @import("../shared/types.zig");
 
 pub const Source = types.CredentialSource;
 
-pub const api_key_env = "EMMA_PROVIDER_API_KEY";
+pub const api_key_env = "SHINBO_PROVIDER_API_KEY";
 
 pub const CatalogPublicOnly = union(enum) {
     no_credential,
@@ -81,7 +81,7 @@ pub fn catalogAccessForCredential(source: ?Source, credential: []const u8) Catal
     return .{ .authenticated = .{ .source = selected_source, .credential = credential } };
 }
 
-pub const missing_credential_message = "emma-cli has no provider credential. Set " ++ api_key_env ++ ".";
+pub const missing_credential_message = "shinbo-cli has no provider credential. Set " ++ api_key_env ++ ".";
 pub const missing_interactive_credential_message = missing_credential_message;
 
 pub const Credential = struct {
@@ -105,7 +105,7 @@ pub const Resolution = struct {
 };
 
 pub fn resolve(alloc: std.mem.Allocator) !Resolution {
-    return .{ .credential = try loadSource(alloc, .emma_provider_api_key) };
+    return .{ .credential = try loadSource(alloc, .shinbo_provider_api_key) };
 }
 
 pub fn loadSource(alloc: std.mem.Allocator, source: Source) !?Credential {
@@ -126,7 +126,7 @@ fn nonEmptyEnvValue(name: []const u8) ?[]const u8 {
 
 pub fn sourceLabel(source: Source) []const u8 {
     return switch (source) {
-        .emma_provider_api_key => api_key_env,
+        .shinbo_provider_api_key => api_key_env,
     };
 }
 
@@ -176,13 +176,13 @@ test "catalog access isolates public and authenticated provider credentials" {
     try std.testing.expect(missing.credentialSource() == null);
     try std.testing.expect(missing.authorizationCredential() == null);
 
-    const refresh_failed = catalogAccessAfterRefreshFailure(.emma_provider_api_key);
+    const refresh_failed = catalogAccessAfterRefreshFailure(.shinbo_provider_api_key);
     try std.testing.expectEqual(CatalogPublicOnlyReason.credential_refresh_failed, refresh_failed.publicOnlyReason().?);
-    try std.testing.expectEqual(Source.emma_provider_api_key, refresh_failed.credentialSource().?);
+    try std.testing.expectEqual(Source.shinbo_provider_api_key, refresh_failed.credentialSource().?);
 
     var credential = Credential{
         .token = try std.testing.allocator.dupe(u8, "token"),
-        .source = .emma_provider_api_key,
+        .source = .shinbo_provider_api_key,
     };
     defer credential.deinit(std.testing.allocator);
 
@@ -196,7 +196,7 @@ test "catalog access isolates public and authenticated provider credentials" {
     try std.testing.expect(fallback.publicFallbackAfterRejection() == null);
 }
 
-test "credential resolution reads only the emma provider environment variable" {
+test "credential resolution reads only the shinbo provider environment variable" {
     const alloc = std.testing.allocator;
     const env = try CredentialTestEnv.install(alloc, &.{
         .{ api_key_env, "api-key" },
@@ -208,8 +208,8 @@ test "credential resolution reads only the emma provider environment variable" {
     defer if (resolution.credential) |*credential| credential.deinit(alloc);
     const credential = resolution.credential orelse return error.TestExpectedCredential;
     try std.testing.expectEqualStrings("api-key", credential.token);
-    try std.testing.expectEqual(Source.emma_provider_api_key, credential.source);
-    try std.testing.expect(sourceExists(.emma_provider_api_key));
+    try std.testing.expectEqual(Source.shinbo_provider_api_key, credential.source);
+    try std.testing.expect(sourceExists(.shinbo_provider_api_key));
 }
 
 test "a blank credential is absent rather than empty" {
@@ -219,5 +219,5 @@ test "a blank credential is absent rather than empty" {
 
     const resolution = try resolve(alloc);
     try std.testing.expect(resolution.credential == null);
-    try std.testing.expect(!sourceExists(.emma_provider_api_key));
+    try std.testing.expect(!sourceExists(.shinbo_provider_api_key));
 }

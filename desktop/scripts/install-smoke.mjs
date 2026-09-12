@@ -7,7 +7,7 @@ const [executable, screenshotArgument] = process.argv.slice(2);
 if (!executable || !screenshotArgument) throw new Error("Usage: node scripts/install-smoke.mjs <executable> <screenshot.png>");
 
 const screenshot = path.resolve(screenshotArgument);
-const scratch = path.join(process.env.RUNNER_TEMP ?? tmpdir(), "emma-install-smoke");
+const scratch = path.join(process.env.RUNNER_TEMP ?? tmpdir(), "shinbo-install-smoke");
 const profile = path.join(scratch, "profile");
 const dataRoot = path.join(scratch, "data");
 rmSync(scratch, { recursive: true, force: true });
@@ -28,13 +28,13 @@ async function waitFor(what, timeoutMs, probe) {
 }
 
 const app = spawn(executable, [`--user-data-dir=${profile}`, "--disable-gpu"], {
-  env: { ...process.env, EMMA_DATA_DIR: dataRoot },
+  env: { ...process.env, SHINBO_DATA_DIR: dataRoot },
   stdio: ["ignore", "inherit", "inherit"],
 });
 
 const portFile = path.join(profile, "DevToolsActivePort");
 const port = await waitFor("the DevTools port file", 120_000, () => {
-  if (app.exitCode !== null) throw new Error(`Emma exited with code ${app.exitCode} before writing ${portFile}`);
+  if (app.exitCode !== null) throw new Error(`Shinbo exited with code ${app.exitCode} before writing ${portFile}`);
   const lines = existsSync(portFile) ? readFileSync(portFile, "utf8").split("\n") : [];
   return lines.length > 1 ? lines[0].trim() : "";
 });
@@ -89,8 +89,8 @@ console.log(`Screenshot: ${screenshot}`);
 await evaluate("window.close(), true").catch(() => {});
 socket.close();
 const stopped = () => app.exitCode !== null || app.signalCode !== null;
-const closed = await waitFor("Emma to quit", 30_000, stopped).catch(() => false);
+const closed = await waitFor("Shinbo to quit", 30_000, stopped).catch(() => false);
 if (!closed) {
   app.kill();
-  await waitFor("Emma to stop", 30_000, stopped);
+  await waitFor("Shinbo to stop", 30_000, stopped);
 }

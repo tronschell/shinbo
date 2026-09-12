@@ -5,7 +5,7 @@ import { startTrial, type Improvement } from "../shared/improvement";
 import { SETTINGS_KEY, validateSettings, type VerifierSettings } from "../shared/settings";
 import { scopeApplies, scopeLabel } from "../shared/prompts";
 
-const KEY = "emma.bench.v1";
+const KEY = "shinbo.bench.v1";
 
 export function readBench(): Bench {
   try { return validateBench(JSON.parse(localStorage.getItem(KEY) ?? "null")); }
@@ -118,7 +118,7 @@ export function startBench(input: {
 }
 
 export function installBenchHook() {
-  window.emmaBench = {
+  window.shinboBench = {
     importCases: (cases) => cases.map((item) => addBenchCase(item).id),
     start: (options) => {
       const store = readBench();

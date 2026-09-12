@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
+import fs from "node:fs";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -16,7 +17,7 @@ const electron = {
     encryptString: (value: string) => Buffer.from(`${SEAL}${value}`, "utf8"),
     decryptString: (value: Buffer) => {
       const text = value.toString("utf8");
-      if (!roundTrip && text === `${SEAL}emma`) throw new Error("the profile key is not the one that sealed this");
+      if (!roundTrip && text === `${SEAL}shinbo`) throw new Error("the profile key is not the one that sealed this");
       if (!text.startsWith(SEAL)) throw new Error("this ciphertext is not ours");
       const secret = text.slice(SEAL.length);
       if (rejected.has(secret)) throw new Error("Error while decrypting the ciphertext provided to safeStorage.decryptString.");
@@ -30,7 +31,7 @@ require.cache[electronPath] = { id: electronPath, filename: electronPath, loaded
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { CredentialStore, secureStoreWorks }: typeof import("../main/credentials") = require("../main/credentials");
 
-const userData = () => mkdtempSync(path.join(tmpdir(), "emma-credentials-"));
+const userData = () => mkdtempSync(path.join(tmpdir(), "shinbo-credentials-"));
 const stored = (root: string) => JSON.parse(readFileSync(path.join(root, "credentials.json"), "utf8")) as Record<string, string>;
 const seal = (secret: string) => Buffer.from(`${SEAL}${secret}`, "utf8").toString("base64");
 
@@ -94,4 +95,22 @@ test("the notice names the key and the computer it could not be read on", () => 
   assert.equal(unreadableKeyNotice("OpenRouter", "win32"), "Your saved OpenRouter key could not be read on this PC. Paste it again.");
   assert.equal(unreadableKeyNotice("Z.ai", "darwin"), "Your saved Z.ai key could not be read on this Mac. Paste it again.");
   assert.equal(unreadableKeyNotice("ZAI_API_KEY", "win32"), "Your saved ZAI_API_KEY could not be read on this PC. Paste it again.");
+});
+
+for (const operation of ["replace", "remove"] as const) test(`R7-1 a refused credential ${operation} cannot leak into a later successful save`, (t) => {
+  const root = userData();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new CredentialStore(root);
+  store.set("OPENROUTER_API_KEY", "original-account-key");
+  const rename = t.mock.method(fs, "renameSync", () => { throw new Error("ENOSPC: credential persistence failed"); });
+  assert.throws(() => operation === "replace" ? store.set("OPENROUTER_API_KEY", "rejected-account-key") : store.remove("OPENROUTER_API_KEY"), /ENOSPC/);
+  rename.mock.restore();
+  store.set("DEEPSEEK_API_KEY", "unrelated-key");
+  const environment: NodeJS.ProcessEnv = {};
+  store.applyToEnv(environment);
+  const reopened: NodeJS.ProcessEnv = {};
+  new CredentialStore(root).applyToEnv(reopened);
+  t.diagnostic(`operation=${operation}; currentAccount=${environment.OPENROUTER_API_KEY}; reopenedAccount=${reopened.OPENROUTER_API_KEY}`);
+  assert.equal(environment.OPENROUTER_API_KEY, "original-account-key");
+  assert.equal(reopened.OPENROUTER_API_KEY, "original-account-key");
 });

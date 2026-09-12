@@ -212,7 +212,7 @@ const runtime = await createFxTerminal({
   backend: "wasm",
   wasm: await readFile(wasmPath),
   terminal: xtermAdapter(terminal),
-  env: { EMMA_PROVIDER_API_KEY: "workspace-key" },
+  env: { SHINBO_PROVIDER_API_KEY: "workspace-key" },
   fetch,
   configStore: { get(id) { return config.get(id) ?? null; }, set(id, value) { config.set(id, value); } },
   stderr(chunk) { stderr += stderrDecoder.decode(chunk, { stream: true }); },

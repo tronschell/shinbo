@@ -1,6 +1,6 @@
-# Releasing Emma
+# Releasing Shinbo
 
-Emma currently targets **macOS 12 or later on Apple silicon** and **Windows 10
+Shinbo currently targets **macOS 12 or later on Apple silicon** and **Windows 10
 version 1809 or later on x64**. GitHub Actions builds it on standard `macos-15`
 and `windows-2025` (x64) runners.
 
@@ -40,7 +40,7 @@ gh pr create --base dev
 tagged `zvec-grep-v<version>`, created with `gh release create --latest=false` so
 it never displaces an app release. Assets are re-uploaded with `--clobber`, and
 bumping `ZVEC_GREP_VERSION` is what creates the next tag. The app downloads from
-that release; `EMMA_TOOLS_URL` repoints the origin for a local rehearsal.
+that release; `SHINBO_TOOLS_URL` repoints the origin for a local rehearsal.
 
 ## Release a version
 
@@ -95,19 +95,19 @@ rebuilding the application and retaining the installer smoke checks.
 
 Both packaging jobs install what they just built and launch it before anything
 is uploaded. `package-win` runs the Squirrel installer with `-s`, waits for
-`%LOCALAPPDATA%\Emma\app-X.Y.Z\Emma.exe` and `Update.exe`, confirms the Start
+`%LOCALAPPDATA%\Shinbo\app-X.Y.Z\Shinbo.exe` and `Update.exe`, confirms the Start
 Menu shortcut, and finishes with `Update.exe --uninstall -s`. Squirrel cannot
 delete the `Update.exe` it is running from, so it marks the install root with a
 `.dead` file and hands the removal to the next reboot; the step therefore
 requires the updater to exit zero and the versioned directory to be either gone
 or marked dead. `package-mac` mounts the disk image with
-`hdiutil attach -nobrowse -readonly`, copies `Emma.app` into `RUNNER_TEMP`,
+`hdiutil attach -nobrowse -readonly`, copies `Shinbo.app` into `RUNNER_TEMP`,
 detaches, and deletes the copy afterwards. The unsigned copy is launched through
-`Emma.app/Contents/MacOS/Emma` rather than `open`, so Gatekeeper never gets a
+`Shinbo.app/Contents/MacOS/Shinbo` rather than `open`, so Gatekeeper never gets a
 say.
 
 Both then run [`install-smoke.mjs`](../desktop/scripts/install-smoke.mjs), which
-starts the installed binary with a scratch `EMMA_DATA_DIR` and `--user-data-dir`
+starts the installed binary with a scratch `SHINBO_DATA_DIR` and `--user-data-dir`
 under `RUNNER_TEMP`, reads the real port out of `DevToolsActivePort` because the
 app forces `remote-debugging-port=0`, checks `/json/version` and `/json/list`,
 requires a page target ending in `dist-renderer/index.html`, evaluates
@@ -145,7 +145,7 @@ link connects the previous release to the exact source commit.
 
 The [contribution skill](../.claude/skills/contributing/SKILL.md) routes agents to
 the [release skill](../.claude/skills/releasing/SKILL.md) to write these summaries
-as part of normal PR preparation. Emma's squash-merge settings already preserve
+as part of normal PR preparation. Shinbo's squash-merge settings already preserve
 the PR title and body. There is no release-time collection or editing step for
 the owner. A GitHub API failure stops the job before publication.
 
@@ -162,24 +162,24 @@ or changing anything. References resolve on GitHub, independent of local tags.
 ## Downloads and updates
 
 Every release publishes macOS Apple silicon and Windows x64 assets to
-[GitHub Releases](https://github.com/tronschell/emma/releases).
+[GitHub Releases](https://github.com/tronschell/shinbo/releases).
 
 macOS:
 
-- `Emma-vX.Y.Z-darwin-arm64.dmg`
-- `Emma-vX.Y.Z-darwin-arm64.dmg.sha256`
-- `Emma-vX.Y.Z-darwin-arm64.zip`
-- `Emma-vX.Y.Z-darwin-arm64.zip.sha256`
+- `Shinbo-vX.Y.Z-darwin-arm64.dmg`
+- `Shinbo-vX.Y.Z-darwin-arm64.dmg.sha256`
+- `Shinbo-vX.Y.Z-darwin-arm64.zip`
+- `Shinbo-vX.Y.Z-darwin-arm64.zip.sha256`
 
 Windows:
 
-- `Emma-vX.Y.Z-win32-x64-Setup.exe`
-- `Emma-X.Y.Z-full.nupkg`
+- `Shinbo-vX.Y.Z-win32-x64-Setup.exe`
+- `Shinbo-X.Y.Z-full.nupkg`
 - `RELEASES`
-- `Emma-vX.Y.Z-windows-x64.sha256`
+- `Shinbo-vX.Y.Z-windows-x64.sha256`
 
-The disk image is the human download: open it and drag Emma onto the
-Applications alias on the right. The centered Finder window uses Emma's rose
+The disk image is the human download: open it and drag Shinbo onto the
+Applications alias on the right. The centered Finder window uses Shinbo's rose
 dither background, a drag instruction, and the root package version at the
 bottom. `scripts/dmg-mac.mjs` draws the background at standard and Retina
 resolution with macOS AppKit, then saves the icon positions and window geometry
@@ -208,9 +208,9 @@ On macOS, a packaged app checks the feed at launch, on a five-minute tick, when
 the machine wakes, and when a window takes focus, with any check inside thirty
 minutes of the last one skipped. Wake and focus matter because a sleeping Mac
 suspends the timer, so a window left open for days would otherwise never check
-again. **Check for Updates…** in the Emma menu forces one past that gap and
+again. **Check for Updates…** in the Shinbo menu forces one past that gap and
 reports the result either way. Squirrel downloads a newer eligible version in
-the background, and Emma shows **Update ready · X.Y.Z** with **Install and
+the background, and Shinbo shows **Update ready · X.Y.Z** with **Install and
 relaunch** once the download finishes.
 
 The downloaded version is recorded in `update-ready.json` under the user data
@@ -218,14 +218,14 @@ directory, so quitting no longer forgets it and the notice returns on the next
 launch. Squirrel can only install an update this process downloaded, so
 installing from a restored notice re-downloads first and then relaunches. The
 record is deleted once the running version is no longer older than it. The
-unpackaged `EMMA_UPDATE_FAKE` mode only exercises the notice.
+unpackaged `SHINBO_UPDATE_FAKE` mode only exercises the notice.
 
 On Windows, the Setup executable is a Squirrel installer. It installs per user
-under `%LOCALAPPDATA%\Emma`, needs no administrator prompt, and the same
+under `%LOCALAPPDATA%\Shinbo`, needs no administrator prompt, and the same
 `update.electronjs.org` feed serves it. There is no wizard: it shows one 420x260
-splash for about twenty seconds and then launches Emma, and
+splash for about twenty seconds and then launches Shinbo, and
 [`installer-splash.mjs`](../desktop/scripts/installer-splash.mjs) writes that
-committed `desktop/assets/installer/emma-setup.gif` from the disk image's own
+committed `desktop/assets/installer/shinbo-setup.gif` from the disk image's own
 palette, Bayer dither, bow mark and pixel type. Squirrel sizes the splash window
 to the GIF and shows it at 1:1, so rerun the script and commit the result after
 changing the artwork. Squirrel appends `/RELEASES` to the feed URL, and the feed
@@ -251,7 +251,7 @@ to the feed on both platforms.
 **Windows builds are not code signed today.** The repository holds no Windows
 certificate, so SmartScreen shows "Windows protected your PC" on the installer;
 users click **More info** and then **Run anyway**. The published
-`Emma-vX.Y.Z-windows-x64.sha256` file is how a download is checked in the
+`Shinbo-vX.Y.Z-windows-x64.sha256` file is how a download is checked in the
 meantime. `update.electronjs.org` does not require Windows Squirrel builds to
 be signed, so auto-update works unsigned.
 
@@ -312,7 +312,7 @@ architecture, and native helpers.
 Use another output directory to avoid replacing a running development bundle:
 
 ```sh
-npm --prefix desktop run package:mac -- /tmp/emma-release-check
+npm --prefix desktop run package:mac -- /tmp/shinbo-release-check
 ```
 
 Launch the resulting app with an isolated profile and data directory and

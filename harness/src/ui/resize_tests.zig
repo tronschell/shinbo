@@ -1,6 +1,3 @@
-//! Grid-level resize tests that replay `TranscriptRuntime` output through
-//! `vt_emulator.Grid` without a TTY or signals.
-
 const std = @import("std");
 
 const question_prompt = @import("../core/agent/question_prompt.zig");
@@ -58,8 +55,6 @@ const TestFrameObservation = struct {
     changed_cells: usize = 0,
 };
 
-/// Test harness that captures every byte `TranscriptRuntime` emits and
-/// replays it through a virtual terminal.
 pub const Harness = struct {
     alloc: Allocator,
     tmp: std.testing.TmpDir,
@@ -112,7 +107,6 @@ pub const Harness = struct {
         self.vt.deinit();
     }
 
-    /// Pull any bytes written since the last flush into the VT grid.
     pub fn flush(self: *Harness) !void {
         const total = try self.file.length(io_mod.getIo());
         if (total <= self.read_offset) return;
@@ -1207,7 +1201,7 @@ fn expectActiveInputSurvivesResize(
     defer approval.deinit(alloc);
 
     try h.shell.initViewport(&h.metrics, 15);
-    // Tiny targets require the committed frame to own the full terminal.
+
     h.shell.owned_top_row = 1;
     h.frame_redraw = true;
     try renderTestFooter(&h, &input, &approval, &h.frame_redraw);
@@ -3350,8 +3344,7 @@ test "structured command-output rewrite materializes committed transcript scroll
         const text = try std.fmt.bufPrint(&line, "assistant table row {d}\n", .{index + 1});
         try first_assistant.text.appendSlice(h.alloc, text);
     }
-    // Assistant content is complete before each frame; report producer
-    // closure so the finality floor does not hold the tail.
+
     h.shell.transcript_release = h.shell.transcript_release.with_assistant_tail_writable(false);
 
     try h.renderTranscriptFrame();
@@ -3388,8 +3381,7 @@ test "structured command-output rewrite materializes committed transcript scroll
 
     try h.renderTranscriptFrame();
     try h.flush();
-    // The retention rewrite is byte-incompatible with the committed anchor.
-    // This frame re-anchors in place and records same-epoch recovery debt.
+
     try std.testing.expectEqual(@as(u16, 0), h.last_frame.planned_scroll_rows);
     try std.testing.expectEqual(@as(u16, 0), h.last_frame.unplanned_scroll_rows);
     const held_diagnostic = h.shell.transcriptCommitDiagnostic();
@@ -3402,7 +3394,6 @@ test "structured command-output rewrite materializes committed transcript scroll
         .invalid, .recovering => return error.TestExpectedStableTranscript,
     }
 
-    // The following compatible frame settles the held rows with final bytes.
     try h.renderTranscriptFrame();
     try h.flush();
     try std.testing.expect(h.last_frame.planned_scroll_rows > 0);
@@ -3917,7 +3908,7 @@ test "welcome logo stays pinned while middle transcript rows overflow" {
     try h.flush();
 
     try expectGridContains(&h, "Run /help for commands");
-    try expectGridContains(&h, "emma v");
+    try expectGridContains(&h, "shinbo v");
     try expectGridNotContains(&h, "content line 0");
     try expectGridContains(&h, "content line 44");
 }
@@ -3946,7 +3937,7 @@ test "welcome logo stays pinned during footer-reserved overflow" {
 
     try std.testing.expect(h.shell.last_visible_transcript_split_active);
     try std.testing.expect(h.shell.last_visible_transcript_split_suffix_start_line > h.shell.last_visible_transcript_split_prefix_lines);
-    try expectGridContains(&h, "emma v");
+    try expectGridContains(&h, "shinbo v");
     try expectGridContains(&h, "Run /help for commands");
     try expectGridNotContains(&h, "content line 0");
     try expectGridContains(&h, "content line 44");
@@ -4598,7 +4589,7 @@ test "entry-bound shimmer resolves inside pinned welcome tail selection" {
     try h.flush();
 
     const status_row = try findRowContaining(&h, "tail status line");
-    try expectGridContains(&h, "emma v");
+    try expectGridContains(&h, "shinbo v");
 
     var ctx = defaultFooterContext(&input);
     setToolActivity(&ctx, status_id, "Reading pinned tail");
@@ -5491,7 +5482,7 @@ test "compact picker dismissal preserves committed history floor" {
             .topic = "status",
             .tone = .information,
             .body = "model=test-model\n" ++
-                "auth=EMMA_PROVIDER_API_KEY\n" ++
+                "auth=SHINBO_PROVIDER_API_KEY\n" ++
                 "auth_refreshable=false\n" ++
                 "permission_mode=auto\n" ++
                 "sandbox=none\n" ++
@@ -6001,7 +5992,6 @@ test "approval footer growth preserves raw status row over stale footer frame" {
     _ = try h.shell.appendRawTranscriptEntry(alloc, status_line ++ "\n");
     _ = try approval.syncRequest(alloc, .{ .label = "skill next-best-practices" });
 
-    // Footer growth follows transcript paint; its stale clear must preserve the status row.
     try renderTestFooter(&h, &input, &approval, &frame_redraw);
     try h.flush();
 
@@ -6315,9 +6305,6 @@ test "inline approval footer reflow preserves concurrent transcript progress" {
     try renderTestFooter(&h, &input, &approval, &h.frame_redraw);
     try h.flush();
 
-    // The assistant producer is still open, so the streamed rows are not
-    // final: the viewport follows them through an in-place repaint and no
-    // transcript row is released into scrollback.
     try std.testing.expectEqual(@as(u16, 0), h.last_frame.planned_scroll_rows);
     try std.testing.expectEqual(@as(u16, 0), h.last_frame.committed_scroll_rows);
     try std.testing.expectEqual(@as(u16, 0), h.last_frame.unplanned_scroll_rows);
@@ -6332,8 +6319,6 @@ test "inline approval footer reflow preserves concurrent transcript progress" {
     try std.testing.expectEqual(@as(usize, 1), try countGridOccurrences(&h, append_one));
     try std.testing.expectEqual(@as(usize, 1), try countGridOccurrences(&h, append_two));
 
-    // Closing the producer finalizes the tail; the held rows settle through
-    // the catch-up replay, possibly across frames.
     h.shell.transcript_release = h.shell.transcript_release.with_assistant_tail_writable(false);
     var settle_frames: usize = 0;
     var settled_scroll_rows: u32 = 0;
@@ -7227,7 +7212,6 @@ pub fn testReconstructiveFullTranscriptReplay() !void {
     const middle_idx = std.mem.find(u8, emitted, middle_marker) orelse return error.TestMissingMiddleEntry;
     const final_idx = std.mem.find(u8, emitted, final_marker) orelse return error.TestMissingFinalEntry;
 
-    // Limit uniqueness checks to the reconstructive replay, before the final-tail paint.
     const replay = emitted[first_idx .. final_idx + final_marker.len];
     try std.testing.expect(reset_idx < first_idx);
     try std.testing.expect(reset_idx < replay_origin_idx);

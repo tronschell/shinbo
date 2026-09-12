@@ -9,15 +9,14 @@
 #include <string.h>
 
 typedef enum { TapDown, TapUp, TapCancel } TapEvent;
-static const uint16_t kLeftOptionKeyCode = 58;
 typedef struct {
     bool is_down;
     bool has_previous_release;
     bool ignore_release;
     NSTimeInterval previous_release;
-} DoubleLeftOption;
+} DoubleTap;
 
-static bool handle_tap(DoubleLeftOption *tap, TapEvent event, NSTimeInterval time) {
+static bool handle_tap(DoubleTap *tap, TapEvent event, NSTimeInterval time) {
     switch (event) {
         case TapCancel:
             memset(tap, 0, sizeof(*tap));
@@ -46,10 +45,6 @@ static bool handle_tap(DoubleLeftOption *tap, TapEvent event, NSTimeInterval tim
     return false;
 }
 
-/* A modifier held down on its own, which macOS itself does nothing with. Only the
-   listener can see this: a global shortcut is only ever told about the key going down.
-   Anything else happening — a second modifier, a keystroke, the release — cancels the
-   hold, so holding Shift to type a long capitalised word never opens Emma. */
 #define kMaxHolds 8
 typedef struct {
     uint16_t key_code;
@@ -64,34 +59,32 @@ typedef struct {
 
 typedef struct {
     HoldSet set;
+    DoubleTap taps[kMaxHolds];
     size_t armed;
     uint64_t generation;
 } HoldWatch;
 
-static const CGEventFlags kModifierMask = kCGEventFlagMaskAlphaShift | kCGEventFlagMaskShift
-    | kCGEventFlagMaskControl | kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand
-    | kCGEventFlagMaskNumericPad | kCGEventFlagMaskHelp | kCGEventFlagMaskSecondaryFn;
-
-static const struct { uint16_t code; CGEventFlags flag; } kModifierFlags[] = {
-    {54, kCGEventFlagMaskCommand}, {55, kCGEventFlagMaskCommand},
-    {56, kCGEventFlagMaskShift}, {60, kCGEventFlagMaskShift},
-    {58, kCGEventFlagMaskAlternate}, {61, kCGEventFlagMaskAlternate},
-    {59, kCGEventFlagMaskControl}, {62, kCGEventFlagMaskControl},
+static const struct { uint16_t code; NSEventModifierFlags flag; } kModifierFlags[] = {
+    {54, NSEventModifierFlagCommand}, {55, NSEventModifierFlagCommand},
+    {56, NSEventModifierFlagShift}, {60, NSEventModifierFlagShift},
+    {58, NSEventModifierFlagOption}, {61, NSEventModifierFlagOption},
+    {59, NSEventModifierFlagControl}, {62, NSEventModifierFlagControl},
+    {63, NSEventModifierFlagFunction},
 };
 
-static CGEventFlags modifier_flag(uint16_t key_code) {
+static NSEventModifierFlags modifier_flag(uint16_t key_code) {
     for (size_t index = 0; index < sizeof(kModifierFlags) / sizeof(kModifierFlags[0]); index += 1) {
         if (kModifierFlags[index].code == key_code) return kModifierFlags[index].flag;
     }
     return 0;
 }
 
-static size_t handle_hold(HoldWatch *watch, CGEventType type, uint16_t key_code, CGEventFlags flags) {
-    flags &= kModifierMask;
-    if (type != kCGEventFlagsChanged) { watch->armed = 0; watch->generation += 1; return 0; }
+static size_t handle_hold(HoldWatch *watch, NSEventType type, uint16_t key_code, NSEventModifierFlags flags) {
+    flags &= NSEventModifierFlagDeviceIndependentFlagsMask;
+    if (type != NSEventTypeFlagsChanged) { watch->armed = 0; watch->generation += 1; return 0; }
     for (size_t index = 0; index < watch->set.count; index += 1) {
-        CGEventFlags flag = modifier_flag(watch->set.items[index].key_code);
-        if (watch->set.items[index].key_code == key_code && flag != 0 && flags == flag) {
+        NSEventModifierFlags flag = modifier_flag(watch->set.items[index].key_code);
+        if (watch->set.items[index].seconds > 0 && watch->set.items[index].key_code == key_code && flag != 0 && flags == flag) {
             watch->armed = index + 1;
             watch->generation += 1;
             return watch->armed;
@@ -102,7 +95,6 @@ static size_t handle_hold(HoldWatch *watch, CGEventType type, uint16_t key_code,
     return 0;
 }
 
-/** True when the armed hold is still the one that armed at this generation and time. */
 static bool hold_survived(const HoldWatch *watch, size_t armed, uint64_t generation) {
     return watch->armed == armed && armed != 0 && watch->generation == generation;
 }
@@ -121,7 +113,7 @@ static HoldSet parse_holds(NSDictionary *object) {
         if (![identifier isKindOfClass:[NSString class]] || ![key_code isKindOfClass:[NSNumber class]] || ![ms isKindOfClass:[NSNumber class]]) continue;
         double milliseconds = [ms doubleValue];
         int code = [key_code intValue];
-        if (milliseconds < 100 || milliseconds > 5000 || code < 0 || code > 0xFFFF || modifier_flag((uint16_t)code) == 0) continue;
+        if (milliseconds != 0 && (milliseconds < 100 || milliseconds > 5000) || code < 0 || code > 0xFFFF || modifier_flag((uint16_t)code) == 0) continue;
         const char *name = [(NSString *)identifier UTF8String];
         if (!name || strlen(name) >= sizeof(out[0].id)) continue;
         out[count].key_code = (uint16_t)code;
@@ -134,17 +126,24 @@ static HoldSet parse_holds(NSDictionary *object) {
     return set;
 }
 
-static TapEvent event_input(CGEventType type, uint16_t key_code, CGEventFlags flags) {
-    if (type != kCGEventFlagsChanged || key_code != kLeftOptionKeyCode) return TapCancel;
+static TapEvent event_input(NSEventType type, uint16_t key_code, NSEventModifierFlags flags, uint16_t tap_code) {
+    if (type != NSEventTypeFlagsChanged || key_code != tap_code) return TapCancel;
 
-    flags &= kModifierMask;
-    if (flags == kCGEventFlagMaskAlternate) return TapDown;
+    flags &= NSEventModifierFlagDeviceIndependentFlagsMask;
+    if (flags == modifier_flag(tap_code)) return TapDown;
     if (flags == 0) return TapUp;
     return TapCancel;
 }
 
-// Reports the real camera-housing bounds per display. AppKit exposes the unobscured
-// areas beside the housing; the notch is what sits between them.
+static size_t handle_taps(HoldWatch *watch, NSEventType type, uint16_t key_code, NSEventModifierFlags flags, NSTimeInterval time) {
+    size_t fired = 0;
+    for (size_t index = 0; index < watch->set.count; index += 1) {
+        if (watch->set.items[index].seconds > 0) continue;
+        if (handle_tap(&watch->taps[index], event_input(type, key_code, flags, watch->set.items[index].key_code), time)) fired = index + 1;
+    }
+    return fired;
+}
+
 static int print_screens(void) {
     NSMutableArray *items = [NSMutableArray array];
     for (NSScreen *screen in [NSScreen screens]) {
@@ -160,7 +159,7 @@ static int print_screens(void) {
     }
     NSData *json = [NSJSONSerialization dataWithJSONObject:items options:0 error:NULL];
     if (!json) {
-        fputs("Emma: unable to serialize display geometry.\n", stderr);
+        fputs("Shinbo: unable to serialize display geometry.\n", stderr);
         return 1;
     }
     fwrite(json.bytes, 1, json.length, stdout);
@@ -249,7 +248,7 @@ static int print_selection(void) {
     }
     NSData *json = [NSJSONSerialization dataWithJSONObject:item options:0 error:NULL];
     if (!json) {
-        fputs("Emma: unable to serialize the selection.\n", stderr);
+        fputs("Shinbo: unable to serialize the selection.\n", stderr);
         return 1;
     }
     fwrite(json.bytes, 1, json.length, stdout);
@@ -258,13 +257,9 @@ static int print_selection(void) {
     return 0;
 }
 
-// Bounded computer-use input. One JSON action per stdin line, one JSON result per line.
-// Emma's Electron main process owns the permission gate; this helper only validates and posts.
 #define kMaxInputLine (64 * 1024)
 #define kMaxTypedCharacters 4096
 
-// The longest a single hold_key may pin a key down, in seconds. The tool's own
-// ceiling is 300; this is the backstop for a helper driven by anything else.
 #define kMaxHoldSeconds 300.0
 
 typedef enum {
@@ -275,7 +270,6 @@ typedef enum {
 typedef struct {
     ActionKind kind;
     CGPoint point;
-    /** Where a drag starts. `point` is where it ends. */
     CGPoint origin;
     int clicks;
     CGMouseButton button;
@@ -284,13 +278,9 @@ typedef struct {
     CGKeyCode key_code;
     CGEventFlags flags;
     double seconds;
-    /** False for the actions that happen wherever the pointer already is. */
     bool has_point;
 } InputAction;
 
-/* Names as the computer-use tool spells them: X11 keysyms, which is what the
-   model emits, lowercased before lookup. The aliases are the ones that actually
-   turn up — `return` and `Return`, `esc` and `Escape`, `prior` and `Page_Up`. */
 static const struct { const char *name; CGKeyCode code; } kNamedKeys[] = {
     {"a", 0}, {"b", 11}, {"c", 8}, {"d", 2}, {"e", 14}, {"f", 3}, {"g", 5},
     {"h", 4}, {"i", 34}, {"j", 38}, {"k", 40}, {"l", 37}, {"m", 46}, {"n", 45},
@@ -310,7 +300,6 @@ static const struct { const char *name; CGKeyCode code; } kNamedKeys[] = {
     {"minus", 27}, {"equal", 24}, {"bracketleft", 33}, {"bracketright", 30},
     {"backslash", 42}, {"semicolon", 41}, {"apostrophe", 39}, {"grave", 50},
     {"comma", 43}, {"period", 47}, {"slash", 44},
-    // The modifiers themselves, because `hold_key` is mostly used to hold one.
     {"shift", 56}, {"shift_l", 56}, {"control", 59}, {"ctrl", 59}, {"control_l", 59},
     {"alt", 58}, {"option", 58}, {"alt_l", 58}, {"super", 55}, {"command", 55}, {"super_l", 55},
 };
@@ -334,8 +323,6 @@ static bool modifier_flags(NSArray *modifiers, CGEventFlags *flags) {
     for (id item in modifiers) {
         if (![item isKindOfClass:[NSString class]]) return false;
         NSString *name = [(NSString *)item lowercaseString];
-        // Both spellings: Emma's own callers say "command", the computer-use
-        // vocabulary the model already knows says the X11 "super"/"alt"/"ctrl".
         if ([name isEqualToString:@"command"] || [name isEqualToString:@"super"] || [name isEqualToString:@"cmd"]) *flags |= kCGEventFlagMaskCommand;
         else if ([name isEqualToString:@"shift"]) *flags |= kCGEventFlagMaskShift;
         else if ([name isEqualToString:@"option"] || [name isEqualToString:@"alt"]) *flags |= kCGEventFlagMaskAlternate;
@@ -353,7 +340,6 @@ static bool number_value(id value, double *out) {
     return true;
 }
 
-/** Reads an optional bounded seconds value, for the two actions that wait. */
 static bool duration_value(id value, double *out, NSString **error) {
     double seconds = 0;
     if (value && !number_value(value, &seconds)) { *error = @"duration is invalid"; return false; }
@@ -362,7 +348,6 @@ static bool duration_value(id value, double *out, NSString **error) {
     return true;
 }
 
-// Parses one action. Never posts an event, so the self-test can exercise it directly.
 static bool parse_action(NSDictionary *object, InputAction *action, NSString **text, NSString **error) {
     *text = nil;
     memset(action, 0, sizeof(*action));
@@ -380,8 +365,6 @@ static bool parse_action(NSDictionary *object, InputAction *action, NSString **t
 
     if ([kind isEqualToString:@"move"] || [kind isEqualToString:@"click"] || [kind isEqualToString:@"double_click"]
         || [kind isEqualToString:@"triple_click"] || [kind isEqualToString:@"mouse_down"] || [kind isEqualToString:@"mouse_up"]) {
-        // Down and up happen wherever the pointer already is: that is the whole
-        // point of splitting them out of `click`, so they take no coordinates.
         bool held = [kind isEqualToString:@"mouse_down"] || [kind isEqualToString:@"mouse_up"];
         if (!has_point && !held) { *error = @"action requires numeric x and y"; return false; }
         if ([kind isEqualToString:@"move"]) { action->kind = ActionMove; return true; }
@@ -451,7 +434,6 @@ static bool parse_action(NSDictionary *object, InputAction *action, NSString **t
     return false;
 }
 
-// CGDisplayBounds already uses the flipped global space CGEvent expects, so no AppKit conversion.
 static bool point_on_active_display(CGPoint point) {
     CGDirectDisplayID displays[16];
     uint32_t count = 0;
@@ -468,7 +450,6 @@ static void post(CGEventRef event) {
     CFRelease(event);
 }
 
-/** Where the pointer is right now, in the same flipped global space every action uses. */
 static CGPoint cursor_point(void) {
     CGEventRef probe = CGEventCreate(NULL);
     CGPoint point = probe ? CGEventGetLocation(probe) : CGPointZero;
@@ -476,7 +457,6 @@ static CGPoint cursor_point(void) {
     return point;
 }
 
-/** The down/up pair for one button, since the three buttons do not share a type. */
 static CGEventType button_event(CGMouseButton button, bool down) {
     if (button == kCGMouseButtonRight) return down ? kCGEventRightMouseDown : kCGEventRightMouseUp;
     if (button == kCGMouseButtonCenter) return down ? kCGEventOtherMouseDown : kCGEventOtherMouseUp;
@@ -489,7 +469,6 @@ static CGEventType drag_event(CGMouseButton button) {
     return kCGEventLeftMouseDragged;
 }
 
-/** Posts one mouse event with the run's modifiers held, which a plain post would drop. */
 static void post_mouse(CGEventType type, CGPoint point, CGMouseButton button, CGEventFlags flags, int64_t clicks) {
     CGEventRef event = CGEventCreateMouseEvent(NULL, type, point, button);
     if (!event) return;
@@ -523,15 +502,11 @@ static bool perform_action(InputAction action, NSString *text, NSString **error)
         }
         case ActionMouseDown:
         case ActionMouseUp: {
-            // Wherever the pointer already is: `mouse_move` put it there, and a
-            // drag built out of these is the caller's to sequence.
             CGPoint point = action.has_point ? action.point : cursor_point();
             post_mouse(button_event(action.button, action.kind == ActionMouseDown), point, action.button, action.flags, 1);
             break;
         }
         case ActionDrag: {
-            // Dragged through a midpoint rather than teleported: a single jump from
-            // press to release is not a gesture most views recognise as a drag.
             CGPoint middle = CGPointMake((action.origin.x + action.point.x) / 2, (action.origin.y + action.point.y) / 2);
             post_mouse(kCGEventMouseMoved, action.origin, action.button, action.flags, 0);
             post_mouse(button_event(action.button, true), action.origin, action.button, action.flags, 1);
@@ -548,7 +523,6 @@ static bool perform_action(InputAction action, NSString *text, NSString **error)
             break;
         }
         case ActionType: {
-            // Unicode strings avoid a keycode/layout table entirely.
             NSUInteger length = text.length;
             for (NSUInteger start = 0; start < length; start += 32) {
                 NSRange range = NSMakeRange(start, MIN((NSUInteger)32, length - start));
@@ -574,8 +548,6 @@ static bool perform_action(InputAction action, NSString *text, NSString **error)
             break;
         }
         case ActionHoldKey: {
-            // Held by repeating the down event, the way the OS's own key repeat
-            // reaches an app: one long press posts nothing while it is held.
             CGEventRef down = CGEventCreateKeyboardEvent(NULL, action.key_code, true);
             if (down) CGEventSetFlags(down, action.flags);
             post(down);
@@ -611,7 +583,7 @@ static void write_result(bool ok, NSString *message) {
 
 static int run_input(void) {
     if (!AXIsProcessTrusted()) {
-        fputs("Emma: Accessibility access is required to control the computer. Grant it in System Settings, then relaunch Emma.\n", stderr);
+        fputs("Shinbo: Accessibility access is required to control the computer. Grant it in System Settings, then relaunch Shinbo.\n", stderr);
         write_result(false, @"Accessibility access is not granted");
         return 1;
     }
@@ -641,7 +613,7 @@ static int run_input(void) {
 }
 
 static void self_test(void) {
-    DoubleLeftOption tap = {0};
+    DoubleTap tap = {0};
     assert(!handle_tap(&tap, TapDown, 0));
     assert(!handle_tap(&tap, TapDown, 0.01));
     assert(!handle_tap(&tap, TapUp, 0.05));
@@ -658,36 +630,37 @@ static void self_test(void) {
     assert(!handle_tap(&tap, TapCancel, 0.51));
     assert(!handle_tap(&tap, TapDown, 0.6));
 
-    assert(event_input(kCGEventFlagsChanged, kLeftOptionKeyCode, kCGEventFlagMaskAlternate) == TapDown);
-    assert(event_input(kCGEventFlagsChanged, kLeftOptionKeyCode, kCGEventFlagMaskAlternate | kCGEventFlagMaskNonCoalesced) == TapDown);
-    assert(event_input(kCGEventFlagsChanged, kLeftOptionKeyCode, 0) == TapUp);
-    assert(event_input(kCGEventFlagsChanged, 61, kCGEventFlagMaskAlternate) == TapCancel);
-    assert(event_input(kCGEventFlagsChanged, kLeftOptionKeyCode, kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand) == TapCancel);
-    assert(event_input(kCGEventFlagsChanged, kLeftOptionKeyCode, kCGEventFlagMaskAlternate | kCGEventFlagMaskSecondaryFn) == TapCancel);
-    assert(event_input(kCGEventKeyDown, 0, 0) == TapCancel);
+    assert(event_input(NSEventTypeFlagsChanged, 58, NSEventModifierFlagOption, 58) == TapDown);
+    assert(event_input(NSEventTypeFlagsChanged, 58, 0, 58) == TapUp);
+    assert(event_input(NSEventTypeFlagsChanged, 61, NSEventModifierFlagOption, 58) == TapCancel);
+    assert(event_input(NSEventTypeFlagsChanged, 58, NSEventModifierFlagOption | NSEventModifierFlagCommand, 58) == TapCancel);
+    assert(event_input(NSEventTypeFlagsChanged, 63, NSEventModifierFlagFunction, 63) == TapDown);
+    assert(event_input(NSEventTypeKeyDown, 0, 0, 58) == TapCancel);
 
     HoldWatch watch = {0};
-    watch.set = parse_holds(@{@"holds": @[@{@"id": @"voice", @"keyCode": @58, @"ms": @500}, @{@"id": @"bad", @"keyCode": @0, @"ms": @500}]});
-    // A letter key is not holdable, so only the modifier binding survives parsing.
-    assert(watch.set.count == 1 && watch.set.items[0].key_code == 58 && watch.set.items[0].seconds == 0.5);
-    size_t armed = handle_hold(&watch, kCGEventFlagsChanged, 58, kCGEventFlagMaskAlternate);
+    watch.set = parse_holds(@{@"holds": @[@{@"id": @"voice", @"keyCode": @58, @"ms": @500}, @{@"id": @"bad", @"keyCode": @0, @"ms": @500}, @{@"id": @"toggle", @"keyCode": @63, @"ms": @0}]});
+    assert(watch.set.count == 2 && watch.set.items[0].key_code == 58 && watch.set.items[0].seconds == 0.5 && watch.set.items[1].seconds == 0);
+    assert(handle_taps(&watch, NSEventTypeFlagsChanged, 63, NSEventModifierFlagFunction, 0) == 0);
+    assert(handle_taps(&watch, NSEventTypeFlagsChanged, 63, 0, 0.05) == 0);
+    assert(handle_taps(&watch, NSEventTypeFlagsChanged, 63, NSEventModifierFlagFunction, 0.2) == 2);
+    assert(handle_taps(&watch, NSEventTypeFlagsChanged, 63, 0, 0.25) == 0);
+    assert(handle_hold(&watch, NSEventTypeFlagsChanged, 63, NSEventModifierFlagFunction) == 0);
+    size_t armed = handle_hold(&watch, NSEventTypeFlagsChanged, 58, NSEventModifierFlagOption);
     assert(armed == 1);
     uint64_t generation = watch.generation;
     assert(hold_survived(&watch, armed, generation));
-    // Releasing, adding a second modifier, or typing under the hold all cancel it.
-    assert(handle_hold(&watch, kCGEventFlagsChanged, 58, 0) == 0);
+    assert(handle_hold(&watch, NSEventTypeFlagsChanged, 58, 0) == 0);
     assert(!hold_survived(&watch, armed, generation));
-    armed = handle_hold(&watch, kCGEventFlagsChanged, 58, kCGEventFlagMaskAlternate);
+    armed = handle_hold(&watch, NSEventTypeFlagsChanged, 58, NSEventModifierFlagOption);
     generation = watch.generation;
-    assert(armed == 1 && handle_hold(&watch, kCGEventFlagsChanged, 56, kCGEventFlagMaskAlternate | kCGEventFlagMaskShift) == 0);
+    assert(armed == 1 && handle_hold(&watch, NSEventTypeFlagsChanged, 56, NSEventModifierFlagOption | NSEventModifierFlagShift) == 0);
     assert(!hold_survived(&watch, armed, generation));
-    armed = handle_hold(&watch, kCGEventFlagsChanged, 58, kCGEventFlagMaskAlternate);
+    armed = handle_hold(&watch, NSEventTypeFlagsChanged, 58, NSEventModifierFlagOption);
     generation = watch.generation;
-    assert(armed == 1 && handle_hold(&watch, kCGEventKeyDown, 0, kCGEventFlagMaskAlternate) == 0);
+    assert(armed == 1 && handle_hold(&watch, NSEventTypeKeyDown, 0, NSEventModifierFlagOption) == 0);
     assert(!hold_survived(&watch, armed, generation));
-    // The other Option key is a different binding, and an unbound modifier arms nothing.
-    assert(handle_hold(&watch, kCGEventFlagsChanged, 61, kCGEventFlagMaskAlternate) == 0);
-    assert(handle_hold(&watch, kCGEventFlagsChanged, 56, kCGEventFlagMaskShift) == 0);
+    assert(handle_hold(&watch, NSEventTypeFlagsChanged, 61, NSEventModifierFlagOption) == 0);
+    assert(handle_hold(&watch, NSEventTypeFlagsChanged, 56, NSEventModifierFlagShift) == 0);
 
     InputAction action;
     NSString *text = nil;
@@ -728,37 +701,6 @@ static void self_test(void) {
     assert(!parse_action((NSDictionary *)@[], &action, &text, &error));
 }
 
-static DoubleLeftOption tap;
-static HoldWatch watch;
-static CFMachPortRef listener;
-
-static CGEventRef observe(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *info) {
-    (void)proxy;
-    (void)info;
-    if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
-        CGEventTapEnable(listener, true);
-        return event;
-    }
-    uint16_t key_code = (uint16_t)CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
-    CGEventFlags flags = CGEventGetFlags(event);
-    double time = (double)CGEventGetTimestamp(event) / (double)NSEC_PER_SEC;
-    if (handle_tap(&tap, event_input(type, key_code, flags), time)) {
-        fputs("toggle\n", stdout);
-        fflush(stdout);
-    }
-    size_t armed = handle_hold(&watch, type, key_code, flags);
-    if (!armed) return event;
-    uint64_t generation = watch.generation;
-    HoldBinding binding = watch.set.items[armed - 1];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(binding.seconds * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (!hold_survived(&watch, armed, generation)) return;
-        watch.armed = 0;
-        printf("hold %s\n", binding.id);
-        fflush(stdout);
-    });
-    return event;
-}
-
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         if (argc == 2 && strcmp(argv[1], "--self-test") == 0) {
@@ -771,9 +713,14 @@ int main(int argc, const char *argv[]) {
 
         NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt: @YES};
         if (!AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options)) {
-            fputs("Emma: Accessibility access is required for double-left-Option Quick Ask. Grant it in System Settings, then relaunch Emma.\n", stderr);
+            fputs("Shinbo: Accessibility access is required for Quick Ask keybinds. Grant it in System Settings, then relaunch Shinbo.\n", stderr);
         }
 
+        NSApplication *application = [NSApplication sharedApplication];
+        [application setActivationPolicy:NSApplicationActivationPolicyProhibited];
+        [application finishLaunching];
+
+        static HoldWatch watch = {0};
         __block NSMutableData *pending = [NSMutableData data];
         NSFileHandle *input = [NSFileHandle fileHandleWithStandardInput];
         input.readabilityHandler = ^(NSFileHandle *handle) {
@@ -792,6 +739,7 @@ int main(int argc, const char *argv[]) {
                     HoldSet parsed = object ? parse_holds(object) : (HoldSet){0};
                     dispatch_async(dispatch_get_main_queue(), ^{
                         watch.set = parsed;
+                        memset(watch.taps, 0, sizeof(watch.taps));
                         watch.armed = 0;
                         watch.generation += 1;
                     });
@@ -799,17 +747,28 @@ int main(int argc, const char *argv[]) {
                 pending = [[pending subdataWithRange:NSMakeRange(start, pending.length - start)] mutableCopy];
             }
         };
-        listener = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, kCGEventTapOptionListenOnly,
-            CGEventMaskBit(kCGEventFlagsChanged) | CGEventMaskBit(kCGEventKeyDown), observe, NULL);
-        if (!listener) {
-            fputs("Emma: unable to start the Quick Ask hotkey listener.\n", stderr);
+        id monitor = [NSEvent addGlobalMonitorForEventsMatchingMask:(NSEventMaskFlagsChanged | NSEventMaskKeyDown) handler:^(NSEvent *event) {
+            size_t tapped = handle_taps(&watch, event.type, event.keyCode, event.modifierFlags, event.timestamp);
+            if (tapped) {
+                printf("hold %s\n", watch.set.items[tapped - 1].id);
+                fflush(stdout);
+            }
+            size_t armed = handle_hold(&watch, event.type, event.keyCode, event.modifierFlags);
+            if (!armed) return;
+            uint64_t generation = watch.generation;
+            HoldBinding binding = watch.set.items[armed - 1];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(binding.seconds * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if (!hold_survived(&watch, armed, generation)) return;
+                watch.armed = 0;
+                printf("hold %s\n", binding.id);
+                fflush(stdout);
+            });
+        }];
+        if (!monitor) {
+            fputs("Shinbo: unable to start the Quick Ask hotkey listener.\n", stderr);
             return 1;
         }
-        CFRunLoopSourceRef source = CFMachPortCreateRunLoopSource(NULL, listener, 0);
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
-        CFRelease(source);
-        CGEventTapEnable(listener, true);
-        CFRunLoopRun();
+        [application run];
     }
     return 0;
 }

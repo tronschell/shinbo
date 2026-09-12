@@ -39,7 +39,7 @@ export async function savePlan(userData: string, plan: Omit<Plan, "id" | "update
   const root = plansRoot(userData);
   const taken = (await readdir(root).catch(() => [])).filter((name) => name.endsWith(".md")).map((name) => name.slice(0, -3));
   const id = plan.id ?? unique(planSlug(title), taken);
-  if (!taken.includes(id) && taken.length >= MAX_PLANS) throw new Error(`Emma already holds the maximum of ${MAX_PLANS} plans. Delete one before writing another.`);
+  if (!taken.includes(id) && taken.length >= MAX_PLANS) throw new Error(`Shinbo already holds the maximum of ${MAX_PLANS} plans. Delete one before writing another.`);
   const written: Plan = { ...plan, id, title, updatedAt: new Date().toISOString() };
   const markdown = renderPlan(written);
   if (Buffer.byteLength(markdown, "utf8") > MAX_PLAN_BYTES) throw new Error(`That plan is larger than ${Math.round(MAX_PLAN_BYTES / 1024)}K. Shorten the briefs, or split it into two plans.`);
@@ -76,5 +76,5 @@ function unique(slug: string, taken: readonly string[]) {
   for (let suffix = 2; suffix <= MAX_PLANS; suffix += 1) {
     if (!taken.includes(`${stem}-${suffix}`)) return `${stem}-${suffix}`;
   }
-  throw new Error(`Emma already holds too many plans called "${slug}". Rewrite one of them instead.`);
+  throw new Error(`Shinbo already holds too many plans called "${slug}". Rewrite one of them instead.`);
 }

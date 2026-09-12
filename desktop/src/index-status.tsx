@@ -12,9 +12,9 @@ export function useSemanticGrepStatus(): SemanticGrepStatus {
   const [status, setStatus] = useState(EMPTY);
   useEffect(() => {
     let live = true;
-    const load = () => void window.emma.semanticGrepStatus().then((next) => { if (live) setStatus(next); }).catch(() => undefined);
+    const load = () => void window.shinbo.semanticGrepStatus().then((next) => { if (live) setStatus(next); }).catch(() => undefined);
     load();
-    const off = window.emma.onSemanticGrep(load);
+    const off = window.shinbo.onSemanticGrep(load);
     return () => { live = false; off(); };
   }, []);
   return status;
@@ -24,9 +24,9 @@ export function useZvecGrepStatus(): ZvecGrepStatus {
   const [status, setStatus] = useState<ZvecGrepStatus>({ phase: "missing", version: ZVEC_GREP_VERSION, bytes: 0, total: 0, detail: "" });
   useEffect(() => {
     let live = true;
-    const load = () => void window.emma.zvecGrepStatus().then((next) => { if (live) setStatus(next); }).catch(() => undefined);
+    const load = () => void window.shinbo.zvecGrepStatus().then((next) => { if (live) setStatus(next); }).catch(() => undefined);
     load();
-    const off = window.emma.onZvecGrep(load);
+    const off = window.shinbo.onZvecGrep(load);
     return () => { live = false; off(); };
   }, []);
   return status;

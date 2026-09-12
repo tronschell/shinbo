@@ -5,7 +5,7 @@ import { reasonText } from "./errors";
 import { plural } from "./plural";
 import { SearchIcon } from "./icons";
 
-const PREFIX_KEY = "emma.worktreePrefix.v1";
+const PREFIX_KEY = "shinbo.worktreePrefix.v1";
 
 const readPrefix = (folderId: string) => localStorage.getItem(`${PREFIX_KEY}.${folderId}`) ?? "";
 const writePrefix = (folderId: string, prefix: string) => {
@@ -38,7 +38,7 @@ export default function WorktreesView() {
 
   useEffect(() => {
     let live = true;
-    void window.emma.listFolders()
+    void window.shinbo.listFolders()
       .then((grants) => {
         if (!live) return;
         setFolders(grants);
@@ -55,7 +55,7 @@ export default function WorktreesView() {
   useEffect(() => {
     if (!folderId) return;
     let live = true;
-    void window.emma.worktreeList(folderId)
+    void window.shinbo.worktreeList(folderId)
       .then((rows) => { if (live) { setEntries(rows); setUpdated(new Date()); setSelected(new Set()); setError(""); } })
       .catch((reason: unknown) => { if (live) { setError(reasonText(reason)); setEntries([]); } })
       .finally(() => { if (live) setBusy(false); });
@@ -91,14 +91,14 @@ export default function WorktreesView() {
   const create = () => {
     if (!folderId || !draft.trim()) return;
     setNaming(false);
-    act(() => window.emma.worktreeAdd({ folderId, prefix, name: draft.trim() }));
+    act(() => window.shinbo.worktreeAdd({ folderId, prefix, name: draft.trim() }));
     setDraft("");
   };
 
   const remove = () => {
     if (!removable.length) return;
     if (!confirm(`Delete ${removable.length} ${plural(removable.length, "worktree")}? Uncommitted files in them are gone.`)) return;
-    act(() => window.emma.worktreeRemove({ folderId, paths: removable }));
+    act(() => window.shinbo.worktreeRemove({ folderId, paths: removable }));
   };
 
   return <div className="worktrees-view">
@@ -107,7 +107,7 @@ export default function WorktreesView() {
         <span>Branch prefix</span>
         <p>New branches start like <b>{branchPreview(prefix)}</b></p>
       </div>
-      <input value={prefix} spellCheck={false} maxLength={48} placeholder="emma/"
+      <input value={prefix} spellCheck={false} maxLength={48} placeholder="shinbo/"
         aria-label="Branch prefix for new worktrees"
         onChange={(event) => { writePrefix(folderId, event.target.value); reload(); }} />
     </section>

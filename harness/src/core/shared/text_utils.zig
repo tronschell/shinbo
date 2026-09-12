@@ -37,9 +37,6 @@ pub fn utf8ForwardBoundary(text: []const u8, index: usize) usize {
 
 pub const HeadRounding = enum { down, up };
 
-/// Writes text truncated to max_content_bytes as head + marker + tail with
-/// rune-safe cut points. The caller chooses how the retained budget splits
-/// between head and tail when it is odd.
 pub fn writeHeadTailBounded(
     writer: *std.Io.Writer,
     text: []const u8,
@@ -95,9 +92,6 @@ pub const EncodedText = struct {
     }
 };
 
-/// Incrementally applies the same terminal-safe token policy as
-/// `encodeTerminalSafe`. It retains at most one unfinished UTF-8 token so a
-/// caller can process bounded file pages without exposing raw bytes.
 pub const IncrementalTerminalSafeEncoder = struct {
     pending: [4]u8 = undefined,
     pending_len: usize = 0,
@@ -160,7 +154,6 @@ pub const IncrementalTerminalSafeEncoder = struct {
     }
 };
 
-/// Validates UTF-8 across arbitrary chunks and rejects an incomplete final sequence.
 pub const IncrementalUtf8Validator = struct {
     pending: [4]u8 = undefined,
     pending_len: usize = 0,
@@ -379,8 +372,6 @@ pub fn encodeTerminalSafe(
     };
 }
 
-/// Returns true when `raw` is valid printable terminal text and
-/// `encodeTerminalSafe` would preserve it byte-for-byte.
 pub fn isTerminalSafe(raw: []const u8) bool {
     var index: usize = 0;
     while (index < raw.len) {
@@ -615,7 +606,7 @@ fn isNonPrintingCodepoint(codepoint: u21) bool {
 const secret_prefixes = [_][]const u8{
     "OPENAI_API_KEY=",
     "ANTHROPIC_API_KEY=",
-    "EMMA_PROVIDER_API_KEY=",
+    "SHINBO_PROVIDER_API_KEY=",
     "AI_GATEWAY_API_KEY=",
     "VERCEL_OIDC_TOKEN=",
     "GITHUB_TOKEN=",

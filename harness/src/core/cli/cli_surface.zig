@@ -80,8 +80,6 @@ const ResumeInvocation = struct {
 const resume_id_alias_prefix = "--resume-";
 pub const upgrade_relaunch_arg = "--upgrade-relaunch";
 
-// The one resume alias that asks which session to open. Every other spelling
-// names its target, so it resumes without a prompt.
 const resume_picker_alias = "-r";
 
 pub const ResumeTarget = union(enum) {
@@ -135,8 +133,8 @@ pub const RunResult = union(enum) {
     handled_exit: u8,
 };
 
-pub const record_modifier_usage = "usage: emma-cli --record is only supported for interactive startup\n";
-const version_usage = "usage: emma-cli --version\n";
+pub const record_modifier_usage = "usage: shinbo-cli --record is only supported for interactive startup\n";
+const version_usage = "usage: shinbo-cli --version\n";
 
 pub fn recordRequested(args: []const [:0]const u8) error{RecordModifierRequiresInteractive}!bool {
     var count: usize = 0;
@@ -237,8 +235,6 @@ const PersistedRecordOptions = struct {
     target: ?PersistedRecordTarget = null,
 };
 
-// `fx session` reads one saved session, so it names its target and never
-// reaches for the picker that `ResumeTarget` carries.
 const SessionDetailTarget = union(enum) {
     last,
     id: []u8,
@@ -390,9 +386,6 @@ fn parseGlobalLaunchArgs(
     };
 }
 
-/// Returns the command that follows the supported global launch modifiers.
-/// Startup uses this same surface to select the full runtime configuration
-/// before the allocating parser runs.
 pub fn commandAfterGlobalLaunchArgs(args: []const [:0]const u8) ?[]const u8 {
     var index: usize = 0;
     while (index < args.len) {
@@ -493,8 +486,6 @@ pub const InteractiveLaunchParseResult = union(enum) {
     noninteractive: NonInteractiveLaunch,
 };
 
-/// Parses the shared interactive launch language without dispatching commands.
-/// Returned launch values own their allocations and must be deinitialized.
 pub fn parseInteractiveLaunch(
     alloc: Allocator,
     args: []const [:0]const u8,
@@ -562,9 +553,6 @@ pub fn parseInteractiveLaunch(
     }
 }
 
-/// Detects `fx <subcommand> --help` / `-h` and returns the subcommand kind so the
-/// caller can render command-specific help. Top-level `fx --help`/`fx help` are
-/// handled separately and intentionally excluded here.
 fn topLevelHelpRequest(command_catalog: CommandCatalog, args: []const [:0]const u8) ?TopLevelKind {
     if (args.len < 2) return null;
     const kind = command_specs.topLevelKindFromToken(command_catalog, args[0]) orelse return null;
@@ -618,7 +606,7 @@ fn runIfRequestedWithDeps(alloc: Allocator, args: []const [:0]const u8, cfg: Con
         } else {
             try writer.writer.print("fx: invalid global launch option: {s}\n", .{@errorName(err)});
         }
-        try writer.writer.writeAll("usage: emma-cli [--context-limit NAME=BYTES|off] [--add-dir PATH]... [--no-additional-dirs] <command>\n");
+        try writer.writer.writeAll("usage: shinbo-cli [--context-limit NAME=BYTES|off] [--add-dir PATH]... [--no-additional-dirs] <command>\n");
         try writeStderr(deps, writer.written());
         return .handled_failure;
     };
@@ -678,7 +666,7 @@ fn runNonInteractiveWithDeps(
         },
         .acp => |rest| {
             const acp_opts = parseAcpArgs(rest) catch {
-                try writeStderr(deps, "usage: emma-cli acp [--model <id>] [--log-file <path>]\n");
+                try writeStderr(deps, "usage: shinbo-cli acp [--model <id>] [--log-file <path>]\n");
                 return .handled_failure;
             };
             try cfg.acp_runner.run(alloc, .{
@@ -1521,7 +1509,7 @@ fn selfExePathDefault(_: ?*anyopaque, alloc: Allocator) ![]u8 {
 }
 
 fn writeTopLevelUsage(command_catalog: CommandCatalog, deps: RunDeps, kind: TopLevelKind) !void {
-    try writeStderr(deps, "usage: emma-cli ");
+    try writeStderr(deps, "usage: shinbo-cli ");
     try writeStderr(deps, command_specs.topLevelUsage(command_catalog, kind));
     try writeStderr(deps, "\n");
 }
@@ -1558,7 +1546,7 @@ fn writeUsageCommandFailure(
             message,
         );
     }
-    try writeStderr(deps, "emma-cli usage: ");
+    try writeStderr(deps, "shinbo-cli usage: ");
     try writeStderr(deps, message);
     try writeStderr(deps, "\n");
 }
@@ -3575,7 +3563,7 @@ test "runIfRequested help writes top-level help" {
 
     const result = try runIfRequestedWithDeps(std.testing.allocator, &.{@constCast("help")}, testConfig(), capture.deps());
     try std.testing.expectEqual(RunResult.handled_success, result);
-    try std.testing.expect(std.mem.startsWith(u8, capture.stdout.written(), "emma v0.0.0\nFast, native coding agent for the terminal."));
+    try std.testing.expect(std.mem.startsWith(u8, capture.stdout.written(), "shinbo v0.0.0\nFast, native coding agent for the terminal."));
     try std.testing.expect(std.mem.find(u8, capture.stdout.written(), testConfig().version) != null);
     try std.testing.expectEqualStrings("", capture.stderr.written());
 }
@@ -3592,7 +3580,7 @@ test "workspace launch modifiers preserve supported command help" {
         deps,
     );
     try std.testing.expectEqual(RunResult.handled_success, result);
-    try std.testing.expect(std.mem.startsWith(u8, capture.stdout.written(), "emma-cli ask\n\n"));
+    try std.testing.expect(std.mem.startsWith(u8, capture.stdout.written(), "shinbo-cli ask\n\n"));
     try std.testing.expectEqualStrings("", capture.stderr.written());
 }
 
@@ -3670,7 +3658,7 @@ test "runIfRequested version flags reject extra args" {
         const result = try runIfRequestedWithDeps(std.testing.allocator, args, testConfig(), capture.deps());
         try std.testing.expectEqual(RunResult.handled_failure, result);
         try std.testing.expectEqualStrings("", capture.stdout.written());
-        try std.testing.expectEqualStrings("usage: emma-cli --version\n", capture.stderr.written());
+        try std.testing.expectEqualStrings("usage: shinbo-cli --version\n", capture.stderr.written());
     }
 }
 
@@ -3752,7 +3740,7 @@ test "runIfRequested rejects record modifier outside interactive startup" {
     );
 
     try std.testing.expectEqual(RunResult.handled_failure, result);
-    try std.testing.expectEqualStrings("usage: emma-cli --record is only supported for interactive startup\n", capture.stderr.written());
+    try std.testing.expectEqualStrings("usage: shinbo-cli --record is only supported for interactive startup\n", capture.stderr.written());
 }
 
 test "runIfRequested carries record intent through supported interactive launches" {
@@ -3842,7 +3830,7 @@ test "runNoConfigIfRequested handles help without config" {
         testCommandCatalog(),
         capture.deps(),
     ));
-    try std.testing.expect(std.mem.startsWith(u8, capture.stdout.written(), "emma v0.0.0\nFast, native coding agent for the terminal."));
+    try std.testing.expect(std.mem.startsWith(u8, capture.stdout.written(), "shinbo v0.0.0\nFast, native coding agent for the terminal."));
     try std.testing.expectEqualStrings("", capture.stderr.written());
 
     try std.testing.expect(!try runNoConfigIfRequestedWithDeps(
@@ -3911,7 +3899,7 @@ test "CLI surface uses the supplied command catalog for parsing usage and help" 
         usage_capture.deps(),
     );
     try std.testing.expectEqual(RunResult.handled_failure, result);
-    try std.testing.expectEqualStrings("usage: emma-cli mstart\n", usage_capture.stderr.written());
+    try std.testing.expectEqualStrings("usage: shinbo-cli mstart\n", usage_capture.stderr.written());
 }
 
 test "workflow config does not carry placeholder gateway tools" {
@@ -3939,7 +3927,7 @@ test "runIfRequested invalid local flags write usage" {
     const result = try runIfRequestedWithDeps(std.testing.allocator, &.{ @constCast("status"), @constCast("--wat") }, testConfig(), capture.deps());
     try std.testing.expectEqual(RunResult.handled_failure, result);
     try std.testing.expectEqualStrings("", capture.stdout.written());
-    try std.testing.expectEqualStrings("usage: emma-cli status [--json]\n", capture.stderr.written());
+    try std.testing.expectEqualStrings("usage: shinbo-cli status [--json]\n", capture.stderr.written());
 }
 
 test "runIfRequested invalid json local flags write json error" {
@@ -4092,7 +4080,7 @@ test "runIfRequested rejects malformed resume aliases with canonical usage" {
         );
         try std.testing.expectEqual(RunResult.handled_failure, result);
         try std.testing.expectEqualStrings(
-            "usage: emma-cli session resume [last|<id>] [--record] | session resume --id <id> [--record] | --resume [last|<id>] [--record] | resume [last|<id>] [--record] | resume --id <id> [--record] | --resume-last | --continue | -c | -r | --resume-<id>\n",
+            "usage: shinbo-cli session resume [last|<id>] [--record] | session resume --id <id> [--record] | --resume [last|<id>] [--record] | resume [last|<id>] [--record] | resume --id <id> [--record] | --resume-last | --continue | -c | -r | --resume-<id>\n",
             capture.stderr.written(),
         );
     }
@@ -4123,7 +4111,7 @@ test "runIfRequested invalid resume writes usage" {
     const result = try runIfRequestedWithDeps(std.testing.allocator, &.{ @constCast("resume"), @constCast("a"), @constCast("b") }, testConfig(), capture.deps());
     try std.testing.expectEqual(RunResult.handled_failure, result);
     try std.testing.expectEqualStrings(
-        "usage: emma-cli session resume [last|<id>] [--record] | session resume --id <id> [--record] | --resume [last|<id>] [--record] | resume [last|<id>] [--record] | resume --id <id> [--record] | --resume-last | --continue | -c | -r | --resume-<id>\n",
+        "usage: shinbo-cli session resume [last|<id>] [--record] | session resume --id <id> [--record] | --resume [last|<id>] [--record] | resume [last|<id>] [--record] | resume --id <id> [--record] | --resume-last | --continue | -c | -r | --resume-<id>\n",
         capture.stderr.written(),
     );
 }
@@ -4136,7 +4124,7 @@ test "runIfRequested unknown command writes header and help" {
         error.UnknownCliCommand,
         runIfRequestedWithDeps(std.testing.allocator, &.{@constCast("wat")}, testConfig(), capture.deps()),
     );
-    try std.testing.expect(std.mem.startsWith(u8, capture.stderr.written(), "fx: unknown subcommand: wat\n\nemma v0.0.0\nFast, native coding agent for the terminal.\n"));
+    try std.testing.expect(std.mem.startsWith(u8, capture.stderr.written(), "fx: unknown subcommand: wat\n\nshinbo v0.0.0\nFast, native coding agent for the terminal.\n"));
 }
 
 test "runIfRequested bare version subcommand remains unknown" {
@@ -4147,7 +4135,7 @@ test "runIfRequested bare version subcommand remains unknown" {
         error.UnknownCliCommand,
         runIfRequestedWithDeps(std.testing.allocator, &.{@constCast("version")}, testConfig(), capture.deps()),
     );
-    try std.testing.expect(std.mem.startsWith(u8, capture.stderr.written(), "fx: unknown subcommand: version\n\nemma v0.0.0\nFast, native coding agent for the terminal.\n"));
+    try std.testing.expect(std.mem.startsWith(u8, capture.stderr.written(), "fx: unknown subcommand: version\n\nshinbo v0.0.0\nFast, native coding agent for the terminal.\n"));
 }
 
 test "runIfRequested model fetch failure is handled" {
@@ -4240,7 +4228,7 @@ test "runIfRequested local json success appends exactly one newline" {
     const result = try runIfRequestedWithDeps(std.testing.allocator, &.{ @constCast("status"), @constCast("--json") }, testConfig(), deps);
     try std.testing.expectEqual(RunResult.handled_success, result);
     try std.testing.expectEqualStrings(
-        "{\"kind\":\"status\",\"model\":\"test-model\",\"update_channel\":\"stable\",\"build_channel\":\"stable\",\"build_revision\":\"\",\"auth\":\"missing\",\"auth_help\":\"emma-cli has no provider credential. Set EMMA_PROVIDER_API_KEY.\",\"permission_mode\":\"auto\",\"sandbox\":\"none\",\"workspace\":\"/tmp/fx\",\"history_turns\":0,\"session_permission_grants\":0,\"agent_step_limit\":42}\n",
+        "{\"kind\":\"status\",\"model\":\"test-model\",\"update_channel\":\"stable\",\"build_channel\":\"stable\",\"build_revision\":\"\",\"auth\":\"missing\",\"auth_help\":\"shinbo-cli has no provider credential. Set SHINBO_PROVIDER_API_KEY.\",\"permission_mode\":\"auto\",\"sandbox\":\"none\",\"workspace\":\"/tmp/fx\",\"history_turns\":0,\"session_permission_grants\":0,\"agent_step_limit\":42}\n",
         capture.stdout.written(),
     );
     try std.testing.expect(!std.mem.endsWith(u8, capture.stdout.written(), "\n\n"));
@@ -4333,7 +4321,7 @@ test "writeRenderedJsonLine falls back to heap and appends exactly one newline" 
     );
 
     try std.testing.expectEqualStrings(
-        "{\"kind\":\"status\",\"model\":\"test-model\",\"update_channel\":\"stable\",\"build_channel\":\"stable\",\"build_revision\":\"\",\"auth\":\"missing\",\"auth_help\":\"emma-cli has no provider credential. Set EMMA_PROVIDER_API_KEY.\",\"permission_mode\":\"ask\",\"sandbox\":\"none\",\"workspace\":\"/tmp/fx\",\"history_turns\":0,\"session_permission_grants\":0,\"agent_step_limit\":42}\n",
+        "{\"kind\":\"status\",\"model\":\"test-model\",\"update_channel\":\"stable\",\"build_channel\":\"stable\",\"build_revision\":\"\",\"auth\":\"missing\",\"auth_help\":\"shinbo-cli has no provider credential. Set SHINBO_PROVIDER_API_KEY.\",\"permission_mode\":\"ask\",\"sandbox\":\"none\",\"workspace\":\"/tmp/fx\",\"history_turns\":0,\"session_permission_grants\":0,\"agent_step_limit\":42}\n",
         capture.stdout.written(),
     );
 }
@@ -4358,13 +4346,13 @@ test "writeRenderedJsonLine renders doctor json through output contract" {
     defer capture.deinit();
 
     var checks = [_]doctor_runtime.Check{
-        .{ .name = "auth", .status = .ok, .detail = "EMMA_PROVIDER_API_KEY is configured" },
+        .{ .name = "auth", .status = .ok, .detail = "SHINBO_PROVIDER_API_KEY is configured" },
         .{ .name = "gh", .status = .warn, .detail = "GitHub CLI not found in PATH" },
     };
     const snapshot = doctor_runtime.Snapshot{
         .workspace_root = @constCast("/tmp/fx"),
         .model = "test-model",
-        .auth = .{ .active_source = .emma_provider_api_key },
+        .auth = .{ .active_source = .shinbo_provider_api_key },
         .permission_mode = .auto,
         .agent_step_limit = 42,
         .checks = checks[0..],
@@ -4379,7 +4367,7 @@ test "writeRenderedJsonLine renders doctor json through output contract" {
     );
 
     try std.testing.expectEqualStrings(
-        "{\"kind\":\"doctor\",\"ok_count\":1,\"warn_count\":1,\"fail_count\":0,\"workspace\":\"/tmp/fx\",\"model\":\"test-model\",\"auth\":\"EMMA_PROVIDER_API_KEY\",\"permission_mode\":\"auto\",\"agent_step_limit\":42,\"checks\":[{\"name\":\"auth\",\"status\":\"ok\",\"detail\":\"EMMA_PROVIDER_API_KEY is configured\"},{\"name\":\"gh\",\"status\":\"warn\",\"detail\":\"GitHub CLI not found in PATH\"}]}\n",
+        "{\"kind\":\"doctor\",\"ok_count\":1,\"warn_count\":1,\"fail_count\":0,\"workspace\":\"/tmp/fx\",\"model\":\"test-model\",\"auth\":\"SHINBO_PROVIDER_API_KEY\",\"permission_mode\":\"auto\",\"agent_step_limit\":42,\"checks\":[{\"name\":\"auth\",\"status\":\"ok\",\"detail\":\"SHINBO_PROVIDER_API_KEY is configured\"},{\"name\":\"gh\",\"status\":\"warn\",\"detail\":\"GitHub CLI not found in PATH\"}]}\n",
         capture.stdout.written(),
     );
 }
@@ -4521,11 +4509,11 @@ fn stubLoadStartupState(
 ) !app_lifecycle.StartupState {
     var state = app_lifecycle.StartupState{ .agent_step_limit = default_agent_step_limit };
     errdefer state.deinit(alloc);
-    state.workspace_root = try alloc.dupe(u8, "/tmp/emma-cli");
+    state.workspace_root = try alloc.dupe(u8, "/tmp/shinbo-cli");
     state.selected_model = try alloc.dupe(u8, default_model);
     state.credential = .{
         .token = try alloc.dupe(u8, "test-key"),
-        .source = .emma_provider_api_key,
+        .source = .shinbo_provider_api_key,
     };
     return state;
 }
@@ -4600,7 +4588,7 @@ const ModelFetchProbe = struct {
         const self: *ModelFetchProbe = @ptrCast(@alignCast(raw.?));
         self.called = true;
         if (!std.mem.eql(u8, input.access.authorizationCredential() orelse "", "test-key") or
-            input.access.credentialSource() != .emma_provider_api_key or
+            input.access.credentialSource() != .shinbo_provider_api_key or
             !std.mem.eql(u8, input.endpoint, "/v1/models") or
             input.cancel_flag != null)
         {

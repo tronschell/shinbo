@@ -6,7 +6,7 @@ export const SETUP_PERMISSIONS = [
     tasks: ["Control this Mac", "Quick Ask on ⌥⌥", "Bound shortcuts"],
     title: "Accessibility",
     what: "Opens Quick Ask when you double-tap Option, and moves the pointer when you ask.",
-    why: "Double-tapping the left Option key is a key press in whatever app is in front, so macOS only reports it to an app you have trusted. The same grant is what lets Emma click and type for you — and that still asks before every run.",
+    why: "Double-tapping the left Option key is a key press in whatever app is in front, so macOS only reports it to an app you have trusted. The same grant is what lets Shinbo click and type for you — and that still asks before every run.",
     pane: "com.apple.preference.security?Privacy_Accessibility",
     relaunch: true,
   },
@@ -24,7 +24,7 @@ export const SETUP_PERMISSIONS = [
     tasks: ["Dictation", "Quick Ask with voice"],
     title: "Microphone",
     what: "Dictates into the composer instead of typing.",
-    why: "Hold the voice orb, or the key you bind to voice, and Emma writes down what you say. The audio is transcribed and dropped; only the words reach a thread.",
+    why: "Hold the voice orb, or the key you bind to voice, and Shinbo writes down what you say. The audio is transcribed and dropped; only the words reach a thread.",
     pane: "com.apple.preference.security?Privacy_Microphone",
     relaunch: false,
   },
@@ -42,7 +42,7 @@ export const SETUP_PERMISSIONS = [
     tasks: ["Read the front tab", "Clip a page"],
     title: "Automation",
     what: "Reads the address of the page your browser has in front.",
-    why: "Emma asks Safari or Chrome for the front tab's address and title, then fetches the page itself. macOS raises this the first time, once per browser, and lists Emma under the browser it is asking about.",
+    why: "Shinbo asks Safari or Chrome for the front tab's address and title, then fetches the page itself. macOS raises this the first time, once per browser, and lists Shinbo under the browser it is asking about.",
     pane: "com.apple.preference.security?Privacy_Automation",
     relaunch: false,
   },
@@ -51,7 +51,7 @@ export const SETUP_PERMISSIONS = [
     tasks: ["Turn finished", "Permission asks"],
     title: "Notifications",
     what: "Tells you when a turn finishes, or needs an answer.",
-    why: "Emma posts one banner when a run lands or stops on a permission ask. Nothing else is ever announced.",
+    why: "Shinbo posts one banner when a run lands or stops on a permission ask. Nothing else is ever announced.",
     pane: "com.apple.preference.notifications",
     relaunch: false,
   },
@@ -60,7 +60,7 @@ export const SETUP_PERMISSIONS = [
     tasks: ["Your vault", "Connected folders"],
     title: "Files & Folders",
     what: "Writes what you keep into the vault or folder you chose.",
-    why: "Each save is a plain Markdown note in a folder you already own. Nothing is kept in a format only Emma can open.",
+    why: "Each save is a plain Markdown note in a folder you already own. Nothing is kept in a format only Shinbo can open.",
     pane: "com.apple.preference.security?Privacy_FilesAndFolders",
     relaunch: false,
   },
@@ -82,6 +82,6 @@ const WINDOWS_PANES: Partial<Record<SetupPermission, string>> = {
 
 export function privacySettingsUrl(id: unknown, platform = "darwin"): string {
   const pane = SETUP_PERMISSIONS.find((item) => item.id === id)?.pane;
-  if (!pane) throw new Error("That is not a permission Emma asks for.");
+  if (!pane) throw new Error("That is not a permission Shinbo asks for.");
   return platform === "darwin" ? `x-apple.systempreferences:${pane}` : WINDOWS_PANES[id as SetupPermission] ?? "ms-settings:privacy";
 }

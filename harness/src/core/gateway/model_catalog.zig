@@ -135,11 +135,9 @@ pub const FetchFn = *const fn (
 ) Allocator.Error!ProviderResult;
 
 pub const Provider = struct {
-    /// When set, context must remain valid until every in-flight `fetch` returns.
     context: ?*anyopaque = null,
     fetch_fn: FetchFn,
 
-    /// Returns owned catalog entries; the caller frees them with `freeModelCatalog`.
     pub fn fetch(self: Provider, alloc: Allocator, input: FetchInput) Allocator.Error!ProviderResult {
         return self.fetch_fn(self.context, alloc, input);
     }
@@ -147,7 +145,6 @@ pub const Provider = struct {
 
 pub const FetchResult = union(enum) {
     loaded: struct {
-        /// Owned catalog entries; the caller frees them with `freeModelCatalog`.
         catalog: std.ArrayList(ModelCatalogEntry),
         provenance: Provenance,
     },
@@ -305,7 +302,6 @@ pub fn freeModelCatalogEntry(alloc: std.mem.Allocator, entry: ModelCatalogEntry)
     if (entry.web_search_price) |price| alloc.free(price);
 }
 
-/// Returns owned model id strings in catalog order; caller frees with `collections.freeStringList`.
 pub fn projectModelIds(alloc: std.mem.Allocator, candidates: []const ModelCatalogEntry) !std.ArrayList([]u8) {
     var ids: std.ArrayList([]u8) = .empty;
     errdefer collections.freeStringList(alloc, &ids);
@@ -409,8 +405,6 @@ const FeaturedPickerFamily = struct {
     count: usize,
 };
 
-// These are product preferences, but the model version in each slot always
-// comes from the live Gateway catalog instead of a pinned model ID.
 const featured_picker_families = [_]FeaturedPickerFamily{
     .{ .family = "anthropic/claude-fable", .count = 1 },
     .{ .family = "openai/gpt", .count = 1 },
@@ -444,9 +438,6 @@ pub fn projectPickerModelCatalog(alloc: std.mem.Allocator, candidates: []const M
     }
     sort_utils.sort([]const u8, providers.items, {}, lessThanStrings);
 
-    // After the product highlights, scan providers alphabetically. Each
-    // provider contributes its current models, rather than inheriting the
-    // Gateway's global quality ranking.
     for (providers.items) |provider| {
         while (pickerProviderSelectionCount(selected.items, provider) < pickerProviderLimit(provider)) {
             const candidate = newestUnselectedPickerProviderCandidate(candidates, provider, selected.items) orelse break;
@@ -454,7 +445,6 @@ pub fn projectPickerModelCatalog(alloc: std.mem.Allocator, candidates: []const M
         }
     }
 
-    // Highlights stay on top; the rest of the catalog follows so any model is selectable.
     for (candidates) |candidate| {
         if (pickerCatalogContains(selected.items, candidate.id)) continue;
         try appendClonedModelCatalogEntry(alloc, &selected, candidate);
@@ -574,7 +564,6 @@ fn isPickerProviderCandidate(provider: []const u8, candidate: ModelCatalogEntry,
 }
 
 fn pickerFamilyLimit(family: []const u8) usize {
-    // Let the picker show two general models next to one coding-focused model.
     if (std.mem.eql(u8, family, "openai/gpt")) return 2;
     if (std.mem.eql(u8, family, "openai/gpt-codex")) return 1;
     return extended_picker_provider_limit;
@@ -671,7 +660,7 @@ test "catalog authentication fallback is anonymous and bounded" {
     defer debug_trace.resetForTest();
     try debug_trace.configureForTestWithScopes(alloc, trace_path, "catalog");
 
-    const access = credentials.catalogAccessForCredential(.emma_provider_api_key, "test-key");
+    const access = credentials.catalogAccessForCredential(.shinbo_provider_api_key, "test-key");
     const rejection = Failure{ .category = .authentication, .http_status = .unauthorized };
     var accepted = FallbackProbe{ .failures = .{ rejection, null } };
     var loaded = fetchWithPublicFallback(accepted.provider(), std.testing.allocator, .{
@@ -680,7 +669,7 @@ test "catalog authentication fallback is anonymous and bounded" {
     });
     defer freeModelCatalog(std.testing.allocator, &loaded.loaded.catalog);
     try std.testing.expectEqual(AccessLevel.public_only, loaded.loaded.provenance.access.level);
-    try std.testing.expectEqual(credentials.Source.emma_provider_api_key, loaded.loaded.provenance.access.source.?);
+    try std.testing.expectEqual(credentials.Source.shinbo_provider_api_key, loaded.loaded.provenance.access.source.?);
     try std.testing.expectEqual(credentials.CatalogPublicOnlyReason.authenticated_credential_rejected, loaded.loaded.provenance.access.public_only_reason.?);
     try std.testing.expect(loaded.loaded.provenance.access.private_models_may_be_hidden);
     try std.testing.expect(loaded.loaded.provenance.anonymous_fallback_used);
@@ -725,19 +714,19 @@ test "catalog authentication fallback is anonymous and bounded" {
     try std.testing.expect(std.mem.find(
         u8,
         trace,
-        "requested_access=authenticated credential_source=emma_provider_api_key effective_access=public_only public_only_reason=authenticated_credential_rejected anonymous_fallback=true outcome=loaded failure_category=authentication http_status=401 retryable=false",
+        "requested_access=authenticated credential_source=shinbo_provider_api_key effective_access=public_only public_only_reason=authenticated_credential_rejected anonymous_fallback=true outcome=loaded failure_category=authentication http_status=401 retryable=false",
     ) != null);
     try std.testing.expect(std.mem.find(
         u8,
         trace,
-        "requested_access=authenticated credential_source=emma_provider_api_key effective_access=authenticated public_only_reason=none anonymous_fallback=false outcome=failed failure_category=transport http_status=none retryable=true",
+        "requested_access=authenticated credential_source=shinbo_provider_api_key effective_access=authenticated public_only_reason=none anonymous_fallback=false outcome=failed failure_category=transport http_status=none retryable=true",
     ) != null);
     try std.testing.expect(std.mem.find(u8, trace, "test-key") == null);
     try std.testing.expect(std.mem.find(u8, trace, "/v1/models") == null);
 }
 
 test "catalog fallback classification stays bounded across repeated cycles" {
-    const access = credentials.catalogAccessForCredential(.emma_provider_api_key, "repeated-test-key");
+    const access = credentials.catalogAccessForCredential(.shinbo_provider_api_key, "repeated-test-key");
     const terminal_failures = [_]Failure{
         .{ .category = .authentication },
         .{ .category = .rate_limited, .http_status = .too_many_requests, .retryable = true },

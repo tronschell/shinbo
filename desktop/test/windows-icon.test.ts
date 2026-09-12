@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-const icon = readFileSync(path.join(__dirname, "../../assets/emma.ico"));
+const icon = readFileSync(path.join(__dirname, "../../assets/shinbo.ico"));
 const entries = Array.from({ length: icon.readUInt16LE(4) }, (_unused, index) => {
   const at = 6 + 16 * index;
   return {

@@ -310,7 +310,6 @@ pub const Runtime = struct {
         };
     }
 
-    /// Loads the catalog inline for cooperative single-threaded hosts.
     pub fn loadCooperative(
         self: *Self,
         provider: model_catalog.Provider,
@@ -433,8 +432,6 @@ pub const Runtime = struct {
         self.cancel_requested.store(false, .seq_cst);
     }
 
-    /// Installs a catalog that was completely fetched and validated before the
-    /// caller's publication boundary. Ownership transfers without allocation.
     pub fn adoptOwnedCatalog(
         self: *Self,
         access: credentials.CatalogAccess,
@@ -822,7 +819,7 @@ fn modelIdListContains(ids: []const []u8, needle: []const u8) bool {
 }
 
 fn authenticatedCatalogAccess(credential: []const u8) credentials.CatalogAccess {
-    return credentials.catalogAccessForCredential(.emma_provider_api_key, credential);
+    return credentials.catalogAccessForCredential(.shinbo_provider_api_key, credential);
 }
 
 fn testCatalog(alloc: Allocator, model_id: []const u8) !std.ArrayList(model_catalog.ModelCatalogEntry) {
@@ -955,7 +952,7 @@ test "model cache projects anonymous fallback provenance for 401 and 403" {
 
         const provenance = runtime.outcome.loaded.?;
         try std.testing.expectEqual(model_catalog.AccessLevel.public_only, provenance.access.level);
-        try std.testing.expectEqual(credentials.Source.emma_provider_api_key, provenance.access.source.?);
+        try std.testing.expectEqual(credentials.Source.shinbo_provider_api_key, provenance.access.source.?);
         try std.testing.expectEqual(credentials.CatalogPublicOnlyReason.authenticated_credential_rejected, provenance.access.public_only_reason.?);
         try std.testing.expect(provenance.access.private_models_may_be_hidden);
         try std.testing.expect(provenance.anonymous_fallback_used);
@@ -1070,7 +1067,7 @@ test "model cache reloads a ready authenticated catalog after access downgrades"
             .reason = .no_credential,
         },
         .{
-            .access = credentials.catalogAccessAfterRefreshFailure(.emma_provider_api_key),
+            .access = credentials.catalogAccessAfterRefreshFailure(.shinbo_provider_api_key),
             .reason = .credential_refresh_failed,
         },
     };
@@ -1081,7 +1078,7 @@ test "model cache reloads a ready authenticated catalog after access downgrades"
         var private_provider = AuthChangeCatalog{ .model_id = "private/only-model" };
         runtime.startWarmup(
             private_provider.provider(),
-            credentials.catalogAccessForCredential(.emma_provider_api_key, "private-key"),
+            credentials.catalogAccessForCredential(.shinbo_provider_api_key, "private-key"),
         );
         try waitForWarmup(&runtime);
 
@@ -1107,7 +1104,7 @@ test "model cache reuses a ready public catalog when only its public reason chan
     var unused_provider = AuthChangeCatalog{ .model_id = "public/redundant-model" };
     runtime.startWarmup(
         unused_provider.provider(),
-        credentials.catalogAccessAfterRefreshFailure(.emma_provider_api_key),
+        credentials.catalogAccessAfterRefreshFailure(.shinbo_provider_api_key),
     );
 
     try std.testing.expectEqual(@as(usize, 0), unused_provider.calls);
@@ -1215,7 +1212,7 @@ test "model cache warmup publishes a snapshot and filtered completion" {
 
     const provenance = runtime.outcome.loaded.?;
     try std.testing.expectEqual(model_catalog.AccessLevel.authenticated, provenance.access.level);
-    try std.testing.expectEqual(credentials.Source.emma_provider_api_key, provenance.access.source.?);
+    try std.testing.expectEqual(credentials.Source.shinbo_provider_api_key, provenance.access.source.?);
     try std.testing.expect(!provenance.access.private_models_may_be_hidden);
     try std.testing.expect(!provenance.anonymous_fallback_used);
     try std.testing.expect(provenance.fallback_failure == null);

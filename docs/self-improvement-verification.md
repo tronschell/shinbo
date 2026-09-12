@@ -24,7 +24,7 @@ subagent attribution, same-timestamp runs, older-trace offsets and children
 finishing after their parent.
 
 A deterministic local HTTP provider exercised the freshly built
-`harness/zig-out/bin/emma-cli` through the desktop Harness client. A GLM parent
+`harness/zig-out/bin/shinbo-cli` through the desktop Harness client. A GLM parent
 received a GLM-only prompt and tool-description marker. Its GPT child requested
 its own context and received neither marker, while retaining the standard tool
 and verification guidance. All three provider requests completed; no real model
@@ -44,7 +44,7 @@ validation processes were stopped afterward.
 
 The website feature/docs, roadmap, agent reference and screenshot were updated.
 Its build, changed-file formatting/lint and browser verification passed. Its
-full checks still report pre-existing lint errors in `EmmaWindow.tsx` and
+full checks still report pre-existing lint errors in `ShinboWindow.tsx` and
 formatting issues in seven untouched files.
 
 The phone's shared trace/protocol types and metadata regression check were

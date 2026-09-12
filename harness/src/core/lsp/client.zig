@@ -580,7 +580,7 @@ pub const Client = struct {
         defer self.alloc.free(uri);
         const params = try std.fmt.allocPrint(
             self.alloc,
-            "{{\"processId\":null,\"clientInfo\":{{\"name\":\"emma-cli\"}}," ++
+            "{{\"processId\":null,\"clientInfo\":{{\"name\":\"shinbo-cli\"}}," ++
                 "\"rootUri\":{f},\"rootPath\":{f}," ++
                 "\"workspaceFolders\":[{{\"uri\":{f},\"name\":{f}}}]," ++
                 "\"initializationOptions\":{s},\"capabilities\":{s}}}",

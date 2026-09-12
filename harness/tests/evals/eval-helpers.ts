@@ -1,4 +1,4 @@
-// Model-backed eval helpers. Requires a built binary and EMMA_PROVIDER_API_KEY.
+
 import { expect } from "bun:test";
 import { execFileSync, execSync, spawn as nodeSpawn } from "node:child_process";
 import {
@@ -427,7 +427,7 @@ export function assertFirstTerminalExecMatches(
   expect(pattern.test(first?.command_result?.command ?? "")).toBe(true);
 }
 
-// Generic fx CLI runner for deterministic command coverage.
+
 
 export interface FxRunResult {
   stdout: string;
@@ -528,5 +528,5 @@ export async function runFx(
 }
 
 export const HAS_API_KEY: boolean = !!(
-  process.env.EMMA_PROVIDER_API_KEY
+  process.env.SHINBO_PROVIDER_API_KEY
 );

@@ -1,11 +1,11 @@
-/**
- * tmux helper for interactive TUI testing.
- *
- * Creates isolated tmux sessions, sends keystrokes, captures pane
- * output, and provides waitForText polling for assertions.
- *
- * Requires: tmux installed and available in PATH.
- */
+
+
+
+
+
+
+
+
 import { execFileSync, execSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,14 +19,14 @@ const TMUX_CAPTURE_MAX_BUFFER = 32 * 1024 * 1024;
 const TMUX_HEX_CHUNK_BYTES = 256;
 const COMPOSER_LINE = /^[ \t]*(?:┃|❯|>)(?:[ \t]|$)/;
 const AUTH_ENV_KEYS = [
-  "EMMA_PROVIDER_API_KEY",
+  "SHINBO_PROVIDER_API_KEY",
 ] as const;
 const DEFAULT_UNSET_ENV_KEYS = [
   ...AUTH_ENV_KEYS,
   "FX_E2E_GATEWAY_CHAT_URL",
   "FX_E2E_GATEWAY_MODELS_URL",
   "FX_E2E_GATEWAY_CREDITS_URL",
-  "EMMA_UPGRADE_BASE_URL",
+  "SHINBO_UPGRADE_BASE_URL",
   "FX_PERMISSION_MODE",
 ] as const;
 const MIRRORED_ENV_KEYS = [
@@ -397,10 +397,10 @@ export function startFakeGateway(
   }, options);
 }
 
-// Same server and classifier handling as startFakeGateway, but every
-// completion request is answered by the supplied callback instead of a
-// finite queue. For suites that replay one response indefinitely or switch
-// on their own state.
+
+
+
+
 export function startDynamicFakeGateway(
   response: (body: string) => Response | Promise<Response>,
   options: FakeGatewayOptions = {},
@@ -846,11 +846,11 @@ export class TmuxSession {
     }
   }
 
-  /**
-   * Complete pane history including the ANSI sequences emitted by fx.
-   * Keep this separate from the viewport capture so transcript-order tests
-   * inspect all committed output rather than only the visible rows.
-   */
+
+
+
+
+
   async captureFullScrollbackEscapes(): Promise<string> {
     try {
       return execFileSync(
@@ -867,10 +867,10 @@ export class TmuxSession {
     }
   }
 
-  /**
-   * Current pane title, which is what a terminal renders as the tab label.
-   * fx sets it through OSC 2, so this reads back what the user would see.
-   */
+
+
+
+
   async paneTitle(): Promise<string> {
     try {
       return execFileSync(
@@ -886,11 +886,11 @@ export class TmuxSession {
     }
   }
 
-  /**
-   * Resize the tmux window. Delivers a real SIGWINCH to fx, exercising the
-   * resize pipeline end-to-end. Default post-resize sleep covers the 100 ms
-   * debounce in src/main.zig.
-   */
+
+
+
+
+
   async resizeWindow(cols: number, rows: number, settleMs = 250): Promise<void> {
     execSync(`${this.tmuxCommand()} resize-window -t ${this.name} -x ${cols} -y ${rows}`, {
       stdio: "pipe",
@@ -898,10 +898,10 @@ export class TmuxSession {
     await sleep(settleMs);
   }
 
-  /**
-   * Capture pane output including raw ANSI escape sequences. Use when you
-   * need to assert on color/style or confirm specific escapes were emitted.
-   */
+
+
+
+
   async capturePaneEscapes(): Promise<string> {
     try {
       return execSync(`${this.tmuxCommand()} capture-pane -t ${this.name} -e -p -J`, {
@@ -914,10 +914,10 @@ export class TmuxSession {
     }
   }
 
-  /**
-   * Copy subsequent raw pane output to a file. Unlike capture-pane, this
-   * preserves control bytes such as BEL before tmux applies them to its grid.
-   */
+
+
+
+
   startPaneOutputCapture(path: string): void {
     execFileSync(
       "tmux",
@@ -932,20 +932,20 @@ export class TmuxSession {
     );
   }
 
-  /**
-   * Grid snapshot of the pane as an array of row strings (ANSI stripped).
-   * Rows are right-padded to the pane width so positional assertions are
-   * stable.
-   */
+
+
+
+
+
   async capturePaneGrid(): Promise<string[]> {
     const raw = await this.capturePane();
     if (raw.length === 0) return [];
     return raw.replace(/\n$/, "").split("\n");
   }
 
-  /**
-   * Full snapshot for golden-style assertions.
-   */
+
+
+
   async snapshot(): Promise<{ grid: string[]; escapes: string; alive: boolean }> {
     return {
       grid: await this.capturePaneGrid(),
@@ -954,10 +954,10 @@ export class TmuxSession {
     };
   }
 
-  /**
-   * Current pane dimensions as tmux sees them. Handy for sanity checks after
-   * resizeWindow().
-   */
+
+
+
+
   paneSize(): { cols: number; rows: number } {
     const raw = execSync(
       `${this.tmuxCommand()} display-message -t ${this.name} -p "#{pane_width}x#{pane_height}"`,

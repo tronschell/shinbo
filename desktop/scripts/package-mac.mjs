@@ -28,10 +28,10 @@ const output = (command, args, cwd = desktop) => execFileSync(command, args, { c
 const version = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")).version;
 assert.match(version, /^\d+\.\d+\.\d+$/, "The root package.json needs a stable X.Y.Z version.");
 const electronChecksums = JSON.parse(readFileSync(path.join(desktop, "node_modules/electron/checksums.json"), "utf8"));
-const zigOptimize = process.env.EMMA_FAST_BUILD === "1" ? "Debug" : "ReleaseSafe";
+const zigOptimize = process.env.SHINBO_FAST_BUILD === "1" ? "Debug" : "ReleaseSafe";
 
 await Promise.all([
-  runAsync("cargo", ["build", "--locked", "--release", "-p", "emma-host"], root),
+  runAsync("cargo", ["build", "--locked", "--release", "-p", "shinbo-host"], root),
   runAsync("zig", ["build", `-Doptimize=${zigOptimize}`, "-Dtarget=aarch64-macos.12.0"], path.join(root, "harness")),
   ...["build:native", "vendor:ripgrep", "build:main", "build:renderer"].map((script) => runAsync("npm", ["run", script])),
 ]);
@@ -39,7 +39,7 @@ await Promise.all([
 const notices = path.join(out, "notices");
 mkdirSync(notices, { recursive: true });
 for (const [source, name] of [
-  ["LICENSE", "Emma-LICENSE.txt"],
+  ["LICENSE", "Shinbo-LICENSE.txt"],
   ["harness/LICENSE", "Harness-LICENSE.txt"],
   ["harness/THIRD_PARTY_NOTICES.md", "Harness-NOTICES.md"],
   ["harness/FORK.md", "Harness-FORK.md"],
@@ -58,21 +58,21 @@ writeFileSync(path.join(notices, "Rust-LICENSES.txt"), metadata.packages.filter(
 }).join("\n\n"));
 
 const resources = [
-  path.join(root, "target/release/emma-host"),
-  path.join(root, "harness/zig-out/bin/emma-cli"),
+  path.join(root, "target/release/shinbo-host"),
+  path.join(root, "harness/zig-out/bin/shinbo-cli"),
   path.join(desktop, "vendor/rg"),
-  ...["emma-option-tap", "emma-computer", "emma-transcribe", "emma-pty"].map((name) => path.join(desktop, "dist-native", name)),
+  ...["shinbo-option-tap", "shinbo-computer", "shinbo-transcribe", "shinbo-pty"].map((name) => path.join(desktop, "dist-native", name)),
   path.join(desktop, "skills"),
   notices,
 ];
 const bundled = /^\/(?:package\.json$|dist-main(?:$|\/(?:main|shared)(?:\/|$))|dist-renderer(?:\/|$)|node_modules(?:$|\/ws(?:\/|$)))/;
-const iconDirectory = mkdtempSync(path.join(tmpdir(), "emma-package-icon-"));
-const icon = path.join(iconDirectory, "emma.icns");
-cpSync(path.join(desktop, "assets/emma.icns"), icon);
+const iconDirectory = mkdtempSync(path.join(tmpdir(), "shinbo-package-icon-"));
+const icon = path.join(iconDirectory, "shinbo.icns");
+cpSync(path.join(desktop, "assets/shinbo.icns"), icon);
 try {
   await packager({
     dir: desktop,
-    name: "Emma",
+    name: "Shinbo",
     icon,
     platform: "darwin",
     arch: "arm64",
@@ -81,6 +81,8 @@ try {
     asar: true,
     prune: false,
     download: { checksums: electronChecksums },
+    // Keep the pre-rename bundle id: Squirrel.Mac only installs an update whose code signature satisfies the running app's
+    // designated requirement, which pins `identifier "com.tronschell.emma"`, and macOS permission grants are keyed by it.
     appBundleId: "com.tronschell.emma",
     appVersion: version,
     buildVersion: version,
@@ -95,7 +97,7 @@ try {
 } finally {
   rmSync(iconDirectory, { recursive: true, force: true });
 }
-const app = path.join(out, "Emma-darwin-arm64/Emma.app");
+const app = path.join(out, "Shinbo-darwin-arm64/Shinbo.app");
 for (const resource of resources) cpSync(resource, path.join(app, "Contents/Resources", path.basename(resource)), { recursive: true, verbatimSymlinks: true });
 run(process.execPath, ["scripts/trim-packaged-locales.mjs", app]);
 const archive = path.join(app, "Contents/Resources/app.asar");
@@ -123,6 +125,6 @@ for (const resource of resources) {
 }
 run("codesign", ["--force", "--deep", "--sign", "-", app]);
 run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", app]);
-for (const name of ["emma-option-tap", "emma-computer", "emma-pty"]) run(path.join(app, "Contents/Resources", name), ["--self-test"]);
+for (const name of ["shinbo-option-tap", "shinbo-computer", "shinbo-pty"]) run(path.join(app, "Contents/Resources", name), ["--self-test"]);
 assert.equal(execFileSync(path.join(app, "Contents/Resources/rg"), ["--pcre2", "--only-matching", "(?<=release-)ready"], { input: "release-ready\n", encoding: "utf8" }).trim(), "ready");
-console.log(`Verified Emma ${version}: ${app}`);
+console.log(`Verified Shinbo ${version}: ${app}`);

@@ -147,7 +147,7 @@ class PgsoCorpusTests(unittest.TestCase):
             "argv": ["bun", "test", "--max-concurrency", "1", f"./{test_file}"],
             "cwd": "tests/e2e",
             "env_set": {"FX_SOUND": "0"},
-            "env_unset": ["EMMA_PROVIDER_API_KEY"],
+            "env_unset": ["SHINBO_PROVIDER_API_KEY"],
             "timeout_seconds": 60,
             "requires_tmux": True,
             "test_file": test_file,
@@ -327,7 +327,7 @@ class PgsoCorpusTests(unittest.TestCase):
             "LLVM_PROFILE_FILE",
             "TMUX",
             "TMUX_TMPDIR",
-            "EMMA_PROVIDER_API_KEY",
+            "SHINBO_PROVIDER_API_KEY",
             "FX_TRACE_LOG",
             "FX_TRACE_SCOPES",
         ):

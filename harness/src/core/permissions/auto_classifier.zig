@@ -13,9 +13,9 @@ pub const tool_name = "permission_decision";
 const max_rationale_bytes: usize = 240;
 const max_review_packet_bytes: usize = 16 * 1024;
 pub const gateway_reviewer_model = "zai/glm-5.2";
-pub const model_env = "EMMA_REVIEWER_MODEL";
-pub const chat_url_env = "EMMA_REVIEWER_CHAT_URL";
-pub const api_key_env = "EMMA_REVIEWER_API_KEY";
+pub const model_env = "SHINBO_REVIEWER_MODEL";
+pub const chat_url_env = "SHINBO_REVIEWER_CHAT_URL";
+pub const api_key_env = "SHINBO_REVIEWER_API_KEY";
 
 pub const Risk = enum {
     low,
@@ -36,7 +36,6 @@ pub const Decision = enum {
     ask,
 };
 
-/// Owns `rationale`; call `deinit` or transfer it to the allocator's lifetime.
 pub const Result = struct {
     risk: Risk,
     authorization: Authorization,
@@ -128,15 +127,12 @@ pub const AutoPermissionPhase = enum {
     human_approval,
 };
 
-/// Borrowed view of the successful model turn. Every referenced slice must
-/// remain valid until `Reviewer.review` returns.
 pub const ReviewTurnContext = struct {
     model: []const u8,
     pending_assistant: types.ChatMessage,
     target_call_id: []const u8,
     origin: ReviewOrigin,
-    /// Bounded canonical root-user requests for the active turn. Assistant,
-    /// tool, feedback, repository, and attachment text never become authority.
+
     current_root_request: []const u8 = "",
     auto_permission_phase: AutoPermissionPhase = .automatic_review,
 };
@@ -210,9 +206,6 @@ pub const OverrideFn = *const fn (
     ReviewRequest,
 ) anyerror!ParseOutcome;
 
-/// Borrowed runtime inputs for one provider-backed permission review. Every
-/// referenced slice and pointer must remain valid until `Classifier.review`
-/// returns.
 pub const ProviderInput = struct {
     credential: []const u8 = "",
     endpoint: []const u8 = "",
@@ -228,8 +221,6 @@ pub const ProviderFn = *const fn (
     ReviewRequest,
 ) anyerror!ParseOutcome;
 
-/// Registered implementation of automatic permission review. Core owns the
-/// review policy; providers perform the model transport selected at composition.
 pub const Provider = struct {
     context: ?*anyopaque = null,
     review_fn: ProviderFn,
@@ -491,8 +482,6 @@ pub const Reviewer = struct {
     }
 };
 
-/// One injected automatic-review capability. Provider and override state are
-/// borrowed and used synchronously by `review`.
 pub const Classifier = struct {
     provider: ?Provider = null,
     provider_input: ProviderInput = .{},
@@ -1017,9 +1006,6 @@ fn parseArguments(alloc: std.mem.Allocator, arguments_json: []const u8) !ParseOu
         return .invalid;
     }
 
-    // Risk and authorization are informational for traces and prompts.
-    // Authorization strength is judged by the model under review_policy_template;
-    // the host does not veto allow by risk class.
     return .{ .valid = .{
         .risk = risk,
         .authorization = authorization,

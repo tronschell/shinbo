@@ -70,7 +70,7 @@ function gatewayEnv(
 ) {
   return {
     HOME: root.home,
-    EMMA_PROVIDER_API_KEY: "fake-auto-mode-reliability-key",
+    SHINBO_PROVIDER_API_KEY: "fake-auto-mode-reliability-key",
     FX_GATEWAY_BASE_URL: gateway.baseUrl,
     FX_GATEWAY_CHAT_URL: gateway.chatUrl,
     FX_MODEL: MODEL,

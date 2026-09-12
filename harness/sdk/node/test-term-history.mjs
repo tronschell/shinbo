@@ -59,7 +59,7 @@ async function start() {
   backend: "wasm",
     wasm,
     terminal: xtermAdapter(terminal),
-    env: { EMMA_PROVIDER_API_KEY: "term-history-key" },
+    env: { SHINBO_PROVIDER_API_KEY: "term-history-key" },
     fetch,
     promptHistoryStore,
     onEvent(event) { events.push(event); },

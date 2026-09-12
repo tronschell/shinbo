@@ -1,6 +1,10 @@
 import { SETTINGS_KEY } from "../shared/settings";
+import { copyLegacyStorage } from "../shared/legacy-storage";
 import type { ProviderProfile } from "../shared/settings";
 import type { CompactSnapshot } from "./types";
+
+try { copyLegacyStorage(localStorage); }
+catch (error) { console.error("Shinbo could not carry forward legacy settings", error); }
 
 const OVERLAY_SURFACES = ["annotation", "hotspot", "radial", "run", "overlay", "computerCursor"];
 const query = new URLSearchParams(location.search);
@@ -9,7 +13,7 @@ export const isWorkspaceWindow = !OVERLAY_SURFACES.some((key) => query.has(key))
 
 let pending = OVERLAY_SURFACES.some((key) => query.has(key))
   ? undefined
-  : window.emma.request<CompactSnapshot>("threadSummaries");
+  : window.shinbo.request<CompactSnapshot>("threadSummaries");
 
 void pending?.catch(() => undefined);
 
@@ -19,7 +23,7 @@ const savedProviders = (): ProviderProfile[] => {
 };
 
 const providersReady = isWorkspaceWindow
-  ? window.emma.setProviders(savedProviders()).then(() => undefined, () => undefined)
+  ? window.shinbo.setProviders(savedProviders()).then(() => undefined, () => undefined)
   : Promise.resolve();
 
 export const whenProvidersReady = () => providersReady;

@@ -1,5 +1,5 @@
-use emma_core::{Thread, ThreadMessage, ThreadRole, ThreadStore, ThreadTrace, Timestamp};
 use serde_json::{Value, json};
+use shinbo_core::{Thread, ThreadMessage, ThreadRole, ThreadStore, ThreadTrace, Timestamp};
 use std::{
     collections::BTreeMap,
     io::{BufRead, BufReader, Write},
@@ -8,9 +8,9 @@ use std::{
 
 #[test]
 fn compiled_host_rejects_invalid_goal_numbers_and_thread_kinds_without_mutating() {
-    let root = std::env::temp_dir().join(format!("emma-host-validation-{}", std::process::id()));
-    let mut child = Command::new(env!("CARGO_BIN_EXE_emma-host"))
-        .env("EMMA_DATA_DIR", &root)
+    let root = std::env::temp_dir().join(format!("shinbo-host-validation-{}", std::process::id()));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_shinbo-host"))
+        .env("SHINBO_DATA_DIR", &root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -68,7 +68,7 @@ fn compiled_host_rejects_invalid_goal_numbers_and_thread_kinds_without_mutating(
 
 #[test]
 fn compiled_host_preserves_large_snapshots_and_accepts_the_next_request() {
-    let root = std::env::temp_dir().join(format!("emma-host-snapshot-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("shinbo-host-snapshot-{}", std::process::id()));
     let store = ThreadStore::new(root.join("threads"));
     let now = Timestamp::now();
     let mut expected = BTreeMap::new();
@@ -92,8 +92,8 @@ fn compiled_host_preserves_large_snapshots_and_accepts_the_next_request() {
         store.save(&thread).unwrap();
         expected.insert(thread.id.to_string(), serde_json::to_value(thread).unwrap());
     }
-    let mut child = Command::new(env!("CARGO_BIN_EXE_emma-host"))
-        .env("EMMA_DATA_DIR", &root)
+    let mut child = Command::new(env!("CARGO_BIN_EXE_shinbo-host"))
+        .env("SHINBO_DATA_DIR", &root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()

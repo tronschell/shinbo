@@ -260,7 +260,7 @@ function fixtureEnv(
 ): Record<string, string | undefined> {
   return {
     HOME: root.home,
-    EMMA_PROVIDER_API_KEY: "fake-gateway-lifecycle-key",
+    SHINBO_PROVIDER_API_KEY: "fake-gateway-lifecycle-key",
     FX_GATEWAY_BASE_URL: gateway.baseUrl,
     FX_GATEWAY_CHAT_URL: gateway.chatUrl,
     FX_E2E_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -3350,7 +3350,7 @@ describe("gateway stream lifecycle", () => {
             cwd: root.workspace,
             env: {
               HOME: root.home,
-              EMMA_PROVIDER_API_KEY: "fake-gateway-lifecycle-key",
+              SHINBO_PROVIDER_API_KEY: "fake-gateway-lifecycle-key",
               FX_E2E_GATEWAY_CHAT_URL:
                 `http://127.0.0.1:${address.port}/v1/ai/chat/completions`,
               FX_MODEL: MODEL,
@@ -3480,7 +3480,7 @@ describe("gateway stream lifecycle", () => {
           cwd: root.workspace,
           env: {
             HOME: root.home,
-            EMMA_PROVIDER_API_KEY: "fake-gateway-lifecycle-key",
+            SHINBO_PROVIDER_API_KEY: "fake-gateway-lifecycle-key",
             FX_E2E_GATEWAY_CHAT_URL:
               `http://127.0.0.1:${address.port}/v1/ai/chat/completions`,
             FX_MODEL: MODEL,
@@ -4429,8 +4429,8 @@ describe("gateway stream lifecycle", () => {
         expect(gateway.classifierRequests[0]!.body).toContain("exact-");
         expect(gateway.classifierRequests[0]!.body).toContain("inputSchema");
         if (decision === "ask") {
-          // Headless automatic review returns a recoverable denial to the
-          // primary model without executing the MCP tool or asking the user.
+
+
           expect(result.code).toBe(0);
           expect(gateway.requests).toHaveLength(3);
           expect(gateway.requests[2]!.body).toContain("tool_permission_denied");

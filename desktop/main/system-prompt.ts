@@ -130,7 +130,7 @@ export function goalBlock(goal: Goal): string {
     goal.evidence ? `Evidence recorded so far: ${goal.evidence}` : "",
     goal.blockedReason ? `Blocker on record: ${goal.blockedReason} — reported on ${tokens(goal.blockedStreak)} of the ${tokens(GOAL_BLOCKED_TURNS)} consecutive goal turns it takes to call the goal blocked.` : "",
     "",
-    "The goal persists across turns, so the end of this turn is not the end of it: when you stop, Emma starts another turn at the same objective on its own. Work accordingly.",
+    "The goal persists across turns, so the end of this turn is not the end of it: when you stop, Shinbo starts another turn at the same objective on its own. Work accordingly.",
     "Keep the whole objective intact. If it cannot be finished now, make concrete progress toward the end state that was actually asked for and leave the goal active — never redefine success as the smaller, easier thing that happens to fit this turn.",
     "Treat completion as unproven until you have checked it against the current state of the thing itself. Intent, partial progress, memory of earlier work and a plausible-looking answer are none of them proof. Marking the goal complete claims the full objective is finished and would survive being read back requirement by requirement, so send it only with evidence of the real end state: what you ran, what it printed, what changed. If the evidence is indirect, partial, merely consistent with being done, or leaves one requirement unverified, keep working instead.",
     "Never call it complete because the budget is nearly gone or because you are stopping. A budget that runs out is budgetLimited, and asking the user to extend it is the honest move.",

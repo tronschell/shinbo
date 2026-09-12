@@ -9,7 +9,7 @@
 .island-bar { display: grid; grid-template-columns: calc(var(--notch-x) - var(--island-inset)) var(--notch-w) 1fr; align-items: center; height: var(--notch-h); border-bottom: 1px solid var(--border); }
 .island-bar .brand { justify-content: flex-start; padding-left: var(--s-4); }
 .island-bar .mark { width: 20px; height: 20px; }
-.island-bar .emma-mark { width: 22px; }
+.island-bar .shinbo-mark { width: 22px; }
 
 .island-status { display: flex; align-items: center; justify-content: flex-end; gap: var(--s-2); min-width: 0; padding-right: var(--s-4); overflow: hidden; color: var(--text-3); font: var(--fs-2xs)/1.4 var(--font-mono); letter-spacing: var(--ls-caps); text-transform: uppercase; white-space: nowrap; text-overflow: ellipsis; }
 .island-body { display: flex; flex-direction: column; justify-content: center; gap: var(--s-2); flex: 1; min-height: 0; overflow: hidden; padding: var(--s-3) var(--s-4); transition: opacity var(--t); }
@@ -41,7 +41,7 @@
 .status-pill:active { cursor: grabbing; }
 .status-pill .mark { color: inherit; }
 .status-pill.working { --pill: var(--yellow); }
-.status-pill.error { --pill: var(--orange); }
+.status-pill.error { --pill: var(--pink); }
 .status-pill.done { --pill: var(--lime); }
 .status-pill.working .mark svg { animation: mark-wiggle 2.6s ease-in-out infinite; }
 .status-pill.leaving { opacity: 0; }
@@ -126,7 +126,7 @@
   font: 11px/9px var(--font-mono); letter-spacing: .5px;
   background: linear-gradient(90deg,
     color-mix(in srgb, var(--rose) 50%, var(--text-3)),
-    color-mix(in srgb, var(--orange) 50%, var(--text-3)),
+    color-mix(in srgb, var(--pink) 50%, var(--text-3)),
     color-mix(in srgb, var(--lime) 50%, var(--text-3)),
     color-mix(in srgb, var(--teal) 50%, var(--text-3)),
     color-mix(in srgb, var(--blue) 50%, var(--text-3)),

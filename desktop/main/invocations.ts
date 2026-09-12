@@ -72,6 +72,8 @@ export async function readUsage(userData: string): Promise<Usage> {
 
 const counted = new Set<string>();
 let writing: Promise<unknown> = Promise.resolve();
+let pending = new Map<string, Usage>();
+let scheduled = false;
 
 export function recordUse(userData: string, key: string, once = "") {
   if (!key) return writing;
@@ -80,18 +82,34 @@ export function recordUse(userData: string, key: string, once = "") {
     if (counted.size >= MAX_COUNTED_CALLS) counted.clear();
     counted.add(once);
   }
+  const additions = pending.get(userData) ?? {};
+  const day = usageDay(new Date());
+  const days = additions[key] ??= {};
+  days[day] = (days[day] ?? 0) + 1;
+  pending.set(userData, additions);
+  if (scheduled) return writing;
+  scheduled = true;
   writing = writing.then(async () => {
-    const usage = await readUsage(userData);
-    const at = new Date();
-    const cutoff = usageDay(new Date(at.getTime() - MAX_DAYS * DAY_MILLISECONDS));
-    const day = usageDay(at);
-    const days: Record<string, number> = { ...usage[key] };
-    days[day] = (days[day] ?? 0) + 1;
-    usage[key] = Object.fromEntries(Object.entries(days).filter(([stamp]) => stamp >= cutoff));
-    const file = usageFile(userData);
-    const temporary = `${file}.${process.pid}.tmp`;
-    await writeFile(temporary, JSON.stringify(Object.fromEntries(Object.entries(usage).slice(-MAX_KEYS))), { encoding: "utf8", mode: 0o600 });
-    await rename(temporary, file);
-  }).catch((error: unknown) => console.warn("Emma could not record capability use:", error instanceof Error ? error.message : error));
+    const batch = pending;
+    pending = new Map();
+    scheduled = false;
+    const cutoff = usageDay(new Date(Date.now() - MAX_DAYS * DAY_MILLISECONDS));
+    for (const [directory, additions] of batch) {
+      try {
+        const usage = await readUsage(directory);
+        for (const [key, added] of Object.entries(additions)) {
+          const days = { ...usage[key] };
+          for (const [day, count] of Object.entries(added)) days[day] = (days[day] ?? 0) + count;
+          usage[key] = Object.fromEntries(Object.entries(days).filter(([stamp]) => stamp >= cutoff));
+        }
+        const file = usageFile(directory);
+        const temporary = `${file}.${process.pid}.tmp`;
+        await writeFile(temporary, JSON.stringify(Object.fromEntries(Object.entries(usage).slice(-MAX_KEYS))), { encoding: "utf8", mode: 0o600 });
+        await rename(temporary, file);
+      } catch (error) {
+        console.warn("Shinbo could not record capability use:", error instanceof Error ? error.message : error);
+      }
+    }
+  });
   return writing;
 }

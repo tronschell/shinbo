@@ -106,7 +106,9 @@ export function lineage(threads: Thread[], limit: number): LineageRow[] {
   for (const thread of threads) {
     const parent = thread.parentThreadId && byId.has(thread.parentThreadId) ? thread.parentThreadId : "";
     if (!parent) { roots.push(thread); continue; }
-    children.set(parent, [...(children.get(parent) ?? []), thread]);
+    const siblings = children.get(parent);
+    if (siblings) siblings.push(thread);
+    else children.set(parent, [thread]);
   }
   const recent = (left: Thread, right: Thread) => right.updatedAt.localeCompare(left.updatedAt);
   for (const list of children.values()) list.sort(recent);

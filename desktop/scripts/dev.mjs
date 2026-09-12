@@ -36,7 +36,7 @@ native.on("exit", (code) => {
       if (mainCode) process.exit(mainCode);
       const vite = run(npm, ["exec", "vite", "--", "--host", "127.0.0.1"]);
       globalThis.setTimeout(() => {
-        const electron = run(npm, ["exec", "electron", "."], { ...process.env, EMMA_DEV_SERVER_URL: "http://127.0.0.1:5173" });
+        const electron = run(npm, ["exec", "electron", "."], { ...process.env, SHINBO_DEV_SERVER_URL: "http://127.0.0.1:5173" });
         electron.on("exit", (electronCode) => {
           void stopTree(vite).finally(() => process.exit(electronCode ?? 0));
         });

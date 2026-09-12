@@ -15,14 +15,14 @@ function useTask(id: string | undefined) {
   useEffect(() => {
     if (!id) return;
     let live = true;
-    const read = () => void window.emma.readBackground(id).then((found) => {
+    const read = () => void window.shinbo.readBackground(id).then((found) => {
       if (!live || !found) return;
       setState({ id, ...found });
       if (found.task.status === "exited") clearInterval(timer);
     }).catch(() => undefined);
     const timer = setInterval(read, POLL_MS);
     read();
-    const off = window.emma.onBackground(read);
+    const off = window.shinbo.onBackground(read);
     return () => { live = false; clearInterval(timer); off(); };
   }, [id]);
   return state?.id === id ? state : null;
@@ -58,7 +58,7 @@ export function CodeBlock({ text, language }: { text: string; language?: string 
   const start = () => {
     setError("");
     setId(undefined);
-    void window.emma.runCommand({ command: text, folderId: thread?.folderId })
+    void window.shinbo.runCommand({ command: text, folderId: thread?.folderId })
       .then((task) => setId(task.id))
       .catch((reason: unknown) => setError(reasonText(reason)));
   };
@@ -73,7 +73,7 @@ export function CodeBlock({ text, language }: { text: string; language?: string 
     <div className="md-code-bar">
       {language && <span className="md-code-lang">{language}</span>}
       {runnable && <button type="button" className="md-code-button" title={running ? "Stop" : "Run this command"} aria-label={running ? "Stop this command" : "Run this command"}
-        onClick={() => running && id ? void window.emma.stopBackground(id) : start()}>
+        onClick={() => running && id ? void window.shinbo.stopBackground(id) : start()}>
         <Icon path={running ? STOP : PLAY} />
       </button>}
       <button type="button" className="md-code-button" title={copied ? "Copied" : "Copy"} aria-label={copied ? "Copied" : "Copy this block"}

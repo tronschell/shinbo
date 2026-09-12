@@ -1,4 +1,4 @@
-export const UPDATE_REPOSITORY = "tronschell/emma";
+export const UPDATE_REPOSITORY = "tronschell/shinbo";
 export const DEFAULT_UPDATE_ORIGIN = "https://update.electronjs.org";
 
 const MAX_UPDATE_ORIGIN_CHARS = 512;

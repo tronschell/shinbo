@@ -50,8 +50,8 @@ contained these fixes.
 The desktop build still reports its existing large-bundle warning. Native socket
 tests need execution outside the filesystem/network sandbox; sandbox-denied
 loopback calls are not application failures. Local logs and fixtures are under
-`/private/tmp/emma-release-ready.Q83BUf` and
-`/private/tmp/emma-gateway-readiness.YlFhKa` on the verification Mac.
+`/private/tmp/shinbo-release-ready.Q83BUf` and
+`/private/tmp/shinbo-gateway-readiness.YlFhKa` on the verification Mac.
 
 The widget smoke used a separate bundle identifier, profile, vault and Rust data
 directory. Only a dummy credential name/value was provided. The native dialog
@@ -77,8 +77,8 @@ c3385944ab094d752c9a37fd998bad64a363f2cc56874dc2efaa9b84182fe172
 
 The updater code was unchanged from `d1e0984`. The mock used a loopback feed,
 ad-hoc signatures pinned to the replacement hash, and a test-only library
-validation entitlement. It used neither the installed Emma nor real user data.
-Evidence is in `/private/tmp/emma-update-rehearsal.ImHJ9T/result.json` and its
+validation entitlement. It used neither the installed Shinbo nor real user data.
+Evidence is in `/private/tmp/shinbo-update-rehearsal.ImHJ9T/result.json` and its
 event log. This proves local download, replacement, restart and data retention;
 it does not prove GitHub delivery, Developer ID signing, notarization,
 Gatekeeper acceptance or macOS 12 compatibility.
@@ -99,7 +99,7 @@ No child-context patch remains in the candidate.
 
 ## Publication and website gates
 
-After this snapshot, [release PR #7](https://github.com/tronschell/emma/pull/7)
+After this snapshot, [release PR #7](https://github.com/tronschell/shinbo/pull/7)
 merged and prepared `v0.2.0` at `48ed848`. Its draft contains only GitHub's
 source archives because the prepared tree never reached the `main` packaging
 job, and it predates the hardening changes above. Keep that draft unpublished.
@@ -114,7 +114,7 @@ job, and it predates the hardening changes above. Keep that draft unpublished.
    All five Apple secret names exist, but their contents and validity were not
    inspected or proven. The assetless `v0.2.0` draft is not that proof.
 4. Check the public feed after publication. The app is wired to
-   `update.electronjs.org/tronschell/emma/darwin-arm64/<installed-version>`;
+   `update.electronjs.org/tronschell/shinbo/darwin-arm64/<installed-version>`;
    release names and ZIP names match its contract. A later upgrade between two
    published signed versions is still needed to prove that entire path.
 5. Apply/review and deploy the prepared website delta. The existing dirty website
@@ -122,7 +122,7 @@ job, and it predates the hardening changes above. Keep that draft unpublished.
    typechecking, production build and a 1280px live-browser check; all 26 tools
    and 11 screenshot dimensions match. Deployment and the live site's contents
    remain unverified. The baseline-relative patch is
-   `/private/tmp/emma-website-baseline.SXidCj/website-readiness.patch`.
+   `/private/tmp/shinbo-website-baseline.SXidCj/website-readiness.patch`.
 6. Review the `main` strict up-to-date branch rule before the next promotion.
    After a merge promotion, `main` has a merge commit absent from linear `dev`;
    requiring the next `dev` head to include it can block repeated promotions.

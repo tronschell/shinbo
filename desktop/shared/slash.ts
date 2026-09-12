@@ -1,8 +1,8 @@
-/* The composer's "/" commands and "@" file mentions: the menu that opens while a
-   name is being typed, and the coloured tokens it leaves behind in the message.
-   One grammar, two sigils — "/" names a capability, "@" names a file by its
-   folder-relative path. Pure text work only — the renderer owns the popover and
-   the mirrored highlight layer. */
+
+
+
+
+
 
 import type { ContextPick } from "./folders";
 
@@ -12,12 +12,12 @@ export interface SlashCommand {
   name: string;
   kind: SlashKind;
   detail: string;
-  /** Present on the local-context kinds: what picking this attaches to the next turn. */
+
   pick?: ContextPick;
 }
 
-/** The word every menu row wears, so a built-in tool never reads as an imported
-    skill and a knowledge page never reads as a file on disk. */
+
+
 export const KIND_LABELS: Record<SlashKind, string> = {
   tool: "Tool",
   skill: "Skill",
@@ -30,20 +30,20 @@ export const KIND_LABELS: Record<SlashKind, string> = {
   terminal: "Terminal",
   diff: "Diff",
   visual: "Picture",
-  component: "Built by Emma",
+  component: "Built by Shinbo",
 };
 
-/** Hues a "/" token cycles through. Orange is the accent and stays out of it. */
+
 export const SLASH_HUES = 5;
-/** The one hue past the rotation, reserved for every "@" file mention. */
+
 export const FILE_HUE = SLASH_HUES;
-/** And the one past that, for a pasted link. */
+
 export const LINK_HUE = FILE_HUE + 1;
-/** Rows a menu draws: a connected folder can list hundreds of files.
-    ponytail: a flat cap, not virtualisation — narrow the query instead. */
+
+
 export const MENU_MAX = 20;
 
-/** The names the composer answers itself, before any import is consulted. */
+
 export const BUILTIN_COMMANDS: SlashCommand[] = [
   { id: "agent", name: "agent", kind: "builtin", detail: "Zig coding harness" },
   { id: "council", name: "council", kind: "builtin", detail: "seat several models on one question" },
@@ -54,14 +54,14 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
 
 export type Sigil = "/" | "@";
 
-/* A "/" name is one word: the token ends at whitespace or a second slash. An "@"
-   name is a path, so it keeps its slashes and ends only at whitespace. */
+
+
 const WORD = "\\p{L}\\p{N}\\p{M}";
 const NAME = `[${WORD}][${WORD}._:-]*`;
 const PATH = `[${WORD}][${WORD}._:/-]*`;
 const GRAMMAR: [Sigil, string][] = [["/", NAME], ["@", PATH]];
 const TYPING = GRAMMAR.map(([sigil, name]) => [sigil, new RegExp(`(?:^|\\s)[${sigil}](${name}|)$`, "u")] as const);
-/* A link ends before the punctuation a sentence puts after it, so "see https://a.dev." keeps its full stop as prose. */
+
 const LINK = "https?://[^\\s<>()\\[\\]]*[^\\s<>()\\[\\].,;:!?'\"]";
 const TOKEN = new RegExp(`(^|\\s)(${LINK}|/${NAME}|@${PATH})`, "gu");
 
@@ -70,9 +70,9 @@ export function pathName(path: string): string {
   return name || "file";
 }
 
-/** The "/name" or "@path" fragment under the caret, or null when the caret is in
-    neither. A sigil only opens at a word start, so "a/b" and "me@host" stay prose,
-    and since the caret sits in at most one fragment only one menu can ever open. */
+
+
+
 export function slashQuery(text: string, caret: number) {
   const head = text.slice(0, Math.max(0, caret));
   for (const [sigil, pattern] of TYPING) {
@@ -82,8 +82,8 @@ export function slashQuery(text: string, caret: number) {
   return null;
 }
 
-/* Tab completes whatever lands first, so what a name starts with outranks what
-   it merely contains: "/gen" has to reach "general" before "agent". */
+
+
 export function matchCommands(commands: SlashCommand[], query: string) {
   const needle = query.trim().toLocaleLowerCase();
   if (!needle) return [...commands];
@@ -95,29 +95,29 @@ export function matchCommands(commands: SlashCommand[], query: string) {
     .map((entry) => entry.command);
 }
 
-/** Swap the fragment under the caret for the chosen name, and say where the caret lands. */
+
 export function insertCommand(text: string, at: { start: number; query: string; sigil?: Sigil }, name: string) {
   const tail = text.slice(at.start + at.query.length + 1);
   const head = `${text.slice(0, at.start)}${at.sigil ?? "/"}${name}${/^\s/.test(tail) ? "" : " "}`;
   return { text: head + tail, caret: head.length };
 }
 
-/** Every "/name" or "@path" written in a message. The composer resolves these as
-    they are typed; an unattended run has only the saved text, so it reads them back. */
+
+
 export function mentions(text: string, sigil: Sigil): string[] {
   return [...text.matchAll(TOKEN)].map((match) => match[2]).filter((token) => token.startsWith(sigil)).map((token) => token.slice(1));
 }
 
 export interface SlashSegment {
   text: string;
-  /** Absent for ordinary prose; otherwise the hue index for this name. */
+
   hue?: number;
 }
 
-/** Split a message so each token naming a known command can be painted its own hue.
-    Hues are handed out in order of first appearance, so a name keeps its colour.
-    Every known "@" path instead takes FILE_HUE, so a file mention never wears a
-    command's colour. */
+
+
+
+
 export function highlightSegments(text: string, names: string[], paths: string[] = []): SlashSegment[] {
   const known = { "/": new Set(names.map((name) => name.toLocaleLowerCase())), "@": new Set(paths.map((path) => path.toLocaleLowerCase())) };
   const order: string[] = [];

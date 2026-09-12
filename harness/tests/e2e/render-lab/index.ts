@@ -1636,7 +1636,7 @@ async function launchFx(
   options: FxLaunchOptions = {},
 ): Promise<void> {
   const environment = [
-    options.gatewayApiKey ? `EMMA_PROVIDER_API_KEY=${shQuote(options.gatewayApiKey)}` : null,
+    options.gatewayApiKey ? `SHINBO_PROVIDER_API_KEY=${shQuote(options.gatewayApiKey)}` : null,
     options.gatewayChatUrl ? `FX_E2E_GATEWAY_CHAT_URL=${shQuote(options.gatewayChatUrl)}` : null,
     options.gatewayModelsUrl ? `FX_E2E_GATEWAY_MODELS_URL=${shQuote(options.gatewayModelsUrl)}` : null,
     options.permissionMode ? `FX_PERMISSION_MODE=${shQuote(options.permissionMode)}` : null,
@@ -2103,7 +2103,7 @@ class RenderLabTmux {
     const command = [
       "env",
       "-u",
-      "EMMA_PROVIDER_API_KEY",
+      "SHINBO_PROVIDER_API_KEY",
       "-u",
       "FX_DISABLE_KEYCHAIN=1",
       "FX_SKIP_ONBOARDING=1",
@@ -2117,7 +2117,7 @@ class RenderLabTmux {
       `SHELL_A_BETWEEN_LAUNCHES=${shQuote(opts.manifest.markers.shell[1] ?? "")}`,
       `SHELL_A_BEFORE_THIRD=${shQuote(opts.manifest.markers.shell[2] ?? "")}`,
       shQuote(zshPath()),
-      // The fixture owns ZDOTDIR, so runner-global startup files must not run.
+
       "-d",
       "-i",
     ].join(" ");
@@ -2306,7 +2306,7 @@ function preflightBinaryOnly(): void {
 
 function testEnv(fixture: Fixture, manifest: RenderLabManifest): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
-  delete env.EMMA_PROVIDER_API_KEY;
+  delete env.SHINBO_PROVIDER_API_KEY;
   env.FX_DISABLE_KEYCHAIN = "1";
   env.FX_SKIP_ONBOARDING = "1";
   env.HOME = fixture.home;

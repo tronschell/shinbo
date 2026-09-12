@@ -13,7 +13,7 @@ Add-Type @"
 using System;
 using System.Text;
 using System.Runtime.InteropServices;
-public static class EmmaFrontWindow {
+public static class ShinboFrontWindow {
   public delegate bool EnumWindowsProc(IntPtr handle, IntPtr data);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr handle);
@@ -23,9 +23,9 @@ public static class EmmaFrontWindow {
 }
 "@
 $handles = New-Object System.Collections.Generic.List[System.IntPtr]
-$foreground = [EmmaFrontWindow]::GetForegroundWindow()
-if ($foreground -ne [IntPtr]::Zero -and [EmmaFrontWindow]::IsWindowVisible($foreground)) { $handles.Add($foreground) }
-[EmmaFrontWindow]::EnumWindows({ param($handle, $data) if ($handle -ne $foreground -and [EmmaFrontWindow]::IsWindowVisible($handle)) { $handles.Add($handle) }; return $true }, [IntPtr]::Zero) | Out-Null
+$foreground = [ShinboFrontWindow]::GetForegroundWindow()
+if ($foreground -ne [IntPtr]::Zero -and [ShinboFrontWindow]::IsWindowVisible($foreground)) { $handles.Add($foreground) }
+[ShinboFrontWindow]::EnumWindows({ param($handle, $data) if ($handle -ne $foreground -and [ShinboFrontWindow]::IsWindowVisible($handle)) { $handles.Add($handle) }; return $true }, [IntPtr]::Zero) | Out-Null
 $browserNames = @{
   chrome = "Google Chrome"
   chromium = "Chromium"
@@ -37,7 +37,7 @@ $browserNames = @{
 }
 function Get-WindowText([IntPtr] $handle) {
   $value = New-Object System.Text.StringBuilder 1024
-  [void][EmmaFrontWindow]::GetWindowText($handle, $value, $value.Capacity)
+  [void][ShinboFrontWindow]::GetWindowText($handle, $value, $value.Capacity)
   return $value.ToString()
 }
 function Get-Page([IntPtr] $handle, [string] $application, [string] $window) {
@@ -58,7 +58,7 @@ function Get-Page([IntPtr] $handle, [string] $application, [string] $window) {
 $rows = @()
 foreach ($handle in $handles) {
   $processId = [uint32]0
-  [void][EmmaFrontWindow]::GetWindowThreadProcessId($handle, [ref]$processId)
+  [void][ShinboFrontWindow]::GetWindowThreadProcessId($handle, [ref]$processId)
   if ($processId -eq 0) { continue }
   $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
   if ($null -eq $process) { continue }
@@ -99,7 +99,7 @@ export function windowsFrontContext(): Promise<WindowsFrontContext> {
       if (settled) return;
       settled = true;
       if (child.pid) terminateProcessTree(child.pid, "SIGTERM", false);
-      reject(new Error("Emma could not inspect the front Windows application in time"));
+      reject(new Error("Shinbo could not inspect the front Windows application in time"));
     }, 5000);
     child.stdout.on("data", (data: Buffer) => { output += data.toString(); if (output.length > MAX_OUTPUT && child.pid) terminateProcessTree(child.pid, "SIGTERM", false); });
     child.stderr.on("data", (data: Buffer) => { failure = `${failure}${data.toString()}`.slice(0, 512); });
@@ -108,8 +108,8 @@ export function windowsFrontContext(): Promise<WindowsFrontContext> {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (code !== 0) { reject(new Error(failure.trim() || "Emma could not inspect the front Windows application")); return; }
-      try { resolve(parseWindowsFrontContext(output.trim())); } catch { reject(new Error("Emma received an invalid front Windows application response")); }
+      if (code !== 0) { reject(new Error(failure.trim() || "Shinbo could not inspect the front Windows application")); return; }
+      try { resolve(parseWindowsFrontContext(output.trim())); } catch { reject(new Error("Shinbo received an invalid front Windows application response")); }
     });
   });
 }

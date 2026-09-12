@@ -12,7 +12,7 @@ import { plural } from "./plural";
 
 const MARKS = import.meta.glob<string>("../assets/filetypes/*.svg", { eager: true, query: "?url", import: "default" });
 const mark = (name: string): string | undefined => MARKS[`../assets/filetypes/${name}.svg`];
-const IS_WINDOWS = typeof window !== "undefined" && window.emma?.platform === "win32";
+const IS_WINDOWS = typeof window !== "undefined" && window.shinbo?.platform === "win32";
 const GIT_INSTALL_COMMAND = IS_WINDOWS ? "winget install --id Git.Git --exact" : "xcode-select --install";
 
 const GROUPS: Record<string, string> = {
@@ -51,17 +51,17 @@ export function useGit(folderId: string | undefined, sending: boolean): GitState
   useEffect(() => {
     if (!folderId) return;
     let active = true;
-    const load = () => void window.emma.gitStatus(folderId)
+    const load = () => void window.shinbo.gitStatus(folderId)
       .then(async (snapshot) => {
         if (!active) return;
         if (snapshot) { setState({ snapshot, ready: "ready" }); return; }
-        const ready = await window.emma.gitReady(folderId).catch(() => "no-repo" as GitReady);
+        const ready = await window.shinbo.gitReady(folderId).catch(() => "no-repo" as GitReady);
         if (active) setState({ snapshot: null, ready });
       })
       .catch(() => { if (active) setState(NO_GIT_STATE); });
     load();
-    const listener = window.emma.onChanged(load);
-    return () => { active = false; window.emma.offChanged(listener); };
+    const listener = window.shinbo.onChanged(load);
+    return () => { active = false; window.shinbo.offChanged(listener); };
   }, [folderId, sending]);
   return folderId ? state : NO_GIT_STATE;
 }
@@ -72,7 +72,7 @@ export function GitSetup({ ready, folderId }: { ready: GitReady; folderId: strin
   const init = () => {
     setBusy(true);
     setError("");
-    void window.emma.gitInit(folderId).catch((reason: unknown) => setError(reasonText(reason))).finally(() => setBusy(false));
+    void window.shinbo.gitInit(folderId).catch((reason: unknown) => setError(reasonText(reason))).finally(() => setBusy(false));
   };
   return <div className="git-page git-setup">
     <div className="git-setup-card">
@@ -160,16 +160,16 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
   const [output, setOutput] = useState("");
   const menu = useRef<HTMLDivElement>(null);
 
-  const reload = useCallback(() => void window.emma.gitStatus(folderId)
+  const reload = useCallback(() => void window.shinbo.gitStatus(folderId)
     .then((value) => { if (value) setLive(value); })
     .catch(() => undefined), [folderId]);
   useEffect(() => {
     reload();
-    const listener = window.emma.onChanged(reload);
-    return () => window.emma.offChanged(listener);
+    const listener = window.shinbo.onChanged(reload);
+    return () => window.shinbo.offChanged(listener);
   }, [reload]);
 
-  const loadHistory = useCallback((skip: number) => void window.emma.gitHistory({ folderId, skip, limit: HISTORY_PAGE })
+  const loadHistory = useCallback((skip: number) => void window.shinbo.gitHistory({ folderId, skip, limit: HISTORY_PAGE })
     .then((page) => { setCommits((current) => skip ? [...current, ...page.commits] : page.commits); setMore(page.more); })
     .catch(() => { if (!skip) { setCommits([]); setMore(false); } }), [folderId]);
   useEffect(() => loadHistory(0), [loadHistory]);
@@ -186,7 +186,8 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
     return () => removeEventListener("pointerdown", outside);
   }, [branchOpen]);
 
-  const diffFiles = useMemo(() => parseDiff(live.diff, Infinity).filter((file) => matchesFilter(filter, file.path)), [live.diff, filter]);
+  const parsedDiff = useMemo(() => parseDiff(live.diff, Infinity), [live.diff]);
+  const diffFiles = useMemo(() => parsedDiff.filter((file) => matchesFilter(filter, file.path)), [parsedDiff, filter]);
   const stats = useMemo(() => new Map(diffFiles.map((file) => [file.path, { added: file.added, removed: file.removed }])), [diffFiles]);
   const rows = useMemo(() => layoutHistory(commits), [commits]);
   const width = rows.reduce((widest, row) => Math.max(widest, row.lanes, row.lane + 1), 1) * LANE_PITCH + LANE_PITCH;
@@ -200,7 +201,7 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
   const branchTo = (branch: string, create: boolean, from?: string) => {
     if (!branch.trim()) return;
     setError("");
-    void window.emma.setBranch({ folderId, branch: branch.trim(), create, from: from && from !== live.branch ? from : undefined })
+    void window.shinbo.setBranch({ folderId, branch: branch.trim(), create, from: from && from !== live.branch ? from : undefined })
       .then(() => { reload(); loadHistory(0); })
       .catch((reason: unknown) => setError(reasonText(reason)))
       .finally(() => { setBranchOpen(false); setNaming(false); setDraft(""); });
@@ -209,7 +210,7 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
   const commit = (event: FormEvent) => {
     event.preventDefault();
     setBusy(true); setError("");
-    void window.emma.gitCommit({ folderId, message, paths: selected, amend })
+    void window.shinbo.gitCommit({ folderId, message, paths: selected, amend })
       .then(() => { setMessage(""); setAmend(false); reload(); loadHistory(0); })
       .catch((reason: unknown) => setError(reasonText(reason)))
       .finally(() => setBusy(false));
@@ -218,7 +219,7 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
   const discard = () => {
     if (!selected.length || !confirm(`Throw away the changes in ${selected.length} ${plural(selected.length, "file")}? This cannot be undone.`)) return;
     setBusy(true); setError("");
-    void window.emma.gitDiscard({ folderId, paths: selected })
+    void window.shinbo.gitDiscard({ folderId, paths: selected })
       .then(reload)
       .catch((reason: unknown) => setError(reasonText(reason)))
       .finally(() => setBusy(false));
@@ -226,7 +227,7 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
 
   const write = () => {
     setBusy(true); setError("");
-    void window.emma.gitMessage({ folderId })
+    void window.shinbo.gitMessage({ folderId })
       .then(setMessage)
       .catch((reason: unknown) => setError(reasonText(reason)))
       .finally(() => setBusy(false));
@@ -240,7 +241,7 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
     try { args = gitArgv(command); }
     catch (reason) { print(`$ git ${command}\n${reasonText(reason)}`); return; }
     setCommand("");
-    void window.emma.gitRun({ folderId, args })
+    void window.shinbo.gitRun({ folderId, args })
       .then((result) => print(`$ git ${args.join(" ")}\n${result.output.trim() || (result.ok ? "(no output)" : "(failed with no output)")}`))
       .catch((reason: unknown) => print(`$ git ${args.join(" ")}\n${reasonText(reason)}`))
       .finally(() => { reload(); loadHistory(0); });

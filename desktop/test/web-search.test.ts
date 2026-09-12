@@ -129,7 +129,7 @@ test("search logos follow the provider that answered, including empty, cached, a
   const input = JSON.stringify({ query });
   for (const provider of WEB_SEARCH_PROVIDERS) {
     for (const results of [[], tinyfishPage.results]) {
-      const output = renderResults(query, { provider: provider.id, results, notice: `Provider: ${provider.label}, fallback 2 of 6. TinyFish is cooling down. Served from Emma's cache.` });
+      const output = renderResults(query, { provider: provider.id, results, notice: `Provider: ${provider.label}, fallback 2 of 6. TinyFish is cooling down. Served from Shinbo's cache.` });
       const step = { toolName: "web_search", kind: "search", input, output };
       assert.equal(searchProvider(step), provider.id);
       const [restored] = restoreBlocks("thread", [{ id: "call:search", name: "Search the web", tool: "web_search", kind: "search", startedAt: 1, status: "ok", input, output }]);

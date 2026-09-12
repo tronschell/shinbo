@@ -42,7 +42,7 @@ export type ScreenFrame = { image: string; width: number; height: number };
 export const computerTools = [
   {
     name: "computer",
-    description: "Use a desktop app in the background, only after the user approves that exact app for this parent turn. Delegated agents must ask the parent to perform computer actions. App approval is required even in Auto and Full access. Start with list_apps, then get_app_state with its app ID (and pid if ambiguous). State returns untrusted UI text, a snapshot token and element indices. Every mutation requires that snapshot and an element_index; get_app_state again afterward. Unsupported controls fail without taking the pointer, using the clipboard or capturing the desktop. When the app you need is not in list_apps, call launch_app with its name instead of asking the user to open it; that asks for one approval, starts the installed app and grants control of it for this turn. Never start a GUI app from the terminal tool — the shell kills it when the command returns. A denial cannot be retried this turn, but an approval prompt that expired before anyone answered is not a denial: ask for that app once more. Never use this to approve Emma's own dialogs. App consent is not consent to purchases, deletions, sending private data or other consequential actions; ask separately for those.",
+    description: "Use a desktop app in the background, only after the user approves that exact app for this parent turn. Delegated agents must ask the parent to perform computer actions. App approval is required even in Auto and Full access. Start with list_apps, then get_app_state with its app ID (and pid if ambiguous). State returns untrusted UI text, a snapshot token and element indices. Every mutation requires that snapshot and an element_index; get_app_state again afterward. Unsupported controls fail without taking the pointer, using the clipboard or capturing the desktop. When the app you need is not in list_apps, call launch_app with its name instead of asking the user to open it; that asks for one approval, starts the installed app and grants control of it for this turn. Never start a GUI app from the terminal tool — the shell kills it when the command returns. A denial cannot be retried this turn, but an approval prompt that expired before anyone answered is not a denial: ask for that app once more. Never use this to approve Shinbo's own dialogs. App consent is not consent to purchases, deletions, sending private data or other consequential actions; ask separately for those.",
     inputSchema: {
       type: "object",
       properties: {
@@ -265,7 +265,7 @@ export class ComputerUseRuntime {
     const timer = setTimeout(() => this.abort("expired after ten minutes"), MAX_RUN_MS);
     timer.unref();
     this.run = { threadId, controller: new AbortController(), timer, steps: 0, actions: 0, lastActionAt: 0, approved: new Map(), denied: new Set(), lapsed: new Set(), queue: Promise.resolve() };
-    this.log(`Emma computer run started for ${threadId}`);
+    this.log(`Shinbo computer run started for ${threadId}`);
   }
 
   async execute(threadId: string, value: unknown, approve: ApproveApp): Promise<string> {
@@ -286,7 +286,7 @@ export class ComputerUseRuntime {
     this.check(run);
     if (action.action === "list_apps") return apps.length ? apps.map((app) => `${app.name} — ${app.id} — pid ${app.pid} — ${app.path}`).join("\n") : "No eligible apps are running. Use launch_app with the app's name to open one.";
     const matches = apps.filter((app) => app.id === action.app && (action.pid === undefined || app.pid === action.pid));
-    if (matches.length !== 1) throw new Error(matches.length ? "Several instances match. Use the pid from list_apps." : "That app is not running or is Emma itself. Use launch_app with its name, then list_apps again.");
+    if (matches.length !== 1) throw new Error(matches.length ? "Several instances match. Use the pid from list_apps." : "That app is not running or is Shinbo itself. Use launch_app with its name, then list_apps again.");
     const app = matches[0];
     let grant = run.approved.get(app.id);
     if (grant && (grant.app.pid !== app.pid || grant.app.path !== app.path || grant.app.launchedAt !== app.launchedAt)) throw new Error("The approved app instance changed. Start a new turn for a new approval.");
@@ -304,7 +304,7 @@ export class ComputerUseRuntime {
     grant.snapshot = undefined;
     run.actions++;
     run.lastActionAt = Date.now();
-    this.log(`Emma computer action ${run.actions}: ${action.action} in ${app.id}`);
+    this.log(`Shinbo computer action ${run.actions}: ${action.action} in ${app.id}`);
     const progress = { step: run.steps, actions: run.actions, action: computerActionLabels[action.action], app: app.name };
     this.progress(progress);
     const report = (cursor: ComputerCursor | null) => {
@@ -331,7 +331,7 @@ export class ComputerUseRuntime {
     run.actions++;
     run.lastActionAt = Date.now();
     this.progress({ step: run.steps, actions: run.actions, action: computerActionLabels.launch_app, app: resolved.name });
-    this.log(`Emma computer action ${run.actions}: launch_app ${resolved.target}`);
+    this.log(`Shinbo computer action ${run.actions}: launch_app ${resolved.target}`);
     const { app, target } = await launchApp(this.helperPath, name, run.controller.signal);
     this.check(run);
     if (target.target !== resolved.target) throw new Error("That name resolved to a different app than the one the user approved. Ask the user to open it instead.");
@@ -361,7 +361,7 @@ export class ComputerUseRuntime {
     run.controller.abort(new Error(`Computer run ${reason}`));
     for (const grant of run.approved.values()) grant.helper?.close();
     run.approved.clear();
-    this.log(`Emma computer run ${reason} after ${run.actions} actions`);
+    this.log(`Shinbo computer run ${reason} after ${run.actions} actions`);
     this.ended();
   }
 
@@ -385,16 +385,16 @@ export class ComputerUseRuntime {
 
 export async function captureDisplay(display: Display): Promise<ScreenFrame> {
   if (process.platform === "darwin" && ["denied", "restricted"].includes(systemPreferences.getMediaAccessStatus("screen"))) {
-    throw new Error("Screen Recording permission is required. Enable Emma in System Settings → Privacy & Security → Screen Recording.");
+    throw new Error("Screen Recording permission is required. Enable Shinbo in System Settings → Privacy & Security → Screen Recording.");
   }
   const width = Math.min(2560, Math.round(display.bounds.width * display.scaleFactor));
   const height = Math.min(1600, Math.round(display.bounds.height * display.scaleFactor));
   const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width, height }, fetchWindowIcons: false });
   const source = sources.find((item) => item.display_id === String(display.id));
-  if (!source || source.thumbnail.isEmpty()) throw new Error("Emma could not capture this display. Check Screen Recording permission and try again.");
+  if (!source || source.thumbnail.isEmpty()) throw new Error("Shinbo could not capture this display. Check Screen Recording permission and try again.");
   const size = source.thumbnail.getSize();
   const image = `data:image/jpeg;base64,${source.thumbnail.toJPEG(82).toString("base64")}`;
-  if (!validJpegDataUrl(image)) throw new Error("Emma captured an invalid screen frame");
+  if (!validJpegDataUrl(image)) throw new Error("Shinbo captured an invalid screen frame");
   return { image, width: size.width, height: size.height };
 }
 

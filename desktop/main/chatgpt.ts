@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { once } from "node:events";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { readFile } from "node:fs/promises";
@@ -6,11 +7,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
-const AUTH_FILE = join(homedir(), ".codex", "auth.json");
+const AUTH_FILE = join(process.env.CODEX_HOME || join(homedir(), ".codex"), "auth.json");
 const ENDPOINT = "https://chatgpt.com/backend-api/codex/responses";
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 
-const SIGN_IN = "Emma could not read a ChatGPT sign-in at ~/.codex/auth.json. Run `codex login` in a terminal and pick Sign in with ChatGPT, then send this again.";
+const SIGN_IN = `Shinbo could not read a ChatGPT sign-in at ${AUTH_FILE}. Run \`codex login\` in a terminal and pick Sign in with ChatGPT, then send this again.`;
 const NOT_A_PLAN = "That sign-in stores an API key, not a ChatGPT plan. Run `codex logout` then `codex login` and pick Sign in with ChatGPT.";
 
 export type ChatgptAuth = { accessToken: string; accountId: string };
@@ -211,7 +212,7 @@ type ChatToolCall = { id: string; type: "function"; function: { name: string; ar
 
 function chatCompletion(chunks: Record<string, unknown>[], state: ChunkState): Record<string, unknown> {
   let content = "";
-  let finish = "stop";
+  let finish: string | null = null;
   let usage: unknown;
   const reasoning: unknown[] = [];
   const calls: ChatToolCall[] = [];
@@ -230,6 +231,7 @@ function chatCompletion(chunks: Record<string, unknown>[], state: ChunkState): R
       call.function.arguments += raw.function?.arguments ?? "";
     }
   }
+  if (!finish) throw new Error("The ChatGPT response ended before it completed.");
   return {
     id: state.id,
     object: "chat.completion",
@@ -261,17 +263,24 @@ async function readBody(request: IncomingMessage): Promise<string> {
 let retentionRefused = false;
 
 async function relay(request: IncomingMessage, response: ServerResponse, token: string) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  response.once("close", abort);
+  const write = async (text: string) => {
+    if (!response.write(text)) await once(response, "drain", { signal: controller.signal });
+  };
   const fail = (status: number, message: string) => {
     if (!response.headersSent) response.writeHead(status, { "content-type": "application/json" });
     response.end(JSON.stringify({ error: { message } }));
   };
   try {
-    if (request.headers.authorization !== `Bearer ${token}`) return fail(401, "This endpoint is Emma's own.");
+    if (request.headers.authorization !== `Bearer ${token}`) return fail(401, "This endpoint is Shinbo's own.");
     if (request.method !== "POST") return fail(405, "Post a chat completion here.");
     const body = JSON.parse(await readBody(request)) as Record<string, unknown>;
     const auth = await chatgptAuth();
+    controller.signal.throwIfAborted();
     const headers = relayHeaders(auth, body);
-    const send = (withoutRetention: boolean) => fetch(ENDPOINT, { method: "POST", headers, body: JSON.stringify(responsesRequest(body, withoutRetention)) });
+    const send = (withoutRetention: boolean) => fetch(ENDPOINT, { method: "POST", headers, signal: controller.signal, body: JSON.stringify(responsesRequest(body, withoutRetention)) });
     let upstream = await send(retentionRefused);
     let refusal = upstream.ok && upstream.body ? "" : (await upstream.text()).slice(0, 2048);
     if (!upstream.ok && upstream.status === 400 && !retentionRefused && refusal.includes("prompt_cache_retention")) {
@@ -285,13 +294,14 @@ async function relay(request: IncomingMessage, response: ServerResponse, token: 
     if (!buffered) response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
     const state = chunkState(typeof body.model === "string" ? body.model : "");
     const answer = () => {
+      const completion = chatCompletion(collected, state);
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify(chatCompletion(collected, state)));
+      response.end(JSON.stringify(completion));
     };
     const decoder = new TextDecoder();
     let carry = "";
     for await (const piece of upstream.body as unknown as AsyncIterable<Uint8Array>) {
-      if (!buffered) response.write(":\n\n");
+      if (!buffered) await write(":\n\n");
       carry += decoder.decode(piece, { stream: true });
       const lines = carry.split("\n");
       carry = lines.pop() ?? "";
@@ -313,25 +323,28 @@ async function relay(request: IncomingMessage, response: ServerResponse, token: 
             collected.push(...ending);
             return answer();
           }
-          for (const chunk of ending) response.write(`data: ${JSON.stringify(chunk)}\n\n`);
-          if (!ending.length) response.write(`data: ${JSON.stringify({ error: { message: failure } })}\n\n`);
-          response.write("data: [DONE]\n\n");
+          for (const chunk of ending) await write(`data: ${JSON.stringify(chunk)}\n\n`);
+          if (!ending.length) await write(`data: ${JSON.stringify({ error: { message: failure } })}\n\n`);
+          await write("data: [DONE]\n\n");
           response.end();
           return;
         }
         for (const chunk of chatChunks(event, state)) {
           if (buffered) collected.push(chunk);
-          else response.write(`data: ${JSON.stringify(chunk)}\n\n`);
+          else await write(`data: ${JSON.stringify(chunk)}\n\n`);
         }
       }
     }
     if (buffered) return answer();
-    response.write("data: [DONE]\n\n");
+    await write("data: [DONE]\n\n");
     response.end();
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     if (response.headersSent) response.destroy();
-    else fail(502, detail);
+    else if (!response.destroyed) fail(502, detail);
+  } finally {
+    response.removeListener("close", abort);
+    controller.abort();
   }
 }
 

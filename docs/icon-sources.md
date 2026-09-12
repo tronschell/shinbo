@@ -1,6 +1,6 @@
 # Icon sources
 
-Every vendor mark Emma ships, and the terms it came under. Files live in
+Every vendor mark Shinbo ships, and the terms it came under. Files live in
 `desktop/assets/brands/`; the registry that pins each one is
 [`desktop/src/brands.ts`](../desktop/src/brands.ts). Nothing is fetched at
 runtime and no icon package is installed. Retrieved 2026-08-20.
@@ -8,7 +8,7 @@ runtime and no icon package is installed. Retrieved 2026-08-20.
 A CC0 or MIT icon package licenses the packaging, not the trademark. Marks are
 normalised onto a 24-unit grid and recoloured `#fff` (or kept at the brand
 colour where the mark has one); do not redraw, distort, or combine them with
-Emma branding, and keep the accessible product label beside every image.
+Shinbo branding, and keep the accessible product label beside every image.
 
 ## Official brand kits
 
@@ -62,11 +62,11 @@ no reusable official kit. Source URL is
 | --- | --- | --- |
 | `desktop/assets/filetypes/*.svg` | Simple Icons where a language owns a mark; otherwise drawn on the same 24-unit grid | CC0 1.0 / original |
 | Nav footer gear | Lucide's [`settings`](https://lucide.dev/icons/settings) path, copied into `NavIcon`; no package installed | ISC |
-| `emma.webp`, `emma-blink.webp` | Emma's own art | — |
+| `shinbo.icon/Assets/bow.svg`, `ShinboMark` / `Mark` in `desktop/src/icons.tsx` | Shinbo's own pixel bow | — |
 
 ## No mark bundled
 
-These use Emma's neutral monogram fallback because no clearly reusable public
+These use Shinbo's neutral monogram fallback because no clearly reusable public
 product-icon kit was found: Devin (Cognition), Thinking Machines, ERNIE
 (Baidu), Hunyuan (Tencent), Sakana AI. Keep the fallback until the owner
 supplies an official asset.

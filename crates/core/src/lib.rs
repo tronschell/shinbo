@@ -42,7 +42,7 @@ mod tests {
 
     const STALE_FRONT_MATTER: &str = concat!(
         "---\n",
-        "emma-thread-format: 11\n",
+        "shinbo-thread-format: 11\n",
         "id: \"1700000000-1a2b-3c4d-0\"\n",
         "title: \"Kept thread\"\n",
         "parent-thread-id: \"\"\n",
@@ -52,7 +52,7 @@ mod tests {
         "source-knowledge-base-count: 2\n",
         "source-0-id: \"default\"\n",
         "source-1-id: \"research\"\n",
-        "a-key-no-version-of-emma-ever-wrote: \"whatever\"\n",
+        "a-key-no-version-of-shinbo-ever-wrote: \"whatever\"\n",
         "created-at: \"2023-11-14T22:13:20Z\"\n",
         "updated-at: \"2023-11-14T22:13:20Z\"\n",
         "archived-at: \"\"\n",
@@ -74,7 +74,7 @@ mod tests {
     fn temp_child(label: &str) -> PathBuf {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         std::env::temp_dir().join(format!(
-            "emma-core-{label}-{}-{}",
+            "shinbo-core-{label}-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ))
@@ -94,7 +94,7 @@ mod tests {
         let rewritten = thread.to_markdown();
         assert!(!rewritten.contains("knowledge-base-id"));
         assert!(!rewritten.contains("source-0-id"));
-        assert!(!rewritten.contains("a-key-no-version-of-emma-ever-wrote"));
+        assert!(!rewritten.contains("a-key-no-version-of-shinbo-ever-wrote"));
         assert_eq!(Thread::from_markdown(&rewritten).unwrap(), thread);
 
         let root = temp_child("stale-front-matter");
@@ -188,7 +188,7 @@ mod tests {
         let older = Thread::new("older", Timestamp::from_unix_seconds(5)).unwrap();
         let legacy = older
             .to_markdown()
-            .replacen("emma-thread-format: 15", "emma-thread-format: 7", 1)
+            .replacen("shinbo-thread-format: 15", "shinbo-thread-format: 7", 1)
             .lines()
             .filter(|line| {
                 !line.starts_with("trace-count:")
@@ -215,7 +215,7 @@ mod tests {
 
         let legacy = child
             .to_markdown()
-            .replacen("emma-thread-format: 15", "emma-thread-format: 8", 1)
+            .replacen("shinbo-thread-format: 15", "shinbo-thread-format: 8", 1)
             .replace("kind: \"subagent\"\n", "")
             .replace("scheduled-job-id: \"\"\n", "");
         assert_eq!(Thread::from_markdown(&legacy).unwrap(), child);
@@ -240,7 +240,7 @@ mod tests {
         );
         let older = root
             .to_markdown()
-            .replacen("emma-thread-format: 15", "emma-thread-format: 5", 1)
+            .replacen("shinbo-thread-format: 15", "shinbo-thread-format: 5", 1)
             .lines()
             .filter(|line| {
                 !line.starts_with("parent-thread-id:")
@@ -376,7 +376,7 @@ mod tests {
         old.push(assistant).unwrap();
         let version_thirteen = old
             .to_markdown()
-            .replacen("emma-thread-format: 15", "emma-thread-format: 13", 1)
+            .replacen("shinbo-thread-format: 15", "shinbo-thread-format: 13", 1)
             .lines()
             .filter(|line| !line.starts_with("Cache-") && !line.starts_with("Cost-Micro-Usd:"))
             .collect::<Vec<_>>()
@@ -391,7 +391,7 @@ mod tests {
         assert_eq!(legacy_generation.cost_micro_usd, None);
         let version_three = old
             .to_markdown()
-            .replacen("emma-thread-format: 15", "emma-thread-format: 3", 1)
+            .replacen("shinbo-thread-format: 15", "shinbo-thread-format: 3", 1)
             .replace("archived-at: \"\"\n", "")
             .replace("parent-thread-id: \"\"\n", "")
             .replace("trace-count: 0\n", "")
@@ -449,7 +449,7 @@ mod tests {
         assert!(Thread::from_markdown(&markdown).unwrap().goal.is_some());
 
         let older = markdown
-            .replacen("emma-thread-format: 15", "emma-thread-format: 12", 1)
+            .replacen("shinbo-thread-format: 15", "shinbo-thread-format: 12", 1)
             .lines()
             .filter(|line| !line.starts_with("goal-"))
             .collect::<Vec<_>>()
@@ -632,13 +632,18 @@ mod tests {
             GoalStatus::BudgetLimited
         );
 
-        let goal = thread
-            .set_goal(
-                "Port the callers",
-                200_000,
-                Timestamp::from_unix_seconds(13),
-            )
-            .unwrap();
+        assert!(
+            thread
+                .set_goal(
+                    "Port the callers",
+                    200_000,
+                    Timestamp::from_unix_seconds(13),
+                )
+                .is_err()
+        );
+        let goal = thread.goal.as_ref().unwrap();
+        assert_eq!(goal.token_budget, 1_000);
+        assert_eq!(goal.status, GoalStatus::BudgetLimited);
         assert_eq!(goal.tokens_used, 1_200);
         assert_eq!(goal.turns, 1);
         assert_eq!(goal.created_at, Timestamp::from_unix_seconds(11));

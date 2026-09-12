@@ -42,14 +42,14 @@ function mount(readVisual) {
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
       if (name === "../shared/visualize") return {
         VISUAL_HEIGHT_MESSAGE: "visual-height", VISUAL_PICKED_MESSAGE: "visual-picked",
-        visualFrameUrl: (id) => `emma-visual://${id}/`,
+        visualFrameUrl: (id) => `shinbo-visual://${id}/`,
       };
       if (name === "./errors") return { reasonText: (error) => error.message };
       if (name === "./icons") return { MoreIcon: () => null };
       throw new Error(name);
     },
     window: {
-      emma: { readVisual },
+      shinbo: { readVisual },
       setTimeout(callback) { timers.set(1, callback); return 1; },
       clearTimeout(id) { timers.delete(id); },
       addEventListener(name, callback) { listeners.set(name, callback); },
@@ -90,11 +90,11 @@ test("loading stays visible until the current frame confirms rendering", async (
   frame.props.ref.current = { contentWindow: page };
   frame.props.onLoad();
   assert.equal(status(app.render()).props["data-running"], true);
-  app.message({ source: {}, data: { emma: "visual-height", height: 200 } });
-  app.message({ source: page, data: { emma: "visual-height", height: Infinity } });
-  app.message({ source: page, data: { emma: "visual-height", height: 0 } });
+  app.message({ source: {}, data: { shinbo: "visual-height", height: 200 } });
+  app.message({ source: page, data: { shinbo: "visual-height", height: Infinity } });
+  app.message({ source: page, data: { shinbo: "visual-height", height: 0 } });
   assert.equal(app.render().props["aria-busy"], true);
-  app.message({ source: page, data: { emma: "visual-height", height: 220 } });
+  app.message({ source: page, data: { shinbo: "visual-height", height: 220 } });
   tree = app.render();
   assert.equal(tree.props["aria-busy"], false);
   assert.equal(status(tree), undefined);
@@ -116,7 +116,7 @@ test("unconfirmed frames stop pulsing and may recover on a late confirmation", a
   assert.equal(tree.props["aria-busy"], false);
   assert.equal(status(tree).props["data-running"], undefined);
   assert.match(status(tree).props.children, /hasn’t confirmed/);
-  app.message({ source: page, data: { emma: "visual-height", height: 180 } });
+  app.message({ source: page, data: { shinbo: "visual-height", height: 180 } });
   tree = app.render();
   assert.equal(status(tree), undefined);
 });

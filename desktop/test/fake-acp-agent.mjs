@@ -49,7 +49,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
   if (method === "session/resume") {
 
     if (!/^sess_\d+_/.test(params.sessionId ?? "")) {
-      send({ jsonrpc: "2.0", id, error: { code: -32602, message: "unknown session" } });
+      send({ jsonrpc: "2.0", id, error: { code: -32602, message: "Session not found" } });
       return;
     }
     active = params.sessionId;
@@ -136,7 +136,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       for (const toolCallId of callIds) {
         const reply = await new Promise((resolve) => {
           toolReply = resolve;
-          send({ jsonrpc: "2.0", id: 98, method: "_emma/callTool", params: { sessionId, toolCallId, name: "computer", arguments: { action: "list_apps" } } });
+          send({ jsonrpc: "2.0", id: 98, method: "_shinbo/callTool", params: { sessionId, toolCallId, name: "computer", arguments: { action: "list_apps" } } });
         });
         notify(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `computer:${reply.result?.output ?? reply.error?.message}` } });
       }
@@ -189,13 +189,13 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       return;
     }
 
-    if (params.prompt.some((part) => part.text?.includes("emmatool"))) {
+    if (params.prompt.some((part) => part.text?.includes("shinbotool"))) {
       const reply = await new Promise((resolve) => {
         toolReply = resolve;
         send({
           jsonrpc: "2.0",
           id: 98,
-          method: "_emma/callTool",
+          method: "_shinbo/callTool",
           params: {
 
             sessionId: params.prompt.some((part) => part.text?.includes("nosession")) ? "sess_nobody" : sessionId,

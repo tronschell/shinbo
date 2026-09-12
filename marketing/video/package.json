@@ -1,0 +1,18 @@
+{
+  "name": "shinbo-product-film",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src.tsx",
+    "render": "remotion render src.tsx Shinbo4K out/shinbo-4k.mp4 --codec h264 --crf 17 --concurrency 4",
+    "preview": "remotion render src.tsx Shinbo4K out/shinbo-preview.mp4 --scale 0.5 --codec h264 --crf 20 --concurrency 4",
+    "gif": "ffmpeg -y -i out/shinbo-preview.mp4 -filter_complex \"fps=8,scale=640:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=64:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle\" shinbo.gif",
+    "check": "node check.mjs"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.520",
+    "remotion": "4.0.520",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  }
+}

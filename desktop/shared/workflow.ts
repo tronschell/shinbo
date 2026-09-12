@@ -52,7 +52,7 @@ export function parseWorkflow(nodes: string, prompt = ""): { nodes: WorkflowNode
     if (saveAs !== undefined && !VARIABLE.test(saveAs)) errors.push(`Node "${id}" saves into "${saveAs}", which is not a variable name.`);
     if (kind === "if") {
       if (saveAs) errors.push(`Node "${id}" is a branch, so it has nothing to save.`);
-      if (!parseCondition(text)) errors.push(`Node "${id}" has a condition Emma cannot read: ${text}`);
+      if (!parseCondition(text)) errors.push(`Node "${id}" has a condition Shinbo cannot read: ${text}`);
     }
     if (kind === "set" && !saveAs) errors.push(`Node "${id}" sets a value but says no variable to save it in.`);
     if (kind !== "if" && node.otherwise !== undefined) errors.push(`Node "${id}" is not a branch, so it has no otherwise.`);
@@ -74,14 +74,14 @@ export function parseWorkflow(nodes: string, prompt = ""): { nodes: WorkflowNode
   return { nodes: parsed, errors };
 }
 
-/**
- * `{{name}}` replaced by its variable, and an unknown name by nothing.
- *
- * `variables` is an object literal, so a workflow written around `{{constructor}}` — or
- * `toString`, `valueOf`, `hasOwnProperty` — would otherwise resolve Object.prototype's and expand
- * to native function source, which `evaluate` then reads as a non-empty value and branches on.
- * Own keys only.
- */
+
+
+
+
+
+
+
+
 export function expand(text: string, variables: Record<string, string>): string {
   return text.replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*\}\}/g, (_, name: string) => (Object.hasOwn(variables, name) ? variables[name] : ""));
 }

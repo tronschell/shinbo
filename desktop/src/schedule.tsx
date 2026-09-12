@@ -113,7 +113,7 @@ export function TriggerPicker({ value, onChange, disabled }: { value: string; on
     {trigger.kind === "weekly" && <>
       <div className="trigger-field trigger-days" role="group" aria-label="Days of the week">
         <span>On</span>
-        <div>{WEEKDAY_NAMES.map((name, day) => <button key={name} type="button" aria-pressed={trigger.weekdays.includes(day)} className={trigger.weekdays.includes(day) ? "active" : ""} disabled={disabled} onClick={() => set({ weekdays: trigger.weekdays.includes(day) ? trigger.weekdays.filter((item) => item !== day) : [...trigger.weekdays, day] })}>{name}</button>)}</div>
+        <div>{WEEKDAY_NAMES.map((name, day) => <button key={name} type="button" aria-pressed={trigger.weekdays.includes(day)} className={trigger.weekdays.includes(day) ? "active" : ""} disabled={disabled} onClick={() => { if (trigger.weekdays.includes(day) && trigger.weekdays.length === 1) return; set({ weekdays: trigger.weekdays.includes(day) ? trigger.weekdays.filter((item) => item !== day) : [...trigger.weekdays, day] }); }}>{name}</button>)}</div>
       </div>
       {time}
     </>}
@@ -151,20 +151,20 @@ export function useTaskCommands(disabledTools: readonly string[] = []) {
   const [artifacts, setArtifacts] = useState<ArtifactMeta[]>([]);
   useEffect(() => {
     let active = true;
-    if (isWorkspaceWindow) void window.emma.searchImportedSkills({ query: "", limit: 64 })
+    if (isWorkspaceWindow) void window.shinbo.searchImportedSkills({ query: "", limit: 64 })
       .then((imported: ImportedSkill[]) => { if (active) setSkills(imported.map((item) => ({ id: item.id, name: item.name, kind: "skill" as const, detail: `${item.source} · skill` }))); })
       .catch(() => undefined);
-    if (isWorkspaceWindow) void window.emma.listFolders().then((granted: FolderGrant[]) => {
+    if (isWorkspaceWindow) void window.shinbo.listFolders().then((granted: FolderGrant[]) => {
       if (!active) return;
       setFolders(granted);
       for (const folder of granted) {
-        void window.emma.listFolderFiles(folder.id).then((listing) => { if (active) setFiles((current) => ({ ...current, [folder.id]: listing.files })); }).catch(() => undefined);
+        void window.shinbo.listFolderFiles(folder.id).then((listing) => { if (active) setFiles((current) => ({ ...current, [folder.id]: listing.files })); }).catch(() => undefined);
       }
     }).catch(() => undefined);
-    void window.emma.listNotes().then((list) => { if (active) setNotes(list); }).catch(() => undefined);
-    const loadArtifacts = () => void window.emma.listArtifacts().then((list) => { if (active) setArtifacts(list); }).catch(() => undefined);
+    void window.shinbo.listNotes().then((list) => { if (active) setNotes(list); }).catch(() => undefined);
+    const loadArtifacts = () => void window.shinbo.listArtifacts().then((list) => { if (active) setArtifacts(list); }).catch(() => undefined);
     loadArtifacts();
-    const stopArtifacts = window.emma.onArtifactsChanged(loadArtifacts);
+    const stopArtifacts = window.shinbo.onArtifactsChanged(loadArtifacts);
     return () => { active = false; stopArtifacts(); };
   }, []);
   const tools = toolCommands(disabledTools);
@@ -235,7 +235,7 @@ const GAP_X = 36;
 const GAP_Y = 64;
 const LANE = 40;
 const GRAPH_BOX = { width: NODE_WIDTH, height: NODE_HEIGHT, gapX: GAP_X, gapY: GAP_Y, lane: LANE };
-const KIND_HUE = { agent: "var(--blue)", script: "var(--teal)", set: "var(--text-3)", if: "var(--orange)" } as const;
+const KIND_HUE = { agent: "var(--blue)", script: "var(--teal)", set: "var(--text-3)", if: "var(--pink)" } as const;
 const GLYPHS = { agent: "◆", script: "▶", set: "◇", if: "◈" } as const;
 const END_ID = "end";
 

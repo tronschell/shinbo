@@ -1,8 +1,3 @@
-//! `fx replay <tape>` implementation.
-//!
-//! This module keeps tape parsing and virtual-terminal replay isolated from
-//! the top-level CLI dispatch.
-
 const std = @import("std");
 const debug_trace = @import("../shared/debug_trace.zig");
 const io_mod = @import("../shared/io.zig");
@@ -433,7 +428,7 @@ fn replyParseError(
     json: bool,
 ) !u8 {
     const msg = switch (err) {
-        Error.MissingTapePath => "fx replay: missing tape path\nusage: emma-cli replay <tape> [--frames] [--json] [--golden <path>] [--frames-dir <path>]\n",
+        Error.MissingTapePath => "fx replay: missing tape path\nusage: shinbo-cli replay <tape> [--frames] [--json] [--golden <path>] [--frames-dir <path>]\n",
         Error.TooManyArgs => "fx replay: too many positional arguments\n",
         Error.UnknownFlag => "fx replay: unknown flag\n",
         Error.MissingGoldenPath => "fx replay: --golden requires a path\n",

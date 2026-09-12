@@ -7,14 +7,14 @@ function useEditors(): EditorApp[] {
   const [editors, setEditors] = useState<EditorApp[]>([]);
   useEffect(() => {
     let active = true;
-    asked ??= window.emma.listEditors();
+    asked ??= window.shinbo.listEditors();
     void asked.then((value) => { if (active) setEditors(value); }).catch(() => undefined);
     return () => { active = false; };
   }, []);
   return editors;
 }
 
-const DEFAULT_KEY = "emma.default-editor";
+const DEFAULT_KEY = "shinbo.default-editor";
 let preferred = localStorage.getItem(DEFAULT_KEY) ?? "";
 const watching = new Set<(id: string) => void>();
 
@@ -36,7 +36,7 @@ export function OpenIn({ folderId, path, label }: { folderId?: string; path?: st
   if (!editors.length) return null;
   const named = path ?? "this folder";
   const send = (editor: EditorApp) => {
-    void window.emma.openInEditor({ ...(folderId ? { folderId } : {}), path: path ?? ".", editorId: editor.id }).catch(() => undefined);
+    void window.shinbo.openInEditor({ ...(folderId ? { folderId } : {}), path: path ?? ".", editorId: editor.id }).catch(() => undefined);
   };
   const mark = (editor: EditorApp) => editor.icon ? <img src={editor.icon} alt="" /> : <b>{editor.label.slice(0, 1)}</b>;
 

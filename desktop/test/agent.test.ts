@@ -25,7 +25,7 @@ const runtime = (deps: Partial<LoopDeps> = {}) => new AgentRuntime({
   ...deps,
 });
 
-test("the gate loosens one rung at a time, and never for a name Emma does not advertise", () => {
+test("the gate loosens one rung at a time, and never for a name Shinbo does not advertise", () => {
   assert.equal(toolGate("ask", "keep"), "auto");
   assert.equal(toolGate("ask", "run_tool"), "ask");
   assert.equal(toolGate("acceptEdits", "run_tool"), "ask");
@@ -85,7 +85,7 @@ test("a browser call becomes agent-browser's own command line, in its own argume
   assert.equal(describeToolCall(parse({ action: "snapshot" })), "looking at the page");
 });
 
-test("a tool Emma wrote herself is listed before it is run", () => {
+test("a tool Shinbo wrote herself is listed before it is run", () => {
   const parse = (name: string, args: unknown) => parseToolArgs(name, JSON.stringify(args));
   assert.deepEqual(parse("run_tool", {}), { name: "run_tool", tool: undefined, input: undefined });
   assert.equal(describeToolCall(parse("run_tool", {})), "listing its own tools");
@@ -153,7 +153,7 @@ test("a turn the harness drives still shows up as a live agent", () => {
   assert.ok(agents.list()[0].generationMs > 0, "a finished run always has a duration to divide by");
 
   agents.adopt({ threadId: "t2", content: "again", mode: "ask", title: "Again" });
-  agents.finish("t2", "emma-cli exited with code 1");
+  agents.finish("t2", "shinbo-cli exited with code 1");
   assert.equal(agents.list().find((agent) => agent.threadId === "t2")?.status, "failed");
 });
 
@@ -197,7 +197,8 @@ test("an agent reads every kind of thread, starts one of its own, and talks to i
   const spawned: { threadId: string; content: string; mode: string; owner?: string }[] = [];
   const agents = runtime({
     request: async (method, params) => {
-      if (method === "snapshot") return library;
+      if (method === "threadSummaries") return { threads: library.threads.map((thread) => ({ ...thread, messages: thread.messages.length })) };
+      if (method === "thread") return library.threads.find((thread) => thread.id === params.threadId);
       if (method === "createThread") {
         created.push(params);
         library.threads.push({ id: "thread-made-000000000", title: params.title, kind: "main", parentThreadId: params.parentThreadId, updatedAt: "2026-01-01T00:03:00Z", messages: [] });
@@ -329,7 +330,8 @@ test("the harness reaches the thread and agent tools without a loop of its own",
   const created: Record<string, string>[] = [];
   const agents = runtime({
     request: async (method, params) => {
-      if (method === "snapshot") return library;
+      if (method === "threadSummaries") return { threads: library.threads.map((thread) => ({ ...thread, messages: thread.messages.length })) };
+      if (method === "thread") return library.threads.find((thread) => thread.id === params.threadId);
       if (method === "createThread") { created.push(params); return { id: "thread-made-000000000" }; }
       if (method === "readTrace") return [];
       return {};
@@ -357,7 +359,7 @@ test("the harness reaches the thread and agent tools without a loop of its own",
   await assert.rejects(() => call("threads", JSON.stringify({ action: "message", thread: "root-1", prompt: "hurry" })), /the thread you are in/);
   assert.match(await call("agents", JSON.stringify({ agent: "root-1", stop: true })), /Stopped root-1/);
 
-  await assert.rejects(() => call("web_search", JSON.stringify({ query: "x" })), /not one of Emma's thread tools/);
+  await assert.rejects(() => call("web_search", JSON.stringify({ query: "x" })), /not one of Shinbo's thread tools/);
 });
 
 test("steering and stopping need a named agent", async () => {

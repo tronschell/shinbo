@@ -46,7 +46,7 @@ const runtime = await createFxTerminal({
   wasm: await readFile(wasmPath),
   terminal: xtermAdapter(terminal),
   env: {
-    EMMA_PROVIDER_API_KEY: "feature-key",
+    SHINBO_PROVIDER_API_KEY: "feature-key",
     FX_TRACE_STDERR: "1",
     FX_TRACE_SCOPES: "full_transcript,full_transcript_cache,frame_schedule",
   },

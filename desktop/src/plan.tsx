@@ -24,9 +24,9 @@ export function usePlans(threadId: string, sample?: Plan[]): Plan[] {
   const [plans, setPlans] = useState<Plan[]>([]);
   useEffect(() => {
     if (sample) return;
-    const load = () => void window.emma.listPlans().then(setPlans).catch(() => undefined);
+    const load = () => void window.shinbo.listPlans().then(setPlans).catch(() => undefined);
     load();
-    return window.emma.onPlansChanged(load);
+    return window.shinbo.onPlansChanged(load);
   }, [sample]);
   return useMemo(() => sample ?? plans.filter((plan) => plan.threadId === threadId), [sample, plans, threadId]);
 }
@@ -111,7 +111,7 @@ export function PlanRail({ threadId, agents, sample, onOpen }: { threadId: strin
   if (!plan || !progress) {
     return <section className="plan-widget">
       <span>Plan</span>
-      <p className="subagent-empty">Nothing planned yet — Emma writes one per <code>plan write</code>.</p>
+      <p className="subagent-empty">Nothing planned yet — Shinbo writes one per <code>plan write</code>.</p>
     </section>;
   }
 

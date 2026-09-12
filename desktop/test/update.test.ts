@@ -16,7 +16,7 @@ test("newerVersion refuses anything that is not a plain version", () => {
   assert.equal(newerVersion("0.1.0", undefined), "");
   assert.equal(newerVersion("0.1.0", { version: "9.9.9" }), "");
   assert.equal(newerVersion("0.1.0", "0.2"), "");
-  assert.equal(newerVersion("0.1.0", "Emma 0.2.0"), "");
+  assert.equal(newerVersion("0.1.0", "Shinbo 0.2.0"), "");
   assert.equal(newerVersion("nightly", "0.2.0"), "");
 });
 
@@ -38,8 +38,8 @@ test("updateOrigin keeps an https origin and loopback http, and discards the res
 });
 
 test("updateFeedUrl names the running build", () => {
-  assert.equal(updateFeedUrl(DEFAULT_UPDATE_ORIGIN, "darwin", "arm64", "0.1.0"), "https://update.electronjs.org/tronschell/emma/darwin-arm64/0.1.0");
-  assert.equal(updateFeedUrl(DEFAULT_UPDATE_ORIGIN, "win32", "x64", "0.1.0"), "https://update.electronjs.org/tronschell/emma/win32-x64/0.1.0");
+  assert.equal(updateFeedUrl(DEFAULT_UPDATE_ORIGIN, "darwin", "arm64", "0.1.0"), "https://update.electronjs.org/tronschell/shinbo/darwin-arm64/0.1.0");
+  assert.equal(updateFeedUrl(DEFAULT_UPDATE_ORIGIN, "win32", "x64", "0.1.0"), "https://update.electronjs.org/tronschell/shinbo/win32-x64/0.1.0");
 });
 
 test("dueForCheck throttles repeat checks and stops once an update is downloaded", () => {

@@ -1,6 +1,6 @@
 export const ZVEC_GREP_VERSION = "0.2.1";
 export const ZVEC_GREP_ENTRY = "node_modules/@zvec/zvec-grep/dist/cli/index.js";
-export const ZVEC_GREP_REPOSITORY = "tronschell/emma";
+export const ZVEC_GREP_REPOSITORY = "tronschell/shinbo";
 export const ZVEC_GREP_TAG = `zvec-grep-v${ZVEC_GREP_VERSION}`;
 export const DEFAULT_TOOLS_ORIGIN = "https://github.com";
 

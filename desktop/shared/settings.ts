@@ -38,6 +38,7 @@ export const PROVIDER_PRESETS = [
   { id: "lmstudio", name: "LM Studio", baseUrl: "http://127.0.0.1:1234/v1", credentialEnv: "", detail: "On this computer" },
   { id: "ollama", name: "Ollama", baseUrl: "http://127.0.0.1:11434/v1", credentialEnv: "", detail: "On this computer" },
   { id: "llamacpp", name: "llama.cpp", baseUrl: "http://127.0.0.1:8080/v1", credentialEnv: "", detail: "On this computer" },
+  { id: "omlx", name: "oMLX", baseUrl: "http://127.0.0.1:8000/v1", credentialEnv: "", detail: "MLX on Apple silicon" },
   { id: "custom", name: "", baseUrl: "", credentialEnv: "", detail: "Any OpenAI-compatible endpoint" },
 ] as const;
 
@@ -62,7 +63,7 @@ export const MODEL_PLANS: readonly ModelPlan[] = [
   { id: "deepseek", label: "DeepSeek", brand: "deepseek", namespace: "deepseek", detail: "DeepSeek, billed per token", baseUrl: "https://api.deepseek.com", credentialEnv: "DEEPSEEK_API_KEY", contextWindow: 0, keysUrl: "https://platform.deepseek.com/api_keys", hint: "sk-…", billing: "metered", note: "DeepSeek sells prepaid balance, not a subscription. At a zero balance every request returns 402 until you top up." },
   { id: "qwen", label: "Qwen Coding Plan", brand: "qwen", namespace: "qwen", detail: "Alibaba Model Studio, flat monthly", baseUrl: "https://coding-intl.dashscope.aliyuncs.com/v1", credentialEnv: "BAILIAN_CODING_PLAN_API_KEY", contextWindow: 0, keysUrl: "https://www.alibabacloud.com/help/en/model-studio/coding-plan", hint: "sk-sp-…", billing: "subscription", note: "A Coding Plan key starts sk-sp- and works only on the coding hosts — an ordinary sk- Model Studio key is not rejected here, it is billed pay-as-you-go, so the wrong key spends money instead of plan quota. Keys are bound to the region that made them. The free Qwen OAuth tier was discontinued in April 2026." },
   { id: "zai", label: "GLM Coding Plan", brand: "glm", namespace: "z-ai", detail: "Z.AI, flat monthly", baseUrl: "https://api.z.ai/api/coding/paas/v4", credentialEnv: "ZAI_API_KEY", contextWindow: 0, keysUrl: "https://z.ai/manage-apikey/apikey-list", hint: "Z.AI key", billing: "subscription", note: "At Z.AI the endpoint picks the billing pool, not the key: this is the coding host, so a plan key spends plan credits here and the same key on the general host draws no plan quota at all. Credits run on a 5-hour rolling window and a weekly reset. A mainland bigmodel.cn account is a separate system from this one." },
-  { id: "kimi", label: "Kimi Code", brand: "kimi", namespace: "moonshotai", detail: "Moonshot, flat monthly", baseUrl: "https://api.kimi.com/coding/v1", credentialEnv: "KIMI_CODE_API_KEY", contextWindow: 0, keysUrl: "https://www.kimi.com/code/console", hint: "Kimi Code key", billing: "subscription", note: "This takes a Kimi Code key, not a Moonshot open-platform key — they are different credentials on different hosts, and Moonshot's own CLI already claims KIMI_API_KEY for the open-platform one, so Emma keeps this under its own name. Roughly 300 to 1,200 requests per 5-hour window, 30 at once, drawn from the same pool as the rest of your Kimi membership." },
+  { id: "kimi", label: "Kimi Code", brand: "kimi", namespace: "moonshotai", detail: "Moonshot, flat monthly", baseUrl: "https://api.kimi.com/coding/v1", credentialEnv: "KIMI_CODE_API_KEY", contextWindow: 0, keysUrl: "https://www.kimi.com/code/console", hint: "Kimi Code key", billing: "subscription", note: "This takes a Kimi Code key, not a Moonshot open-platform key — they are different credentials on different hosts, and Moonshot's own CLI already claims KIMI_API_KEY for the open-platform one, so Shinbo keeps this under its own name. Roughly 300 to 1,200 requests per 5-hour window, 30 at once, drawn from the same pool as the rest of your Kimi membership." },
   { id: "minimax", label: "MiniMax Token Plan", brand: "minimax", namespace: "minimax", detail: "MiniMax, flat monthly", baseUrl: "https://api.minimax.io/v1", credentialEnv: "MINIMAX_API_KEY", contextWindow: 0, keysUrl: "https://platform.minimax.io/user-center/payment/token-plan", hint: "Subscription key", billing: "subscription", note: "MiniMax issues a Subscription Key for the Token Plan and a separate pay-as-you-go key, and states the two are not interchangeable; take the one matching what you pay for. Quota runs on 5-hour rolling and weekly windows. A mainland key will not work on this host." },
   { id: "gemini", label: "Gemini", brand: "gemini", namespace: "google", detail: "Gemini, billed per token", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", credentialEnv: "GEMINI_API_KEY", contextWindow: 0, keysUrl: "https://aistudio.google.com/apikey", hint: "AIza…", billing: "metered", note: "A Google AI Pro or Ultra subscription does not pay for this key. Google states plan benefits apply only inside the AI Studio web interface and that direct API use is billed separately, so requests here bill the project the key belongs to. To spend the subscription instead, sign in to Gemini CLI below. If your shell also exports GOOGLE_API_KEY, that name wins over this one." },
   { id: "mistral", label: "Mistral", brand: "mistral", namespace: "mistralai", detail: "Mistral, plan credits then per token", baseUrl: "https://api.mistral.ai/v1", credentialEnv: "MISTRAL_API_KEY", contextWindow: 0, keysUrl: "https://console.mistral.ai/api-keys", hint: "Mistral key", billing: "metered", note: "A Mistral plan grants monthly API credits that this key spends; there is no separate coding plan to sign in to." },
@@ -168,9 +169,9 @@ export type CliPlan = {
 };
 
 export const CLI_PLANS: readonly CliPlan[] = [
-  { id: "claude", label: "Claude Code", brand: "anthropic", plan: "Claude Pro or Max", signIn: "claude", authFile: ".claude/.credentials.json", authKeychain: "Claude Code-credentials", detail: "Delegated run, not the thread model", note: "Emma spawns the unmodified claude binary you signed in to yourself, which is the only route Anthropic sanctions for a subscription; Emma never sees, stores, or forwards that login. Turns draw on the usage limits your Claude chats already share, and Anthropic publishes no counts for them. Reaching for a key instead silently moves billing to that key." },
-  { id: "codex", label: "Codex", brand: "openai", plan: "ChatGPT Plus, Pro or Business", signIn: "codex login", authFile: ".codex/auth.json", detail: "Thread model, run by Emma's own agent", note: "`codex login` stores the sign-in; Emma reads that token to reach the ChatGPT endpoint and sends nothing else anywhere. Turns run on Emma's own tools, and draw on your plan's five-hour message window, which your ChatGPT and Codex use share. Signing in with an API key instead bills the Platform account per token rather than the subscription." },
-  { id: "gemini", label: "Gemini CLI", brand: "gemini", plan: "Google AI Pro or Ultra", signIn: "gemini", authFile: ".gemini/oauth_creds.json", detail: "Delegated run, not the thread model", note: "Emma spawns the unmodified gemini binary you signed in to yourself; Emma never sees, stores, or forwards that login. It is the only route Google sanctions for a subscription — the Gemini CLI terms forbid other software reaching Gemini Code Assist through this login, and the penalty falls on your account. A free sign-in allows 1,000 requests a day, AI Pro 1,500 and AI Ultra 2,000; Google AI Plus is not supported. Reaching for an API key instead bills per token." },
+  { id: "claude", label: "Claude Code", brand: "anthropic", plan: "Claude Pro or Max", signIn: "claude", authFile: ".claude/.credentials.json", authKeychain: "Claude Code-credentials", detail: "Delegated run, not the thread model", note: "Shinbo spawns the unmodified claude binary you signed in to yourself, which is the only route Anthropic sanctions for a subscription; Shinbo never sees, stores, or forwards that login. Turns draw on the usage limits your Claude chats already share, and Anthropic publishes no counts for them. Reaching for a key instead silently moves billing to that key." },
+  { id: "codex", label: "Codex", brand: "openai", plan: "ChatGPT Plus, Pro or Business", signIn: "codex login", authFile: ".codex/auth.json", detail: "Thread model, run by Shinbo's own agent", note: "`codex login` stores the sign-in; Shinbo reads that token to reach the ChatGPT endpoint and sends nothing else anywhere. Turns run on Shinbo's own tools, and draw on your plan's five-hour message window, which your ChatGPT and Codex use share. Signing in with an API key instead bills the Platform account per token rather than the subscription." },
+  { id: "gemini", label: "Gemini CLI", brand: "gemini", plan: "Google AI Pro or Ultra", signIn: "gemini", authFile: ".gemini/oauth_creds.json", detail: "Delegated run, not the thread model", note: "Shinbo spawns the unmodified gemini binary you signed in to yourself; Shinbo never sees, stores, or forwards that login. It is the only route Google sanctions for a subscription — the Gemini CLI terms forbid other software reaching Gemini Code Assist through this login, and the penalty falls on your account. A free sign-in allows 1,000 requests a day, AI Pro 1,500 and AI Ultra 2,000; Google AI Plus is not supported. Reaching for an API key instead bills per token." },
 ];
 
 export const cliPlan = (id: string) => CLI_PLANS.find((plan) => plan.id === id);
@@ -486,6 +487,7 @@ export const HOLD_KEYS: Record<string, { keyCode: number; label: string }> = {
   ControlLeft: { keyCode: 59, label: "⌃ left" }, ControlRight: { keyCode: 62, label: "⌃ right" },
   MetaLeft: { keyCode: 55, label: "⌘ left" }, MetaRight: { keyCode: 54, label: "⌘ right" },
   ShiftLeft: { keyCode: 56, label: "⇧ left" }, ShiftRight: { keyCode: 60, label: "⇧ right" },
+  Fn: { keyCode: 63, label: "fn" },
 };
 const WINDOWS_HOLD_CODES: Record<string, number> = {
   AltLeft: 0xa4, AltRight: 0xa5,
@@ -495,6 +497,8 @@ const WINDOWS_HOLD_CODES: Record<string, number> = {
 };
 export const HOLD_DURATIONS = [300, 500, 750, 1000] as const;
 export const DEFAULT_HOLD_MS = 500;
+export const TAP_MS = 0;
+export const DOUBLE_TAP_WINDOW_MS = 350;
 
 export const comboKeybind = (accelerator: string): Keybind => ({ accelerator, hold: "", ms: 0 });
 export const holdKeybind = (hold: string, ms: number): Keybind => ({ accelerator: "", hold, ms });
@@ -573,13 +577,14 @@ export function keybindLabel(keybind: Keybind, platform = "darwin"): string {
   if (keybind.hold) {
     const hold = HOLD_KEYS[keybind.hold]?.label ?? keybind.hold;
     const windowsHold = hold.replace("⌥", "Alt").replace("⌃", "Ctrl").replace("⌘", "Win").replace("⇧", "Shift");
-    return `Hold ${platform === "win32" ? windowsHold : hold} · ${keybind.ms}ms`;
+    const name = platform === "win32" ? windowsHold : hold;
+    return keybind.ms === TAP_MS ? `Double-tap ${name}` : `Hold ${name} · ${keybind.ms}ms`;
   }
   return accelLabel(keybind.accelerator, platform);
 }
 
 function keybindKey(keybind: Keybind, platform = "darwin"): string {
-  return keybind.hold ? `hold:${keybind.hold}` : normalizeAccelerator(platformAccelerator(keybind.accelerator, platform));
+  return keybind.hold ? `${keybind.ms === TAP_MS ? "tap" : "hold"}:${keybind.hold}` : normalizeAccelerator(platformAccelerator(keybind.accelerator, platform));
 }
 
 export function validateKeybinds(value: unknown, platform = "darwin"): Keybinds {
@@ -597,7 +602,7 @@ export function validateKeybinds(value: unknown, platform = "darwin"): Keybinds 
     let keybind: Keybind;
     if (hold) {
       if (!HOLD_KEYS[hold]) throw new Error("Only a modifier key can be held.");
-      if (!Number.isInteger(ms) || ms! < HOLD_DURATIONS[0] || ms! > HOLD_DURATIONS[HOLD_DURATIONS.length - 1]) throw new Error("That hold is too short or too long.");
+      if (!Number.isInteger(ms) || ms !== TAP_MS && (ms! < HOLD_DURATIONS[0] || ms! > HOLD_DURATIONS[HOLD_DURATIONS.length - 1])) throw new Error("That hold is too short or too long.");
       keybind = holdKeybind(hold, ms!);
     } else {
       const problem = keybindProblem(accelerator, platform);
@@ -613,7 +618,10 @@ export function validateKeybinds(value: unknown, platform = "darwin"): Keybinds 
 }
 
 export function holdBindings(keybinds: Keybinds, platform = "darwin"): { id: string; keyCode: number; ms: number }[] {
-  return Object.entries(keybinds).flatMap(([id, keybind]) => keybind.hold && HOLD_KEYS[keybind.hold] ? [{ id, keyCode: platform === "win32" ? WINDOWS_HOLD_CODES[keybind.hold] : HOLD_KEYS[keybind.hold].keyCode, ms: keybind.ms }] : []);
+  const code = (hold: string): number | undefined => platform === "win32" ? WINDOWS_HOLD_CODES[hold] : HOLD_KEYS[hold]?.keyCode;
+  const bindings = Object.entries(keybinds).flatMap(([id, keybind]) => keybind.hold && code(keybind.hold) !== undefined ? [{ id, keyCode: code(keybind.hold)!, ms: keybind.ms }] : []);
+  if (!bindings.some((binding) => binding.ms === TAP_MS && binding.keyCode === code("AltLeft"))) bindings.push({ id: "toggle", keyCode: code("AltLeft")!, ms: TAP_MS });
+  return bindings;
 }
 
 export function saveShortcut(settings: UserSettings, request: ShortcutRequest): { settings: UserSettings; action: QuickActionKeybind } {
@@ -666,11 +674,14 @@ export function fontStack(id: FontChoice): string {
   return (FONT_CHOICES.find((font) => font.id === id) ?? FONT_CHOICES[0]).stack;
 }
 
-export const ACCENT_CHOICES = ["orange", "rose", "lime", "teal", "blue", "violet"] as const;
+export const ACCENT_CHOICES = ["pink", "rose", "lime", "teal", "blue", "violet"] as const;
 export type AccentChoice = (typeof ACCENT_CHOICES)[number] | `#${string}`;
 
 export const MIN_UI_SCALE = 80;
 export const MAX_UI_SCALE = 150;
+
+/** Settings saved before the pink accent still say "orange"; read them as the pink they now render. */
+export const legacyHue = (value: unknown): unknown => (value === "orange" ? "pink" : value);
 
 export function isAccentChoice(value: unknown): value is AccentChoice {
   return typeof value === "string" && ((ACCENT_CHOICES as readonly string[]).includes(value) || /^#[0-9a-f]{6}$/i.test(value));
@@ -687,7 +698,7 @@ export const MODEL_ID = /^[A-Za-z0-9\-_.:]+\/[A-Za-z0-9\-_.:]+$/;
 
 export const FREE_ROUTER_KEY = "free-router";
 export const FREE_ROUTER_ID = "free";
-export const FREE_ROUTER_NAME = "Emma Free Router";
+export const FREE_ROUTER_NAME = "Shinbo Free Router";
 export const ROUTER_PREFIX = "router:";
 export const ROUTER_ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
@@ -990,7 +1001,7 @@ export function planBalanceLine(balance: KeyBalance | null | undefined): string 
 export function balanceLine(balance: KeyBalance | null | undefined): string {
   if (!balance) return "Asking OpenRouter what the key is worth…";
   if (balance.error) return balance.error;
-  if (!balance.keyed) return "No key yet — Emma cannot reach a model without one.";
+  if (!balance.keyed) return "No key yet — Shinbo cannot reach a model without one.";
   if (balance.remaining !== null && balance.remaining <= 0) return "Out of credit — only the models marked FREE will run.";
   if (balance.remaining !== null) return `$${balance.remaining.toFixed(2)} of credit left.`;
   return balance.freeTier ? "Free key — the models marked FREE run; a paid one is refused." : "Credit on file.";
@@ -1015,12 +1026,12 @@ export function maskSecret(value: string): string {
   return secret.length < 12 ? "•".repeat(8) : `${secret.slice(0, 6)}${"•".repeat(10)}${secret.slice(-4)}`;
 }
 
-export const SECURE_STORE_BROKEN = "This computer's secure credential store is unavailable, so Emma will not save a key it could never read back.";
+export const SECURE_STORE_BROKEN = "This computer's secure credential store is unavailable, so Shinbo will not save a key it could never read back.";
 
 export type OverlayPreferences = Pick<UserSettings, "notchGap" | "cursorOrbsEnabled" | "notchConcurrency"> & Partial<Pick<UserSettings, "systemPrompt" | "prompts">>;
 const action = (label: string, prompt: string): QuickAction => ({ label, prompt, category: "" });
 
-export const SETTINGS_KEY = "emma.settings.v1";
+export const SETTINGS_KEY = "shinbo.settings.v1";
 
 export const defaultSettings: UserSettings = {
   quickActions: [action("Summarize", "Summarize the current idea and identify the next step."), action("Research", "Research this topic using available knowledge and explain the key findings."), action("Draft", "Turn this idea into a concise working draft.")],
@@ -1051,7 +1062,7 @@ export const defaultSettings: UserSettings = {
   requireZeroRetention: false,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   prompts: [],
-  accent: "orange",
+  accent: "pink",
   navIconColors: true,
   navHues: {},
   folderHues: {},
@@ -1068,7 +1079,8 @@ function validateNavHues(value: unknown): Record<string, AccentChoice> {
   if (value === undefined) return {};
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Section mark colours are invalid");
   const hues: Record<string, AccentChoice> = {};
-  for (const [view, hue] of Object.entries(value)) {
+  for (const [view, raw] of Object.entries(value)) {
+    const hue = legacyHue(raw);
     if (!/^[a-z-]{1,32}$/.test(view) || !isAccentChoice(hue)) throw new Error("Section mark colours are invalid");
     hues[view] = hue;
   }
@@ -1079,7 +1091,8 @@ function validateFolderHues(value: unknown): Record<string, AccentChoice> {
   if (value === undefined) return {};
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Folder colours are invalid");
   const hues: Record<string, AccentChoice> = {};
-  for (const [folder, hue] of Object.entries(value)) {
+  for (const [folder, raw] of Object.entries(value)) {
+    const hue = legacyHue(raw);
     if (validNoteFolder(folder) && isAccentChoice(hue)) hues[folder] = hue;
   }
   return hues;
@@ -1135,7 +1148,7 @@ export function validateSettings(value: unknown, platform = "darwin"): UserSetti
   const systemPrompt = settings.systemPrompt || defaultSettings.systemPrompt;
   if (typeof systemPrompt !== "string" || systemPrompt.length > MAX_SYSTEM_PROMPT_CHARS) throw new Error(`Keep the system prompt under ${MAX_SYSTEM_PROMPT_CHARS} characters`);
   const prompts = validatePrompts(settings.prompts, MAX_SYSTEM_PROMPT_CHARS);
-  const accent = settings.accent ?? defaultSettings.accent;
+  const accent = legacyHue(settings.accent) ?? defaultSettings.accent;
   const navIconColors = settings.navIconColors ?? defaultSettings.navIconColors;
   const navHues = validateNavHues(settings.navHues);
   const folderHues = validateFolderHues(settings.folderHues);
@@ -1162,6 +1175,13 @@ export function routerChain(catalogued: readonly string[] = [], models: readonly
   const chain = models.length ? models : FREE_ROUTER_MODELS;
   const listed = catalogued.length ? chain.filter((id) => catalogued.includes(id)) : chain;
   return (listed.length ? listed : chain).join(",");
+}
+
+export function skippedLinks(chain: string, routed: string): string[] {
+  const slug = (id: string) => id.split(":")[0].toLowerCase();
+  const sent = chain.split(",").filter(Boolean).slice(0, MAX_FALLBACK_MODELS);
+  const answered = sent.findIndex((id) => slug(id) === slug(routed));
+  return answered > 0 ? sent.slice(0, answered) : [];
 }
 
 export function validateRouterModels(value: unknown): string[] {

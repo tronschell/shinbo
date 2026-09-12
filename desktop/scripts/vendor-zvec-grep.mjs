@@ -29,7 +29,7 @@ if (existsSync(entry) && existsSync(stamp) && readFileSync(stamp, "utf8") === wa
 
 rmSync(vendor, { recursive: true, force: true });
 mkdirSync(vendor, { recursive: true });
-writeFileSync(path.join(vendor, "package.json"), `${JSON.stringify({ name: "emma-zvec-grep", private: true, dependencies: { "@zvec/zvec-grep": VERSION } }, null, 2)}\n`);
+writeFileSync(path.join(vendor, "package.json"), `${JSON.stringify({ name: "shinbo-zvec-grep", private: true, dependencies: { "@zvec/zvec-grep": VERSION } }, null, 2)}\n`);
 execFileSync(process.platform === "win32" ? "npm.cmd" : "npm", ["install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", "--no-package-lock"], { cwd: vendor, stdio: "inherit", shell: process.platform === "win32" });
 
 const onnx = path.join(vendor, "node_modules/onnxruntime-node/bin/napi-v3");

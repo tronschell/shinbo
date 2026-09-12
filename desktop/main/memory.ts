@@ -1,12 +1,14 @@
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { pathInside, samePath } from "./platform";
+import { writeAtomic } from "./write-atomic";
 
 export const MEMORY_ROOT = "/memories";
 export const MAX_MEMORY_FILE_BYTES = 256 * 1024;
 export const MAX_MEMORY_FILES = 256;
 const MAX_VIEW_CHARS = 16_000;
 const MAX_LINES = 999_999;
+const memoryCommands = new Map<string, Promise<string>>();
 
 export type MemoryCommand =
   | { command: "view"; path: string; view_range?: [number, number] }
@@ -51,6 +53,17 @@ const numbered = (lines: string[], from = 1) => lines.map((line, index) => `${St
 const humanSize = (bytes: number) => bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)}M` : `${Math.max(1, Math.round(bytes / 1024 * 10) / 10)}K`;
 
 export async function runMemoryCommand(root: string, command: MemoryCommand): Promise<string> {
+  const key = path.resolve(root);
+  const pending = (memoryCommands.get(key) ?? Promise.resolve("")).catch(() => "").then(() => executeMemoryCommand(root, command));
+  memoryCommands.set(key, pending);
+  try {
+    return await pending;
+  } finally {
+    if (memoryCommands.get(key) === pending) memoryCommands.delete(key);
+  }
+}
+
+async function executeMemoryCommand(root: string, command: MemoryCommand): Promise<string> {
   await mkdir(root, { recursive: true, mode: 0o700 });
   switch (command.command) {
     case "view": return await view(root, command);
@@ -60,6 +73,18 @@ export async function runMemoryCommand(root: string, command: MemoryCommand): Pr
     case "delete": return await remove(root, command);
     case "rename": return await move(root, command);
   }
+}
+
+async function writeMemory(target: string, text: string): Promise<void> {
+  let destination = target;
+  let mode = 0o600;
+  try {
+    destination = await realpath(target);
+    mode = (await stat(destination)).mode & 0o777;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  await writeAtomic(destination, text, mode);
 }
 
 async function view(root: string, command: Extract<MemoryCommand, { command: "view" }>): Promise<string> {
@@ -110,7 +135,7 @@ async function create(root: string, command: Extract<MemoryCommand, { command: "
   if (isRoot(root, target)) throw new Error(`Error: ${MEMORY_ROOT} is a directory, not a file.`);
   const text = clampText(command.file_text, "file_text");
   await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
-  await writeFile(target, text, { encoding: "utf8", mode: 0o600 });
+  await writeMemory(target, text);
   return `File created successfully at: ${command.path}`;
 }
 
@@ -128,7 +153,7 @@ async function strReplace(root: string, command: Extract<MemoryCommand, { comman
     throw new Error(`No replacement was performed. Multiple occurrences of old_str \`${old}\` in lines: ${lines.join(", ")}. Please ensure it is unique`);
   }
   const next = text.slice(0, first) + replacement + text.slice(first + old.length);
-  await writeFile(target, clampText(next, "file_text"), { encoding: "utf8", mode: 0o600 });
+  await writeMemory(target, clampText(next, "file_text"));
   const line = text.slice(0, first).split("\n").length;
   const snippet = next.split("\n").slice(Math.max(0, line - 3), line + 3);
   return `The memory file has been edited.\n${numbered(snippet, Math.max(1, line - 2))}`;
@@ -143,7 +168,7 @@ async function insert(root: string, command: Extract<MemoryCommand, { command: "
     throw new Error(`Error: Invalid \`insert_line\` parameter: ${command.insert_line}. It should be within the range of lines of the file: [0, ${lines.length}]`);
   }
   lines.splice(command.insert_line, 0, clampText(command.insert_text, "insert_text").replace(/\n$/, ""));
-  await writeFile(target, clampText(lines.join("\n"), "file_text"), { encoding: "utf8", mode: 0o600 });
+  await writeMemory(target, clampText(lines.join("\n"), "file_text"));
   return `The file ${command.path} has been edited.`;
 }
 

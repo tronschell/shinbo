@@ -79,7 +79,7 @@ function startAcp(cwd: string, home: string, extraEnv: Record<string, string> = 
     env: {
       ...process.env,
       HOME: home,
-      EMMA_PROVIDER_API_KEY: "e2e-placeholder",
+      SHINBO_PROVIDER_API_KEY: "e2e-placeholder",
       NO_COLOR: "1",
       ...extraEnv,
     },
@@ -352,7 +352,7 @@ describe("session recovery", () => {
             cwd: workspaceRoot,
             env: {
               HOME: home,
-              EMMA_PROVIDER_API_KEY: "e2e-placeholder",
+              SHINBO_PROVIDER_API_KEY: "e2e-placeholder",
               FX_GATEWAY_BASE_URL: gateway.baseUrl,
               FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             },
@@ -429,7 +429,7 @@ describe("session recovery", () => {
       ]);
       const resumeEnv = {
         HOME: home,
-        EMMA_PROVIDER_API_KEY: "e2e-placeholder",
+        SHINBO_PROVIDER_API_KEY: "e2e-placeholder",
         FX_GATEWAY_BASE_URL: gateway.baseUrl,
         FX_GATEWAY_CHAT_URL: gateway.chatUrl,
       };

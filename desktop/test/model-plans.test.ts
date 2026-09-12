@@ -64,7 +64,7 @@ test("every plan profile survives the same validation a hand-typed provider does
 
 test("every plan endpoint is https and every key slot is an environment variable name", () => {
   for (const plan of MODEL_PLANS) {
-    assert.ok(providerEndpoint(plan.baseUrl), `${plan.id} has an endpoint Emma would refuse`);
+    assert.ok(providerEndpoint(plan.baseUrl), `${plan.id} has an endpoint Shinbo would refuse`);
     assert.equal(new URL(plan.baseUrl).protocol, "https:", `${plan.id} is not https`);
     assert.ok(isEnvName(plan.credentialEnv), `${plan.id} has an invalid key variable`);
     assert.ok(plan.keysUrl.startsWith("https://"), `${plan.id} has no console link`);
@@ -82,10 +82,10 @@ test("a plan whose subscription no endpoint can bill is marked metered, not subs
   assert.equal(planFor("zai")?.billing, "subscription");
 });
 
-test("a CLI plan names a harness Emma can actually spawn and detect", () => {
+test("a CLI plan names a harness Shinbo can actually spawn and detect", () => {
   for (const plan of CLI_PLANS) {
-    assert.ok(CLI_IDS.includes(plan.id), `${plan.id} is not a CLI Emma runs`);
-    assert.ok(plan.note.includes(plan.id === "codex" ? "Emma reads that token" : "unmodified"), `${plan.id} does not say how the plan reaches Emma`);
+    assert.ok(CLI_IDS.includes(plan.id), `${plan.id} is not a CLI Shinbo runs`);
+    assert.ok(plan.note.includes(plan.id === "codex" ? "Shinbo reads that token" : "unmodified"), `${plan.id} does not say how the plan reaches Shinbo`);
   }
   assert.deepEqual(CLI_PLANS.map((plan) => plan.id), ["claude", "codex", "gemini"]);
 });

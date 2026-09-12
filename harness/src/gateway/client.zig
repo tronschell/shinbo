@@ -214,7 +214,7 @@ const e2e_gateway_chat_url_env = "FX_E2E_GATEWAY_CHAT_URL";
 const e2e_gateway_models_url_env = "FX_E2E_GATEWAY_MODELS_URL";
 const e2e_gateway_credits_url_env = "FX_E2E_GATEWAY_CREDITS_URL";
 const default_gateway_base_url = "https://openrouter.ai/api";
-pub const user_agent = "emma-cli/" ++ build_options.app_version;
+pub const user_agent = "shinbo-cli/" ++ build_options.app_version;
 var resolved_model_trace_emitted = std.atomic.Value(bool).init(false);
 var test_cancel_watcher_spawn_error: ?anyerror = null;
 
@@ -578,7 +578,7 @@ pub fn postGatewayCompletion(
         defer secret.zeroAndFree(alloc, auth_header);
 
         const extra_headers = [_]std.http.Header{
-            .{ .name = "X-Title", .value = "emma-cli" },
+            .{ .name = "X-Title", .value = "shinbo-cli" },
             .{ .name = "Accept", .value = "application/json" },
             .{ .name = "ai-language-model-specification-version", .value = "4" },
             .{ .name = "ai-language-model-id", .value = model },
@@ -1409,7 +1409,7 @@ fn gatewayExtraHeaders(
 ) []const std.http.Header {
     std.debug.assert(buf.len >= 9);
     var len: usize = 0;
-    buf[len] = .{ .name = "X-Title", .value = "emma-cli" };
+    buf[len] = .{ .name = "X-Title", .value = "shinbo-cli" };
     len += 1;
     buf[len] = .{ .name = "ai-language-model-specification-version", .value = "4" };
     len += 1;
@@ -6868,7 +6868,7 @@ test "delivery certainty stays definitely unsent when request setup fails" {
 
 test "chat transport returns once a stalled model call is cancelled" {
     if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
-    const emma_openai = @import("emma_openai.zig");
+    const shinbo_openai = @import("shinbo_openai.zig");
     const zio = io_mod.getIo();
     var fixture = try LoopbackGatewayFixture.init(.response_body_stall, 5000);
     defer fixture.deinit();
@@ -6903,7 +6903,7 @@ test "chat transport returns once a stalled model call is cancelled" {
     var delivery = DeliveryCertainty.init();
     var attempt_evidence: agent_stream_provider.AttemptEvidence = .{};
     const started = std.Io.Clock.Timestamp.now(zio, .awake);
-    const result = emma_openai.provider.stream(std.testing.allocator, .{
+    const result = shinbo_openai.provider.stream(std.testing.allocator, .{
         .api_key = "test-key",
         .model = "test/model",
         .retry_count = 1,
@@ -7245,7 +7245,7 @@ test "direct gateway core callbacks stay on the invoking thread" {
     try std.testing.expectEqual(capture.expected_thread, capture.observed_thread.?);
 }
 
-test "gateway chat request sends emma-cli user agent and attribution headers" {
+test "gateway chat request sends shinbo-cli user agent and attribution headers" {
     var fixture = try LoopbackGatewayFixture.init(.success_capture, 0);
     defer fixture.deinit();
     try fixture.start();
@@ -7281,7 +7281,7 @@ test "gateway chat request sends emma-cli user agent and attribution headers" {
 
     if (fixture.failure) |err| return err;
     try std.testing.expectEqualStrings(user_agent, fixture.capturedHeaderValue("user-agent").?);
-    try std.testing.expectEqualStrings("emma-cli", fixture.capturedHeaderValue("x-title").?);
+    try std.testing.expectEqualStrings("shinbo-cli", fixture.capturedHeaderValue("x-title").?);
     try std.testing.expectEqualStrings("session_wire_123", fixture.capturedHeaderValue("x-session-id").?);
     try std.testing.expectEqualStrings("session_wire_123", fixture.capturedHeaderValue("x-session-affinity").?);
     try std.testing.expect(std.mem.find(u8, fixture.capturedHeaderValue("user-agent").?, "zig") == null);

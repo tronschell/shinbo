@@ -76,7 +76,7 @@ jobs:
           tag="zvec-grep-v$version"
           gh release view "$tag" > /dev/null 2>&1 || gh release create "$tag" \
             --title "zvec-grep $version" \
-            --notes "Prebuilt @zvec/zvec-grep $version trees Emma downloads on demand when semantic search is turned on." \
+            --notes "Prebuilt @zvec/zvec-grep $version trees Shinbo downloads on demand when semantic search is turned on." \
             --latest=false
           gh release upload "$tag" "$RUNNER_TEMP"/tools/* --clobber
           gh release view "$tag" --json assets --jq '.assets[].name'

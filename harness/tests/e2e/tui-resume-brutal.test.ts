@@ -123,7 +123,7 @@ function makePaths(label: string): Paths {
 function gatewayEnv(home: string, gateway: ReturnType<typeof startFakeGateway>) {
   return {
     HOME: home,
-    EMMA_PROVIDER_API_KEY: "fake-resume-brutal-key",
+    SHINBO_PROVIDER_API_KEY: "fake-resume-brutal-key",
     FX_GATEWAY_BASE_URL: gateway.baseUrl,
     FX_GATEWAY_CHAT_URL: gateway.chatUrl,
     FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -271,9 +271,9 @@ function installLargeCatalog(
     ...real,
     updated_at_ms: base - 1,
     workspace_root: realpathSync(paths.workspace),
-    // The stress conversation is one very large user turn spanning many
-    // tool continuations. Its projection can lag the committed event tail,
-    // but the catalog row must remain resumable while that tail is replayed.
+
+
+
     history_len: Math.max(1, real.history_len),
   });
   for (let index = 2; index < config.catalogEntries; index += 1) {
@@ -512,7 +512,7 @@ async function runStress(config: Config): Promise<Paths> {
     };
     writeFileSync(paths.metrics, `${JSON.stringify(report, null, 2)}\n`);
 
-    // These are local regression alarms, not product-level latency contracts.
+
     expect(report.transitions.open.p95Ms).toBeLessThan(2_000);
     expect(report.transitions.scope.p95Ms).toBeLessThan(2_000);
     expect(report.transitions.page.p95Ms).toBeLessThan(5_000);

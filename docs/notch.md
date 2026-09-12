@@ -11,9 +11,9 @@ renderer bundle picking a component off its query string
 ## Opening it
 
 On macOS, double-tap the **left** Option key. macOS reports a bare modifier only
-to a trusted app, so this is an event tap in `emma-option-tap`, built with clang
+to a trusted app, so this is an event tap in `shinbo-option-tap`, built with clang
 from [`desktop/native/quick_ask.m`](../desktop/native/quick_ask.m). On Windows,
-double-tap the **left** Alt key; `emma-option-tap.exe` uses the Windows keyboard
+double-tap the **left** Alt key; `shinbo-option-tap.exe` uses the Windows keyboard
 hook. Both helpers write `toggle` on stdout and nothing else.
 
 | | |
@@ -23,15 +23,15 @@ hook. Both helpers write `toggle` on stdout and nothing else.
 | Needs | Accessibility. Without it the helper says so on stderr and ⌥⌥ stays dead |
 | Also opens it | Any accelerator or hold bound in **Settings → Keybinds** |
 
-The helper does the holds too: bind an action to holding a modifier and Emma
+The helper does the holds too: bind an action to holding a modifier and Shinbo
 sends the helper a `{"holds":[…]}` line over stdin; it answers `hold <action>`
 when the key is held past its duration and cancels on any other key.
 
 ## Where it draws
 
-On macOS, `emma-option-tap --screens` reports the real camera housing per display —
+On macOS, `shinbo-option-tap --screens` reports the real camera housing per display —
 AppKit's `auxiliaryTopLeftArea`/`auxiliaryTopRightArea` bracket it and
-`safeAreaInsets.top` is its height. Emma re-reads it whenever the helper prints,
+`safeAreaInsets.top` is its height. Shinbo re-reads it whenever the helper prints,
 and `parseNotchGeometry` refuses anything outside 40–600 wide or 8–120 tall.
 
 A display with no housing gets a **virtual notch**: a centred gap of
@@ -70,8 +70,8 @@ picker, and a footer reading the model's window and the last answer's tok/s.
   label and a prompt, run as one turn in a fresh thread.
 - The mode picker opens on **Settings → Tools → Default permission mode**, the
   same rung a fresh thread starts on. Pick another there and the island keeps
-  that one from then on, in `emma.overlayMode.v2`. A build before that fix
-  wrote `auto` into `emma.overlayMode.v1` on first mount, so that key is read
+  that one from then on, in `shinbo.overlayMode.v2`. A build before that fix
+  wrote `auto` into `shinbo.overlayMode.v1` on first mount, so that key is read
   once and dropped: any mode but `auto` is carried over, `auto` is discarded as
   the bug's own value and the picker falls back to the Settings default.
 - Escape leaves the island; so does clicking away.
@@ -87,7 +87,7 @@ picker, and a footer reading the model's window and the last answer's tok/s.
 | The island detached, or any island on Windows | It collapses to the chip instead of closing |
 
 An unsent draft survives either way: the composer writes it to `localStorage`
-under `emma.overlayDraft.v1` on every keystroke and reads it back when the island
+under `shinbo.overlayDraft.v1` on every keystroke and reads it back when the island
 is built again.
 
 ## The chip and the popout
@@ -138,7 +138,7 @@ anything that is not on the list.
 | Quick actions | Three labels and prompts |
 | Shortcuts | Accelerator or modifier-hold per action |
 
-The user can create one conversationally, for example: “Make ⌘⌥K ask Emma to
+The user can create one conversationally, for example: “Make ⌘⌥K ask Shinbo to
 summarize what I am working on.” The `shortcut` tool fills the next unbound
 Quick Action, registers the global accelerator immediately, and shows its label
 and prompt on **Settings → Keybinds**. Reusing the same label or combination

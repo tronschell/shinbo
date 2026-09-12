@@ -25,8 +25,8 @@ function listen(server: http.Server, port = 0): Promise<number> {
 }
 
 test("the semantic_grep option names the app binary as node and carries the embedding model", () => {
-  const option = JSON.parse(semanticGrepOption("/Applications/Emma.app/Contents/MacOS/Emma", "/res/zvec-grep/index.js", [{ name: "ZVEC_GREP_EMBEDDING", value: "local/potion-code-16m-v2" }]));
-  assert.equal(option.command, "/Applications/Emma.app/Contents/MacOS/Emma");
+  const option = JSON.parse(semanticGrepOption("/Applications/Shinbo.app/Contents/MacOS/Shinbo", "/res/zvec-grep/index.js", [{ name: "ZVEC_GREP_EMBEDDING", value: "local/potion-code-16m-v2" }]));
+  assert.equal(option.command, "/Applications/Shinbo.app/Contents/MacOS/Shinbo");
   assert.deepEqual(option.args, ["/res/zvec-grep/index.js"]);
   assert.deepEqual(option.env, [{ name: "ELECTRON_RUN_AS_NODE", value: "1" }, { name: "ZVEC_GREP_EMBEDDING", value: "local/potion-code-16m-v2" }]);
 });
@@ -123,7 +123,7 @@ test("the proxy keeps dimensions for OpenAI text-embedding-3 and refuses vectors
 });
 
 test("the proxy port is stable per data directory and inside the unprivileged range", () => {
-  assert.equal(proxyPort("/Users/a/Library/Application Support/Emma"), proxyPort("/Users/a/Library/Application Support/Emma"));
+  assert.equal(proxyPort("/Users/a/Library/Application Support/Shinbo"), proxyPort("/Users/a/Library/Application Support/Shinbo"));
   assert.notEqual(proxyPort("/a"), proxyPort("/b"));
   for (const seed of ["/a", "/b", "/c"]) assert.ok(proxyPort(seed) >= 20000 && proxyPort(seed) < 60000);
 });

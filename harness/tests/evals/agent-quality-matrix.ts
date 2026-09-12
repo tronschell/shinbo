@@ -1,4 +1,4 @@
-export const SHARED_MODEL_CONTEXT_CONTRACT = "emma.shared_model_context.v1";
+export const SHARED_MODEL_CONTEXT_CONTRACT = "shinbo.shared_model_context.v1";
 
 export const FAILURE_CATEGORIES = [
   "local search",
@@ -203,7 +203,7 @@ export const AGENT_QUALITY_BASELINE_MATRIX: readonly AgentQualityMatrixRow[] = [
     },
     targetResult: "A local git command is used, with no web_search or clarification question.",
     coveredEntrypoints: [
-      askEntrypoint("Depends on repo_identity in emma.shared_model_context.v1."),
+      askEntrypoint("Depends on repo_identity in shinbo.shared_model_context.v1."),
     ],
   },
   {
@@ -235,7 +235,7 @@ export const AGENT_QUALITY_BASELINE_MATRIX: readonly AgentQualityMatrixRow[] = [
     targetResult:
       "Starts with local discovery and identifies src/core/slash_commands/command_specs.zig from local evidence.",
     coveredEntrypoints: [
-      askEntrypoint("Uses workspace_identity and available_tools from emma.shared_model_context.v1."),
+      askEntrypoint("Uses workspace_identity and available_tools from shinbo.shared_model_context.v1."),
     ],
   },
   {
@@ -265,7 +265,7 @@ export const AGENT_QUALITY_BASELINE_MATRIX: readonly AgentQualityMatrixRow[] = [
     },
     targetResult: "Uses local search tools only and reports concrete local matches.",
     coveredEntrypoints: [
-      askEntrypoint("Depends on available_tools and workspace_identity from emma.shared_model_context.v1."),
+      askEntrypoint("Depends on available_tools and workspace_identity from shinbo.shared_model_context.v1."),
     ],
   },
   {
@@ -369,7 +369,7 @@ export const AGENT_QUALITY_BASELINE_MATRIX: readonly AgentQualityMatrixRow[] = [
     targetResult:
       "Uses local evidence for current-repo identity and never asks for the user's GitHub handle.",
     coveredEntrypoints: [
-      askEntrypoint("Depends on repo_identity and workspace_identity from emma.shared_model_context.v1."),
+      askEntrypoint("Depends on repo_identity and workspace_identity from shinbo.shared_model_context.v1."),
       interactiveEntrypoint("Follows the same no-handle rule once context refresh is normalized."),
     ],
   },
@@ -404,7 +404,7 @@ export const AGENT_QUALITY_BASELINE_MATRIX: readonly AgentQualityMatrixRow[] = [
     targetResult:
       "Routes PR comments to gh and reports missing gh, auth, or permission failures directly without a clarification question.",
     coveredEntrypoints: [
-      askEntrypoint("Depends on repo_identity and available_tools from emma.shared_model_context.v1."),
+      askEntrypoint("Depends on repo_identity and available_tools from shinbo.shared_model_context.v1."),
     ],
   },
   {
@@ -509,7 +509,7 @@ export const AGENT_QUALITY_BASELINE_MATRIX: readonly AgentQualityMatrixRow[] = [
     },
     targetResult: "Routes known GitHub PR comments to gh and reports an actionable blocker if gh cannot run.",
     coveredEntrypoints: [
-      askEntrypoint("Depends on repo_identity and available_tools from emma.shared_model_context.v1."),
+      askEntrypoint("Depends on repo_identity and available_tools from shinbo.shared_model_context.v1."),
     ],
   },
   {
@@ -539,7 +539,7 @@ export const AGENT_QUALITY_BASELINE_MATRIX: readonly AgentQualityMatrixRow[] = [
     },
     targetResult: "Diagnoses the last failure first; does not blindly repeat an unknown command.",
     coveredEntrypoints: [
-      interactiveEntrypoint("Depends on session_metadata from emma.shared_model_context.v1."),
+      interactiveEntrypoint("Depends on session_metadata from shinbo.shared_model_context.v1."),
       askEntrypoint("Headless resume should use persisted session_metadata when available."),
     ],
   },
@@ -573,7 +573,7 @@ export const AGENT_QUALITY_BASELINE_MATRIX: readonly AgentQualityMatrixRow[] = [
     },
     targetResult: "Continues or reports the exact blocker using prior context.",
     coveredEntrypoints: [
-      interactiveEntrypoint("Depends on session_metadata in emma.shared_model_context.v1."),
+      interactiveEntrypoint("Depends on session_metadata in shinbo.shared_model_context.v1."),
       askEntrypoint("Applies when --session or persisted session resume is used."),
     ],
   },
@@ -674,7 +674,7 @@ export const AGENT_QUALITY_BASELINE_MATRIX: readonly AgentQualityMatrixRow[] = [
     },
     targetResult: "Answers from the latest tool result or clearly says the evidence is unavailable.",
     coveredEntrypoints: [
-      interactiveEntrypoint("Uses session_metadata from emma.shared_model_context.v1."),
+      interactiveEntrypoint("Uses session_metadata from shinbo.shared_model_context.v1."),
       askEntrypoint("Uses persisted session_metadata when a headless session is resumed."),
     ],
   },
@@ -738,7 +738,7 @@ export const AGENT_QUALITY_BASELINE_MATRIX: readonly AgentQualityMatrixRow[] = [
     },
     targetResult: "Returns a structured blocker with an explicit reason and no live ask_user_question path.",
     coveredEntrypoints: [
-      askEntrypoint("Uses permission_mode and available_tools from emma.shared_model_context.v1."),
+      askEntrypoint("Uses permission_mode and available_tools from shinbo.shared_model_context.v1."),
       acpEntrypoint("ACP should map approval-required work to a refusal or policy decision."),
     ],
   },
@@ -769,7 +769,7 @@ export const AGENT_QUALITY_BASELINE_MATRIX: readonly AgentQualityMatrixRow[] = [
     },
     targetResult: "Current workspace_root is reflected before answering or selecting tools.",
     coveredEntrypoints: [
-      interactiveEntrypoint("Uses workspace_identity and session_metadata from emma.shared_model_context.v1."),
+      interactiveEntrypoint("Uses workspace_identity and session_metadata from shinbo.shared_model_context.v1."),
       acpEntrypoint("ACP initialize/resume behavior is explicitly marked as follow-up drift."),
     ],
   },
@@ -793,7 +793,7 @@ export const AGENT_QUALITY_BASELINE_MATRIX: readonly AgentQualityMatrixRow[] = [
       type: "tool-call recorder test",
       status: "implemented",
       notes:
-        "Recorder assertions require the focused Bun test command and document that this path does not require EMMA_PROVIDER_API_KEY or model cost.",
+        "Recorder assertions require the focused Bun test command and document that this path does not require SHINBO_PROVIDER_API_KEY or model cost.",
     },
     modelBackedEval: {
       required: true,
@@ -879,7 +879,7 @@ export const AGENT_QUALITY_BASELINE_MATRIX: readonly AgentQualityMatrixRow[] = [
     targetResult:
       "First action is web_fetch for the exact public URL; web_search and browser automation are absent.",
     coveredEntrypoints: [
-      askEntrypoint("Depends on available_tools and web routing prompt guidance in emma.shared_model_context.v1."),
+      askEntrypoint("Depends on available_tools and web routing prompt guidance in shinbo.shared_model_context.v1."),
     ],
   },
   {
@@ -942,7 +942,7 @@ export const AGENT_QUALITY_BASELINE_MATRIX: readonly AgentQualityMatrixRow[] = [
     },
     targetResult: "Preserves an explicit handle or limitation so a later turn can recover the needed evidence.",
     coveredEntrypoints: [
-      askEntrypoint("Depends on session_metadata and available_tools from emma.shared_model_context.v1."),
+      askEntrypoint("Depends on session_metadata and available_tools from shinbo.shared_model_context.v1."),
       interactiveEntrypoint("Interactive sessions should preserve the same large-output evidence contract."),
     ],
   },
@@ -963,7 +963,7 @@ export const AGENT_QUALITY_BASELINE_MATRIX: readonly AgentQualityMatrixRow[] = [
       type: "tool-call recorder test",
       status: "implemented",
       notes:
-        "Recorder assertions cover first-tool routing; Zig unit tests assert deferred base advertisement, metadata search, exact schema selection, and selected-schema overlay without requiring EMMA_PROVIDER_API_KEY.",
+        "Recorder assertions cover first-tool routing; Zig unit tests assert deferred base advertisement, metadata search, exact schema selection, and selected-schema overlay without requiring SHINBO_PROVIDER_API_KEY.",
     },
     modelBackedEval: {
       required: true,

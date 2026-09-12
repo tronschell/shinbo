@@ -69,7 +69,7 @@ const runtime = await createFxTerminal({
   backend: "wasm",
   wasm: await readFile(wasmPath),
   terminal: instrumentedTerminalHost,
-  env: { EMMA_PROVIDER_API_KEY: "term-lifecycle-key" },
+  env: { SHINBO_PROVIDER_API_KEY: "term-lifecycle-key" },
   fetch,
   onEvent(event) { events.push(event); },
 });
@@ -150,7 +150,7 @@ const abortRuntime = await createFxTerminal({
   backend: "wasm",
   wasm: await readFile(wasmPath),
   terminal: instrumentTerminal(abortTerminal, abortDisposals),
-  env: { EMMA_PROVIDER_API_KEY: "term-lifecycle-key" },
+  env: { SHINBO_PROVIDER_API_KEY: "term-lifecycle-key" },
   fetch,
 });
 const abortFlush = () => new Promise((resolve) => abortTerminal.write("", resolve));
@@ -276,7 +276,7 @@ async function runActiveTransitionChild(scenario, command) {
     backend: "wasm",
     wasm: await readFile(wasmPath),
     terminal: childHost,
-    env: { EMMA_PROVIDER_API_KEY: "term-active-transition-key" },
+    env: { SHINBO_PROVIDER_API_KEY: "term-active-transition-key" },
     fetch: childFetch,
   });
   const childFlush = () => new Promise((resolveFlush) => childTerminal.write("", resolveFlush));

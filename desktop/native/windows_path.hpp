@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace emma_windows_path {
+namespace shinbo_windows_path {
 
 inline std::wstring extended_length(const std::wstring &value) {
     if (value.empty()) return {};

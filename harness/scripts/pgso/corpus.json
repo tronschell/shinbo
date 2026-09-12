@@ -22,7 +22,7 @@
       "NO_COLOR": "1"
     },
     "env_unset": [
-      "EMMA_PROVIDER_API_KEY"
+      "SHINBO_PROVIDER_API_KEY"
     ],
     "timeout_seconds": 1800,
     "requires_tmux": true

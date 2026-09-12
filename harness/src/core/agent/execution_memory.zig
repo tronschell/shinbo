@@ -278,6 +278,10 @@ const ChatMessageAdapter = struct {
     fn reasoning(value: Message) ?[]const u8 {
         return value.reasoning;
     }
+
+    fn reasoningDetails(value: Message) ?[]const u8 {
+        return value.reasoning_details_json;
+    }
 };
 
 const MessageAdapter = struct {
@@ -324,6 +328,10 @@ const MessageAdapter = struct {
     }
 
     fn reasoning(_: Message) ?[]const u8 {
+        return null;
+    }
+
+    fn reasoningDetails(_: Message) ?[]const u8 {
         return null;
     }
 };
@@ -430,6 +438,11 @@ fn buildNormalExecutionMemory(
         else
             null;
         errdefer if (step_reasoning) |text| alloc.free(text);
+        const step_reasoning_details = if (Adapter.reasoningDetails(msg)) |text|
+            try alloc.dupe(u8, text)
+        else
+            null;
+        errdefer if (step_reasoning_details) |text| alloc.free(text);
         const persisted_calls = try dupeCompletedRedactedToolCalls(
             alloc,
             tool_calls,
@@ -441,6 +454,7 @@ fn buildNormalExecutionMemory(
         const step = types.ToolExecutionStep{
             .assistant = assistant,
             .reasoning = step_reasoning,
+            .reasoning_details_json = step_reasoning_details,
             .tool_calls = persisted_calls,
             .tool_results = owned_results,
         };
@@ -483,6 +497,7 @@ pub fn freeTransientToolExecutionStep(
 ) void {
     if (step.assistant) |assistant| alloc.free(assistant);
     if (step.reasoning) |reasoning| alloc.free(reasoning);
+    if (step.reasoning_details_json) |details| alloc.free(details);
     types.freeToolCallSlice(alloc, step.tool_calls);
     types.freePersistedToolResults(alloc, step.tool_results);
 }
@@ -1769,6 +1784,7 @@ test "an assistant tool step keeps its reasoning through execution memory and hi
             .role = .assistant,
             .content = "reading",
             .reasoning = "the working out",
+            .reasoning_details_json = "[{\"type\":\"reasoning.encrypted\",\"data\":\"opaque signature\"}]",
             .tool_calls = calls[0..],
         },
         .{
@@ -1788,4 +1804,9 @@ test "an assistant tool step keeps its reasoning through execution memory and hi
     defer projected.deinit(alloc);
     try session_runtime.appendExecutionMemoryChatMessages(alloc, &projected, memory);
     try std.testing.expectEqualStrings("the working out", projected.items[0].reasoning.?);
+    try std.testing.expectEqualStrings(messages[0].reasoning_details_json.?, memory.tool_steps[0].reasoning_details_json.?);
+    try std.testing.expectEqualStrings(messages[0].reasoning_details_json.?, projected.items[0].reasoning_details_json.?);
+    const copied = try types.dupeExecutionMemory(alloc, memory);
+    defer types.freeExecutionMemory(alloc, copied);
+    try std.testing.expectEqualStrings(messages[0].reasoning_details_json.?, copied.tool_steps[0].reasoning_details_json.?);
 }

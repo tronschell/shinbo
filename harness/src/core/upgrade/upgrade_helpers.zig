@@ -24,7 +24,7 @@ pub fn resolveCdnBase() ?[]const u8 {
     return if (isLoopbackE2eUpgradeBase(url)) url else null;
 }
 
-pub const upgrade_base_url_env = "EMMA_UPGRADE_BASE_URL";
+pub const upgrade_base_url_env = "SHINBO_UPGRADE_BASE_URL";
 
 fn isLoopbackE2eUpgradeBase(url: []const u8) bool {
     const uri = std.Uri.parse(url) catch return false;

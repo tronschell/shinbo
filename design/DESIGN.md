@@ -1,6 +1,6 @@
 ---
 version: alpha
-name: Emma
+name: Shinbo
 description: A dense, dark, terminal-grade desktop chrome drawn with 1px rules on a square grid. Departure Mono for the interface, Inter for prose, one accent hue for action and state.
 colors:
   bg: "#0e0e10"
@@ -15,15 +15,15 @@ colors:
   border: "#e8e6df26"
   border-strong: "#e8e6df47"
   rose: "#ed7a9b"
-  orange: "#ff6a3d"
+  pink: "#ff5c94"
   lime: "#c3d64b"
   yellow: "#e8c34a"
   teal: "#3fd8c0"
   blue: "#6faee6"
   violet: "#ae78f0"
-  accent: "{colors.orange}"
-  accent-soft: "color-mix(in srgb, #ff6a3d 14%, transparent)"
-  accent-2: "oklch(from #ff6a3d l c calc(h + 150))"
+  accent: "{colors.pink}"
+  accent-soft: "color-mix(in srgb, #ff5c94 14%, transparent)"
+  accent-2: "oklch(from #ff5c94 l c calc(h + 150))"
   danger: "{colors.rose}"
   danger-surface: "#2a1620"
   solid: "#e8e6df"
@@ -155,7 +155,7 @@ components:
   button-accent:
     backgroundColor: transparent
     textColor: "{colors.accent}"
-    borderColor: "color-mix(in srgb, #ff6a3d 55%, transparent)"
+    borderColor: "color-mix(in srgb, #ff5c94 55%, transparent)"
     typography: "{typography.label-sm}"
     padding: 0px 8px
     height: 28px
@@ -250,7 +250,7 @@ components:
     rounded: "{rounded.none}"
     size: 6px
   series-1:
-    backgroundColor: "{colors.orange}"
+    backgroundColor: "{colors.pink}"
     size: 6px
   series-2:
     backgroundColor: "{colors.blue}"
@@ -279,7 +279,7 @@ components:
     size: 2px
 ---
 
-# Emma DESIGN.md
+# Shinbo DESIGN.md
 
 The normative values live in the front matter above and in
 [`desktop/src/styles/tokens.css`](../desktop/src/styles/tokens.css), which is
@@ -290,7 +290,7 @@ apply it. Longer implementation notes stay in
 
 ## Overview
 
-Emma is a macOS agent workspace someone keeps open all day, beside an editor and
+Shinbo is a macOS agent workspace someone keeps open all day, beside an editor and
 a terminal. It should read as **instrument, not appliance**: a dense dark chrome
 drawn with sharp 1px rules on a square grid, where every pixel of colour means
 something and nothing decorates.
@@ -319,7 +319,7 @@ language, no per-surface theme.
 
 The ground is a warm-neutral near-black and the ink is a single warm off-white.
 Warmth on both ends is deliberate: a cool grey chrome reads as a system dialog,
-and Emma is meant to read as paper under a lamp.
+and Shinbo is meant to read as paper under a lamp.
 
 ### Ground
 
@@ -364,7 +364,7 @@ series, a section, a status class. If you cannot say what it signifies, use
 
 | Token | Hex | Meaning |
 | --- | --- | --- |
-| `orange` | `#ff6a3d` | The default accent |
+| `pink` | `#ff5c94` | The default accent — the logo pink `#f4156b` lifted to 6.6:1 on `bg`; the logo keeps its own |
 | `blue` | `#6faee6` | Links and references |
 | `rose` | `#ed7a9b` | Danger, destructive confirmation |
 | `teal` | `#3fd8c0` | Categorical |
@@ -377,9 +377,9 @@ decision, not a convenience.
 
 ### The accent
 
-`accent` aliases `orange`; `danger` aliases `rose`. Settings → Appearance
+`accent` aliases `pink`; `danger` aliases `rose`. Settings → Appearance
 repoints `accent` at another palette hue or at any hex, and everything derived
-from it follows, so **never hard-code `#ff6a3d`** — use the token.
+from it follows, so **never hard-code `#ff5c94`** — use the token.
 
 The accent is for **action and state only**: the primary action, the active
 state, the focus ring, a checked control, and any literal quantity meant to be
@@ -389,11 +389,11 @@ all of them accent.
 
 `accent-soft` is the accent at 14% and is the only accent fill that touches a
 large area. `accent-2` is its oklch complement (`h + 150`), used only by the
-computer cursor and the Built-by-Emma reveal.
+computer cursor and the Built-by-Shinbo reveal.
 
 The spec's conventional names are provided as aliases — `primary` → `accent`,
 `secondary` → `text-2`, `tertiary` → `blue`, `neutral` → `bg`, `on-surface` →
-`text`, `error` → `danger` — so a tool that expects them resolves. Emma's own
+`text`, `error` → `danger` — so a tool that expects them resolves. Shinbo's own
 code uses the concrete names.
 
 Two deliberate exceptions to the palette: vendor brand tints in `settings.css`
@@ -448,7 +448,7 @@ The shell is a two-column grid: `sidebar` then content.
 | Composer | The last row of the thread grid, centred on the conversation column: `bg` ground, `border-strong` box, no shadow |
 | Context bar | Flush right column, 288px, user-resizable 260–360, `chrome` ground behind a `border-strong` left edge |
 | Panes | Browser 420px (260–720) right of the context bar; terminal 260px (120–720) across the bottom, capped at 60% |
-| Settings | Full-content takeover with its own sub-nav grouped Personal / Coding / Integrations / Emma |
+| Settings | Full-content takeover with its own sub-nav grouped Personal / Coding / Integrations / Shinbo |
 
 Spacing is an eight-step scale (4, 6, 8, 12, 16, 20, 24, 32). Nothing between
 steps. 12px is the default padding for a band or a row; 32px is the largest gap
@@ -624,34 +624,32 @@ One duration token: `120ms ease`. It applies to hover and focus transitions and
 nothing else. There are no entrance animations, no easing curves per component,
 no spring physics, no skeleton shimmer.
 
-The two exceptions are both identity, not feedback: Emma's 7s blink cycle (a
+The two exceptions are both identity, not feedback: Shinbo's 7s blink cycle (a
 human blink rate) and the opt-in `mark-wiggle`, a 4-degree tilt on the bow. A
 mark at rest holds still.
 
 `prefers-reduced-motion: reduce` kills every transition and animation globally
-through one rule in `index.css`, and leaves Emma's eyes open. Never re-enable
-motion past it.
+through one rule in `index.css`. Never re-enable motion past it.
 
 ## Iconography & The Mark
 
-Emma herself is the logo: `desktop/assets/emma.webp` (eyes open) and
-`emma-blink.webp` (shut), both 1852×1253 and trimmed to the ink — set a width
-and let the height follow. `EmmaMark` stacks both frames and crosses their
-opacities on the same keyframe. She appears at 22px in the quick-ask island. The
-sidebar shows no wordmark; its first row is the search field.
+The logo is the pixel bow: a 16×16 grid drawn as inline SVG with
+`shape-rendering: crispEdges`, so it stays sharp at any size — set a width and
+let the height follow. `ShinboMark` renders it in the brand pink `#f4156b` and
+appears at 22px in the quick-ask island. The sidebar shows no wordmark; its
+first row is the search field.
 
-`Mark` is the other one: a bow on a 16×16 pixel grid, drawn in `currentColor` so
-a context tints it rather than swapping the art — `lime` for a good state,
-`orange` for a bad one, `yellow` for one still in the air. It is the empty-state
-glyph and the quick-ask pill, not the logo.
+`Mark` is the same bow in `currentColor`, so a context tints it rather than
+swapping the art — `lime` for a good state, `pink` for a bad one, `yellow`
+for one still in the air. It is the empty-state glyph and the quick-ask pill.
 
 Vendor brand marks arrive as `<img>` with their fill baked into the asset (white
 where the brand mark is black, the real brand colour where it is not), fitted to
 their own viewBox and padded 2px absolute. Never apply a blanket CSS filter to
 them — it flattens the ones that are meant to be coloured.
 
-The app icon is Emma on a macOS squircle (`emma.icns`); an unpackaged dev run
-puts `emma-dock.png` on the Dock tile instead.
+The app icon is the same bow on a dark macOS squircle (`shinbo.icns`); an
+unpackaged dev run puts `shinbo-dock.png` on the Dock tile instead.
 
 ## Accessibility Floor
 
@@ -686,7 +684,7 @@ To consume this file outside the app, the token block maps directly:
   --text: #e8e6df;
   --border: #e8e6df26;
   --border-strong: #e8e6df47;
-  --accent: #ff6a3d;
+  --accent: #ff5c94;
   --font-mono: "Departure Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --font: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --s-4: 12px;
@@ -706,7 +704,7 @@ export default {
         surface: { DEFAULT: "#131316", 2: "#17171a", 3: "#1c1c20", 4: "#232327" },
         ink: { DEFAULT: "#e8e6df", 2: "#e8e6dfad", 3: "#e8e6df8c" },
         rule: { DEFAULT: "#e8e6df26", strong: "#e8e6df47" },
-        accent: "#ff6a3d",
+        accent: "#ff5c94",
       },
       fontFamily: { mono: ["Departure Mono", "ui-monospace"], sans: ["Inter"] },
       fontSize: { "2xs": "10px", xs: "11px", sm: "12px", md: "13px", lg: "14px" },
@@ -724,5 +722,5 @@ npx @google/design.md lint design/DESIGN.md
 
 It reports zero errors and 22 warnings, all of them `borderColor` on a
 component. That property is not in the spec's sub-token list, which covers fill,
-ink, type, radius, and size but not the edge. Emma is drawn with edges, so the
+ink, type, radius, and size but not the edge. Shinbo is drawn with edges, so the
 warnings are the correct output — do not silence them by deleting the property.

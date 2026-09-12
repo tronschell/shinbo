@@ -1,8 +1,8 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, MenuItem, nativeImage, Notification, powerMonitor, protocol, screen, session, shell, systemPreferences } from "electron";
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdir, open, writeFile } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
 import path from "node:path";
 import { benchExportRequest, benchJudgeRequest, externalUrl, keepRequest, publicUrl, runCommandRequest, statsExportRequest, trustedSender, validJpegDataUrl, validateRequest, vaultRequest, type Request } from "./ipc";
@@ -17,7 +17,7 @@ import { hotspotLayout, hotspotPollDelay, nearBounds, overlayGrowth, overlayLayo
 import { BoundedLines, HostResponses, parseHostLine, recordedTurn, type HostDueJob, type RecordedTurn } from "./ndjson";
 import { describeRun, packVariables, parseVariables, parseWorkflow, runWorkflow, type WorkflowNode } from "../shared/workflow";
 import { runWorkflowScript, workflowScriptPath } from "./workflow-script";
-import { ImportedCapabilityRuntime, MAX_SKILL_RESULTS, SkillAttachmentStore, type McpServerDefinition, harnessMcpServers as readHarnessMcpServers, listEmmaTools, listImportedMcpServers, mirrorSkillsToHarness, searchImportedSkills, seedBuiltinSkills, writeEmmaTool, writeLearnedSkill } from "./capabilities";
+import { ImportedCapabilityRuntime, MAX_SKILL_RESULTS, SkillAttachmentStore, type McpServerDefinition, harnessMcpServers as readHarnessMcpServers, listShinboTools, listImportedMcpServers, mirrorSkillsToHarness, searchImportedSkills, seedBuiltinSkills, writeShinboTool, writeLearnedSkill } from "./capabilities";
 import { daysUnder, mcpServerPrefix, mcpToolKey, modelKey, readUsage, recordUse, skillKey } from "./invocations";
 import { addMarketplace, ensureDefaultMarketplace, installedHooks, installPlugin, pluginDetail, refreshMarketplace, removeMarketplace, runPluginHooks, setHookTrust, trustPluginHooks, uninstallPlugin, writePlugin } from "./marketplace";
 import { hookRuns } from "../shared/plugins";
@@ -33,12 +33,13 @@ import { flattenTaskListTasks, mergeTaskList, parseTaskListTasks, renderTaskList
 import { VISUAL_CSP, VISUAL_SCHEME, visualMarker, visualPage, type Visual } from "../shared/visualize";
 import { captureVisual, keepVisual, readVisual } from "./visuals";
 import { CredentialStore } from "./credentials";
+import { initializeProfile } from "./profile";
 import { FolderStore } from "./folders";
-import { AttachmentStore, isImageAttachment, type Attachment } from "./attachments";
+import { AttachmentStore, attachmentImage, attachmentPreview, isImageAttachment, type Attachment } from "./attachments";
 import { defaultVaultRoot, vaultReady } from "./setup";
 import { applyNoteTags, createNoteFolder, detectObsidianVaults, keepNote, listNoteFolders, listNotes, moveNote, noteInVault, notesRoot, obsidianInstallCommand, obsidianInstalled, readVault, renameNoteFolder, saveVault } from "./vault";
 import { tagNote } from "./vault-tags";
-import { DEFAULT_VAULT_FOLDER, keepKindLabel, MAX_NOTE_BYTES, obsidianOpenUrl, type KeepRequest, type KeptNote, type VaultChoice } from "../shared/vault";
+import { DEFAULT_VAULT_FOLDER, keepKindLabel, MAX_NOTE_BYTES, MAX_NOTE_FILE_BYTES, obsidianOpenUrl, type KeepRequest, type KeptNote, type VaultChoice } from "../shared/vault";
 import { privacySettingsUrl, type SetupStatus } from "../shared/setup";
 import { modelRates, CatalogCache, fetchDeepSeekBalance, fetchOpenRouterBalance, fetchOpenRouterCatalog, probeProvider, type CatalogModel } from "./catalog";
 import { ModelMetadataCatalog, type RouteModelMetadata } from "./model-metadata";
@@ -52,7 +53,7 @@ import { transcribe, validateUtterance, validateVoiceSettings, voiceStatus } fro
 import { contextBlock, MAX_FILE_BYTES, MAX_TURN_IMAGES, mergeSkillContext } from "../shared/folders";
 import { BUILTIN_COMMANDS, mentions, pathName } from "../shared/slash";
 import { captureDisplay, compressScreenFrame, ComputerUseRuntime, MAX_RUN_STEPS } from "./computer";
-import { CODEX_MODEL_ID, CODEX_PREFIX, cliPlan, codexSlug, isEnvName, MODEL_PLANS, providerCredentials, routerKey, webSearchProvider, FREE_ROUTER_ID, planForModel, planForProfile, MIN_UI_SCALE, MAX_UI_SCALE, defaultHarnessExperiments, defaultReview, defaultSettings, defaultTagger, defaultToolSettings, defaultVerifier, routerChain, routerIdFor, validateRouters, holdBindings, isCursorCommand, isThinkingLevel, isKeybindAction, keybindCommands, normalizeAccelerator, providerChatUrl, validateProviders, validateKeybinds, validateOverlayPreferences, validateHarnessExperiments, validateReview, validateTagger, validateToolSettings, validateVerifier, FREE_ROUTER_MODELS, OPENROUTER_CHAT_ENDPOINT, type Keybind, type KeybindAction, type Keybinds, type HarnessExperiments, type OverlayPreferences, type ModelRouter, type ProviderProfile, type ReviewSettings, type TaggerSettings, type ThinkingLevel, type ToolSettings, type VerifierSettings } from "../shared/settings";
+import { CODEX_MODEL_ID, CODEX_PREFIX, cliPlan, codexSlug, isEnvName, MODEL_PLANS, providerCredentials, routerKey, webSearchProvider, FREE_ROUTER_ID, planForModel, planForProfile, MIN_UI_SCALE, MAX_UI_SCALE, defaultHarnessExperiments, defaultReview, defaultSettings, defaultTagger, defaultToolSettings, defaultVerifier, routerChain, routerIdFor, validateRouters, holdBindings, isCursorCommand, isThinkingLevel, isKeybindAction, keybindCommands, normalizeAccelerator, providerChatUrl, validateProviders, validateKeybinds, validateOverlayPreferences, validateHarnessExperiments, validateReview, validateTagger, validateToolSettings, validateVerifier, FREE_ROUTER_MODELS, OPENROUTER_CHAT_ENDPOINT, skippedLinks, type Keybind, type KeybindAction, type Keybinds, type HarnessExperiments, type OverlayPreferences, type ModelRouter, type ProviderProfile, type ReviewSettings, type TaggerSettings, type ThinkingLevel, type ToolSettings, type VerifierSettings } from "../shared/settings";
 import { nameThread } from "./thread-namer";
 import { suggestNextSteps } from "./next-steps";
 import { validateWorkState } from "../shared/next-steps";
@@ -69,7 +70,7 @@ import { chatgptAuth, chatgptRoute } from "./chatgpt";
 import { CliModelCatalog } from "./cli-models";
 import { CLI_IDS, cliHarness, describeRuns, cliOptions } from "../shared/cli";
 import { forceArm, harnessPromptFile, resolveHarnessPrompt, setImprovements, setPrompts, setSystemPrompt, withGoal, withTrialArm, writeHarnessPrompt } from "./system-prompt";
-import { Harness, RESTARTED_BY_YOU, escapesRoot, explainFailure, failedTurn, harnessKey, recoveredSessionTraces, type HarnessMcpServer, type HarnessToolCall, type StoredThreadTrace, type ThinkingRoute, type TurnUsage } from "./harness";
+import { Harness, RESTARTED_BY_YOU, escapesRoot, explainFailure, failedTurn, forgetHarnessSession, harnessKey, recoveredSessionTraces, type HarnessMcpServer, type HarnessToolCall, type StoredThreadTrace, type ThinkingRoute, type TurnUsage } from "./harness";
 import { MAX_LOG_LINES, type HarnessLogLine, type HarnessReport } from "../shared/harness-log";
 import { review } from "./verifier";
 import { MAX_REVIEW_ROUNDS, REVIEWABLE_KINDS, reviewPrompt, reviewTitle, reviewVerdict, revisionPrompt } from "./review";
@@ -98,7 +99,9 @@ const MAX_HOST_CALL_MS = 60 * 1000;
 const WINDOWS_SHUTDOWN_TIMEOUT_MS = 8000;
 
 const DEVICE = localDevice(process.platform);
-if (isWindows) app.setName("Emma");
+if (isWindows) app.setName("Shinbo");
+initializeProfile(app);
+if (process.env.SHINBO_DATA_DIR === undefined && process.env.EMMA_DATA_DIR !== undefined) process.env.SHINBO_DATA_DIR = process.env.EMMA_DATA_DIR;
 
 class Host {
   private child!: ChildProcessWithoutNullStreams;
@@ -121,13 +124,13 @@ class Host {
     child.stdout.on("data", (data: Buffer) => {
       if (this.child !== child) return;
       try { for (const line of this.lines.push(data)) { if (this.failure) break; this.receive(line); } }
-      catch (error) { this.abort(error instanceof Error ? error : new Error("Emma host protocol error")); }
+      catch (error) { this.abort(error instanceof Error ? error : new Error("Shinbo host protocol error")); }
     });
     child.stdout.on("end", () => { if (this.child !== child) return; try { this.lines.end(); this.responses.end(); } catch (error) { this.abort(error as Error); } });
     child.stderr.on("data", (data) => console.error(String(data).trim()));
     child.once("error", (error) => { if (this.child === child) this.fail(error); });
     child.stdin.on("error", (error) => { if (this.child === child) this.fail(error); });
-    child.once("exit", () => { if (this.child === child) this.fail(new Error("Emma host stopped")); });
+    child.once("exit", () => { if (this.child === child) this.fail(new Error("Shinbo host stopped")); });
   }
 
   private restart() {
@@ -168,7 +171,7 @@ class Host {
     const id = String(this.nextId++);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        if (this.pending.has(id)) this.abort(new Error(`Emma host stopped answering ${request.method}`));
+        if (this.pending.has(id)) this.abort(new Error(`Shinbo host stopped answering ${request.method}`));
       }, MAX_HOST_CALL_MS);
       timer.unref?.();
       this.pending.set(id, {
@@ -184,7 +187,7 @@ class Host {
 
   close() {
     this.closed = true;
-    this.fail(new Error("Emma host closed"));
+    this.fail(new Error("Shinbo host closed"));
     if (!this.child.stdin.destroyed) this.child.stdin.end();
     if (!this.child.killed) this.child.kill();
   }
@@ -211,7 +214,7 @@ class Host {
       if (response.ok) request.resolve(response.result);
       else request.reject(new Error(response.error));
     } catch (error) {
-      this.abort(error instanceof Error ? error : new Error("Emma host protocol error"));
+      this.abort(error instanceof Error ? error : new Error("Shinbo host protocol error"));
     }
   }
 
@@ -239,21 +242,21 @@ let capabilities: ImportedCapabilityRuntime | undefined;
 let computerRuntime: ComputerUseRuntime | undefined;
 let agents: AgentRuntime | undefined;
 let bridge: Bridge | undefined;
-const background = new BackgroundCommands(() => broadcast("emma:background"));
-const clis = new CliRuns(() => broadcast("emma:cli-runs"));
+const background = new BackgroundCommands(() => broadcast("shinbo:background"));
+const clis = new CliRuns(() => broadcast("shinbo:cli-runs"));
 const zvecGrep = new ZvecGrepTool(path.join(app.getPath("userData"), "vendor", "zvec-grep"), toolsOrigin(), () => {
-  broadcast("emma:zvec-grep");
+  broadcast("shinbo:zvec-grep");
   if (zvecGrep.status().phase !== "ready") return;
   semanticGrep.apply(harnessExperiments);
-  broadcast("emma:semantic-grep");
+  broadcast("shinbo:semantic-grep");
 });
-const semanticGrep = new SemanticGrep(process.execPath, () => zvecGrep.entry(), proxyPort(app.getPath("userData")), () => broadcast("emma:semantic-grep"));
+const semanticGrep = new SemanticGrep(process.execPath, () => zvecGrep.entry(), proxyPort(app.getPath("userData")), () => broadcast("shinbo:semantic-grep"));
 let cliModels: CliModelCatalog;
-const browsers = new Browsers(() => broadcast("emma:browser"), reportBrowserCursor);
+const browsers = new Browsers(() => broadcast("shinbo:browser"), reportBrowserCursor);
 const terminals = new Terminals(
-  () => nativeHelper("emma-pty"),
-  (id, data, at) => broadcast("emma:terminal-data", { id, data, at }),
-  () => broadcast("emma:terminals"),
+  () => nativeHelper("shinbo-pty"),
+  (id, data, at) => broadcast("shinbo:terminal-data", { id, data, at }),
+  () => broadcast("shinbo:terminals"),
 );
 let runBanner: BrowserWindow | null = null;
 let computerCursorWindow: BrowserWindow | null = null;
@@ -302,7 +305,7 @@ function primeGoals(snapshot: unknown) {
 }
 
 const GOAL_CONTINUATION = "Continue working toward this thread's goal.";
-const GOAL_OVERSPENT = "The token allowance ran out part-way through a turn, so Emma stopped it there. Each agent step re-sends the conversation, so a long turn spends more than the turn ledger records. Continue grants more.";
+const GOAL_OVERSPENT = "The token allowance ran out part-way through a turn, so Shinbo stopped it there. Each agent step re-sends the conversation and its usage counts toward the allowance. Continue grants more.";
 
 const threadFolderIds = (threadId: string) => threadContexts.get(threadId)?.folderIds ?? [];
 
@@ -336,10 +339,17 @@ function loadThreadContexts() {
 }
 
 function rememberThreadContext(threadId: string, record: ThreadContextRecord) {
-  threadContexts.set(threadId, record);
+  const next = new Map(threadContexts).set(threadId, record);
+  const file = threadContextsFile();
+  const temporary = `${file}.${randomUUID()}.tmp`;
   try {
-    writeFileSync(threadContextsFile(), JSON.stringify(Object.fromEntries(threadContexts)));
-  } catch { return; }
+    writeFileSync(temporary, JSON.stringify(Object.fromEntries(next)), { mode: 0o600 });
+    renameSync(temporary, file);
+  } catch (error) {
+    rmSync(temporary, { force: true });
+    throw error;
+  }
+  threadContexts.set(threadId, record);
 }
 const mobileStatus = (activeAt?: number) => ({ ...bridge!.status(), threads: [...phoneThreads], ...(activeAt ? { activeAt } : {}) });
 function namedPath(value: unknown): string | undefined {
@@ -363,7 +373,7 @@ let windowsQuitShutdown: Promise<void> | undefined;
 function noteHarnessLog(line: HarnessLogLine) {
   harnessLog.push(line);
   if (harnessLog.length > MAX_LOG_LINES) harnessLog.splice(0, harnessLog.length - MAX_LOG_LINES);
-  broadcast("emma:harness-log", line);
+  broadcast("shinbo:harness-log", line);
 }
 
 const readHarnessReport = (): HarnessReport => ({
@@ -376,7 +386,7 @@ function restartHarnesses() {
   stopEveryThread();
   for (const client of harnesses.values()) client.close(RESTARTED_BY_YOU);
   harnesses.clear();
-  noteHarnessLog({ at: Date.now(), flow: "err", label: "restart", body: `Emma stopped ${stopped} emma-cli ${stopped === 1 ? "process" : "processes"}. The next turn starts a fresh one.` });
+  noteHarnessLog({ at: Date.now(), flow: "err", label: "restart", body: `Shinbo stopped ${stopped} shinbo-cli ${stopped === 1 ? "process" : "processes"}. The next turn starts a fresh one.` });
   return readHarnessReport();
 }
 const harnessText = new Map<string, string>();
@@ -384,19 +394,29 @@ const harnessThought = new Map<string, string>();
 const harnessRouted = new Map<string, string>();
 const harnessUsage = new Map<string, TurnUsage>();
 const harnessChildren = new Map<string, { childId: string; title: string; startedAt: number; client: Harness }>();
-const stopThread = (threadId: string) => {
+const workflowRuns = new Map<string, AbortController>();
+let settleRuntimeReady: (error?: string) => void;
+let runtimeReady = new Promise<string | undefined>((resolve) => { settleRuntimeReady = resolve; });
+const runtimeReadyTimeout = setTimeout(() => settleRuntimeReady("Saved settings did not finish loading. Open the workspace and try this task again."), 30_000);
+runtimeReadyTimeout.unref();
+function cancelThreadWork(threadId: string) {
   goalStopped.add(threadId);
+  workflowRuns.get(threadId)?.abort();
   if (computerRuntime?.threadId === threadId) computerRuntime.abort();
-  agents?.stop(threadId);
   const child = harnessChildren.get(threadId);
   if (child) void child.client.cancelChild(child.childId).catch(() => undefined);
   else for (const harness of harnesses.values()) void harness.cancel(threadId);
   if (!benchThread(threadId)) return;
   void answerRequest("setThreadArchived", { threadId, archived: "true" }).then(() => changed()).catch(() => undefined);
   for (const id of haltBench(threadId)) if (id !== threadId) stopThread(id);
+}
+const stopThread = (threadId: string) => {
+  if (agents?.list().some((agent) => agent.threadId === threadId)) agents.stop(threadId);
+  else cancelThreadWork(threadId);
 };
 function stopEveryThread() {
   agents!.stopAll();
+  for (const controller of workflowRuns.values()) controller.abort();
   for (const threadId of goalDriving) goalStopped.add(threadId);
   for (const threadId of harnessText.keys()) stopThread(threadId);
   for (const threadId of harnessChildren.keys()) stopThread(threadId);
@@ -416,7 +436,7 @@ async function steerThread(threadId: string, text: string) {
       return;
     }
   }
-  agents!.steer(threadId, text);
+  throw new Error("Shinbo could not reach the turn that is running on this thread. Wait for it to finish, then send it again.");
 }
 let hotkeyHelper: ChildProcess | undefined;
 let mainWindow: BrowserWindow | null = null;
@@ -440,17 +460,17 @@ const reviewing = new Set<string>();
 const turnTouched = new Set<string>();
 
 const toolsChanged = async () => {
-  broadcast("emma:tools-changed");
+  broadcast("shinbo:tools-changed");
   for (const client of harnesses.values()) client.rebindServers();
   recycleHarnesses();
   await syncHarnessSkills();
 };
-const artifactsChanged = () => broadcast("emma:artifacts-changed");
-const componentsChanged = () => broadcast("emma:components-changed");
+const artifactsChanged = () => broadcast("shinbo:artifacts-changed");
+const componentsChanged = () => broadcast("shinbo:components-changed");
 const componentRequests = new ComponentRequests();
 
-const plansChanged = () => broadcast("emma:plans-changed");
-const taskListsChanged = () => broadcast("emma:task-lists-changed");
+const plansChanged = () => broadcast("shinbo:plans-changed");
+const taskListsChanged = () => broadcast("shinbo:task-lists-changed");
 let overlayPreferencesReady = false;
 let queuedOverlayToggle: { command?: string } | null = null;
 let overlayBusy = false;
@@ -470,11 +490,11 @@ let overlayGrow = 0;
 
 const preload = path.join(__dirname, "preload.js");
 const renderer = path.join(app.getAppPath(), "dist-renderer/index.html");
-const windowsIcon = isWindows && !app.isPackaged ? path.join(app.getAppPath(), "assets", "emma.ico") : undefined;
+const windowsIcon = isWindows && !app.isPackaged ? path.join(app.getAppPath(), "assets", "shinbo.ico") : undefined;
 
 const DEV_BINARIES: Record<string, string> = {
-  "emma-host": "target/debug/emma-host",
-  "emma-cli": "harness/zig-out/bin/emma-cli",
+  "shinbo-host": "target/debug/shinbo-host",
+  "shinbo-cli": "harness/zig-out/bin/shinbo-cli",
   rg: "desktop/vendor/rg",
 };
 
@@ -485,7 +505,7 @@ function binary(name: string) {
     : path.join(app.getAppPath(), "..", DEV_BINARIES[name] ? `${DEV_BINARIES[name]}${isWindows ? ".exe" : ""}` : file);
 }
 
-function nativeHelper(name = "emma-option-tap") {
+function nativeHelper(name = "shinbo-option-tap") {
   const file = isWindows && !path.extname(name) ? `${name}.exe` : name;
   return app.isPackaged
     ? path.join(process.resourcesPath, file)
@@ -500,7 +520,7 @@ function readNotchGeometry() {
   if (process.platform !== "darwin") return;
   const child = spawn(nativeHelper(), ["--screens"], { stdio: ["ignore", "pipe", "pipe"] });
   const lines = new BoundedLines(4096);
-  const fail = (error: unknown) => console.error("Emma: display geometry unavailable; using the configured notch gap", error);
+  const fail = (error: unknown) => console.error("Shinbo: display geometry unavailable; using the configured notch gap", error);
   child.stdout.on("data", (data: Buffer) => { try { for (const line of lines.push(data)) { notches = parseNotchGeometry(line); openHotspot(); } } catch (error) { fail(error); child.kill(); } });
   child.stdout.on("end", () => { try { lines.end(); } catch (error) { fail(error); } });
   child.stderr.on("data", (data) => console.error(String(data).trim()));
@@ -516,18 +536,17 @@ function startQuickAskHotkey() {
   child.stdout?.on("data", (data: Buffer) => {
     try {
       for (const line of lines.push(data)) {
-        if (line === "toggle") toggleOverlay();
-        else if (line.startsWith("hold ")) runKeybindAction(line.slice(5));
+        if (line.startsWith("hold ")) runKeybindAction(line.slice(5));
         else throw new Error("invalid Quick Ask hotkey event");
       }
     } catch (error) {
-      console.error("Emma: Quick Ask hotkey listener failed", error);
+      console.error("Shinbo: Quick Ask hotkey listener failed", error);
       child.kill();
     }
   });
-  child.stdout?.on("end", () => { try { lines.end(); } catch (error) { console.error("Emma: Quick Ask hotkey listener failed", error); } });
+  child.stdout?.on("end", () => { try { lines.end(); } catch (error) { console.error("Shinbo: Quick Ask hotkey listener failed", error); } });
   child.stderr?.on("data", (data) => console.error(String(data).trim()));
-  child.once("error", (error) => console.error("Emma: Quick Ask hotkey listener failed", error));
+  child.once("error", (error) => console.error("Shinbo: Quick Ask hotkey listener failed", error));
   child.once("exit", () => { if (hotkeyHelper === child) hotkeyHelper = undefined; });
 }
 
@@ -555,7 +574,7 @@ function applyKeybinds(next: Keybinds): KeybindAction[] {
       if (!taken) throw new Error("already registered");
       registeredKeybinds.add(accelerator);
     } catch (error) {
-      console.error(`Emma: ${accelerator} is unavailable`, error);
+      console.error(`Shinbo: ${accelerator} is unavailable`, error);
       refused.push(action);
     }
   }
@@ -564,33 +583,33 @@ function applyKeybinds(next: Keybinds): KeybindAction[] {
 
 function saveShortcutFromTool(args: Extract<ToolArgs, { name: "shortcut" }>): Promise<string> {
   const window = [mainWindow, overlay].find((candidate) => candidate && !candidate.isDestroyed() && !candidate.webContents.isLoading());
-  if (!window) throw new Error("Open Emma's workspace or Quick Ask before creating a shortcut.");
+  if (!window) throw new Error("Open Shinbo's workspace or Quick Ask before creating a shortcut.");
   const id = randomUUID();
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       if (!pendingShortcuts.delete(id)) return;
-      reject(new Error("Emma's settings page did not answer the shortcut request."));
+      reject(new Error("Shinbo's settings page did not answer the shortcut request."));
     }, 10_000);
     pendingShortcuts.set(id, { senderId: window.webContents.id, accelerator: args.accelerator, timeout, resolve, reject });
     try {
-      window.webContents.send("emma:shortcut-request", { id, accelerator: args.accelerator, label: args.label, prompt: args.prompt });
+      window.webContents.send("shinbo:shortcut-request", { id, accelerator: args.accelerator, label: args.label, prompt: args.prompt });
     } catch (error) {
       clearTimeout(timeout);
       pendingShortcuts.delete(id);
-      reject(error instanceof Error ? error : new Error("Emma could not open shortcut settings."));
+      reject(error instanceof Error ? error : new Error("Shinbo could not open shortcut settings."));
     }
   });
 }
 
 function sendHoldKeybinds() {
   try { hotkeyHelper?.stdin?.write(`${JSON.stringify({ holds: holdBindings(keybinds, process.platform) })}\n`); }
-  catch (error) { console.error("Emma: could not send the hold shortcuts to the listener", error); }
+  catch (error) { console.error("Shinbo: could not send the hold shortcuts to the listener", error); }
 }
 
 function runOverlayCommand(command: string) {
   if (overlay && !overlay.isDestroyed()) {
     closeRadial();
-    overlay.webContents.send("emma:quick-command", command);
+    overlay.webContents.send("shinbo:quick-command", command);
     overlay.focus();
     return;
   }
@@ -660,7 +679,7 @@ async function load(window: BrowserWindow, mode: "main" | "overlay" | "annotatio
     setTimeout(resolve, 2000).unref();
   });
   try {
-    const dev = process.env.EMMA_DEV_SERVER_URL;
+    const dev = process.env.SHINBO_DEV_SERVER_URL;
     const parameters = mode === "main" ? {} : { [mode]: "1", ...extra };
     const query = mode === "main" ? "" : `?${new URLSearchParams(parameters).toString()}`;
     if (dev) await window.loadURL(`${dev}${query}`);
@@ -672,7 +691,7 @@ async function load(window: BrowserWindow, mode: "main" | "overlay" | "annotatio
     else if (mode === "overlay" || mode === "annotation") { window.showInactive(); window.focus(); }
     else if (mode !== "computerCursor") window.showInactive();
   } catch (error) {
-    if (!window.isDestroyed()) console.error("Emma window failed to load", error);
+    if (!window.isDestroyed()) console.error("Shinbo window failed to load", error);
   }
 }
 
@@ -715,12 +734,12 @@ function openSettingsPage(page: string) {
   const fresh = !mainWindow;
   openMain();
   const window = mainWindow!;
-  if (fresh) window.webContents.once("did-finish-load", () => { if (!window.isDestroyed()) window.webContents.send("emma:open-settings", page); });
-  else window.webContents.send("emma:open-settings", page);
+  if (fresh) window.webContents.once("did-finish-load", () => { if (!window.isDestroyed()) window.webContents.send("shinbo:open-settings", page); });
+  else window.webContents.send("shinbo:open-settings", page);
 }
 
 function trustedFrame(event: Electron.IpcMainInvokeEvent) {
-  if (event.senderFrame !== event.sender.mainFrame || !trustedSender(event.senderFrame.url, app.getAppPath(), process.env.EMMA_DEV_SERVER_URL)) {
+  if (event.senderFrame !== event.sender.mainFrame || !trustedSender(event.senderFrame.url, app.getAppPath(), process.env.SHINBO_DEV_SERVER_URL)) {
     throw new Error("IPC sender is not allowed");
   }
 }
@@ -744,7 +763,7 @@ function collapseToPill(window: BrowserWindow) {
   pillSpot = { x: bounds.x, y: bounds.y };
   overlaySurface = "pill";
   window.setBounds(bounds);
-  window.webContents.send("emma:overlay-surface", "pill");
+  window.webContents.send("shinbo:overlay-surface", "pill");
   closeRadial();
 }
 
@@ -754,7 +773,7 @@ function expandPill(window: BrowserWindow) {
   overlaySurface = "popout";
   overlayBaseHeight = layout.base;
   window.setBounds(layout.bounds);
-  window.webContents.send("emma:overlay-surface", "popout");
+  window.webContents.send("shinbo:overlay-surface", "popout");
   window.focus();
 }
 
@@ -764,7 +783,7 @@ function leaveOverlay(window: BrowserWindow) {
 }
 
 function newQuickSession(window: BrowserWindow) {
-  if (overlayBusy && overlayPreferences.notchConcurrency !== "continue") window.webContents.send("emma:new-quick-session");
+  if (overlayBusy && overlayPreferences.notchConcurrency !== "continue") window.webContents.send("shinbo:new-quick-session");
 }
 
 function toggleOverlay(command?: string) {
@@ -784,7 +803,7 @@ function toggleOverlay(command?: string) {
       newQuickSession(overlay);
       overlay.show();
       overlay.focus();
-      if (command) overlay.webContents.send("emma:quick-command", command);
+      if (command) overlay.webContents.send("shinbo:quick-command", command);
       return;
     }
     closeOverlay(overlay);
@@ -904,7 +923,7 @@ function openHotspot() {
     window.webContents.once("did-finish-load", () => {
       if (window.isDestroyed()) return;
       window.setIgnoreMouseEvents(!hovering, { forward: true });
-      window.webContents.send("emma:notch-hover", hovering);
+      window.webContents.send("shinbo:notch-hover", hovering);
     });
     void load(window, "hotspot", { notchLeft: String(layout.notch.left), notchWidth: String(layout.notch.width), notchHeight: String(layout.notch.height) });
   };
@@ -921,7 +940,7 @@ function openHotspot() {
         hovering = inside;
         if (hotspot && !hotspot.isDestroyed()) {
           hotspot.setIgnoreMouseEvents(!inside, { forward: true });
-          hotspot.webContents.send("emma:notch-hover", inside);
+          hotspot.webContents.send("shinbo:notch-hover", inside);
         }
       }
     }
@@ -947,7 +966,7 @@ function restoreOverlay() {
 }
 
 function sendScreenContext() {
-  if (overlay && !overlay.isDestroyed()) overlay.webContents.send("emma:screen-context", annotationAttachment.status());
+  if (overlay && !overlay.isDestroyed()) overlay.webContents.send("shinbo:screen-context", annotationAttachment.status());
 }
 
 async function frontApplication(): Promise<FrontApplication | undefined> {
@@ -962,7 +981,7 @@ async function frontContextNote(): Promise<string> {
   const tab = await frontmostTab(front.application).catch(() => undefined);
   const window = tab || !front.window || front.window === front.application ? "" : `, window “${front.window}”`;
   const page = tab ? ` The page open in it is “${tab.title || tab.url}” — ${tab.url}.` : "";
-  return `The user opened Emma from “${front.application}”${window}.${page} When they say “this”, “this page”, “this video” or “what I'm looking at”, that is what they mean.`;
+  return `The user opened Shinbo from “${front.application}”${window}.${page} When they say “this”, “this page”, “this video” or “what I'm looking at”, that is what they mean.`;
 }
 
 function closeAnnotation() {
@@ -975,11 +994,11 @@ function closeAnnotation() {
 function startHost() {
   host?.close();
   credentials!.applyToEnv(process.env);
-  host = new Host(binary("emma-host"));
+  host = new Host(binary("shinbo-host"));
 }
 
 function ownWindow(contents: Electron.WebContents | null): boolean {
-  return !!contents && trustedSender(contents.getURL(), app.getAppPath(), process.env.EMMA_DEV_SERVER_URL);
+  return !!contents && trustedSender(contents.getURL(), app.getAppPath(), process.env.SHINBO_DEV_SERVER_URL);
 }
 
 function pageMayAsk(contents: Electron.WebContents | null, permission: string, kinds: string[]): boolean {
@@ -1021,7 +1040,7 @@ function credentialSlot(value: unknown) {
 
   if (!isEnvName(candidate.env)) throw new Error("An environment variable name must start with a letter or underscore and hold only letters, digits, and underscores.");
 
-  if (LOADER_ENV.test(candidate.env)) throw new Error("That environment variable controls how programs are loaded, so Emma will not hold it.");
+  if (LOADER_ENV.test(candidate.env)) throw new Error("That environment variable controls how programs are loaded, so Shinbo will not hold it.");
   return { env: candidate.env, secret: candidate.secret as string | undefined };
 }
 
@@ -1130,7 +1149,7 @@ function recordedRevert(folderId: string, file: string): string {
   const recorded = agents!.list()
     .flatMap((agent) => agents!.changes(agent.threadId))
     .find((change) => change.folderId === folderId && change.path === file);
-  if (!recorded || recorded.before === null) throw new Error("Only a file Emma rewrote can be reverted here.");
+  if (!recorded || recorded.before === null) throw new Error("Only a file Shinbo rewrote can be reverted here.");
   return recorded.before;
 }
 
@@ -1239,7 +1258,7 @@ function forceArmRequest(value: unknown): { threadId: string; arm: Arm } {
 
 function reportRunProgress(progress: ComputerRunProgress) {
   computerProgress = progress;
-  if (runBanner && !runBanner.isDestroyed()) runBanner.webContents.send("emma:computer-run-progress", progress);
+  if (runBanner && !runBanner.isDestroyed()) runBanner.webContents.send("shinbo:computer-run-progress", progress);
   if (progress.cursor === undefined) return;
   computerCursorOwner = "computer";
   computerCursorHeld = false;
@@ -1281,7 +1300,7 @@ function showComputerCursor() {
   try {
     const bounds = isWindows ? screen.screenToDipRect(null, cursor.bounds) : cursor.bounds;
     window.setBounds({ x: Math.round(bounds.x), y: Math.round(bounds.y), width: Math.round(bounds.width), height: Math.round(bounds.height) });
-    window.webContents.send("emma:computer-run-progress", { ...progress, cursor });
+    window.webContents.send("shinbo:computer-run-progress", { ...progress, cursor });
     window.showInactive();
     window.moveAbove(above);
     if (!computerCursorHeld) computerCursorTimer = setTimeout(() => { if (!window.isDestroyed()) window.hide(); }, remaining);
@@ -1291,26 +1310,30 @@ function showComputerCursor() {
 }
 
 const BRIDGE_EVENTS: Record<string, (payload: unknown) => BridgeEvent> = {
-  "emma:changed": () => ({ k: "evt", t: "invalidate", what: "snapshot" }),
-  "emma:artifacts-changed": () => ({ k: "evt", t: "invalidate", what: "artifacts" }),
-  "emma:plans-changed": () => ({ k: "evt", t: "invalidate", what: "plans" }),
-  "emma:task-lists-changed": () => ({ k: "evt", t: "invalidate", what: "taskLists" }),
-  "emma:notes-changed": () => ({ k: "evt", t: "invalidate", what: "notes" }),
-  "emma:components-changed": () => ({ k: "evt", t: "invalidate", what: "components" }),
-  "emma:tools-changed": () => ({ k: "evt", t: "invalidate", what: "tools" }),
-  "emma:cli-runs": () => ({ k: "evt", t: "invalidate", what: "cliRuns" }),
-  "emma:background": () => ({ k: "evt", t: "invalidate", what: "background" }),
-  "emma:scheduled-jobs": () => ({ k: "evt", t: "invalidate", what: "scheduledJobs" }),
-  "emma:delta": (payload) => ({ k: "evt", ...(payload as { threadId: string; delta: string; thinking?: boolean }), t: "delta" }),
-  "emma:step": (payload) => ({ k: "evt", t: "step", step: phoneStep(payload as RemoteStep) }),
-  "emma:agents": (payload) => ({ k: "evt", t: "agents", agents: payload as LiveAgent[] }),
-  "emma:spans": (payload) => ({ k: "evt", t: "spans", spans: phoneSpans(payload as Record<string, TraceSpan[]>) }),
-  "emma:context-experiment": (payload) => ({ k: "evt", ...(payload as { threadId: string; prunedResults: number; reinjected: boolean; savedTokens: number; addedTokens: number; checkpoint?: string }), t: "context-experiment" }),
-  "emma:context-breakdown": (payload) => ({ k: "evt", ...(payload as { threadId: string; systemPromptBytes: number; systemToolsBytes: number; mcpToolsBytes: number; skillsBytes: number; memoryBytes: number }), t: "context-breakdown" }),
+  "shinbo:changed": () => ({ k: "evt", t: "invalidate", what: "snapshot" }),
+  "shinbo:artifacts-changed": () => ({ k: "evt", t: "invalidate", what: "artifacts" }),
+  "shinbo:plans-changed": () => ({ k: "evt", t: "invalidate", what: "plans" }),
+  "shinbo:task-lists-changed": () => ({ k: "evt", t: "invalidate", what: "taskLists" }),
+  "shinbo:notes-changed": () => ({ k: "evt", t: "invalidate", what: "notes" }),
+  "shinbo:components-changed": () => ({ k: "evt", t: "invalidate", what: "components" }),
+  "shinbo:tools-changed": () => ({ k: "evt", t: "invalidate", what: "tools" }),
+  "shinbo:cli-runs": () => ({ k: "evt", t: "invalidate", what: "cliRuns" }),
+  "shinbo:background": () => ({ k: "evt", t: "invalidate", what: "background" }),
+  "shinbo:scheduled-jobs": () => ({ k: "evt", t: "invalidate", what: "scheduledJobs" }),
+  "shinbo:delta": (payload) => ({ k: "evt", ...(payload as { threadId: string; delta: string; thinking?: boolean }), t: "delta" }),
+  "shinbo:step": (payload) => ({ k: "evt", t: "step", step: phoneStep(payload as RemoteStep) }),
+  "shinbo:agents": (payload) => ({ k: "evt", t: "agents", agents: payload as LiveAgent[] }),
+  "shinbo:spans": (payload) => ({ k: "evt", t: "spans", spans: phoneSpans(payload as Record<string, TraceSpan[]>) }),
+  "shinbo:context-experiment": (payload) => ({ k: "evt", ...(payload as { threadId: string; prunedResults: number; reinjected: boolean; savedTokens: number; addedTokens: number; checkpoint?: string }), t: "context-experiment" }),
+  "shinbo:context-breakdown": (payload) => ({ k: "evt", ...(payload as { threadId: string; systemPromptBytes: number; systemToolsBytes: number; mcpToolsBytes: number; skillsBytes: number; memoryBytes: number }), t: "context-breakdown" }),
 };
 
 function broadcast(channel: string, payload?: unknown) {
   if (bridge?.sending() && Object.hasOwn(BRIDGE_EVENTS, channel)) bridge.event(BRIDGE_EVENTS[channel](payload));
+  if (channel === "shinbo:spans") {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+    return;
+  }
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) window.webContents.send(channel, payload);
   }
@@ -1320,7 +1343,7 @@ const CHANGED_COALESCE_MS = 150;
 const READ_ONLY_METHODS = new Set(["snapshot", "threadSummaries", "thread", "listOpenRouterModels"]);
 
 const SCHEDULED_JOB_WRITES = new Set(["saveScheduledJob", "deleteScheduledJob", "runScheduledJob", "setScheduledJobEnabled"]);
-const scheduledJobsChanged = () => broadcast("emma:scheduled-jobs");
+const scheduledJobsChanged = () => broadcast("shinbo:scheduled-jobs");
 let changedAt = 0;
 let changedQueued: ReturnType<typeof setTimeout> | undefined;
 
@@ -1328,14 +1351,14 @@ function changed() {
   const since = Date.now() - changedAt;
   if (since >= CHANGED_COALESCE_MS) {
     changedAt = Date.now();
-    broadcast("emma:changed");
+    broadcast("shinbo:changed");
     return;
   }
   if (changedQueued) return;
   changedQueued = setTimeout(() => {
     changedQueued = undefined;
     changedAt = Date.now();
-    broadcast("emma:changed");
+    broadcast("shinbo:changed");
   }, CHANGED_COALESCE_MS - since);
   changedQueued.unref();
 }
@@ -1370,7 +1393,7 @@ function connectVault(vault: VaultChoice) {
     const root = realpathSync(vault.root);
     vaultFolderId = folders!.add(root).find((grant) => samePath(grant.path, root))?.id;
   } catch (error) {
-    console.error("Emma: could not connect the vault folder", error);
+    console.error("Shinbo: could not connect the vault folder", error);
   }
 }
 
@@ -1381,11 +1404,11 @@ function visibleFolders() {
 const obsidianVaults = (): VaultChoice[] =>
   detectObsidianVaults().map((found) => ({ root: found.path, folder: DEFAULT_VAULT_FOLDER, kind: "obsidian", name: found.name }));
 
-const notesChanged = () => broadcast("emma:notes-changed");
+const notesChanged = () => broadcast("shinbo:notes-changed");
 
-function notesOrNone(vault: VaultChoice | null): KeptNote[] {
+async function notesOrNone(vault: VaultChoice | null): Promise<KeptNote[]> {
   try {
-    return vault ? listNotes(vault) : [];
+    return vault ? await listNotes(vault) : [];
   } catch {
     return [];
   }
@@ -1410,7 +1433,7 @@ async function clipForKeep(url: string | undefined, hideOverlay: boolean) {
 
 async function keep(request: KeepRequest, hideOverlay: boolean): Promise<KeptNote> {
   const vault = readVault(app.getPath("userData"));
-  if (!vault) throw new Error("Emma has nowhere to keep this yet. Choose an Obsidian vault or a folder on the Knowledge base page, then keep it again.");
+  if (!vault) throw new Error("Shinbo has nowhere to keep this yet. Choose an Obsidian vault or a folder on the Knowledge base page, then keep it again.");
   let filled = request;
   if (request.kind === "page" && !request.text) {
     const clip = await clipForKeep(request.sourceUrl, hideOverlay);
@@ -1430,7 +1453,7 @@ async function keep(request: KeepRequest, hideOverlay: boolean): Promise<KeptNot
 
 async function keepScreen(id: string): Promise<KeptNote> {
   const vault = readVault(app.getPath("userData"));
-  if (!vault) throw new Error("Emma has nowhere to keep this yet. Choose an Obsidian vault or a folder on the Knowledge base page, then keep it again.");
+  if (!vault) throw new Error("Shinbo has nowhere to keep this yet. Choose an Obsidian vault or a folder on the Knowledge base page, then keep it again.");
   const shot = annotationAttachment.claim(id);
   let kept = false;
   try {
@@ -1467,10 +1490,12 @@ async function keepTool(args: Extract<ToolArgs, { name: "keep" }>): Promise<stri
 
 async function tagKeptNote(note: KeptNote, body: string) {
   try {
+    const original = readFileSync(note.path, "utf8");
     const tagged = await tagNote(note, body, tagger);
-    if (tagged) applyNoteTags(note.path, tagged.title, tagged.tags);
-    else console.warn(`The tagger returned no title or tags for ${note.relative}, so it keeps the title it was saved under.`);
-    fireEvent("note-kept", { title: tagged?.title ?? note.title, tags: (tagged?.tags ?? note.tags).join(", ") });
+    const applied = readFileSync(note.path, "utf8") === original ? tagged : null;
+    if (applied) applyNoteTags(note.path, applied.title, applied.tags);
+    else if (!tagged) console.warn(`The tagger returned no title or tags for ${note.relative}, so it keeps the title it was saved under.`);
+    fireEvent("note-kept", { title: applied?.title ?? note.title, tags: (applied?.tags ?? note.tags).join(", ") });
   } catch (error) {
     console.error(`Could not tag ${note.relative}:`, error);
   } finally {
@@ -1478,18 +1503,16 @@ async function tagKeptNote(note: KeptNote, body: string) {
   }
 }
 
-function held(attachment: Attachment): Attachment & { thumbnail?: string } {
+async function held(attachment: Attachment): Promise<Attachment & { thumbnail?: string }> {
   if (!isImageAttachment(attachment.name)) return attachment;
-  const frame = nativeImage.createFromPath(attachment.path);
+  const frame = await attachmentImage(attachment.path, { height: 112 });
   return frame.isEmpty() ? attachment : { ...attachment, thumbnail: frame.resize({ height: 112 }).toDataURL() };
 }
 
 const PREVIEW_IMAGE_WIDTH = 1600;
 
-function previewImage(file: string): string | null {
-  const frame = nativeImage.createFromPath(file);
-  if (frame.isEmpty()) return null;
-  return (frame.getSize().width > PREVIEW_IMAGE_WIDTH ? frame.resize({ width: PREVIEW_IMAGE_WIDTH }) : frame).toDataURL();
+async function previewImage(file: string): Promise<string | null> {
+  return attachmentPreview(file, PREVIEW_IMAGE_WIDTH);
 }
 
 function grantedImage(threadId: string, named: string | undefined, given: string): string {
@@ -1497,9 +1520,9 @@ function grantedImage(threadId: string, named: string | undefined, given: string
   return folders!.fileWithin(grantFor(threadId, named), given);
 }
 
-function folderImage(threadId: string, named: string | undefined, relative: string): string {
-  const frame = nativeImage.createFromPath(grantedImage(threadId, named, relative));
-  if (frame.isEmpty()) throw new Error(`Emma could not read ${relative} as an image. PNG, JPEG, GIF and BMP work; a PDF, an SVG or a missing file does not.`);
+async function folderImage(threadId: string, named: string | undefined, relative: string): Promise<string> {
+  const frame = await attachmentImage(grantedImage(threadId, named, relative), { maxWidth: 1440 });
+  if (frame.isEmpty()) throw new Error(`Shinbo could not read ${relative} as an image. PNG, JPEG, GIF and BMP work; a PDF, an SVG or a missing file does not.`);
   try {
     return compressScreenFrame(frame).image;
   } catch {
@@ -1507,10 +1530,10 @@ function folderImage(threadId: string, named: string | undefined, relative: stri
   }
 }
 
-const shotFile = (extension: string) => path.join(app.getPath("temp"), `emma-shot-${randomUUID()}.${extension}`);
+const shotFile = (extension: string) => path.join(app.getPath("temp"), `shinbo-shot-${randomUUID()}.${extension}`);
 
 function shownToUser(file: string, said: string): string {
-  if (!existsSync(file)) throw new Error("Emma could not save that screenshot.");
+  if (!existsSync(file)) throw new Error("Shinbo could not save that screenshot.");
   const held = attachments!.hold(file);
   return `${said} It is saved at ${held.path}. Show it to the user by writing ![a short description](${held.path}) on its own line in your answer — that draws the picture in the conversation. You cannot see it yourself; look_at_image reads it if you need to know what is in it.`;
 }
@@ -1581,7 +1604,7 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
         const installed = await clis.installed();
         const available = installed.length
           ? installed.map((item) => `${item.id} — ${item.label} at ${item.path}`).join("\n")
-          : "None of the CLIs Emma knows are installed on this computer.";
+          : "None of the CLIs Shinbo knows are installed on this computer.";
         return `Installed CLIs:\n${available}\n\nRuns:\n${describeRuns(clis.list())}`;
       }
       if (args.stop) {
@@ -1601,10 +1624,10 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
         const answer = await agents!.approval({
           threadId: turn.threadId,
           tool: "computer",
-          summary: starting ? `Allow Emma to open ${target.name}?` : `Allow Emma to use ${target.name}?`,
+          summary: starting ? `Allow Shinbo to open ${target.name}?` : `Allow Shinbo to use ${target.name}?`,
           detail: starting
-            ? `${target.target}\n\nAllow Emma to start this installed app and then read and control it in the background for this turn. Delegated agents cannot use this grant. Other apps require their own approval. Access ends when this turn ends or you press Stop. Application text is sent to this turn's model; screenshots and the clipboard are not used.`
-            : `${target.id}\n${target.path}\nProcess ${target.pid}\n\nAllow Emma to read and control this app in the background for this turn. Delegated agents cannot use this grant. Other apps require their own approval. Access ends when this turn ends or you press Stop. Application text is sent to this turn's model; screenshots and the clipboard are not used.`,
+            ? `${target.target}\n\nAllow Shinbo to start this installed app and then read and control it in the background for this turn. Delegated agents cannot use this grant. Other apps require their own approval. Access ends when this turn ends or you press Stop. Application text is sent to this turn's model; screenshots and the clipboard are not used.`
+            : `${target.id}\n${target.path}\nProcess ${target.pid}\n\nAllow Shinbo to read and control this app in the background for this turn. Delegated agents cannot use this grant. Other apps require their own approval. Access ends when this turn ends or you press Stop. Application text is sent to this turn's model; screenshots and the clipboard are not used.`,
         }, { humanOnly: true, signal });
         if (answer === "allowed" && !signal.aborted) openRunBanner(turn.threadId, `${target.name} · background app control`);
         return answer;
@@ -1615,7 +1638,7 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
       return await saveShortcutFromTool(args);
     case "browser": {
       if (args.action !== "close") {
-        broadcast("emma:browser-show", { threadId: turn.threadId });
+        broadcast("shinbo:browser-show", { threadId: turn.threadId });
         openComputerCursor();
       }
       if (args.action === "open") return `Opened ${browserPage(await browsers.open(turn.threadId, args.url!))}. Snapshot it to see what is on it.`;
@@ -1636,7 +1659,7 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
       return `Saved the skill "${skill.name}". Future runs can find it by name.`;
     }
     case "write_tool": {
-      const tool = await writeEmmaTool(app.getPath("userData"), args.tool, args.description, args.code);
+      const tool = await writeShinboTool(app.getPath("userData"), args.tool, args.description, args.code);
       await toolsChanged();
       return `Saved the tool "${tool.name}". Run it with run_tool {"name":"${tool.name}","input":"…"}, in this thread or any later one.`;
     }
@@ -1644,11 +1667,12 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
       const { plugin } = await writePlugin(app.getPath("userData"), args.plugin);
       await toolsChanged();
       const names = plugin.skills.map((skill) => skill.name).join(", ");
-      return `Packaged and installed the plugin "${plugin.name}" at ${plugin.root}. It carries ${plugin.skills.length} ${plugin.skills.length === 1 ? "skill" : "skills"} (${names}), usable by name from the next turn. It is listed on the Plugins page under "Written by Emma".`;
+      return `Packaged and installed the plugin "${plugin.name}" at ${plugin.root}. It carries ${plugin.skills.length} ${plugin.skills.length === 1 ? "skill" : "skills"} (${names}), usable by name from the next turn. It is listed on the Plugins page under "Written by Shinbo".`;
     }
     case "run_tool": {
+      const signal = agents!.signalFor(turn.threadId);
       const disabled = toolSettings.disabledTools;
-      const tools = (await listEmmaTools(app.getPath("userData"))).filter((tool) => !disabled.includes(`run_tool:${tool.name}`));
+      const tools = (await listShinboTools(app.getPath("userData"))).filter((tool) => !disabled.includes(`run_tool:${tool.name}`));
       const listing = tools.length
         ? `Your tools:\n${tools.map((tool) => `${tool.name} — ${tool.description}`).join("\n")}`
         : "You have not written any tools yet. write_tool makes one.";
@@ -1657,19 +1681,20 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
       if (!match) throw new Error(`There is no tool called "${args.tool}". ${listing}`);
       const attached = threadFolder(turn.threadId);
       const cwd = attached ? folders!.directory(attached) : path.dirname(match.run);
-      return await runWrittenTool(cwd, match.run, args.input ?? "");
+      return await runWrittenTool(cwd, match.run, args.input ?? "", signal);
     }
     case "memory":
       return await runMemoryCommand(memoryRoot(), args.command);
     case "vision": {
-      const image = args.url ? publicUrl(args.url)?.href : folderImage(turn.threadId, args.folder, args.path!);
+      const image = args.url ? publicUrl(args.url)?.href : await folderImage(turn.threadId, args.folder, args.path!);
       if (!image) throw new Error("That is not a public image URL. Use a path in a connected folder for a file on this computer.");
-      return await look(toolSettings.vision, image, args.question);
+      return await look(toolSettings.vision, image, args.question, undefined, agents!.signalFor(turn.threadId));
     }
     case "secret": {
+      const signal = agents!.signalFor(turn.threadId);
       const attached = threadFolder(turn.threadId);
-      const output = await runCommand(attached ? folders!.directory(attached) : homedir(), args.command);
-      return await readSecret(toolSettings.secret, args.command, output, args.question);
+      const output = await runCommand(attached ? folders!.directory(attached) : homedir(), args.command, undefined, signal);
+      return await readSecret(toolSettings.secret, args.command, output, args.question, undefined, signal);
     }
     case "task_list":
       return await taskListTool(args, turn);
@@ -1682,13 +1707,13 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
     case "keep":
       return await keepTool(args);
     case "web_search": {
-      const response = await webSearch(toolSettings.webSearch, args.query, args.limit, (credentialEnv) => process.env[credentialEnv] || "");
+      const response = await webSearch(toolSettings.webSearch, args.query, args.limit, (credentialEnv) => process.env[credentialEnv] || "", undefined, agents!.signalFor(turn.threadId));
       return renderResults(args.query, response);
     }
     case "install_mcp": {
       const { id } = await capabilities!.installMcpServer({ name: args.server, command: args.command, args: args.argv, env: args.env });
       await toolsChanged();
-      return `Installed "${args.server}" (${id}) into Emma's configuration — the harness connects it when the next turn starts, and its tools are found from then on with mcp_search_tools.`;
+      return `Installed "${args.server}" (${id}) into Shinbo's configuration — the harness connects it when the next turn starts, and its tools are found from then on with mcp_search_tools.`;
     }
     case "workflow":
       return await workflowTool(args);
@@ -1704,6 +1729,9 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
 function goalRequest(method: string, params: Record<string, string>): Promise<ThreadRecord | undefined> {
   return host!.request({ method, params }).then((thread) => {
     const noted = noteThread(thread);
+    if (noted && goalPursuing(noted.goal) && harnessTurns.has(noted.id) && !turnSpend.has(noted.id)) {
+      turnSpend.set(noted.id, { output: 0, total: 0 });
+    }
     changed();
     return noted;
   });
@@ -1733,19 +1761,20 @@ async function updateGoal(request: Record<string, unknown> & { threadId: string 
   });
   goalStopped.delete(request.threadId);
   agents?.forget(request.threadId);
-  if (goalPursuing(goals.get(request.threadId)) && !goalHalted(request.threadId)) {
+  if (goalDrivesAgain({ goal: goals.get(request.threadId), halted: goalHalted(request.threadId) })) {
     void driveTurn({
       threadId: request.threadId,
       content: GOAL_CONTINUATION,
       mode: threadMode(request.threadId),
       title: updated?.title || "This thread",
       model: threadModel(request.threadId),
-    }).catch((error: unknown) => console.error("Emma: a resumed goal could not start", error));
+    }).catch((error: unknown) => console.error("Shinbo: a resumed goal could not start", error));
   }
   return updated;
 }
 
 async function goalTool(args: Extract<ToolArgs, { name: "goal" }>, turn: TurnRequest): Promise<string> {
+  if (turn.parentThreadId && args.action !== "get") throw new Error("A subagent cannot change its parent's goal. Report progress to the parent instead.");
   const threadId = turn.parentThreadId ?? turn.threadId;
   switch (args.action) {
     case "get":
@@ -1973,7 +2002,7 @@ function variableNote(variables: string[] | undefined): string {
   if (!variables?.length) return "";
   const missing = variables.filter((name) => !process.env[name]);
   if (!missing.length) return ` It reads ${variables.join(", ")}, and every one of them is set.`;
-  return ` It needs ${missing.join(", ")}: tell the user to open Settings \u2192 Built by Emma and fill ${missing.length > 1 ? "them" : "it"} in, or the component has nothing to fetch with.`;
+  return ` It needs ${missing.join(", ")}: tell the user to open Settings \u2192 Built by Shinbo and fill ${missing.length > 1 ? "them" : "it"} in, or the component has nothing to fetch with.`;
 }
 
 async function componentTool(args: Extract<ToolArgs, { name: "component" }>, threadId: string): Promise<string> {
@@ -1981,7 +2010,7 @@ async function componentTool(args: Extract<ToolArgs, { name: "component" }>, thr
   switch (args.action) {
     case "list": {
       const built = await listComponents(userData);
-      if (!built.length) return 'Emma has built nothing into her interface yet. Build one with component {"action":"create","title":"\u2026","code":"\u2026"} and it appears in the context bar.';
+      if (!built.length) return 'Shinbo has built nothing into her interface yet. Build one with component {"action":"create","title":"\u2026","code":"\u2026"} and it appears in the context bar.';
       return `Components:\n${built.map((one) => `${one.id} \u2014 ${one.title} \u2014 v${one.version}${one.expands ? " \u2014 opens full screen" : ""}${one.variables?.length ? ` \u2014 needs ${one.variables.join(", ")}` : ""}${one.disabled ? " \u2014 switched off by the user" : ""}`).join("\n")}`;
     }
     case "get": {
@@ -2002,26 +2031,38 @@ async function componentTool(args: Extract<ToolArgs, { name: "component" }>, thr
   }
 }
 
-function runCommand(cwd: string, command: string, timeoutMs = MAX_COMMAND_MS): Promise<string> {
-  return new Promise((resolve) => {
+function runCommand(cwd: string, command: string, timeoutMs = MAX_COMMAND_MS, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
     const child = spawn(shellBinary(), shellArguments(command, false), { cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"], detached: !isWindows, windowsHide: true });
     let output = "";
     const collect = (data: Buffer) => { if (output.length < MAX_COMMAND_OUTPUT) output += String(data); };
     child.stdout.on("data", collect);
     child.stderr.on("data", collect);
-    const timer = setTimeout(() => { if (child.pid !== undefined) terminateProcessTree(child.pid, "SIGKILL"); }, timeoutMs);
-    child.once("error", (error) => { clearTimeout(timer); resolve(`That command could not start: ${error.message}`); });
-    child.once("close", (code, signal) => {
+    const abort = () => {
+      if (child.pid === undefined || (isWindows && (child.exitCode !== null || child.signalCode !== null))) return;
+      void terminateProcessTree(child.pid, "SIGKILL");
+    };
+    const timer = setTimeout(abort, timeoutMs);
+    const cleanup = () => {
       clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    child.once("error", (error) => { cleanup(); resolve(`That command could not start: ${error.message}`); });
+    child.once("close", (code, killedBy) => {
+      cleanup();
+      if (signal?.aborted) return reject(signal.reason);
       const body = output.slice(0, MAX_COMMAND_OUTPUT).trim() || "(no output)";
-      if (signal) return resolve(`${body}\n[killed after ${timeoutMs / 1000}s]`);
+      if (killedBy) return resolve(`${body}\n[killed after ${timeoutMs / 1000}s]`);
       resolve(code === 0 ? body : `${body}\n[exit ${code}]`);
     });
   });
 }
 
-async function runWrittenTool(cwd: string, file: string, input: string): Promise<string> {
-  if (!isWindows) return runCommand(cwd, `${shellQuoted(file)} ${shellQuoted(input)}`);
+async function runWrittenTool(cwd: string, file: string, input: string, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
+  if (!isWindows) return runCommand(cwd, `${shellQuoted(file)} ${shellQuoted(input)}`, MAX_COMMAND_MS, signal);
   const first = readFileSync(file, "utf8").split(/\r?\n/, 1)[0] ?? "";
   const interpreter = /^#!\s*(?:\/usr\/bin\/env\s+)?([^\s]+)/.exec(first)?.[1]?.toLowerCase().replace(/\.exe$/, "");
   if (!interpreter) throw new Error("That tool has no supported interpreter.");
@@ -2042,25 +2083,34 @@ async function runWrittenTool(cwd: string, file: string, input: string): Promise
     : interpreter === "powershell" || interpreter === "pwsh"
       ? ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", file, input]
       : [file, input];
-  return runDirectCommand(cwd, binary, args);
+  return runDirectCommand(cwd, binary, args, MAX_COMMAND_MS, false, process.env, signal);
 }
 
-function runDirectCommand(cwd: string, binary: string, args: string[], timeoutMs = MAX_COMMAND_MS, raw = false, commandEnv: NodeJS.ProcessEnv = process.env): Promise<string> {
-  return new Promise((resolve) => {
+function runDirectCommand(cwd: string, binary: string, args: string[], timeoutMs = MAX_COMMAND_MS, raw = false, commandEnv: NodeJS.ProcessEnv = process.env, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
     const child = spawnCommand(binary, args, { cwd, env: commandEnv, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     let output = "";
     let stopped = false;
     const collect = (data: Buffer) => { if (output.length < MAX_COMMAND_OUTPUT) output += String(data); };
     child.stdout?.on("data", collect);
     child.stderr?.on("data", collect);
-    const timer = setTimeout(() => {
+    const abort = () => {
+      if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
       stopped = true;
-      if (child.pid !== undefined) terminateProcessTree(child.pid, "SIGKILL", false);
-    }, timeoutMs);
+      void terminateProcessTree(child.pid, "SIGKILL", false);
+    };
+    const timer = setTimeout(abort, timeoutMs);
     timer.unref();
-    child.once("error", (error) => { clearTimeout(timer); resolve(`That tool could not start: ${error.message}`); });
-    child.once("close", (code) => {
+    const cleanup = () => {
       clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    child.once("error", (error) => { cleanup(); resolve(`That tool could not start: ${error.message}`); });
+    child.once("close", (code) => {
+      cleanup();
+      if (signal?.aborted) return reject(signal.reason);
       const body = output.slice(0, MAX_COMMAND_OUTPUT).trim() || "(no output)";
       resolve(raw ? output.slice(0, MAX_COMMAND_OUTPUT).trim() : stopped ? `${body}\n[killed after ${timeoutMs / 1000}s]` : code === 0 ? body : `${body}\n[exit ${code}]`);
     });
@@ -2080,14 +2130,19 @@ function visionRoute() {
 
 function harnessClient(cwd: string, key = cwd, route?: ProviderRoute): Harness {
   const running = harnesses.get(key);
-  if (running?.running) {
+  if (running && staleHarnesses.has(running)) {
+    if (running.busy) throw new Error("This agent is still finishing work. Wait for it to finish so the next turn can use your updated settings.");
+    void running.close();
+    harnesses.delete(key);
+  }
+  if (running?.running && !staleHarnesses.has(running)) {
     harnesses.delete(key);
     harnesses.set(key, running);
     return running;
   }
   if (running) harnesses.delete(key);
-  const binaryPath = binary("emma-cli");
-  if (!existsSync(binaryPath)) throw new Error(`Emma could not find its agent at ${binaryPath}. The install is incomplete — reinstall Emma, or run npm run build:harness from the repo.`);
+  const binaryPath = binary("shinbo-cli");
+  if (!existsSync(binaryPath)) throw new Error(`Shinbo could not find its agent at ${binaryPath}. The install is incomplete — reinstall Shinbo, or run npm run build:harness from the repo.`);
   const home = path.join(app.getPath("userData"), "harness");
   const client = new Harness({
     binaryPath,
@@ -2099,80 +2154,91 @@ function harnessClient(cwd: string, key = cwd, route?: ProviderRoute): Harness {
     promptFile: harnessPromptFile(home, key),
     onActivity: (threadId) => {
       if (agents && !agents.acceptsActivity(threadId)) return;
-      broadcast("emma:activity", { threadId });
+      broadcast("shinbo:activity", { threadId });
     },
     onDelta: (threadId, delta) => {
       if (agents && !agents.noteDelta(threadId, delta)) return;
       harnessText.set(threadId, (harnessText.get(threadId) ?? "") + delta);
-      broadcast("emma:delta", { threadId, delta });
+      broadcast("shinbo:delta", { threadId, delta });
     },
     onThought: (threadId, delta, recovery) => {
       if (agents && !agents.noteDelta(threadId, delta, true)) return;
       harnessThought.set(threadId, (harnessThought.get(threadId) ?? "") + delta);
-      broadcast("emma:delta", { threadId, delta, thinking: true, recovery: recovery === true });
+      broadcast("shinbo:delta", { threadId, delta, thinking: true, recovery: recovery === true });
     },
     onToolCall: (call) => {
       agents?.noteTool(call.threadId, call.toolCallId, call.title || call.kind, call);
       if (REVIEWABLE_KINDS.has(call.kind) && call.status === "completed") turnTouched.add(call.threadId);
       void recordUse(app.getPath("userData"), mcpToolKey(call.toolName ?? call.title), `${call.threadId}:${call.toolCallId}`);
       const wrote = noteHarnessChange(cwd, call);
-      broadcast("emma:step", wrote ? { ...call, edit: editStat(wrote) } : call);
+      broadcast("shinbo:step", wrote ? { ...call, edit: editStat(wrote) } : call);
     },
     onCompacted: (threadId, compacted) => {
       checkpointNoted.delete(threadId);
       agents?.noteNotice(threadId, "compact", compactionNotice(compacted.removedTurns, compacted.modelWritten, compacted.fresh), compacted.handoff);
-      broadcast("emma:compacted", { threadId, ...compacted });
+      broadcast("shinbo:compacted", { threadId, ...compacted });
     },
     onContextExperiment: (threadId, fired) => {
       const { checkpoint, ...rest } = fired;
       if (!checkpoint || checkpointNoted.has(threadId)) {
-        if (rest.prunedResults || rest.reinjected) broadcast("emma:context-experiment", { threadId, ...rest });
+        if (rest.prunedResults || rest.reinjected) broadcast("shinbo:context-experiment", { threadId, ...rest });
         return;
       }
       checkpointNoted.add(threadId);
       agents?.noteNotice(threadId, "steer", checkpoint);
-      broadcast("emma:context-experiment", { threadId, ...fired });
+      broadcast("shinbo:context-experiment", { threadId, ...fired });
     },
-    onContextBreakdown: (threadId, parts) => broadcast("emma:context-breakdown", { threadId, ...parts }),
+    onContextBreakdown: (threadId, parts) => broadcast("shinbo:context-breakdown", { threadId, ...parts }),
     onRoutedModel: (threadId, routed) => {
       harnessRouted.set(threadId, routed.model);
       agents?.noteModel(threadId, routed.model);
-      broadcast("emma:routed-model", { threadId, ...routed });
+      broadcast("shinbo:routed-model", { threadId, ...routed, skipped: skippedLinks(harnessModel(threadModel(threadId)) ?? "", routed.model) });
     },
     onUsage: (threadId, usage) => {
       harnessUsage.set(threadId, usage);
       agents?.noteUsage(threadId, usage);
       const goal = goals.get(threadId);
-      if (goalPursuing(goal) && noteTurnSpend(threadId, usage) >= goalTokensLeft(goal)) noteGoalOverspent(threadId);
+      if (goalPursuing(goal) || turnSpend.has(threadId)) {
+        const spent = noteTurnSpend(threadId, usage);
+        if (goalPursuing(goal) && spent >= goalTokensLeft(goal)) noteGoalOverspent(threadId);
+      }
     },
     onChildStart: async ({ parentThreadId, childId, title }) => {
+      const parent = harnessTurns.get(parentThreadId);
+      const context = threadContext(parentThreadId);
       const name = agentName(childId, new Set(agents!.list().map((agent) => agent.title)));
       const created = await host!.request({ method: "createThread", params: { parentThreadId, title: name, kind: "subagent" } });
       const threadId = (created as { id?: unknown }).id;
-      if (typeof threadId !== "string") throw new Error("Emma host returned an invalid thread");
+      if (typeof threadId !== "string") throw new Error("Shinbo host returned an invalid thread");
       if (reviewThreads.has(parentThreadId)) reviewThreads.add(threadId);
       harnessText.set(threadId, "");
       harnessThought.set(threadId, "");
       harnessUsage.delete(threadId);
       harnessChildren.set(threadId, { childId, title, startedAt: Date.now(), client });
-      const parent = harnessTurns.get(parentThreadId);
-      agents!.adopt({
+      rememberThreadContext(threadId, { ...context });
+      const turn: TurnRequest = {
         threadId,
         content: title,
         title: name,
         parentThreadId,
         depth: (parent?.depth ?? 0) + 1,
         mode: agents!.mode(parentThreadId),
-        model: modelName(parent?.model),
+        model: parent?.model,
         traceContext: parent?.traceContext,
         effort: parent?.effort ?? "",
         parentSpanId: agents!.spanFor(parentThreadId),
-      });
+        bench: parent?.bench,
+        objective: parent?.objective,
+      };
+      harnessTurns.set(threadId, turn);
+      agents!.adopt({ ...turn, model: modelName(turn.model) });
       return threadId;
     },
     onModelContext: (parentThreadId, threadId, model, skills) => {
       const parent = harnessTurns.get(parentThreadId);
       const turn = withTrialArm({ threadId, parentThreadId, title: "Subagent", content: "", mode: parent?.mode ?? agents!.mode(parentThreadId), model }, model);
+      const childTurn = harnessTurns.get(threadId);
+      if (childTurn) harnessTurns.set(threadId, { ...childTurn, model: parent?.model?.startsWith("provider:") || codexSlug(parent?.model) ? parent?.model : `openrouter:${model}` });
       const systemPrompt = resolveHarnessPrompt({ model, addition: turn.promptAddition, workspace: cwd, mode: turn.mode, disabledTools: toolSettings.disabledTools });
       const experiments = { ...harnessExperiments, ...turn.knobs };
       agents!.noteModel(threadId, model);
@@ -2200,6 +2266,7 @@ function harnessClient(cwd: string, key = cwd, route?: ProviderRoute): Harness {
       const child = harnessChildren.get(threadId);
       if (!child) return;
       harnessChildren.delete(threadId);
+      harnessTurns.delete(threadId);
       const spoken = (harnessText.get(threadId) ?? "").trim();
       const thinking = harnessThought.get(threadId);
       const usage = harnessUsage.get(threadId);
@@ -2219,7 +2286,7 @@ function harnessClient(cwd: string, key = cwd, route?: ProviderRoute): Harness {
         inputTokens: String(spent?.inputTokens ?? 0),
         ...recordedCacheUsage(usage),
         model: harnessRouted.get(threadId) ?? modelName(threadModel(threadId)),
-      }).catch((error: unknown) => console.error("Emma: a subagent's transcript could not be recorded", error));
+      }).catch((error: unknown) => console.error("Shinbo: a subagent's transcript could not be recorded", error));
     },
     onPlan: () => {},
     onPhase: (threadId, phase) => agents?.noteActivity(threadId, phase),
@@ -2227,7 +2294,7 @@ function harnessClient(cwd: string, key = cwd, route?: ProviderRoute): Harness {
       if (event === "Stop") input.last_assistant_message = harnessText.get(threadId)?.trim() || null;
       const failures = await runPluginHooks(app.getPath("userData"), event, input);
       for (const failure of failures) {
-        broadcast("emma:step", { threadId, toolCallId: `hook:${event}:${failure.slice(0, 40)}`, title: failure, kind: "other", status: "failed", at: Date.now() });
+        broadcast("shinbo:step", { threadId, toolCallId: `hook:${event}:${failure.slice(0, 40)}`, title: failure, kind: "other", status: "failed", at: Date.now() });
       }
     },
     onPermission: async (ask, options, context) => {
@@ -2242,11 +2309,11 @@ function harnessClient(cwd: string, key = cwd, route?: ProviderRoute): Harness {
       };
       const deny = () => pick("reject_once", "reject_always") ?? null;
       if (context.outsideWorkspace) {
-        broadcast("emma:step", { threadId: ask.threadId, toolCallId: ask.id, title: `blocked: ${ask.tool} is outside the connected folder`, kind: "other", status: "failed", at: Date.now() });
+        broadcast("shinbo:step", { threadId: ask.threadId, toolCallId: ask.id, title: `blocked: ${ask.tool} is outside the connected folder`, kind: "other", status: "failed", at: Date.now() });
         return deny();
       }
       if (reviewThreads.has(ask.threadId) && context.kind === "edit") {
-        broadcast("emma:step", { threadId: ask.threadId, toolCallId: ask.id, title: `blocked: a review reads the work, it does not change it`, kind: "other", status: "failed", at: Date.now() });
+        broadcast("shinbo:step", { threadId: ask.threadId, toolCallId: ask.id, title: `blocked: a review reads the work, it does not change it`, kind: "other", status: "failed", at: Date.now() });
         return deny();
       }
       if (agents!.mode(ask.threadId) === "full") return pick("allow_once", "allow_always") ?? options[0]?.optionId ?? null;
@@ -2254,7 +2321,7 @@ function harnessClient(cwd: string, key = cwd, route?: ProviderRoute): Harness {
       const allowed = await agents!.question({ threadId: ask.threadId, tool: ask.tool, summary: ask.summary, detail: ask.detail });
       return allowed && authorized() ? pick("allow_once", "allow_always") ?? options[0]?.optionId ?? null : deny();
     },
-    onToolRequest: (threadId, name, args) => runEmmaTool(threadId, name, args),
+    onToolRequest: (threadId, name, args) => runShinboTool(threadId, name, args),
     mcpServers: (threadId) => harnessMcpServers(threadId),
     onLog: noteHarnessLog,
   });
@@ -2264,6 +2331,7 @@ function harnessClient(cwd: string, key = cwd, route?: ProviderRoute): Harness {
 }
 
 const MAX_HARNESSES = 8;
+const staleHarnesses = new WeakSet<Harness>();
 
 function reapHarnesses() {
   for (const [cwd, client] of [...harnesses]) {
@@ -2276,6 +2344,7 @@ function reapHarnesses() {
 
 function recycleHarnesses() {
   for (const [cwd, client] of [...harnesses]) {
+    staleHarnesses.add(client);
     if (client.busy) continue;
     client.close();
     harnesses.delete(cwd);
@@ -2317,18 +2386,18 @@ function noteHarnessChange(cwd: string, call: HarnessToolCall): FileChange | und
 
 async function syncHarnessSkills() {
   await mirrorSkillsToHarness(app.getPath("userData"), path.join(app.getPath("userData"), "harness"), toolSettings.disabledSkills)
-    .catch((error) => console.warn("Emma could not mirror skills to the harness:", error instanceof Error ? error.message : error));
+    .catch((error) => console.warn("Shinbo could not mirror skills to the harness:", error instanceof Error ? error.message : error));
 }
 
 const harnessTurns = new Map<string, TurnRequest>();
 
 const HARNESS_TOOL_NAMES: Record<string, string> = { look_at_image: "vision" };
 
-async function runEmmaTool(threadId: string, wireName: string, args: Record<string, unknown>): Promise<string> {
+async function runShinboTool(threadId: string, wireName: string, args: Record<string, unknown>): Promise<string> {
   const name = HARNESS_TOOL_NAMES[wireName] ?? wireName;
   const turn = harnessTurns.get(threadId);
   const authorized = agents!.authorization(threadId);
-  if (!turn || !authorized()) throw new Error("Emma's tools are only available while a turn is running.");
+  if (!turn || !authorized()) throw new Error("Shinbo's tools are only available while a turn is running.");
   const mode = agents!.mode(threadId);
   const gate = toolGate(mode, name, toolSettings.disabledTools);
   if (gate === "hidden") {
@@ -2357,7 +2426,7 @@ async function runEmmaTool(threadId: string, wireName: string, args: Record<stri
 function whyUnavailable(threadId: string, name: string, called = name): string | undefined {
   const needs = toolNeeds(name);
   if (needs === "folders" && threadFolderIds(threadId).length === 0) {
-    return `${called} needs a connected folder. Ask the user to connect one — the folder button in Emma's sidebar opens the picker.`;
+    return `${called} needs a connected folder. Ask the user to connect one — the folder button in Shinbo's sidebar opens the picker.`;
   }
   return undefined;
 }
@@ -2385,6 +2454,7 @@ async function turnRoute(key: string | undefined): Promise<ProviderRoute | undef
 
 function providerRoute(key: string | undefined): ProviderRoute | undefined {
   const profile = providerFor(key);
+  if (key?.startsWith("provider:") && !profile) throw new Error("That provider is not set up. Add it again in Settings → Models, then retry this task.");
   if (!profile) return undefined;
   const apiKey = (profile.credentialEnv ? process.env[profile.credentialEnv]?.trim() : "") ?? "";
   if (profile.credentialEnv && !apiKey) {
@@ -2502,6 +2572,11 @@ async function selectModel(method: string, params: Record<string, string>): Prom
     selectedEffort = thinkingLevel(params.effort);
     return { model: modelId };
   }
+  if (method === "selectRouterModel") {
+    selectedModel = routedModelKey(routerKey(params.routerId ?? ""));
+    selectedEffort = "";
+    return { model: selectedModel };
+  }
   if (method === "selectProviderModel") {
     const profile = providers.find((item) => item.id === params.providerId);
     if (!profile) throw new Error("That provider is not set up. Add it again in Settings → Models.");
@@ -2534,7 +2609,7 @@ function answerRequest(method: string, params: Record<string, string> = {}): Pro
   switch (method) {
     case "listOpenRouterModels":
       return listModelCatalog(!!params.force);
-    case "selectOpenRouterModel": case "selectProviderModel": case "selectCodexModel": case "selectFallbackModel": case "setThreadModel":
+    case "selectOpenRouterModel": case "selectProviderModel": case "selectCodexModel": case "selectFallbackModel": case "selectRouterModel": case "setThreadModel":
       return Promise.resolve().then(() => selectModel(method, params));
     case "createThread": {
       const context = params.parentThreadId ? threadContexts.get(params.parentThreadId) : undefined;
@@ -2599,7 +2674,14 @@ function turnNotice(stopReason: string, spoken: string): string {
 }
 
 function recordTurn(turn: RecordedTurn): Promise<unknown> {
-  return host!.request({ method: "recordTurn", params: recordedTurn(turn) });
+  const goalTurn = turn.goalTurn ?? String(goalPursuing(goals.get(turn.threadId)));
+  return host!.request({ method: "recordTurn", params: recordedTurn({ ...turn, goalTurn }) });
+}
+
+function recordHarnessTurn(turn: RecordedTurn): Promise<unknown> {
+  const goalTokens = Math.max(turnSpend.get(turn.threadId)?.total ?? 0, Number(turn.inputTokens) + Number(turn.outputTokens));
+  const goalTurn = turnSpend.has(turn.threadId) || goalPursuing(goals.get(turn.threadId));
+  return recordTurn({ ...turn, goalTokens: String(goalTokens), goalTurn: String(goalTurn) });
 }
 
 const recordedCacheUsage = (usage: TurnUsage | undefined) =>
@@ -2611,17 +2693,21 @@ const recordedCacheUsage = (usage: TurnUsage | undefined) =>
       ...(usage.costMicroUsd === undefined ? {} : { costMicroUsd: String(usage.costMicroUsd) }),
     };
 
-function attachedImagePaths(value: unknown): string[] {
+async function attachedImagePaths(value: unknown, signal: AbortSignal): Promise<string[]> {
   if (typeof value !== "string") return [];
   let ids: unknown;
   try { ids = JSON.parse(value); } catch { return []; }
   if (!Array.isArray(ids)) return [];
-  return ids.flatMap((id) => {
+  const images: string[] = [];
+  for (const id of ids) {
+    if (signal.aborted) break;
     try {
       const file = attachments!.read(id);
-      return file.text === undefined ? [attachments!.forModel(file)] : [];
-    } catch { return []; }
-  }).slice(0, MAX_TURN_IMAGES);
+      if (file.text === undefined) images.push(await attachments!.forModel(file));
+      if (images.length === MAX_TURN_IMAGES) break;
+    } catch { continue; }
+  }
+  return images;
 }
 
 function bridgeImages(value: unknown): string[] {
@@ -2636,15 +2722,16 @@ function bridgeImages(value: unknown): string[] {
 
 const WAKE_GRACE_MS = 45_000;
 const harnessRuns = new Map<string, Harness>();
+const pendingTurns = new Set<string>();
 const sleepWedged = new Set<string>();
 const SLEEP_CONTINUATION = "This computer went to sleep mid-turn and the connection to the model was lost. Carry on from the last step you finished.";
 const pausedRecovery = new Set<string>();
 const CRASH_CONTINUATION = "The harness process died mid-turn and has been restarted. Carry on from the last step you finished, and check what is already on disk before redoing any of it.";
-const RESTART_NOTICE = "Emma restarted the agent mid-turn and asked it to carry on";
+const RESTART_NOTICE = "Shinbo restarted the agent mid-turn and asked it to carry on";
 
 function noteRestart(threadId: string) {
   harnessThought.set(threadId, `${RESTART_NOTICE}\n`);
-  broadcast("emma:delta", { threadId, delta: RESTART_NOTICE, thinking: true, recovery: true });
+  broadcast("shinbo:delta", { threadId, delta: RESTART_NOTICE, thinking: true, recovery: true });
 }
 
 async function resumeAfterSleep() {
@@ -2660,6 +2747,9 @@ async function resumeAfterSleep() {
 }
 
 async function runOnHarness(client: Harness, cwd: string, turn: TurnRequest, key = cwd, resume = "") {
+  const spent = turnSpend.get(turn.threadId);
+  if (spent) turnSpend.set(turn.threadId, { ...spent, output: 0 });
+  else if (goalPursuing(goals.get(turn.threadId))) turnSpend.set(turn.threadId, { output: 0, total: 0 });
   const home = path.join(app.getPath("userData"), "harness");
   const systemPrompt = writeHarnessPrompt(home, { model: modelName(turn.model), addition: turn.promptAddition, workspace: cwd, mode: turn.mode, disabledTools: toolSettings.disabledTools }, harnessPromptFile(home, key));
   turn = { ...turn, traceContext: {
@@ -2679,13 +2769,16 @@ async function runOnHarness(client: Harness, cwd: string, turn: TurnRequest, key
   harnessRuns.set(turn.threadId, client);
   const startedAt = Date.now();
   agents!.adopt({ ...turn, model: modelName(turn.model) });
+  const signal = agents!.signalFor(turn.threadId)!;
   const route = harnessModel(turn.model);
   const handoff = compactNext.get(turn.threadId);
   compactNext.delete(turn.threadId);
   try {
+    const images = await attachedImagePaths(turn.params?.attachedImages, signal);
+    if (signal.aborted || goalStopped.has(turn.threadId)) throw new Error("This turn was stopped before it reached the model.");
     const { stopReason, usage } = await client.prompt(turn.threadId, cwd, resume || turn.content, turn.mode, route, {
       skillContext: typeof turn.params?.skillContext === "string" ? turn.params.skillContext : undefined,
-      images: attachedImagePaths(turn.params?.attachedImages),
+      images,
       contextWindow: contextWindowFor(turn.model, route),
       effort: thinkingRoute(turn.model, route, turn.effort),
       toolHints: turn.toolHints,
@@ -2706,7 +2799,7 @@ async function runOnHarness(client: Harness, cwd: string, turn: TurnRequest, key
       throw new Error(client.paused.get(turn.threadId)?.message || "The run was refused.");
     }
     agents!.finish(turn.threadId, undefined, stopReason);
-    return await recordTurn({
+    return await recordHarnessTurn({
       threadId: turn.threadId,
       prompt: turn.content,
       thinking: harnessThought.get(turn.threadId),
@@ -2748,7 +2841,7 @@ async function runOnHarness(client: Harness, cwd: string, turn: TurnRequest, key
     const stopped = agents!.list().find((agent) => agent.threadId === turn.threadId);
     const stoppedUsage = { inputTokens: stopped?.inputTokens ?? 0, outputTokens: stopped?.outputTokens ?? 0 };
     try {
-      return await recordTurn({
+      return await recordHarnessTurn({
         threadId: turn.threadId,
         prompt: turn.content,
         thinking: thought,
@@ -2782,24 +2875,28 @@ const activeGoal = (threadId: string) => {
 };
 
 async function runTurn(turn: TurnRequest) {
-  if (harnessRuns.has(turn.threadId)) throw new Error("This thread is still running or finishing its current turn. Wait for it to finish before starting another.");
-  agents!.forget(turn.threadId);
-  turn.subagent ??= threadSubagent(turn.threadId);
-  turn.model = (turn.model ?? threadModel(turn.threadId)) || "fallback";
-  const context = threadContext(turn.threadId);
-  turn.effort ??= context.model === turn.model ? context.effort ?? "" : turn.model === selectedModel ? selectedEffort : "";
-  rememberThreadContext(turn.threadId, { ...context, model: turn.model, effort: turn.effort });
-  turn.stepLimit ??= threadStepLimit(turn.threadId);
-  void recordUse(app.getPath("userData"), modelKey(modelName(turn.model) || "auto"));
-  turn.objective ??= activeGoal(turn.threadId)?.objective;
-  const cwd = harnessCwd(turn.threadId);
-  const nested = turn.nested ? turn.threadId : undefined;
-  const route = await turnRoute(turn.model);
-  const key = harnessKey(cwd, turn.threadId, route?.id);
+  if (pendingTurns.has(turn.threadId) || harnessRuns.has(turn.threadId) || agents!.isLive(turn.threadId)) throw new Error("This thread is still running or finishing its current turn. Wait for it to finish before starting another.");
+  pendingTurns.add(turn.threadId);
+  let key: string | undefined;
   try {
+    await host!.request({ method: "checkTurnCapacity", params: { threadId: turn.threadId } });
+    agents!.forget(turn.threadId);
+    turn.subagent ??= threadSubagent(turn.threadId);
+    turn.model = (turn.model ?? threadModel(turn.threadId)) || "fallback";
+    const context = threadContext(turn.threadId);
+    turn.effort ??= context.model === turn.model ? context.effort ?? "" : turn.model === selectedModel ? selectedEffort : "";
+    rememberThreadContext(turn.threadId, { ...context, model: turn.model, effort: turn.effort });
+    turn.stepLimit ??= threadStepLimit(turn.threadId);
+    void recordUse(app.getPath("userData"), modelKey(modelName(turn.model) || "auto"));
+    turn.objective ??= activeGoal(turn.threadId)?.objective;
+    const cwd = harnessCwd(turn.threadId);
+    const route = await turnRoute(turn.model);
+    if (goalStopped.has(turn.threadId)) throw new Error("This turn was stopped before it reached the model.");
+    key = harnessKey(cwd, turn.threadId, route?.id);
     return await runOnHarness(harnessClient(cwd, key, route), cwd, withGoal(withTrialArm(turn, modelName(turn.model)), activeGoal(turn.threadId)), key);
   } finally {
-    if (nested) {
+    pendingTurns.delete(turn.threadId);
+    if (turn.nested && key) {
       harnesses.get(key)?.close();
       harnesses.delete(key);
     }
@@ -2869,11 +2966,11 @@ async function autoNameThread(threadId: string, asked: string) {
     }
     const title = await nameThread(asked, freeRouter);
     if (!title || title === DEFAULT_THREAD_TITLE) return;
-    await host!.request({ method: "renameThread", params: { threadId, title } });
-    noteThreadName(threadId, title);
+    const renamed = await host!.request({ method: "renameThread", params: { threadId, title, expectedTitle: DEFAULT_THREAD_TITLE } }) as { title: string };
+    noteThreadName(threadId, renamed.title);
     changed();
   } catch (error) {
-    console.error("Emma: this thread could not be named", error);
+    console.error("Shinbo: this thread could not be named", error);
   } finally {
     namingThreads.delete(threadId);
   }
@@ -2945,7 +3042,7 @@ function mcpServerRequest(params: Record<string, unknown>): McpServerDefinition 
   const entries = Object.entries(env as Record<string, unknown>);
   if (entries.length > 32 || entries.some(([key, value]) => typeof value !== "string" || !isEnvName(key))) throw new Error("Server environment is invalid");
 
-  for (const [key] of entries) if (LOADER_ENV.test(key)) throw new Error("That environment variable controls how programs are loaded, so Emma will not pass it to a server.");
+  for (const [key] of entries) if (LOADER_ENV.test(key)) throw new Error("That environment variable controls how programs are loaded, so Shinbo will not pass it to a server.");
   return { name, command, args: args as string[], env: env as Record<string, string> };
 }
 
@@ -2955,7 +3052,7 @@ function bridgeVisual(id: unknown): Visual {
   return { title: visual.title, html: visual.html };
 }
 
-const bridgeReplies = new Map<string, Map<string, unknown>>();
+const bridgeReplies = new Map<string, Map<string, { value: Promise<unknown>; pending: boolean }>>();
 const MAX_REPLIES_PER_THREAD = 32;
 const MAX_REPLY_THREADS = 32;
 
@@ -2963,12 +3060,22 @@ async function onlyOnce(threadId: string, clientId: unknown, run: () => Promise<
   if (typeof clientId !== "string" || !clientId) return await run();
   let held = bridgeReplies.get(threadId);
   if (!held) bridgeReplies.set(threadId, (held = new Map()));
-  if (held.has(clientId)) return held.get(clientId);
-  const result = await run();
-  held.set(clientId, result);
-  for (const stale of [...held.keys()].slice(0, Math.max(0, held.size - MAX_REPLIES_PER_THREAD))) held.delete(stale);
-  for (const stale of [...bridgeReplies.keys()].slice(0, Math.max(0, bridgeReplies.size - MAX_REPLY_THREADS))) bridgeReplies.delete(stale);
-  return result;
+  const previous = held.get(clientId);
+  if (previous) return previous.value;
+  const entry = { value: Promise.resolve().then(run), pending: true };
+  held.set(clientId, entry);
+  try {
+    return await entry.value;
+  } catch (error) {
+    held.delete(clientId);
+    throw error;
+  } finally {
+    entry.pending = false;
+    for (const [id, reply] of held) if (held.size > MAX_REPLIES_PER_THREAD && !reply.pending) held.delete(id);
+    for (const [id, replies] of bridgeReplies) {
+      if (bridgeReplies.size > MAX_REPLY_THREADS && ![...replies.values()].some((reply) => reply.pending)) bridgeReplies.delete(id);
+    }
+  }
 }
 
 async function bridgeDispatch(method: BridgeMethod, params: Record<string, unknown>): Promise<unknown> {
@@ -3056,6 +3163,7 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
     case "clearThreadContext": {
 
       const threadId = boundedCapabilityId(params.threadId, "Clear context thread");
+      forgetHarnessSession(path.join(app.getPath("userData"), "harness"), threadId);
       compactNext.delete(threadId);
       for (const client of harnesses.values()) client.forgetSession(threadId);
       return { cleared: true };
@@ -3135,11 +3243,11 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
         ],
         at: [
           ...artifacts.map((artifact) => ({ id: `artifact:${artifact.id}`, name: pathName(artifact.title), kind: "artifact" as const, detail: `${ARTIFACT_LABELS[artifact.kind]} · artifact` })),
-          ...notesOrNone(vault).map((note) => ({ id: `note:${note.path}`, name: pathName(note.title), kind: "page" as const, detail: [keepKindLabel(note.kind), ...note.tags].join(" · ") })),
-          ...attached.flatMap((folderId) => {
+          ...(await notesOrNone(vault)).map((note) => ({ id: `note:${note.path}`, name: pathName(note.title), kind: "page" as const, detail: [keepKindLabel(note.kind), ...note.tags].join(" · ") })),
+          ...(await Promise.all(attached.map(async (folderId) => {
             const folder = grants.find((grant) => grant.id === folderId);
-            return folder ? folders!.files(folderId).files.map((file) => ({ id: `file:${folderId}:${file.path}`, name: pathName(file.path), kind: "file" as const, detail: `${folder.name}/${file.path}` })) : [];
-          }),
+            return folder ? (await folders!.files(folderId)).files.map((file) => ({ id: `file:${folderId}:${file.path}`, name: pathName(file.path), kind: "file" as const, detail: `${folder.name}/${file.path}` })) : [];
+          }))).flat(),
         ],
       } satisfies CommandMenu;
     }
@@ -3167,9 +3275,9 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
       const found = namedPath(params.path);
       const granted = found !== undefined && folders!.list().some((folder) => pathInside(folder.path, found));
 
-      if (found === undefined || !(granted || attachments!.holds(found))) throw new Error("Not an image Emma can show");
-      const frame = nativeImage.createFromPath(found);
-      if (frame.isEmpty()) throw new Error("Not an image Emma can show");
+      if (found === undefined || !(granted || attachments!.holds(found))) throw new Error("Not an image Shinbo can show");
+      const frame = await attachmentImage(found, { maxWidth: 1440 });
+      if (frame.isEmpty()) throw new Error("Not an image Shinbo can show");
 
       return { mime: "image/jpeg", base64: compressScreenFrame(frame).image.split(",")[1] };
     }
@@ -3183,11 +3291,8 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
     }
     case "gitReady":
       return await gitReady(cwd());
-    case "gitStatus": {
-      const snapshot = await gitSnapshot(cwd());
-      if (!snapshot || params.diff === true) return snapshot;
-      return { ...snapshot, diff: "", truncated: false };
-    }
+    case "gitStatus":
+      return await gitSnapshot(cwd(), false, params.diff === true);
     case "gitFileDiff": {
       const [file] = commitPaths([params.path]);
       const directory = cwd();
@@ -3234,7 +3339,7 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
         env: OPENROUTER_ENV,
         masked: credentials!.list().find((item) => item.env === OPENROUTER_ENV)?.masked ?? "",
         balance: key ? await fetchOpenRouterBalance(key) : null,
-        zeroRetention: process.env.EMMA_OPENROUTER_ZDR !== undefined,
+        zeroRetention: process.env.SHINBO_OPENROUTER_ZDR !== undefined,
         selectedModel,
       } satisfies KeyStatus;
     }
@@ -3253,11 +3358,11 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
     }
     case "setZeroRetention": {
       const on = flag(params.on, "Zero retention");
-      if ((process.env.EMMA_OPENROUTER_ZDR !== undefined) !== on) {
-        if (on) process.env.EMMA_OPENROUTER_ZDR = "1";
-        else delete process.env.EMMA_OPENROUTER_ZDR;
+      if ((process.env.SHINBO_OPENROUTER_ZDR !== undefined) !== on) {
+        if (on) process.env.SHINBO_OPENROUTER_ZDR = "1";
+        else delete process.env.SHINBO_OPENROUTER_ZDR;
         recycleHarnesses();
-        broadcast("emma:changed");
+        broadcast("shinbo:changed");
       }
       return { zeroRetention: on };
     }
@@ -3286,7 +3391,7 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
     }
     case "listToolTargets": {
       const [written, found, servers] = await Promise.all([
-        listEmmaTools(userData),
+        listShinboTools(userData),
 
         capabilities!.searchSkills("", MAX_PHONE_SKILLS + 1),
         capabilities!.listMcpServers(),
@@ -3317,7 +3422,7 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
       const definition = mcpServerRequest(params);
       const approved = await confirmOnMac(
         `Install the MCP server “${definition.name}” from your phone?`,
-        `Emma will run this on your ${DEVICE}, and again on every turn that uses it:\n\n${[definition.command, ...definition.args ?? []].join(" ")}`,
+        `Shinbo will run this on your ${DEVICE}, and again on every turn that uses it:\n\n${[definition.command, ...definition.args ?? []].join(" ")}`,
         "Install it",
       );
       if (!approved) throw new Error(`Nobody at your ${DEVICE} approved that server.`);
@@ -3337,10 +3442,10 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
         if (!plugin) throw new Error(`No plugin called "${id}" is installed.`);
 
         const running = plugin.hooks.filter((hook) => hookRuns(hook.event));
-        if (!running.length) throw new Error(`"${plugin.displayName || plugin.name}" has no hook Emma would ever run.`);
+        if (!running.length) throw new Error(`"${plugin.displayName || plugin.name}" has no hook Shinbo would ever run.`);
         const approved = await confirmOnMac(
           `Trust the hooks in “${plugin.displayName || plugin.name}” from your phone?`,
-          `Emma will run these on your ${DEVICE}, on every turn that reaches their moment:\n\n${plugin.hooks.map((hook) => `${hook.event}${hookRuns(hook.event) ? "" : " (Emma has no such moment)"}: ${hook.command}`).join("\n\n")}`,
+          `Shinbo will run these on your ${DEVICE}, on every turn that reaches their moment:\n\n${plugin.hooks.map((hook) => `${hook.event}${hookRuns(hook.event) ? "" : " (Shinbo has no such moment)"}: ${hook.command}`).join("\n\n")}`,
           "Trust them",
         );
         if (!approved) throw new Error(`Nobody at your ${DEVICE} approved those hooks.`);
@@ -3363,7 +3468,7 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
         const labels = importSources(homedir()).filter((source) => adding.includes(source.id)).map((source) => source.label).join(", ");
         const approved = await confirmOnMac(
           "Read another agent's skills and MCP servers?",
-          `Emma will read ${labels} on this ${DEVICE} and start the servers their config files name.`,
+          `Shinbo will read ${labels} on this ${DEVICE} and start the servers their config files name.`,
           "Import",
         );
         if (!approved) throw new Error(`Nobody at your ${DEVICE} approved that import.`);
@@ -3431,7 +3536,7 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
       const directory = folderId ? folders!.directory(folderId) : homedir();
       const approved = await confirmOnMac(
         "Run a command from your phone?",
-        `Emma will run this on your ${DEVICE} now, in ${directory}:\n\n${command}`,
+        `Shinbo will run this on your ${DEVICE} now, in ${directory}:\n\n${command}`,
         "Run it",
       );
       if (!approved) throw new Error(`Nobody at your ${DEVICE} approved that command.`);
@@ -3448,12 +3553,7 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
     case "readMemory": {
 
       const file = resolveMemoryPath(memoryRoot(), params.path);
-      const stats = statSync(file);
-      if (!stats.isFile()) throw new Error("That memory cannot be read.");
-      return {
-        text: readFileSync(file).subarray(0, MAX_MEMORY_FILE_BYTES).toString("utf8"),
-        truncated: stats.size > MAX_MEMORY_FILE_BYTES,
-      };
+      return await readLimitedText(file, MAX_MEMORY_FILE_BYTES, "That memory cannot be read.");
     }
     case "deleteMemory":
       await runMemoryCommand(memoryRoot(), { command: "delete", path: typeof params.path === "string" ? params.path : "" });
@@ -3461,16 +3561,13 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
     case "listNotes": {
       const vault = readVault(userData);
 
-      return vault ? phoneList(listNotes(vault)) : { rows: [], capped: false };
+      return vault ? phoneList(await listNotes(vault)) : { rows: [], capped: false };
     }
     case "readNote": {
       const vault = readVault(userData);
       if (!vault) throw new Error("No vault is connected.");
       const note = path.join(notesRoot(vault), noteInVault(vault, params.path));
-      const stats = statSync(note);
-      if (!stats.isFile()) throw new Error("That note cannot be read.");
-
-      return { text: readFileSync(note).subarray(0, MAX_NOTE_BYTES).toString("utf8"), truncated: stats.size > MAX_NOTE_BYTES };
+      return await readLimitedText(note, MAX_NOTE_BYTES, "That note cannot be read.");
     }
     case "keep":
       return await keep(keepRequest(params), false);
@@ -3485,10 +3582,10 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
       const directory = realpathSync.native(asked);
       if (!statSync(directory).isDirectory()) throw new Error("That is not a folder.");
       const held = folders!.list().some((grant) => samePath(grant.path, directory));
-      if (!held && !pathInside(homedir(), directory)) throw new Error("From a phone, Emma only connects folders inside your home folder.");
+      if (!held && !pathInside(homedir(), directory)) throw new Error("From a phone, Shinbo only connects folders inside your home folder.");
       const granted = held || await confirmOnMac(
         "Connect a folder from your phone?",
-        `Emma will be able to read and write everything in ${directory}, and its agents will run against it. Only connect a folder you asked for from your phone just now.`,
+        `Shinbo will be able to read and write everything in ${directory}, and its agents will run against it. Only connect a folder you asked for from your phone just now.`,
         "Connect this folder",
       );
       if (!granted) throw new Error(`Nobody at your ${DEVICE} approved that folder.`);
@@ -3516,7 +3613,7 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
     }
     case "listCliModels": {
       const cli = boundedCapabilityId(params.cli, "CLI");
-      if (!CLI_IDS.includes(cli)) throw new Error("Emma does not know that CLI.");
+      if (!CLI_IDS.includes(cli)) throw new Error("Shinbo does not know that CLI.");
       return phoneList((await cliModels.read(cli, (id) => clis.where(id))).models);
     }
     case "setCliRunModel": {
@@ -3577,8 +3674,8 @@ async function runDrivenTurn(turn: TurnRequest) {
   }
   const thread = noteThread(recorded);
   await noteGoalFailure(turn.threadId, agents!.list().find((agent) => agent.threadId === turn.threadId)?.error);
-  if (!turn.goalTurn) void continueGoal(turn, thread).catch((error: unknown) => console.error("Emma: a goal's continuation failed", error));
-  if (wantsReview(turn, thread)) void reviewWork(turn, recorded).catch((error: unknown) => console.error("Emma: a second-model review failed", error));
+  if (!turn.goalTurn) void continueGoal(turn, thread).catch((error: unknown) => console.error("Shinbo: a goal's continuation failed", error));
+  if (wantsReview(turn, thread)) void reviewWork(turn, recorded).catch((error: unknown) => console.error("Shinbo: a second-model review failed", error));
   return recorded;
 }
 
@@ -3614,8 +3711,6 @@ async function reviewWork(turn: TurnRequest, recorded: unknown) {
         content: revisionPrompt(modelName(reviewSettings.model), said),
         mode: threadContexts.get(turn.threadId)?.mode ?? agents!.mode(turn.threadId),
         title: turn.title,
-        model: turn.model,
-        subagent: turn.subagent,
         reviewed: true,
       });
       if (noteThread(redone)?.archivedAt) return;
@@ -3630,7 +3725,7 @@ async function runReview(turn: TurnRequest, answered: string): Promise<string> {
   const title = reviewTitle(turn.title);
   const created = await host!.request({ method: "createThread", params: { parentThreadId: turn.threadId, title } });
   const threadId = (created as { id?: unknown }).id;
-  if (typeof threadId !== "string") throw new Error("Emma host returned an invalid thread");
+  if (typeof threadId !== "string") throw new Error("Shinbo host returned an invalid thread");
   const parent = threadContexts.get(turn.threadId);
   if (parent) rememberThreadContext(threadId, { ...parent, model: reviewSettings.model, effort: "", review: false });
   reviewThreads.add(threadId);
@@ -3674,8 +3769,6 @@ async function continueGoal(turn: TurnRequest, thread: ThreadRecord | undefined)
         content: GOAL_CONTINUATION,
         mode: threadContexts.get(threadId)?.mode ?? agents!.mode(threadId),
         title: turn.title,
-        model: turn.model,
-        subagent: turn.subagent,
         goalTurn: true,
         objective: goals.get(threadId)?.objective,
       }))?.archivedAt;
@@ -3783,6 +3876,25 @@ function phonePage(messages: Message[], total: number, from: number): { messages
   return { messages: page.slice(start), total, from: from + start };
 }
 
+async function readLimitedText(file: string, limit: number, unreadable: string): Promise<{ text: string; truncated: boolean }> {
+  const handle = await open(file, "r");
+  try {
+    const stats = await handle.stat();
+    if (!stats.isFile()) throw new Error(unreadable);
+    const buffer = Buffer.alloc(Math.min(stats.size, limit));
+    let read = 0;
+    while (read < buffer.length) {
+      const { bytesRead } = await handle.read(buffer, read, buffer.length - read, read);
+      if (!bytesRead) break;
+      read += bytesRead;
+    }
+    const truncated = stats.size > limit;
+    return { text: new TextDecoder("utf-8", { ignoreBOM: true }).decode(buffer.subarray(0, read), { stream: truncated }), truncated };
+  } finally {
+    await handle.close();
+  }
+}
+
 function phoneMemories(): Promise<PhoneList<MemoryNote>> {
   return listMemories(memoryRoot()).then((notes) => phoneList(notes.map((note) => ({
     ...note,
@@ -3848,6 +3960,8 @@ async function resolveMentions(prompt: string): Promise<{ content: string; skill
   const userData = app.getPath("userData");
   const artifacts = paths.length ? await listArtifacts(userData).catch(() => []) : [];
   const vault = paths.length ? readVault(userData) : undefined;
+  let notes: Awaited<ReturnType<typeof listNotes>> | undefined;
+  const listings = new Map<string, Awaited<ReturnType<FolderStore["files"]>>>();
   for (const mention of paths) {
     const artifact = artifacts.find((item) => pathName(item.title) === mention);
     if (artifact) {
@@ -3859,11 +3973,11 @@ async function resolveMentions(prompt: string): Promise<{ content: string; skill
       }
       continue;
     }
-    const note = vault ? listNotes(vault).find((item) => pathName(item.title) === mention) : undefined;
+    const note = vault ? (notes ??= await listNotes(vault)).find((item) => pathName(item.title) === mention) : undefined;
     if (note && vault) {
       const file = path.join(notesRoot(vault), noteInVault(vault, note.path));
       try {
-        if (statSync(file).size > MAX_NOTE_BYTES) throw new Error("it is too large to attach");
+        if (statSync(file).size > MAX_NOTE_FILE_BYTES) throw new Error("it is too large to attach");
         sections.push({ heading: `Note ${note.title}`, body: readFileSync(file, "utf8") });
       } catch (error) {
         sections.push({ heading: `Note ${note.title}`, body: `Could not be read: ${error instanceof Error ? error.message : String(error)}` });
@@ -3871,7 +3985,9 @@ async function resolveMentions(prompt: string): Promise<{ content: string; skill
       continue;
     }
     for (const grant of folders!.list()) {
-      const listed = folders!.files(grant.id).files.find((file) => pathName(file.path) === mention);
+      let listing = listings.get(grant.id);
+      if (!listing) { listing = await folders!.files(grant.id); listings.set(grant.id, listing); }
+      const listed = listing.files.find((file) => pathName(file.path) === mention);
       if (!listed) continue;
       try {
         const file = folders!.read(grant.id, listed.path);
@@ -3886,29 +4002,48 @@ async function resolveMentions(prompt: string): Promise<{ content: string; skill
 }
 
 async function runScheduledWorkflow(job: HostDueJob["dueJob"]) {
-  const { nodes, errors } = parseWorkflow(job.nodes, job.prompt);
-  if (errors.length) {
-    await host!.request({
-      method: "recordTurn",
-      params: { threadId: job.threadId, prompt: job.prompt, response: `This task did not run: its graph will not run as written.\n\n${errors.join("\n")}`, durationMilliseconds: "0", outputTokens: "0", inputTokens: "0" },
+  if (workflowRuns.has(job.threadId)) throw new Error("This workflow is already running.");
+  const controller = new AbortController();
+  workflowRuns.set(job.threadId, controller);
+  try {
+    const startupError = await runtimeReady;
+    if (startupError) throw new Error(startupError);
+    controller.signal.throwIfAborted();
+    const { nodes, errors } = parseWorkflow(job.nodes, job.prompt);
+    if (errors.length) throw new Error(`Its graph will not run as written.\n\n${errors.join("\n")}`);
+    const mode = asPermissionMode(job.permissionMode);
+    const model = job.model || selectedModel || "fallback";
+    const effort = model === selectedModel ? selectedEffort : "";
+    rememberThreadContext(job.threadId, { ...threadContext(job.threadId), mode, model, effort });
+    const run = await runWorkflow(nodes, parseVariables(job.variables), async (prompt, node, input) => {
+      controller.signal.throwIfAborted();
+      if (node.kind === "script") {
+        agents!.adopt({ threadId: job.threadId, title: job.title, content: prompt, mode, model, effort });
+        agents!.noteActivity(job.threadId, "running workflow script");
+        try {
+          const output = await runWorkflowScript(prompt, input, workflowScriptRoots(), controller.signal);
+          agents!.finish(job.threadId);
+          return output;
+        } catch (error) {
+          agents!.finish(job.threadId, error instanceof Error ? error.message : String(error), controller.signal.aborted ? "cancelled" : undefined);
+          throw error;
+        }
+      }
+      const { content, skillContext } = await resolveMentions(prompt);
+      controller.signal.throwIfAborted();
+      const outcome = await driveTurn({ threadId: job.threadId, content, mode, title: job.title, model, effort, ...(skillContext ? { params: { skillContext } } : {}) });
+      controller.signal.throwIfAborted();
+      const agent = agents!.list().find((candidate) => candidate.threadId === job.threadId);
+      if (agent?.error || agent?.status === "failed" || agent?.status === "stopped") throw new Error(agent.error || "The workflow turn did not complete.");
+      return lastAssistantMessage(outcome) ?? "";
     });
-    changed();
-    return;
+    controller.signal.throwIfAborted();
+    await host!.request({ method: "finishScheduledJob", params: { jobId: job.jobId, outputs: packVariables(run.variables), depth: String(job.depth) } });
+  } catch (error) {
+    await recordTurn({ threadId: job.threadId, prompt: job.prompt, answer: "", notice: controller.signal.aborted ? "You stopped this workflow." : `This workflow failed: ${error instanceof Error ? error.message : String(error)}`, durationMilliseconds: "0", outputTokens: "0", inputTokens: "0", model: "" });
+  } finally {
+    workflowRuns.delete(job.threadId);
   }
-  const mode = asPermissionMode(job.permissionMode);
-  const model = job.model || selectedModel || "fallback";
-  const effort = model === selectedModel ? selectedEffort : "";
-  rememberThreadContext(job.threadId, { ...threadContext(job.threadId), mode, model, effort });
-  const run = await runWorkflow(nodes, parseVariables(job.variables), async (prompt, node, input) => {
-    if (node.kind === "script") {
-      try { return await runWorkflowScript(prompt, input, workflowScriptRoots()); }
-      catch (error) { return `[script could not run: ${error instanceof Error ? error.message : String(error)}]`; }
-    }
-    const { content, skillContext } = await resolveMentions(prompt);
-    const outcome = await driveTurn({ threadId: job.threadId, content, mode, title: job.title, model, effort, ...(skillContext ? { params: { skillContext } } : {}) });
-    return lastAssistantMessage(outcome) ?? "";
-  });
-  await host!.request({ method: "finishScheduledJob", params: { jobId: job.jobId, outputs: packVariables(run.variables), depth: String(job.depth) } });
   changed();
 }
 
@@ -4004,7 +4139,7 @@ function openRunBanner(threadId: string, task: string) {
   closeRunBanner();
   if (!globalShortcut.register("Escape", () => stopThread(threadId))) {
     stopThread(threadId);
-    throw new Error("Emma could not register the computer-use Escape stop shortcut");
+    throw new Error("Shinbo could not register the computer-use Escape stop shortcut");
   }
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   const width = Math.min(520, display.workArea.width - 40);
@@ -4038,7 +4173,7 @@ function openComputerCursor() {
   const cursor = secureWindow({
     width: 1,
     height: 1,
-    title: "Emma activity cursor",
+    title: "Shinbo activity cursor",
     frame: false,
     transparent: true,
     backgroundColor: "#00000000",
@@ -4111,7 +4246,7 @@ function startAnnotation() {
 
 const APP_BRIDGE = '<script>(()=>{const w=new Map();let n=0;addEventListener("message",(e)=>{const a=w.get(e.data?.n);'
   + 'if(e.source!==parent||!a)return;w.delete(e.data.n);e.data.error?a[1](new Error(e.data.error)):a[0](e.data.rows)});'
-  + 'window.emma={sql:(sql,...params)=>new Promise((ok,no)=>{w.set(++n,[ok,no]);parent.postMessage({emma:"sql",n,sql,params},"*")})}})()</script>';
+  + 'window.shinbo={sql:(sql,...params)=>new Promise((ok,no)=>{w.set(++n,[ok,no]);parent.postMessage({shinbo:"sql",n,sql,params},"*")})}})()</script>';
 
 function appPage(content: string): string {
   const doctype = /^\s*<!doctype[^>]*>/i.exec(content);
@@ -4136,7 +4271,7 @@ function addUpdateMenuItem() {
   const menu = Menu.getApplicationMenu();
   const submenu = menu?.items[0]?.submenu;
   if (!submenu) {
-    console.warn("Emma: no application menu to add the update check to");
+    console.warn("Shinbo: no application menu to add the update check to");
     return;
   }
   submenu.insert(1, new MenuItem({ label: "Check for Updates\u2026", click: () => checkForUpdates() }));
@@ -4148,9 +4283,11 @@ function handleSquirrelEvent(): boolean {
   const event = readSquirrelEvent();
   if (!event) return false;
   const update = path.resolve(path.dirname(process.execPath), "..", "Update.exe");
-  if (event === "install" || event === "updated") spawn(update, ["--createShortcut", "Emma.exe"], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+  if (event === "install" || event === "updated") spawn(update, ["--createShortcut", "Shinbo.exe"], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+  // An install made under the old name keeps its Emma shortcuts, which point at an Emma.exe stub that no longer resolves.
+  if (event === "updated") for (const link of windowsShortcutFiles(process.env, "Emma")) rmSync(link, { force: true });
   if (event === "uninstall") {
-    spawn(update, ["--removeShortcut", "Emma.exe"], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+    spawn(update, ["--removeShortcut", "Shinbo.exe"], { detached: true, stdio: "ignore", windowsHide: true }).unref();
     for (const link of windowsShortcutFiles()) rmSync(link, { force: true });
   }
   app.quit();
@@ -4161,8 +4298,8 @@ const squirrelHandled = handleSquirrelEvent();
 const primaryInstance = squirrelHandled ? false : app.requestSingleInstanceLock({ version: app.getVersion() });
 if (!primaryInstance && !squirrelHandled) {
   if (isMac && app.isPackaged) dialog.showErrorBox(
-    "Another copy of Emma is running",
-    `Emma ${app.getVersion()} at ${path.resolve(process.execPath, "../../..")} could not start because Emma is already running. Any Emma window shown belongs to that running copy.\n\nQuit the running Emma with Command-Q. Drag Emma.app from the disk image into Applications, choose Replace if asked, then open Emma from Applications. Replacing the app keeps your settings and conversations.`,
+    "Another copy of Shinbo is running",
+    `Shinbo ${app.getVersion()} at ${path.resolve(process.execPath, "../../..")} could not start because Shinbo is already running. Any Shinbo window shown belongs to that running copy.\n\nQuit the running Shinbo with Command-Q. Drag Shinbo.app from the disk image into Applications, choose Replace if asked, then open Shinbo from Applications. Replacing the app keeps your settings and conversations.`,
   );
   app.quit();
 }
@@ -4172,7 +4309,7 @@ else app.on("second-instance", (_event, _argv, _cwd, data: unknown) => {
 });
 
 if (primaryInstance) app.whenReady().then(() => {
-  if (!app.isPackaged) app.dock?.setIcon(path.join(app.getAppPath(), "assets", "emma-dock.png"));
+  if (!app.isPackaged) app.dock?.setIcon(path.join(app.getAppPath(), "assets", "shinbo-dock.png"));
   session.defaultSession.setPermissionCheckHandler((contents, permission, _origin, details) => pageMayAsk(contents, permission, details.mediaType ? [details.mediaType] : []));
   session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => callback(pageMayAsk(contents, permission, (details as { mediaTypes?: string[] }).mediaTypes ?? [])));
   protocol.handle(ARTIFACT_SCHEME, async (request) => {
@@ -4235,7 +4372,7 @@ if (primaryInstance) app.whenReady().then(() => {
   void host!.request({ method: "threadSummaries", params: {} }).then(primeGoals).catch(() => undefined);
   capabilities = new ImportedCapabilityRuntime(app.getPath("userData"));
   void seedBuiltinSkills(builtinSkills(), app.getPath("userData"), path.join(app.getPath("userData"), "harness"), ["artifact"]).then(syncHarnessSkills);
-  computerRuntime = new ComputerUseRuntime(nativeHelper("emma-computer"), closeRunBanner, console.log, reportRunProgress);
+  computerRuntime = new ComputerUseRuntime(nativeHelper("shinbo-computer"), closeRunBanner, console.log, reportRunProgress);
   agents = new AgentRuntime({
     request: (method, params) => answerRequest(method, params),
     ask: (request: PermissionAsk) => {
@@ -4247,25 +4384,24 @@ if (primaryInstance) app.whenReady().then(() => {
         if (!reached) agents!.answer(request.id, false);
         return;
       }
-      needsYou("Emma needs your approval", request.summary);
-      mainWindow.webContents.send("emma:permission-ask", request);
+      needsYou("Shinbo needs your approval", request.summary);
+      mainWindow.webContents.send("shinbo:permission-ask", request);
     },
     answered: (id, allowed) => {
       bridge?.resolved(id, allowed);
-      mainWindow?.webContents.send("emma:permission-resolved", { id, allowed });
+      mainWindow?.webContents.send("shinbo:permission-resolved", { id, allowed });
     },
-    stopped: (threadId) => {
-      if (computerRuntime?.threadId === threadId) computerRuntime.abort();
-    },
+    stopped: cancelThreadWork,
+    steer: steerThread,
     verify: (request) => review(request),
-    advise: (transcript) => advise(toolSettings.advisor, transcript),
+    advise: (transcript, signal) => advise(toolSettings.advisor, transcript, undefined, signal),
     spawnTurn: (turn, owner) => {
       const context = owner ? threadContexts.get(owner) : undefined;
       if (context && !threadContexts.has(turn.threadId)) rememberThreadContext(turn.threadId, { ...context });
       return driveTurn(turn);
     },
-    changed: () => { broadcast("emma:agents", agents!.list()); broadcast("emma:spans", agents!.spans()); },
-    step: (step) => broadcast("emma:step", step),
+    changed: () => { broadcast("shinbo:agents", agents!.list()); broadcast("shinbo:spans", agents!.spans()); },
+    step: (step) => broadcast("shinbo:step", step),
   });
   loadPhoneThreads();
   loadThreadContexts();
@@ -4273,30 +4409,30 @@ if (primaryInstance) app.whenReady().then(() => {
     userData: app.getPath("userData"),
     identity: desktopIdentity,
     dispatch: async (method, params) => {
-      if (method === "sendMessage" || method === "steerAgent" || method === "answerPermission") broadcast("emma:mobile-status", mobileStatus(Date.now()));
+      if (method === "sendMessage" || method === "steerAgent" || method === "answerPermission") broadcast("shinbo:mobile-status", mobileStatus(Date.now()));
       const result = await bridgeDispatch(method, params);
       if (method === "createThread") {
         phoneThreads.add((result as ThreadSummary).id);
         writeFileSync(phoneThreadsFile(), JSON.stringify([...phoneThreads]));
-        broadcast("emma:mobile-status", mobileStatus());
+        broadcast("shinbo:mobile-status", mobileStatus());
       }
       return result;
     },
     live: bridgeLive,
-    onStatus: (status) => broadcast("emma:mobile-status", { ...status, threads: [...phoneThreads] }),
+    onStatus: (status) => broadcast("shinbo:mobile-status", { ...status, threads: [...phoneThreads] }),
   });
   bridge.start();
   configureCouncil({
     route: councilRoute,
     rates: (modelId) => modelRates(path.join(app.getPath("userData"), "openrouter-catalog.json"), modelId),
-    emit: (state) => broadcast("emma:council", state),
+    emit: (state) => broadcast("shinbo:council", state),
     land: async (state) => {
       const spent = state.voices.reduce((total, voice) => ({
         inputTokens: total.inputTokens + voice.inputTokens,
         outputTokens: total.outputTokens + voice.outputTokens,
         microDollars: total.microDollars + voice.microDollars,
       }), { inputTokens: 0, outputTokens: 0, microDollars: 0 });
-      await recordTurn({
+      const thread = noteThread(await recordTurn({
         threadId: state.threadId,
         prompt: state.question,
         answer: councilAnswer(state),
@@ -4305,7 +4441,11 @@ if (primaryInstance) app.whenReady().then(() => {
         outputTokens: String(spent.outputTokens),
         ...(spent.microDollars > 0 ? { costMicroUsd: String(spent.microDollars) } : {}),
         model: `council of ${state.seats.length}`,
-      });
+      }));
+      const liveSpend = turnSpend.get(state.threadId);
+      if (liveSpend && thread?.goal && (thread.goal.status === "budgetLimited" || (goalPursuing(thread.goal) && liveSpend.total >= goalTokensLeft(thread.goal)))) {
+        noteGoalOverspent(state.threadId);
+      }
       changed();
     },
     carried: async (threadId) => {
@@ -4313,14 +4453,14 @@ if (primaryInstance) app.whenReady().then(() => {
       return (thread?.messages ?? []).slice(-6).map((message) => `${message.role}: ${message.content}`).join("\n\n");
     },
   });
-  powerMonitor.on("resume", () => void resumeAfterSleep().catch((error: unknown) => console.error("Emma: could not pick a turn back up after sleep", error)));
+  powerMonitor.on("resume", () => void resumeAfterSleep().catch((error: unknown) => console.error("Shinbo: could not pick a turn back up after sleep", error)));
   const stopComputerForLock = () => {
     if (computerRuntime?.threadId) stopThread(computerRuntime.threadId);
   };
   powerMonitor.on("suspend", stopComputerForLock);
   powerMonitor.on("lock-screen", stopComputerForLock);
-  ipcMain.handle("emma:request", async (event, value: unknown) => {
-    if (event.senderFrame !== event.sender.mainFrame || !trustedSender(event.senderFrame.url, app.getAppPath(), process.env.EMMA_DEV_SERVER_URL)) {
+  ipcMain.handle("shinbo:request", async (event, value: unknown) => {
+    if (event.senderFrame !== event.sender.mainFrame || !trustedSender(event.senderFrame.url, app.getAppPath(), process.env.SHINBO_DEV_SERVER_URL)) {
       throw new Error("IPC sender is not allowed");
     }
     let request = validateRequest(value);
@@ -4376,77 +4516,88 @@ if (primaryInstance) app.whenReady().then(() => {
       if (skillClaimed && !delivered) skillAttachment.finish(skillAttachmentId!, false);
     }
   });
-  ipcMain.handle("emma:get-thread-context", (event, value: unknown) => {
+  ipcMain.handle("shinbo:get-thread-context", (event, value: unknown) => {
     if (event.senderFrame !== event.sender.mainFrame || event.sender !== overlay?.webContents) mainWindowSender(event);
     const threadId = boundedCapabilityId((value as { threadId?: unknown } | null)?.threadId, "Thread context thread");
     if (!threadModel(threadId)) rememberThreadContext(threadId, { ...threadContext(threadId), model: selectedModel || "fallback", effort: selectedEffort });
-    return { model: threadModel(threadId), effort: threadEffort(threadId) };
+    const context = threadContext(threadId);
+    return { folderIds: context.folderIds, mode: context.mode, model: context.model, effort: threadEffort(threadId), review: context.review ?? false };
   });
-  ipcMain.handle("emma:set-thread-context", (event, value: unknown) => {
+  ipcMain.handle("shinbo:set-thread-context", (event, value: unknown) => {
     if (event.senderFrame !== event.sender.mainFrame || event.sender !== overlay?.webContents) mainWindowSender(event);
     const { threadId, ...context } = threadContextRequest(value);
     keepThreadContext(threadId, context);
     agents!.setMode(threadId, context.mode);
     return context.mode;
   });
-  ipcMain.handle("emma:update-ready", (event) => {
+  ipcMain.handle("shinbo:runtime-ready", (event, value: unknown) => {
+    mainWindowSender(event);
+    if (typeof value !== "string" || value.length > 4096) throw new Error("Runtime initialization status is invalid.");
+    const error = value || undefined;
+    clearTimeout(runtimeReadyTimeout);
+    settleRuntimeReady(error);
+    runtimeReady = Promise.resolve(error);
+  });
+  ipcMain.handle("shinbo:update-ready", (event) => {
     mainWindowSender(event);
     return readyUpdate();
   });
-  ipcMain.handle("emma:install-update", (event) => {
+  ipcMain.handle("shinbo:install-update", (event) => {
     mainWindowSender(event);
     installUpdate();
   });
-  ipcMain.handle("emma:harness-report", (event) => {
+  ipcMain.handle("shinbo:harness-report", (event) => {
     mainWindowSender(event);
     return readHarnessReport();
   });
-  ipcMain.handle("emma:restart-harness", (event) => {
+  ipcMain.handle("shinbo:restart-harness", (event) => {
     mainWindowSender(event);
     return restartHarnesses();
   });
-  ipcMain.handle("emma:list-memories", (event) => {
+  ipcMain.handle("shinbo:list-memories", (event) => {
     mainWindowSender(event);
     return listMemories(memoryRoot());
   });
-  ipcMain.handle("emma:delete-memory", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:delete-memory", async (event, value: unknown) => {
     mainWindowSender(event);
     await runMemoryCommand(memoryRoot(), { command: "delete", path: typeof value === "string" ? value : "" });
     return listMemories(memoryRoot());
   });
   const councilThread = (value: unknown) => boundedCapabilityId((value as { threadId?: unknown } | null)?.threadId, "Thread");
-  ipcMain.handle("emma:council-start", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:council-start", async (event, value: unknown) => {
     mainWindowSender(event);
-    return await startCouncil(validateCouncilStart(value));
+    const request = validateCouncilStart(value);
+    await host!.request({ method: "checkTurnCapacity", params: { threadId: request.threadId } });
+    return await startCouncil(request);
   });
-  ipcMain.handle("emma:council-stop", (event, value: unknown) => {
+  ipcMain.handle("shinbo:council-stop", (event, value: unknown) => {
     mainWindowSender(event);
     stopCouncil(councilThread(value));
     return null;
   });
-  ipcMain.handle("emma:council-adopt", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:council-adopt", async (event, value: unknown) => {
     mainWindowSender(event);
     const seatId = (value as { seatId?: unknown } | null)?.seatId;
     return await adoptCouncil(councilThread(value), typeof seatId === "string" && seatId.length <= 64 ? seatId : "");
   });
-  ipcMain.handle("emma:council-close", (event, value: unknown) => {
+  ipcMain.handle("shinbo:council-close", (event, value: unknown) => {
     mainWindowSender(event);
     closeCouncil(councilThread(value));
     return null;
   });
-  ipcMain.handle("emma:council-state", (event, value: unknown) => {
+  ipcMain.handle("shinbo:council-state", (event, value: unknown) => {
     mainWindowSender(event);
     return councilState(councilThread(value)) ?? null;
   });
-  ipcMain.handle("emma:list-agents", (event) => {
+  ipcMain.handle("shinbo:list-agents", (event) => {
     mainWindowSender(event);
     return agents!.list();
   });
-  ipcMain.handle("emma:list-background", (event) => {
+  ipcMain.handle("shinbo:list-background", (event) => {
     mainWindowSender(event);
     return background.list();
   });
-  ipcMain.handle("emma:run-command", (event, value: unknown) => {
+  ipcMain.handle("shinbo:run-command", (event, value: unknown) => {
     mainWindowSender(event);
     const { command, folderId } = runCommandRequest(value);
     return background.start(
@@ -4455,52 +4606,52 @@ if (primaryInstance) app.whenReady().then(() => {
       folderId ? folderNames([folderId])[0] ?? "" : "",
     );
   });
-  ipcMain.handle("emma:read-background", (event, value: unknown) => {
+  ipcMain.handle("shinbo:read-background", (event, value: unknown) => {
     mainWindowSender(event);
     return background.output(boundedCapabilityId(value, "Background task"), MAX_COMMAND_OUTPUT) ?? null;
   });
-  ipcMain.handle("emma:stop-background", (event, value: unknown) => {
+  ipcMain.handle("shinbo:stop-background", (event, value: unknown) => {
     mainWindowSender(event);
     return background.stop(boundedCapabilityId(value, "Background task"));
   });
-  ipcMain.handle("emma:list-cli-runs", (event) => {
+  ipcMain.handle("shinbo:list-cli-runs", (event) => {
     mainWindowSender(event);
     return clis.list();
   });
-  ipcMain.handle("emma:read-cli-run", (event, value: unknown) => {
+  ipcMain.handle("shinbo:read-cli-run", (event, value: unknown) => {
     mainWindowSender(event);
     return clis.output(boundedCapabilityId(value, "CLI run"), MAX_CLI_VIEW_CHARS) ?? null;
   });
-  ipcMain.handle("emma:stop-cli-run", (event, value: unknown) => {
+  ipcMain.handle("shinbo:stop-cli-run", (event, value: unknown) => {
     mainWindowSender(event);
     return clis.stop(boundedCapabilityId(value, "CLI run"));
   });
-  ipcMain.handle("emma:cli-models", (event, value: unknown) => {
+  ipcMain.handle("shinbo:cli-models", (event, value: unknown) => {
     mainWindowSender(event);
     const request = (value ?? {}) as { cli?: unknown; refresh?: unknown };
     const cli = boundedCapabilityId(request.cli, "CLI");
-    if (!CLI_IDS.includes(cli)) throw new Error("Emma does not know that CLI.");
+    if (!CLI_IDS.includes(cli)) throw new Error("Shinbo does not know that CLI.");
     return cliModels.read(cli, (id) => clis.where(id), request.refresh === true);
   });
-  ipcMain.handle("emma:cli-run-model", (event, value: unknown) => {
+  ipcMain.handle("shinbo:cli-run-model", (event, value: unknown) => {
     mainWindowSender(event);
     const selected = cliOptions(value);
     const request = value as { id?: unknown };
     return clis.setOptions(boundedCapabilityId(request.id, "CLI run"), selected);
   });
-  ipcMain.handle("emma:installed-clis", (event) => {
+  ipcMain.handle("shinbo:installed-clis", (event) => {
     mainWindowSender(event);
     return clis.installed();
   });
-  ipcMain.handle("emma:cli-sign-in", (event, value: unknown) => {
+  ipcMain.handle("shinbo:cli-sign-in", (event, value: unknown) => {
     mainWindowSender(event);
     const candidate = terminalRequest(value);
     const signIn = boundedCapabilityId(candidate.signIn, "Plan");
-    if (!cliPlan(signIn)) throw new Error("Emma does not know that plan.");
+    if (!cliPlan(signIn)) throw new Error("Shinbo does not know that plan.");
     const { columns, rows } = terminalSize(candidate);
     return terminals.open({ threadId: SIGN_IN_THREAD, cwd: homedir(), columns, rows, signIn });
   });
-  ipcMain.handle("emma:handoff-cli-run", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:handoff-cli-run", async (event, value: unknown) => {
     mainWindowSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid handoff request.");
     const request = value as Record<string, unknown>;
@@ -4516,58 +4667,58 @@ if (primaryInstance) app.whenReady().then(() => {
     const grant = grantFor(source.threadId, undefined);
     return clis.start({ threadId: source.threadId, cli, prompt, cwd: folders!.directory(grant), folder: folderNames([grant])[0] ?? "", unattended: false, fromRuns: [sourceId], ...cliOptions(request) });
   });
-  ipcMain.handle("emma:send-cli-run", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:send-cli-run", async (event, value: unknown) => {
     mainWindowSender(event);
     const { id, prompt } = cliSendRequest(value);
     await clis.send(id, prompt);
     return clis.get(id) ?? null;
   });
-  ipcMain.handle("emma:browser-status", (event, value: unknown) => {
+  ipcMain.handle("shinbo:browser-status", (event, value: unknown) => {
     mainWindowSender(event);
     return browsers.status(boundedCapabilityId(value, "Browser thread"));
   });
-  ipcMain.handle("emma:browser-open", (event, value: unknown) => {
+  ipcMain.handle("shinbo:browser-open", (event, value: unknown) => {
     mainWindowSender(event);
     const { threadId, url } = browserOpenRequest(value);
     return browsers.open(threadId, url);
   });
-  ipcMain.handle("emma:browser-nav", (event, value: unknown) => {
+  ipcMain.handle("shinbo:browser-nav", (event, value: unknown) => {
     mainWindowSender(event);
     const { threadId, action } = browserNavRequest(value);
     return browsers.navigate(threadId, action);
   });
-  ipcMain.handle("emma:browser-place", (event, value: unknown) => {
+  ipcMain.handle("shinbo:browser-place", (event, value: unknown) => {
     mainWindowSender(event);
     const { threadId, bounds } = browserPlaceRequest(value);
     browsers.hideAllExcept(threadId);
     browsers.place(threadId, bounds);
   });
-  ipcMain.handle("emma:browser-clips", (event) => {
+  ipcMain.handle("shinbo:browser-clips", (event) => {
     mainWindowSender(event);
     return browsers.clips();
   });
-  ipcMain.handle("emma:browser-clip-use", (event, value: unknown) => {
+  ipcMain.handle("shinbo:browser-clip-use", (event, value: unknown) => {
     mainWindowSender(event);
     const { threadId, index } = browserClipRequest(value);
     browsers.reuseClip(threadId, index);
   });
-  ipcMain.handle("emma:browser-tab-new", (event, value: unknown) => {
+  ipcMain.handle("shinbo:browser-tab-new", (event, value: unknown) => {
     mainWindowSender(event);
     const { candidate, threadId } = browserRequest(value);
     const url = candidate.url === undefined ? undefined : browserOpenRequest(value).url;
     return browsers.newTab(threadId, url);
   });
-  ipcMain.handle("emma:browser-tab-select", (event, value: unknown) => {
+  ipcMain.handle("shinbo:browser-tab-select", (event, value: unknown) => {
     mainWindowSender(event);
     const { threadId, tabId } = browserTabRequest(value);
     return browsers.selectTab(threadId, tabId);
   });
-  ipcMain.handle("emma:browser-tab-close", (event, value: unknown) => {
+  ipcMain.handle("shinbo:browser-tab-close", (event, value: unknown) => {
     mainWindowSender(event);
     const { threadId, tabId } = browserTabRequest(value);
     return browsers.closeTab(threadId, tabId);
   });
-  ipcMain.handle("emma:terminal-open", (event, value: unknown) => {
+  ipcMain.handle("shinbo:terminal-open", (event, value: unknown) => {
     mainWindowSender(event);
     const candidate = terminalRequest(value);
     const threadId = boundedCapabilityId(candidate.threadId, "Terminal thread");
@@ -4575,91 +4726,92 @@ if (primaryInstance) app.whenReady().then(() => {
     const cli = typeof candidate.cli === "string" ? candidate.cli : undefined;
     return terminals.open({ threadId, cwd: folders!.directory(grantFor(threadId, undefined)), columns, rows, cli });
   });
-  ipcMain.handle("emma:terminal-write", (event, value: unknown) => {
+  ipcMain.handle("shinbo:terminal-write", (event, value: unknown) => {
     mainWindowSender(event);
     const candidate = terminalRequest(value);
     if (typeof candidate.data !== "string" || candidate.data.length > MAX_TERMINAL_INPUT) throw new Error("Terminal input is invalid");
     terminals.write(boundedCapabilityId(candidate.id, "Terminal"), candidate.data);
   });
-  ipcMain.handle("emma:terminal-resize", (event, value: unknown) => {
+  ipcMain.handle("shinbo:terminal-resize", (event, value: unknown) => {
     mainWindowSender(event);
     const candidate = terminalRequest(value);
     const { columns, rows } = terminalSize(candidate);
     terminals.resize(boundedCapabilityId(candidate.id, "Terminal"), columns, rows);
   });
-  ipcMain.handle("emma:terminal-close", (event, value: unknown) => {
+  ipcMain.handle("shinbo:terminal-close", (event, value: unknown) => {
     mainWindowSender(event);
     terminals.close(boundedCapabilityId(value, "Terminal"));
   });
-  ipcMain.handle("emma:terminal-list", (event, value: unknown) => {
+  ipcMain.handle("shinbo:terminal-list", (event, value: unknown) => {
     mainWindowSender(event);
     return terminals.list(boundedCapabilityId(value, "Terminal thread"));
   });
-  ipcMain.handle("emma:terminal-buffer", (event, value: unknown) => {
+  ipcMain.handle("shinbo:terminal-buffer", (event, value: unknown) => {
     mainWindowSender(event);
     return terminals.buffer(boundedCapabilityId(value, "Terminal"));
   });
-  ipcMain.handle("emma:open-link", (event, value: unknown) => {
+  ipcMain.handle("shinbo:open-link", (event, value: unknown) => {
     mainWindowSender(event);
     if (typeof value !== "string" || value.length > 2048) throw new Error("Link is invalid");
     const target = externalUrl(value);
-    if (!target) throw new Error("Emma opens http and https addresses only.");
+    if (!target) throw new Error("Shinbo opens http and https addresses only.");
     void shell.openExternal(target.href);
   });
-  ipcMain.handle("emma:list-spans", (event) => {
+  ipcMain.handle("shinbo:list-spans", (event) => {
     mainWindowSender(event);
     return agents!.spans();
   });
-  ipcMain.handle("emma:list-asks", (event) => {
+  ipcMain.handle("shinbo:list-asks", (event) => {
     mainWindowSender(event);
     return agents!.outstandingAsks();
   });
-  ipcMain.handle("emma:live-partial", (event) => {
+  ipcMain.handle("shinbo:live-partial", (event) => {
     mainWindowSender(event);
     return livePartial();
   });
-  ipcMain.handle("emma:thread-traces", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:thread-traces", async (event, value: unknown) => {
     mainWindowSender(event);
     const threadId = boundedCapabilityId(value, "Trace thread");
     return await readThreadTraces(threadId);
   });
-  ipcMain.on("emma:answer-permission", (event, value: unknown) => {
+  ipcMain.on("shinbo:answer-permission", (event, value: unknown) => {
     if (event.senderFrame !== event.sender.mainFrame || event.sender !== mainWindow?.webContents) return;
     if (!value || typeof value !== "object") return;
     const answer = value as Record<string, unknown>;
     if (typeof answer.id !== "string" || typeof answer.allowed !== "boolean") return;
     agents!.answer(answer.id, answer.allowed);
   });
-  ipcMain.on("emma:computer-run-ready", (event) => {
+  ipcMain.on("shinbo:computer-run-ready", (event) => {
     if (event.senderFrame !== event.sender.mainFrame) return;
     if (event.sender === computerCursorWindow?.webContents) {
       computerCursorReady = true;
       showComputerCursor();
     } else if (event.sender === runBanner?.webContents && computerProgress) {
-      event.sender.send("emma:computer-run-progress", computerProgress);
+      event.sender.send("shinbo:computer-run-progress", computerProgress);
     }
   });
-  ipcMain.handle("emma:steer-agent", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:steer-agent", async (event, value: unknown) => {
     mainWindowSender(event);
     const request = agentMessage(value);
     await steerThread(request.threadId, request.text);
   });
-  ipcMain.on("emma:stop-agent", (event, value: unknown) => {
+  ipcMain.on("shinbo:stop-agent", (event, value: unknown) => {
     if (event.senderFrame !== event.sender.mainFrame || ![mainWindow?.webContents, runBanner?.webContents].includes(event.sender)) return;
     if (typeof value === "string") { stopThread(value); return; }
     stopEveryThread();
   });
-  ipcMain.handle("emma:thread-changes", (event, value: unknown) => {
+  ipcMain.handle("shinbo:thread-changes", (event, value: unknown) => {
     mainWindowSender(event);
     return agents!.changes(boundedCapabilityId(value, "Changes thread"));
   });
-  ipcMain.handle("emma:clear-thread-context", (event, value: unknown) => {
+  ipcMain.handle("shinbo:clear-thread-context", (event, value: unknown) => {
     mainWindowSender(event);
     const threadId = boundedCapabilityId(value, "Clear context thread");
+    forgetHarnessSession(path.join(app.getPath("userData"), "harness"), threadId);
     compactNext.delete(threadId);
     for (const client of harnesses.values()) client.forgetSession(threadId);
   });
-  ipcMain.handle("emma:revert-change", (event, value: unknown) => {
+  ipcMain.handle("shinbo:revert-change", (event, value: unknown) => {
     mainWindowSender(event);
     if (!value || typeof value !== "object") throw new Error("Revert request is invalid");
     const request = value as Record<string, unknown>;
@@ -4672,17 +4824,17 @@ if (primaryInstance) app.whenReady().then(() => {
     changed();
     return true;
   });
-  ipcMain.on("emma:stop-computer-run", (event) => {
+  ipcMain.on("shinbo:stop-computer-run", (event) => {
     if (event.senderFrame !== event.sender.mainFrame || ![mainWindow?.webContents, runBanner?.webContents].includes(event.sender)) return;
     if (computerRuntime?.threadId) stopThread(computerRuntime.threadId);
   });
-  ipcMain.handle("emma:set-providers", (event, value: unknown) => {
+  ipcMain.handle("shinbo:set-providers", (event, value: unknown) => {
     mainWindowSender(event);
     providers = validateProviders(value);
     recycleHarnesses();
     return providers;
   });
-  ipcMain.handle("emma:test-provider", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:test-provider", async (event, value: unknown) => {
     mainWindowSender(event);
     const draft = (value ?? {}) as Partial<ProviderProfile>;
     const [profile] = validateProviders([{
@@ -4697,83 +4849,83 @@ if (primaryInstance) app.whenReady().then(() => {
     const key = profile.credentialEnv ? process.env[profile.credentialEnv] ?? "" : "";
     return await probeProvider(profile.baseUrl, key, typeof draft.modelId === "string" ? draft.modelId.trim() : "");
   });
-  ipcMain.handle("emma:set-default-mode", (event, value: unknown) => {
+  ipcMain.handle("shinbo:set-default-mode", (event, value: unknown) => {
     panelSender(event);
     defaultMode = asPermissionMode(value);
     return defaultMode;
   });
-  ipcMain.handle("emma:set-verifier", (event, value: unknown) => {
+  ipcMain.handle("shinbo:set-verifier", (event, value: unknown) => {
     panelSender(event);
     verifier = validateVerifier(value);
     return verifier;
   });
-  ipcMain.handle("emma:set-tagger", (event, value: unknown) => {
+  ipcMain.handle("shinbo:set-tagger", (event, value: unknown) => {
     panelSender(event);
     tagger = validateTagger(value);
     return tagger;
   });
-  ipcMain.handle("emma:set-zoom", (event, value: unknown) => {
+  ipcMain.handle("shinbo:set-zoom", (event, value: unknown) => {
     mainWindowSender(event);
     const zoom = typeof value === "number" && Number.isFinite(value) ? Math.min(MAX_UI_SCALE / 100, Math.max(MIN_UI_SCALE / 100, value)) : 1;
     event.sender.setZoomFactor(zoom);
     return zoom;
   });
-  ipcMain.handle("emma:set-tool-settings", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:set-tool-settings", async (event, value: unknown) => {
     panelSender(event);
     toolSettings = validateToolSettings(value);
     await toolsChanged();
     return toolSettings;
   });
-  ipcMain.handle("emma:set-harness-experiments", (event, value: unknown) => {
+  ipcMain.handle("shinbo:set-harness-experiments", (event, value: unknown) => {
     mainWindowSender(event);
     harnessExperiments = validateHarnessExperiments(value);
     semanticGrep.apply(harnessExperiments);
     return harnessExperiments;
   });
-  ipcMain.handle("emma:semantic-grep-status", (event) => {
+  ipcMain.handle("shinbo:semantic-grep-status", (event) => {
     mainWindowSender(event);
     return semanticGrep.status();
   });
-  ipcMain.handle("emma:zvec-grep-status", (event) => {
+  ipcMain.handle("shinbo:zvec-grep-status", (event) => {
     mainWindowSender(event);
     return zvecGrep.status();
   });
-  ipcMain.handle("emma:zvec-grep-install", (event) => {
+  ipcMain.handle("shinbo:zvec-grep-install", (event) => {
     mainWindowSender(event);
     return zvecGrep.install();
   });
-  ipcMain.handle("emma:zvec-grep-cancel", (event) => {
+  ipcMain.handle("shinbo:zvec-grep-cancel", (event) => {
     mainWindowSender(event);
     return zvecGrep.cancel();
   });
-  ipcMain.handle("emma:machine-facts", (event) => {
+  ipcMain.handle("shinbo:machine-facts", (event) => {
     mainWindowSender(event);
     return machineFacts(app.getPath("userData"));
   });
-  ipcMain.handle("emma:verify-embedding-key", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:verify-embedding-key", async (event, value: unknown) => {
     mainWindowSender(event);
     const model = embeddingModelRequest(value);
     return verifyEmbeddingKey(model, process.env[model.credentialEnv]?.trim() ?? "");
   });
-  ipcMain.handle("emma:set-review", (event, value: unknown) => {
+  ipcMain.handle("shinbo:set-review", (event, value: unknown) => {
     mainWindowSender(event);
     reviewSettings = validateReview(value);
     return reviewSettings;
   });
-  ipcMain.handle("emma:set-improvements", (event, value: unknown) => {
+  ipcMain.handle("shinbo:set-improvements", (event, value: unknown) => {
     mainWindowSender(event);
     const store = validateImprovements(value);
     setImprovements(store);
     return store;
   });
-  ipcMain.handle("emma:force-arm", (event, value: unknown) => {
+  ipcMain.handle("shinbo:force-arm", (event, value: unknown) => {
     mainWindowSender(event);
     const { threadId, arm } = forceArmRequest(value);
     ownBench(threadId);
     forceArm(threadId, arm);
     return arm;
   });
-  ipcMain.handle("emma:reveal-path", (event, value: unknown) => {
+  ipcMain.handle("shinbo:reveal-path", (event, value: unknown) => {
     mainWindowSender(event);
     const found = namedPath(value);
     if (!found) return false;
@@ -4782,49 +4934,54 @@ if (primaryInstance) app.whenReady().then(() => {
     shell.showItemInFolder(found);
     return true;
   });
-  ipcMain.handle("emma:preview-path", (event, value: unknown) => {
+  ipcMain.handle("shinbo:preview-path", async (event, value: unknown) => {
     mainWindowSender(event);
+    const skillName = typeof value === "string" ? /^\/([a-zA-Z0-9._-]{1,96})$/.exec(value)?.[1] : undefined;
+    if (skillName) {
+      const skill = await capabilities!.previewSkill(skillName).catch(() => null);
+      if (skill) return skill;
+    }
     const found = namedPath(value);
     if (!found) return null;
     const { grant, attached } = pathGrant(found);
     if (!grant && !attached) return { path: found, text: null };
     try {
-      if (isImageAttachment(found)) return { path: found, text: null, image: previewImage(found) };
+      if (isImageAttachment(found)) return { path: found, text: null, image: await previewImage(found) };
       if (attached && statSync(found).size > MAX_FILE_BYTES) return { path: found, text: null };
       return { path: found, text: attached ? readFileSync(found, "utf8") : folders!.read(grant!.id, path.relative(grant!.path, found)).text };
     } catch {
       return { path: found, text: null };
     }
   });
-  ipcMain.handle("emma:set-goal", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:set-goal", async (event, value: unknown) => {
     panelSender(event);
     return await setGoal(goalIpc(value));
   });
-  ipcMain.handle("emma:update-goal", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:update-goal", async (event, value: unknown) => {
     panelSender(event);
     return await updateGoal(goalIpc(value));
   });
-  ipcMain.handle("emma:clear-goal", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:clear-goal", async (event, value: unknown) => {
     panelSender(event);
     return await goalRequest("clearGoal", { threadId: boundedCapabilityId(value, "Goal thread") });
   });
-  ipcMain.handle("emma:list-plans", (event) => {
+  ipcMain.handle("shinbo:list-plans", (event) => {
     panelSender(event);
     return listPlans(app.getPath("userData"));
   });
-  ipcMain.handle("emma:list-task-lists", (event) => {
+  ipcMain.handle("shinbo:list-task-lists", (event) => {
     panelSender(event);
     return listTaskLists(app.getPath("userData"));
   });
-  ipcMain.handle("emma:list-artifacts", (event) => {
+  ipcMain.handle("shinbo:list-artifacts", (event) => {
     panelSender(event);
     return listArtifacts(app.getPath("userData"));
   });
-  ipcMain.handle("emma:read-artifact", (event, value: unknown) => {
+  ipcMain.handle("shinbo:read-artifact", (event, value: unknown) => {
     mainWindowSender(event);
     return readArtifact(app.getPath("userData"), boundedCapabilityId(value, "Artifact"));
   });
-  ipcMain.handle("emma:save-artifact", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:save-artifact", async (event, value: unknown) => {
     mainWindowSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Artifact request is invalid");
     const request = value as Record<string, unknown>;
@@ -4840,34 +4997,34 @@ if (primaryInstance) app.whenReady().then(() => {
     artifactsChanged();
     return saved;
   });
-  ipcMain.handle("emma:delete-artifact", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:delete-artifact", async (event, value: unknown) => {
     mainWindowSender(event);
     await deleteArtifact(app.getPath("userData"), boundedCapabilityId(value, "Artifact"));
     artifactsChanged();
   });
-  ipcMain.handle("emma:reveal-artifact", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:reveal-artifact", async (event, value: unknown) => {
     mainWindowSender(event);
     const artifact = await readArtifact(app.getPath("userData"), boundedCapabilityId(value, "Artifact"));
     shell.showItemInFolder(artifact.path);
     return true;
   });
-  ipcMain.handle("emma:artifact-sql", (event, value: unknown) => {
+  ipcMain.handle("shinbo:artifact-sql", (event, value: unknown) => {
     panelSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Artifact query is invalid");
     const request = value as Record<string, unknown>;
     return queryArtifact(app.getPath("userData"), boundedCapabilityId(request.id, "Artifact"), request.sql, request.params);
   });
-  ipcMain.handle("emma:list-components", (event) => {
+  ipcMain.handle("shinbo:list-components", (event) => {
     panelSender(event);
     return listComponents(app.getPath("userData"));
   });
-  ipcMain.handle("emma:delete-component", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:delete-component", async (event, value: unknown) => {
     mainWindowSender(event);
     const gone = await deleteComponent(app.getPath("userData"), boundedCapabilityId(value, "Component"));
     componentsChanged();
     return gone;
   });
-  ipcMain.handle("emma:enable-component", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:enable-component", async (event, value: unknown) => {
     mainWindowSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Component request is invalid");
     const request = value as Record<string, unknown>;
@@ -4875,7 +5032,7 @@ if (primaryInstance) app.whenReady().then(() => {
     componentsChanged();
     return meta;
   });
-  ipcMain.handle("emma:expand-component", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:expand-component", async (event, value: unknown) => {
     mainWindowSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Component request is invalid");
     const request = value as Record<string, unknown>;
@@ -4883,7 +5040,7 @@ if (primaryInstance) app.whenReady().then(() => {
     componentsChanged();
     return meta;
   });
-  ipcMain.handle("emma:component-fetch", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:component-fetch", async (event, value: unknown) => {
     panelSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Component request is invalid");
     const request = value as Record<string, unknown>;
@@ -4894,7 +5051,7 @@ if (primaryInstance) app.whenReady().then(() => {
         type: "warning",
         title: "Component API access",
         message: `Allow “${meta.title.replace(/\s+/g, " ")}” to use ${template.variables.join(", ")}?`,
-        detail: `This approves only the exact request below until Emma quits. A changed request or component needs new approval. Components share Emma's interface and can repeat approved requests; this is not a separate account for each widget. Only approve an endpoint you trust with these credentials.\n\n${JSON.stringify(template, null, 2)}`,
+        detail: `This approves only the exact request below until Shinbo quits. A changed request or component needs new approval. Components share Shinbo's interface and can repeat approved requests; this is not a separate account for each widget. Only approve an endpoint you trust with these credentials.\n\n${JSON.stringify(template, null, 2)}`,
         buttons: ["Cancel", "Allow this request"],
         defaultId: 0,
         cancelId: 0,
@@ -4903,11 +5060,11 @@ if (primaryInstance) app.whenReady().then(() => {
       return choice.response === 1;
     });
   });
-  ipcMain.handle("emma:read-component", (event, value: unknown) => {
+  ipcMain.handle("shinbo:read-component", (event, value: unknown) => {
     mainWindowSender(event);
     return readComponent(app.getPath("userData"), boundedCapabilityId(value, "Component"));
   });
-  ipcMain.handle("emma:shoot-component", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:shoot-component", async (event, value: unknown) => {
     mainWindowSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Component request is invalid");
     const request = value as Record<string, unknown>;
@@ -4929,13 +5086,13 @@ if (primaryInstance) app.whenReady().then(() => {
     componentsChanged();
     return true;
   });
-  ipcMain.handle("emma:read-visual", (event, value: unknown) => {
+  ipcMain.handle("shinbo:read-visual", (event, value: unknown) => {
     mainWindowSender(event);
     const visual = readVisual(boundedCapabilityId(value, "Visual"));
     if (!visual) throw new Error("That visual is no longer in this conversation.");
     return visual;
   });
-  ipcMain.handle("emma:export-visual", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:export-visual", async (event, value: unknown) => {
     mainWindowSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Visual request is invalid");
     const request = value as Record<string, unknown>;
@@ -4952,7 +5109,7 @@ if (primaryInstance) app.whenReady().then(() => {
     await writeFile(choice.filePath, png);
     return choice.filePath;
   });
-  ipcMain.handle("emma:export-thread-stats", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:export-thread-stats", async (event, value: unknown) => {
     mainWindowSender(event);
     const request = statsExportRequest(value);
     const choice = await dialog.showSaveDialog(mainWindow!, {
@@ -4965,12 +5122,12 @@ if (primaryInstance) app.whenReady().then(() => {
     for (const file of request.files) await writeFile(path.join(choice.filePath, file.name), file.text, "utf8");
     return choice.filePath;
   });
-  ipcMain.handle("emma:bench-judge", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:bench-judge", async (event, value: unknown) => {
     mainWindowSender(event);
     const request = benchJudgeRequest(value);
     return await judgeCase(request, request.judge ?? tagger);
   });
-  ipcMain.handle("emma:export-bench", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:export-bench", async (event, value: unknown) => {
     mainWindowSender(event);
     const request = benchExportRequest(value);
     const choice = await dialog.showSaveDialog(mainWindow!, {
@@ -4983,64 +5140,64 @@ if (primaryInstance) app.whenReady().then(() => {
     await writeFile(choice.filePath, workbook(request.sheets));
     return choice.filePath;
   });
-  ipcMain.handle("emma:list-folders", (event) => {
+  ipcMain.handle("shinbo:list-folders", (event) => {
     mainWindowSender(event);
     return visibleFolders();
   });
-  ipcMain.handle("emma:plugin-catalog", (event) => {
+  ipcMain.handle("shinbo:plugin-catalog", (event) => {
     mainWindowSender(event);
     return ensureDefaultMarketplace(app.getPath("userData"));
   });
-  ipcMain.handle("emma:add-marketplace", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:add-marketplace", async (event, value: unknown) => {
     mainWindowSender(event);
     const request = (value ?? {}) as Record<string, unknown>;
     return await addMarketplace(app.getPath("userData"), { source: request.source, ref: request.ref, sparse: request.sparse });
   });
-  ipcMain.handle("emma:remove-marketplace", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:remove-marketplace", async (event, value: unknown) => {
     mainWindowSender(event);
     const catalog = await removeMarketplace(app.getPath("userData"), value);
     await toolsChanged();
     return catalog;
   });
-  ipcMain.handle("emma:refresh-marketplace", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:refresh-marketplace", async (event, value: unknown) => {
     mainWindowSender(event);
     return await refreshMarketplace(app.getPath("userData"), value);
   });
-  ipcMain.handle("emma:install-plugin", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:install-plugin", async (event, value: unknown) => {
     mainWindowSender(event);
     const request = (value ?? {}) as Record<string, unknown>;
     const catalog = await installPlugin(app.getPath("userData"), request.marketplace, request.plugin);
     await toolsChanged();
     return catalog;
   });
-  ipcMain.handle("emma:uninstall-plugin", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:uninstall-plugin", async (event, value: unknown) => {
     mainWindowSender(event);
     const catalog = await uninstallPlugin(app.getPath("userData"), value);
     await toolsChanged();
     return catalog;
   });
-  ipcMain.handle("emma:trust-plugin-hooks", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:trust-plugin-hooks", async (event, value: unknown) => {
     mainWindowSender(event);
     const request = (value ?? {}) as Record<string, unknown>;
     return await trustPluginHooks(app.getPath("userData"), request.id, request.trusted);
   });
-  ipcMain.handle("emma:plugin-detail", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:plugin-detail", async (event, value: unknown) => {
     mainWindowSender(event);
     const request = (value ?? {}) as Record<string, unknown>;
     return await pluginDetail(app.getPath("userData"), request.marketplace, request.plugin);
   });
-  ipcMain.handle("emma:setup-status", (event) => {
+  ipcMain.handle("shinbo:setup-status", (event) => {
     mainWindowSender(event);
     return setupStatus();
   });
-  ipcMain.handle("emma:reset-data", (event) => {
+  ipcMain.handle("shinbo:reset-data", (event) => {
     mainWindowSender(event);
-    const candidates = resetDataRoots(app.getPath("userData"), process.env.EMMA_DATA_DIR, process.platform, homedir(), process.env);
+    const candidates = resetDataRoots(app.getPath("userData"), process.env.SHINBO_DATA_DIR, process.platform, homedir(), process.env);
     const roots = candidates.map((root) => {
       const resolved = canonicalResetPath(root);
-      if (!samePath(root, resolved)) throw new Error(`Reset blocked: refusing to delete unsafe Emma data path "${root}".`);
+      if (!samePath(root, resolved)) throw new Error(`Reset blocked: refusing to delete unsafe Shinbo data path "${root}".`);
       try {
-        if (!statSync(resolved).isDirectory()) throw new Error(`Reset blocked: refusing to delete unsafe Emma data path "${root}".`);
+        if (!statSync(resolved).isDirectory()) throw new Error(`Reset blocked: refusing to delete unsafe Shinbo data path "${root}".`);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
@@ -5052,7 +5209,7 @@ if (primaryInstance) app.whenReady().then(() => {
     app.relaunch();
     app.exit(0);
   });
-  ipcMain.handle("emma:open-privacy-settings", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:open-privacy-settings", async (event, value: unknown) => {
     mainWindowSender(event);
     const url = privacySettingsUrl(value, process.platform);
     const mac = isMac;
@@ -5060,25 +5217,25 @@ if (primaryInstance) app.whenReady().then(() => {
     if (value === "accessibility" && mac) systemPreferences.isTrustedAccessibilityClient(true);
     void shell.openExternal(url);
   });
-  ipcMain.handle("emma:pick-vault-folder", async (event): Promise<VaultChoice | null> => {
+  ipcMain.handle("shinbo:pick-vault-folder", async (event): Promise<VaultChoice | null> => {
     mainWindowSender(event);
-    const choice = await dialog.showOpenDialog(mainWindow!, { title: "Where should Emma keep your notes?", defaultPath: readVault(app.getPath("userData"))?.root ?? defaultVaultRoot(), buttonLabel: "Keep notes here", properties: ["openDirectory", "createDirectory"] });
+    const choice = await dialog.showOpenDialog(mainWindow!, { title: "Where should Shinbo keep your notes?", defaultPath: readVault(app.getPath("userData"))?.root ?? defaultVaultRoot(), buttonLabel: "Keep notes here", properties: ["openDirectory", "createDirectory"] });
     if (choice.canceled || !choice.filePaths[0]) return null;
     pickedVaultRoot = choice.filePaths[0];
     return obsidianVaults().find((found) => found.root === pickedVaultRoot)
       ?? { root: pickedVaultRoot, folder: DEFAULT_VAULT_FOLDER, kind: "folder", name: path.basename(pickedVaultRoot) || pickedVaultRoot };
   });
-  ipcMain.handle("emma:detect-vaults", (event) => {
+  ipcMain.handle("shinbo:detect-vaults", (event) => {
     mainWindowSender(event);
     return obsidianVaults();
   });
-  ipcMain.handle("emma:set-vault", (event, value: unknown) => {
+  ipcMain.handle("shinbo:set-vault", (event, value: unknown) => {
     mainWindowSender(event);
     const chosen = vaultRequest(value);
     const root = chosen.kind === "obsidian"
       ? obsidianVaults().find((found) => found.name === chosen.name)?.root
       : pickedVaultRoot ?? readVault(app.getPath("userData"))?.root;
-    if (!root) throw new Error("Choose the folder Emma should keep your notes in.");
+    if (!root) throw new Error("Choose the folder Shinbo should keep your notes in.");
     connectVault(saveVault(app.getPath("userData"), {
       root,
       folder: chosen.folder ?? DEFAULT_VAULT_FOLDER,
@@ -5087,25 +5244,25 @@ if (primaryInstance) app.whenReady().then(() => {
     }));
     return setupStatus();
   });
-  ipcMain.handle("emma:vault-status", (event) => {
+  ipcMain.handle("shinbo:vault-status", (event) => {
     panelSender(event);
     return readVault(app.getPath("userData"));
   });
-  ipcMain.handle("emma:keep", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:keep", async (event, value: unknown) => {
     panelSender(event);
     return await keep(keepRequest(value), event.sender === overlay?.webContents);
   });
-  ipcMain.handle("emma:list-notes", (event) => {
+  ipcMain.handle("shinbo:list-notes", (event) => {
     panelSender(event);
     const vault = readVault(app.getPath("userData"));
     return vault ? listNotes(vault) : [];
   });
-  ipcMain.handle("emma:list-note-folders", (event) => {
+  ipcMain.handle("shinbo:list-note-folders", (event) => {
     panelSender(event);
     const vault = readVault(app.getPath("userData"));
     return vault ? listNoteFolders(vault) : [];
   });
-  ipcMain.handle("emma:create-note-folder", (event, value: unknown) => {
+  ipcMain.handle("shinbo:create-note-folder", (event, value: unknown) => {
     mainWindowSender(event);
     const vault = readVault(app.getPath("userData"));
     if (!vault) throw new Error("No vault is connected.");
@@ -5113,7 +5270,7 @@ if (primaryInstance) app.whenReady().then(() => {
     notesChanged();
     return folder;
   });
-  ipcMain.handle("emma:rename-note-folder", (event, value: unknown) => {
+  ipcMain.handle("shinbo:rename-note-folder", (event, value: unknown) => {
     mainWindowSender(event);
     const vault = readVault(app.getPath("userData"));
     if (!vault) throw new Error("No vault is connected.");
@@ -5122,7 +5279,7 @@ if (primaryInstance) app.whenReady().then(() => {
     notesChanged();
     return renamed;
   });
-  ipcMain.handle("emma:move-note", (event, value: unknown) => {
+  ipcMain.handle("shinbo:move-note", (event, value: unknown) => {
     mainWindowSender(event);
     const vault = readVault(app.getPath("userData"));
     if (!vault) throw new Error("No vault is connected.");
@@ -5131,15 +5288,15 @@ if (primaryInstance) app.whenReady().then(() => {
     notesChanged();
     return moved;
   });
-  ipcMain.handle("emma:read-note", (event, value: unknown) => {
+  ipcMain.handle("shinbo:read-note", (event, value: unknown) => {
     panelSender(event);
     const vault = readVault(app.getPath("userData"));
     if (!vault) throw new Error("No vault is connected.");
     const file = path.join(notesRoot(vault), noteInVault(vault, value));
-    if (!statSync(file).isFile() || statSync(file).size > MAX_NOTE_BYTES) throw new Error("That note cannot be read.");
+    if (!statSync(file).isFile() || statSync(file).size > MAX_NOTE_FILE_BYTES) throw new Error("That note cannot be read.");
     return readFileSync(file, "utf8");
   });
-  ipcMain.handle("emma:open-in-obsidian", (event, value: unknown) => {
+  ipcMain.handle("shinbo:open-in-obsidian", (event, value: unknown) => {
     panelSender(event);
     const vault = readVault(app.getPath("userData"));
     if (!vault) throw new Error("No vault is connected.");
@@ -5147,44 +5304,45 @@ if (primaryInstance) app.whenReady().then(() => {
     if (vault.kind === "obsidian") void shell.openExternal(obsidianOpenUrl(vault, relative));
     else shell.showItemInFolder(path.join(notesRoot(vault), relative));
   });
-  ipcMain.handle("emma:install-obsidian", (event) => {
+  ipcMain.handle("shinbo:install-obsidian", (event) => {
     mainWindowSender(event);
     return { installed: obsidianInstalled(), command: obsidianInstallCommand() };
   });
-  ipcMain.handle("emma:pick-folder", async (event) => {
+  ipcMain.handle("shinbo:pick-folder", async (event) => {
     mainWindowSender(event);
     const choice = await dialog.showOpenDialog(mainWindow!, { title: "Connect a folder", properties: ["openDirectory", "createDirectory"] });
     if (choice.canceled || !choice.filePaths[0]) return visibleFolders();
     folders!.add(choice.filePaths[0]);
     return visibleFolders();
   });
-  ipcMain.handle("emma:forget-folder", (event, value: unknown) => {
+  ipcMain.handle("shinbo:forget-folder", (event, value: unknown) => {
     mainWindowSender(event);
     const id = boundedCapabilityId(value, "Folder");
     if (id === vaultFolderId) throw new Error("Your vault stays connected; change it from Settings.");
     folders!.remove(id);
     return visibleFolders();
   });
-  ipcMain.handle("emma:git-status", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:git-status", async (event, value: unknown, includeDiff: unknown = true) => {
     mainWindowSender(event);
-    return await gitSnapshot(folders!.directory(boundedCapabilityId(value, "Folder")), true);
+    if (typeof includeDiff !== "boolean") throw new Error("The diff option must be a boolean.");
+    return await gitSnapshot(folders!.directory(boundedCapabilityId(value, "Folder")), true, includeDiff);
   });
-  ipcMain.handle("emma:git-ready", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:git-ready", async (event, value: unknown) => {
     mainWindowSender(event);
     return await gitReady(folders!.directory(boundedCapabilityId(value, "Folder")));
   });
-  ipcMain.handle("emma:git-init", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:git-init", async (event, value: unknown) => {
     mainWindowSender(event);
     await initRepo(folders!.directory(boundedCapabilityId(value, "Folder")));
     changed();
   });
-  ipcMain.handle("emma:git-history", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:git-history", async (event, value: unknown) => {
     mainWindowSender(event);
     const request = gitRequest(value, "History");
     const cwd = folders!.directory(boundedCapabilityId(request.folderId, "Folder"));
     return await gitHistory(cwd, { skip: gitCount(request.skip, "Skip"), limit: gitCount(request.limit, "Limit") });
   });
-  ipcMain.handle("emma:git-commit", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:git-commit", async (event, value: unknown) => {
     mainWindowSender(event);
     const request = gitRequest(value, "Commit");
     const cwd = folders!.directory(boundedCapabilityId(request.folderId, "Folder"));
@@ -5192,52 +5350,52 @@ if (primaryInstance) app.whenReady().then(() => {
     if (typeof message !== "string" || Buffer.byteLength(message) > MAX_COMMIT_MESSAGE_BYTES) throw new Error("That commit message is invalid");
     return await commit(cwd, { message, paths: request.paths, amend: request.amend === true });
   });
-  ipcMain.handle("emma:git-discard", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:git-discard", async (event, value: unknown) => {
     mainWindowSender(event);
     const request = gitRequest(value, "Discard");
     await discard(folders!.directory(boundedCapabilityId(request.folderId, "Folder")), request.paths);
   });
-  ipcMain.handle("emma:git-run", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:git-run", async (event, value: unknown) => {
     mainWindowSender(event);
     const request = gitRequest(value, "Git command");
     const cwd = folders!.directory(boundedCapabilityId(request.folderId, "Folder"));
     return await runGit(cwd, validateGitArgs(request.args));
   });
-  ipcMain.handle("emma:git-message", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:git-message", async (event, value: unknown) => {
     mainWindowSender(event);
     const request = gitRequest(value, "Commit message");
     const snapshot = await gitSnapshot(folders!.directory(boundedCapabilityId(request.folderId, "Folder")));
     if (!snapshot) throw new Error("That folder is not a git repository.");
     return await writeCommitMessage(tagger, { diff: snapshot.diff, files: snapshot.files });
   });
-  ipcMain.handle("emma:mobile-status", (event) => {
+  ipcMain.handle("shinbo:mobile-status", (event) => {
     mainWindowSender(event);
     return mobileStatus();
   });
-  ipcMain.handle("emma:mobile-pair", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:mobile-pair", async (event, value: unknown) => {
     mainWindowSender(event);
     if (!isPin(value)) throw new Error("Choose a PIN of 4 to 12 digits before pairing a phone.");
     return await bridge!.pair(value);
   });
-  ipcMain.handle("emma:mobile-cancel-pair", (event) => {
+  ipcMain.handle("shinbo:mobile-cancel-pair", (event) => {
     mainWindowSender(event);
     bridge!.cancelPair();
     return bridge!.status();
   });
-  ipcMain.handle("emma:mobile-unpair", (event, value: unknown) => {
+  ipcMain.handle("shinbo:mobile-unpair", (event, value: unknown) => {
     mainWindowSender(event);
     bridge!.unpair(typeof value === "number" && Number.isFinite(value) ? value : undefined);
     return bridge!.status();
   });
-  ipcMain.handle("emma:machine-sample", (event) => {
+  ipcMain.handle("shinbo:machine-sample", (event) => {
     mainWindowSender(event);
     return machineSample();
   });
-  ipcMain.handle("emma:list-editors", (event) => {
+  ipcMain.handle("shinbo:list-editors", (event) => {
     mainWindowSender(event);
     return installedEditors();
   });
-  ipcMain.handle("emma:open-in-editor", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:open-in-editor", async (event, value: unknown) => {
     mainWindowSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Editor request is invalid");
     const request = value as Record<string, unknown>;
@@ -5245,14 +5403,14 @@ if (primaryInstance) app.whenReady().then(() => {
     if (request.folderId === undefined) {
       const file = namedPath(request.path);
       const held = file ? pathGrant(file) : { grant: undefined, attached: false };
-      if (!file || (!held.grant && !held.attached)) throw new Error("That file is not open to Emma.");
+      if (!file || (!held.grant && !held.attached)) throw new Error("That file is not open to Shinbo.");
       await openInEditor(editorId, file);
       return;
     }
     const folderId = boundedCapabilityId(request.folderId, "Folder");
     await openInEditor(editorId, folders!.fileWithin(folderId, boundedCapabilityId(request.path, "File path")));
   });
-  ipcMain.handle("emma:set-branch", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:set-branch", async (event, value: unknown) => {
     mainWindowSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Branch request is invalid");
     const request = value as Record<string, unknown>;
@@ -5260,7 +5418,7 @@ if (primaryInstance) app.whenReady().then(() => {
     await switchBranch(cwd, boundedCapabilityId(request.branch, "Branch"), request.create === true, request.from === undefined ? undefined : boundedCapabilityId(request.from, "Branch"));
     changed();
   });
-  ipcMain.handle("emma:set-worktree", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:set-worktree", async (event, value: unknown) => {
     mainWindowSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Worktree request is invalid");
     const request = value as Record<string, unknown>;
@@ -5273,11 +5431,11 @@ if (primaryInstance) app.whenReady().then(() => {
     if (!grant) throw new Error("That folder could not be connected.");
     return { folders: list, folderId: grant.id };
   });
-  ipcMain.handle("emma:worktree-list", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:worktree-list", async (event, value: unknown) => {
     mainWindowSender(event);
     return await listWorktrees(folders!.directory(boundedCapabilityId(value, "Folder")));
   });
-  ipcMain.handle("emma:worktree-remove", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:worktree-remove", async (event, value: unknown) => {
     mainWindowSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Worktree request is invalid");
     const request = value as Record<string, unknown>;
@@ -5288,7 +5446,7 @@ if (primaryInstance) app.whenReady().then(() => {
     await removeWorktrees(cwd, request.paths as string[]);
     changed();
   });
-  ipcMain.handle("emma:worktree-add", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:worktree-add", async (event, value: unknown) => {
     mainWindowSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Worktree request is invalid");
     const request = value as Record<string, unknown>;
@@ -5301,62 +5459,64 @@ if (primaryInstance) app.whenReady().then(() => {
     if (!grant) throw new Error("That folder could not be connected.");
     return { folders: list, folderId: grant.id };
   });
-  ipcMain.handle("emma:list-folder-files", (event, value: unknown) => {
+  ipcMain.handle("shinbo:list-folder-files", (event, value: unknown) => {
     mainWindowSender(event);
     return folders!.files(boundedCapabilityId(value, "Folder"));
   });
-  ipcMain.handle("emma:read-folder-file", (event, value: unknown) => {
+  ipcMain.handle("shinbo:read-folder-file", (event, value: unknown) => {
     mainWindowSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("File request is invalid");
     const request = value as Record<string, unknown>;
     return folders!.read(boundedCapabilityId(request.folderId, "Folder"), boundedCapabilityId(request.path, "File path"));
   });
-  ipcMain.handle("emma:attach-files", async (event) => {
+  ipcMain.handle("shinbo:attach-files", async (event) => {
     mainWindowSender(event);
     const choice = await dialog.showOpenDialog(mainWindow!, { title: "Attach files", properties: ["openFile", "multiSelections"] });
     if (choice.canceled) return [];
-    return choice.filePaths.map((file) => held(attachments!.hold(file)));
+    const picked = [];
+    for (const file of choice.filePaths) picked.push(await held(attachments!.hold(file)));
+    return picked;
   });
-  ipcMain.handle("emma:attach-data", (event, value: unknown) => {
+  ipcMain.handle("shinbo:attach-data", (event, value: unknown) => {
     mainWindowSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Attachment is invalid");
     const request = value as { name?: unknown; data?: unknown };
     if (!(request.data instanceof ArrayBuffer) && !ArrayBuffer.isView(request.data)) throw new Error("Attachment is invalid");
     return held(attachments!.save(request.name, new Uint8Array(request.data instanceof ArrayBuffer ? request.data : request.data.buffer)));
   });
-  ipcMain.handle("emma:read-attachment", (event, value: unknown) => {
+  ipcMain.handle("shinbo:read-attachment", (event, value: unknown) => {
     mainWindowSender(event);
     return attachments!.read(value);
   });
-  ipcMain.handle("emma:discover-agent-imports", (event) => {
+  ipcMain.handle("shinbo:discover-agent-imports", (event) => {
     if (event.senderFrame !== event.sender.mainFrame || event.sender !== mainWindow?.webContents) throw new Error("Import discovery sender is not allowed");
     return discoverImports(homedir());
   });
-  ipcMain.handle("emma:import-agent-sources", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:import-agent-sources", async (event, value: unknown) => {
     if (event.senderFrame !== event.sender.mainFrame || event.sender !== mainWindow?.webContents || !Array.isArray(value) || value.length > MAX_IMPORT_SOURCES || value.some((id) => typeof id !== "string")) throw new Error("Import selection is invalid");
     const saved = await saveImportManifest(app.getPath("userData"), homedir(), value);
     await toolsChanged();
     return saved;
   });
-  ipcMain.handle("emma:search-imported-skills", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:search-imported-skills", async (event, value: unknown) => {
     mainWindowSender(event);
     const query = boundedCapabilityQuery(value, "Skill search");
     const found = await capabilities!.searchSkills(query.query, query.limit);
     return found.filter((skill) => !toolSettings.disabledSkills.includes(skill.id));
   });
-  ipcMain.handle("emma:list-tool-targets", async (event) => {
+  ipcMain.handle("shinbo:list-tool-targets", async (event) => {
     mainWindowSender(event);
     return {
-      written: (await listEmmaTools(app.getPath("userData"))).map((tool) => ({ id: `run_tool:${tool.name}`, name: tool.name, source: tool.description })),
+      written: (await listShinboTools(app.getPath("userData"))).map((tool) => ({ id: `run_tool:${tool.name}`, name: tool.name, source: tool.description })),
       skills: (await capabilities!.searchSkills("", 64)).filter((skill) => skill.source !== "installed"),
       servers: await capabilities!.listMcpServers(),
     };
   });
-  ipcMain.handle("emma:next-steps", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:next-steps", async (event, value: unknown) => {
     mainWindowSender(event);
     return await suggestNextSteps(validateWorkState(value), freeRouter);
   });
-  ipcMain.handle("emma:capability-usage", async (event) => {
+  ipcMain.handle("shinbo:capability-usage", async (event) => {
     mainWindowSender(event);
     const usage = await readUsage(app.getPath("userData"));
     const [skills, servers] = await Promise.all([capabilities!.searchSkills("", MAX_SKILL_RESULTS), capabilities!.listMcpServers()]);
@@ -5369,7 +5529,7 @@ if (primaryInstance) app.whenReady().then(() => {
       servers: servers.map((server) => ({ id: server.id, name: server.name, source: `${server.source} · ${server.command}`, days: daysUnder(usage, mcpServerPrefix(server.name)) })),
     };
   });
-  ipcMain.handle("emma:select-imported-skill", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:select-imported-skill", async (event, value: unknown) => {
     mainWindowSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Skill selection is invalid");
     const candidate = value as Record<string, unknown>;
@@ -5380,40 +5540,40 @@ if (primaryInstance) app.whenReady().then(() => {
     skillAttachment.put(skill, threadId);
     return { id: skill.id, source: skill.source, name: skill.name, threadId, chars: skill.instructions.length };
   });
-  ipcMain.handle("emma:imported-skill-status", (event) => {
+  ipcMain.handle("shinbo:imported-skill-status", (event) => {
     mainWindowSender(event);
     return skillAttachment.status();
   });
-  ipcMain.handle("emma:clear-imported-skill", (event, value: unknown) => {
+  ipcMain.handle("shinbo:clear-imported-skill", (event, value: unknown) => {
     mainWindowSender(event);
     skillAttachment.clear(boundedCapabilityId(value, "Skill attachment"));
   });
-  ipcMain.handle("emma:list-imported-mcp-servers", async (event) => {
+  ipcMain.handle("shinbo:list-imported-mcp-servers", async (event) => {
     mainWindowSender(event);
     const servers = await capabilities!.listMcpServers();
     return servers.filter((server) => !toolSettings.disabledServers.includes(server.id));
   });
-  ipcMain.handle("emma:set-zero-retention", (event, value: unknown) => {
+  ipcMain.handle("shinbo:set-zero-retention", (event, value: unknown) => {
     mainWindowSender(event);
     if (typeof value !== "boolean") throw new Error("The zero-retention preference must be a boolean");
-    if ((process.env.EMMA_OPENROUTER_ZDR !== undefined) === value) return;
-    if (value) process.env.EMMA_OPENROUTER_ZDR = "1";
-    else delete process.env.EMMA_OPENROUTER_ZDR;
+    if ((process.env.SHINBO_OPENROUTER_ZDR !== undefined) === value) return;
+    if (value) process.env.SHINBO_OPENROUTER_ZDR = "1";
+    else delete process.env.SHINBO_OPENROUTER_ZDR;
     recycleHarnesses();
   });
-  ipcMain.handle("emma:list-credentials", (event) => {
+  ipcMain.handle("shinbo:list-credentials", (event) => {
     mainWindowSender(event);
     return credentials!.list();
   });
-  ipcMain.handle("emma:openrouter-balance", (event) => {
+  ipcMain.handle("shinbo:openrouter-balance", (event) => {
     mainWindowSender(event);
     return fetchOpenRouterBalance(process.env.OPENROUTER_API_KEY ?? "");
   });
-  ipcMain.handle("emma:deepseek-balance", (event) => {
+  ipcMain.handle("shinbo:deepseek-balance", (event) => {
     mainWindowSender(event);
     return fetchDeepSeekBalance(process.env.DEEPSEEK_API_KEY ?? "");
   });
-  ipcMain.handle("emma:save-credential", (event, value: unknown) => {
+  ipcMain.handle("shinbo:save-credential", (event, value: unknown) => {
     mainWindowSender(event);
     const slot = credentialSlot(value);
     if (slot.secret === undefined) credentials!.remove(slot.env);
@@ -5422,13 +5582,13 @@ if (primaryInstance) app.whenReady().then(() => {
     recycleHarnesses();
     return credentials!.list();
   });
-  ipcMain.handle("emma:fetch-url", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:fetch-url", async (event, value: unknown) => {
     mainWindowSender(event);
     if (typeof value !== "string") throw new Error("Only http and https links can be read");
     const { title, text } = await fetchReadablePage(value);
     return { title, text };
   });
-  ipcMain.handle("emma:clip-page", async (event) => {
+  ipcMain.handle("shinbo:clip-page", async (event) => {
     const window = overlay;
     if (!window || event.senderFrame !== event.sender.mainFrame || event.sender !== window.webContents) throw new Error("Clipping the front page is available only from the quick overlay");
     closeRadial();
@@ -5444,15 +5604,15 @@ if (primaryInstance) app.whenReady().then(() => {
     }
     return clipPage(front);
   });
-  ipcMain.handle("emma:load-ui-plugins", (event) => {
-    if (event.senderFrame !== event.sender.mainFrame || !trustedSender(event.senderFrame.url, app.getAppPath(), process.env.EMMA_DEV_SERVER_URL)) throw new Error("UI plugin sender is not allowed");
+  ipcMain.handle("shinbo:load-ui-plugins", (event) => {
+    if (event.senderFrame !== event.sender.mainFrame || !trustedSender(event.senderFrame.url, app.getAppPath(), process.env.SHINBO_DEV_SERVER_URL)) throw new Error("UI plugin sender is not allowed");
     return loadUiPlugins(app.getPath("userData"));
   });
-  ipcMain.handle("emma:start-screen-annotation", (event) => {
+  ipcMain.handle("shinbo:start-screen-annotation", (event) => {
     if (event.senderFrame !== event.sender.mainFrame || event.sender !== overlay?.webContents) throw new Error("Screen annotation is available only from the quick overlay");
     startAnnotation();
   });
-  ipcMain.handle("emma:capture-screen-context", async (event) => {
+  ipcMain.handle("shinbo:capture-screen-context", async (event) => {
     const window = overlay;
     if (!window || event.senderFrame !== event.sender.mainFrame || event.sender !== window.webContents) throw new Error("Screen capture is available only from the quick overlay");
     closeRadial();
@@ -5471,13 +5631,13 @@ if (primaryInstance) app.whenReady().then(() => {
       capturing = false;
     }
   });
-  ipcMain.handle("emma:keep-screen", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:keep-screen", async (event, value: unknown) => {
     const window = overlay;
     if (!window || event.senderFrame !== event.sender.mainFrame || event.sender !== window.webContents) throw new Error("Keeping the screen is available only from the quick overlay");
     if (!validScreenContextId(value)) throw new Error("Screen context is unavailable");
     return await keepScreen(value);
   });
-  ipcMain.handle("emma:get-screen-annotation-frame", async (event) => {
+  ipcMain.handle("shinbo:get-screen-annotation-frame", async (event) => {
     const window = annotation;
     if (!window || event.senderFrame !== event.sender.mainFrame || event.sender !== window.webContents || !annotationDisplay) throw new Error("Screen annotation frame is unavailable");
     window.hide();
@@ -5491,45 +5651,42 @@ if (primaryInstance) app.whenReady().then(() => {
       if (!window.isDestroyed()) window.show();
     }
   });
-  ipcMain.handle("emma:finish-screen-annotation", (event, value: unknown) => {
+  ipcMain.handle("shinbo:finish-screen-annotation", (event, value: unknown) => {
     if (event.senderFrame !== event.sender.mainFrame || event.sender !== annotation?.webContents) throw new Error("Screen annotation sender is not allowed");
     annotationAttachment.put({ id: randomUUID(), image: composeScreenContext(value), source: annotationSource });
     closeAnnotation();
   });
-  ipcMain.handle("emma:cancel-screen-annotation", (event) => {
+  ipcMain.handle("shinbo:cancel-screen-annotation", (event) => {
     if (event.senderFrame !== event.sender.mainFrame || event.sender !== annotation?.webContents) throw new Error("Screen annotation sender is not allowed");
     closeAnnotation();
   });
-  ipcMain.handle("emma:screen-annotation-status", (event) => {
+  ipcMain.handle("shinbo:screen-annotation-status", (event) => {
     if (event.senderFrame !== event.sender.mainFrame || event.sender !== overlay?.webContents) throw new Error("Screen annotation sender is not allowed");
     return annotationAttachment.status();
   });
-  ipcMain.handle("emma:clear-screen-annotation", (event, id: unknown) => {
+  ipcMain.handle("shinbo:clear-screen-annotation", (event, id: unknown) => {
     if (event.senderFrame !== event.sender.mainFrame || event.sender !== overlay?.webContents || typeof id !== "string") throw new Error("Screen annotation sender is not allowed");
     annotationAttachment.clear(id);
   });
-  ipcMain.on("emma:set-overlay-preferences", (event, value: unknown) => {
-    if (event.senderFrame !== event.sender.mainFrame || !trustedSender(event.senderFrame.url, app.getAppPath(), process.env.EMMA_DEV_SERVER_URL)) {
-      return;
+  ipcMain.handle("shinbo:set-overlay-preferences", (event, value: unknown) => {
+    if (event.senderFrame !== event.sender.mainFrame || !trustedSender(event.senderFrame.url, app.getAppPath(), process.env.SHINBO_DEV_SERVER_URL)) {
+      throw new Error("Overlay settings sender is not allowed.");
     }
-    try {
-      overlayPreferences = validateOverlayPreferences(value);
-      overlayPreferencesReady = true;
-      setSystemPrompt(overlayPreferences.systemPrompt ?? "");
-      setPrompts(overlayPreferences.prompts ?? []);
-      if (queuedOverlayToggle) {
-        const queued = queuedOverlayToggle;
-        queuedOverlayToggle = null;
-        toggleOverlay(queued.command);
-      }
+    overlayPreferences = validateOverlayPreferences(value);
+    overlayPreferencesReady = true;
+    setSystemPrompt(overlayPreferences.systemPrompt ?? "");
+    setPrompts(overlayPreferences.prompts ?? []);
+    if (queuedOverlayToggle) {
+      const queued = queuedOverlayToggle;
+      queuedOverlayToggle = null;
+      toggleOverlay(queued.command);
     }
-    catch { console.error("Emma: invalid overlay settings"); }
   });
-  ipcMain.handle("emma:set-keybinds", (event, value: unknown) => {
-    if (event.senderFrame !== event.sender.mainFrame || !trustedSender(event.senderFrame.url, app.getAppPath(), process.env.EMMA_DEV_SERVER_URL)) throw new Error("Keybind sender is not allowed");
+  ipcMain.handle("shinbo:set-keybinds", (event, value: unknown) => {
+    if (event.senderFrame !== event.sender.mainFrame || !trustedSender(event.senderFrame.url, app.getAppPath(), process.env.SHINBO_DEV_SERVER_URL)) throw new Error("Keybind sender is not allowed");
     return applyKeybinds(validateKeybinds(value, process.platform));
   });
-  ipcMain.handle("emma:complete-shortcut-request", (event, value: unknown) => {
+  ipcMain.handle("shinbo:complete-shortcut-request", (event, value: unknown) => {
     trustedFrame(event);
     if (!value || typeof value !== "object") throw new Error("Shortcut result is invalid");
     const result = value as { id?: unknown; keybinds?: unknown; message?: unknown; error?: unknown };
@@ -5554,14 +5711,14 @@ if (primaryInstance) app.whenReady().then(() => {
       throw reason;
     }
   });
-  ipcMain.on("emma:quick-command", (event, value: unknown) => {
+  ipcMain.on("shinbo:quick-command", (event, value: unknown) => {
     const window = radial;
     if (!window || event.senderFrame !== event.sender.mainFrame || event.sender !== window.webContents) return;
     if (!isCursorCommand(value)) return;
-    overlay?.webContents.send("emma:quick-command", value);
+    overlay?.webContents.send("shinbo:quick-command", value);
     closeRadial();
   });
-  ipcMain.on("emma:set-overlay-height", (event, value: unknown) => {
+  ipcMain.on("shinbo:set-overlay-height", (event, value: unknown) => {
     const window = overlay;
     if (!window || event.senderFrame !== event.sender.mainFrame || event.sender !== window.webContents) return;
     overlayGrow = overlayGrowth(value);
@@ -5570,7 +5727,7 @@ if (primaryInstance) app.whenReady().then(() => {
     const height = overlayBaseHeight + overlayGrow;
     if (bounds.height !== height) window.setBounds({ ...bounds, height });
   });
-  ipcMain.on("emma:move-pill", (event, value: unknown) => {
+  ipcMain.on("shinbo:move-pill", (event, value: unknown) => {
     const window = overlay;
     if (!window || event.senderFrame !== event.sender.mainFrame || event.sender !== window.webContents || overlaySurface !== "pill") return;
     const spot = value as { x?: unknown; y?: unknown };
@@ -5580,17 +5737,17 @@ if (primaryInstance) app.whenReady().then(() => {
     pillSpot = { x: bounds.x, y: bounds.y };
     window.setBounds(bounds);
   });
-  ipcMain.on("emma:expand-pill", (event) => {
+  ipcMain.on("shinbo:expand-pill", (event) => {
     const window = overlay;
     if (!window || event.senderFrame !== event.sender.mainFrame || event.sender !== window.webContents || overlaySurface !== "pill") return;
     expandPill(window);
   });
-  ipcMain.on("emma:dismiss-overlay", (event) => {
+  ipcMain.on("shinbo:dismiss-overlay", (event) => {
     const window = overlay;
     if (!window || event.senderFrame !== event.sender.mainFrame || event.sender !== window.webContents || overlaySurface !== "pill" || overlayBusy) return;
     window.destroy();
   });
-  ipcMain.on("emma:open-workspace", (event, value: unknown) => {
+  ipcMain.on("shinbo:open-workspace", (event, value: unknown) => {
     const window = overlay;
     if (!window || event.senderFrame !== event.sender.mainFrame || event.sender !== window.webContents) return;
     if (typeof value === "string" && /^[a-z]{1,16}$/.test(value)) openSettingsPage(value);
@@ -5598,7 +5755,7 @@ if (primaryInstance) app.whenReady().then(() => {
     closeOverlay(window);
   });
   let resyncing = false;
-  ipcMain.on("emma:resync-window", (event) => {
+  ipcMain.on("shinbo:resync-window", (event) => {
     const window = mainWindow;
     if (!window || window.isDestroyed() || event.senderFrame !== event.sender.mainFrame || event.sender !== window.webContents) return;
     if (resyncing) return;
@@ -5612,26 +5769,33 @@ if (primaryInstance) app.whenReady().then(() => {
       if (now === width + 1) window.setContentSize(width, tall);
     }, 50).unref();
   });
-  ipcMain.handle("emma:voice-status", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:voice-status", async (event, value: unknown) => {
     trustedFrame(event);
     return voiceStatus(validateVoiceSettings(value));
   });
-  ipcMain.handle("emma:transcribe", async (event, value: unknown) => {
+  ipcMain.handle("shinbo:transcribe", async (event, value: unknown) => {
     trustedFrame(event);
     if (!value || typeof value !== "object") throw new Error("The recording is invalid");
     const { audio, mimeType, settings } = value as Record<string, unknown>;
-    return transcribe(validateUtterance({ audio, mimeType }), validateVoiceSettings(settings));
+    const utterance = validateUtterance({ audio, mimeType });
+    const voice = validateVoiceSettings(settings);
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    event.sender.once("destroyed", cancel);
+    if (event.sender.isDestroyed()) cancel();
+    try { return await transcribe(utterance, voice, controller.signal); }
+    finally { event.sender.removeListener("destroyed", cancel); }
   });
-  ipcMain.on("emma:open-overlay", (event) => {
+  ipcMain.on("shinbo:open-overlay", (event) => {
     const window = hotspot;
     if (!window || event.senderFrame !== event.sender.mainFrame || event.sender !== window.webContents || overlay) return;
     toggleOverlay();
   });
-  ipcMain.handle("emma:demo-quick-ask", (event) => {
+  ipcMain.handle("shinbo:demo-quick-ask", (event) => {
     mainWindowSender(event);
     if (!overlay) toggleOverlay();
   });
-  ipcMain.on("emma:set-overlay-busy", (event, value: unknown) => {
+  ipcMain.on("shinbo:set-overlay-busy", (event, value: unknown) => {
     if (event.senderFrame !== event.sender.mainFrame || event.sender !== overlay?.webContents || typeof value !== "boolean") return;
     overlayBusy = value;
     if (!overlayBusy && closeOverlayWhenIdle && overlay) {
@@ -5640,7 +5804,7 @@ if (primaryInstance) app.whenReady().then(() => {
     }
   });
   openMain();
-  startUpdates((version) => broadcast("emma:update-ready", version));
+  startUpdates((version) => broadcast("shinbo:update-ready", version));
   addUpdateMenuItem();
   readNotchGeometry();
   screen.on("display-added", readNotchGeometry);
@@ -5672,6 +5836,7 @@ app.on("before-quit", (event) => {
   });
 });
 app.on("will-quit", (event) => {
+  for (const controller of workflowRuns.values()) controller.abort();
   bridge?.stop();
   semanticGrep.stop();
   globalShortcut.unregisterAll();

@@ -102,7 +102,7 @@ test("a decided record survives the second look, and the second look knows it is
   assert.deepEqual(attemptIds(again, kept[0].id), attemptIds(again, again[1].id), "the family reads the same from either end");
 
   const reworded = startTrial(kept, { ...retryDraft(kept[0]), addition: "bash failed in 6 turns, most recently with “gone”. Use rg." }, 4);
-  assert.deepEqual(attemptIds(reworded, reworded[1].id), [kept[0].id, reworded[1].id], "the draft rewrites its own words from live friction and Emma rewords them again — identity is the lineage carried on the record, not the text");
+  assert.deepEqual(attemptIds(reworded, reworded[1].id), [kept[0].id, reworded[1].id], "the draft rewrites its own words from live friction and Shinbo rewords them again — identity is the lineage carried on the record, not the text");
 
   const other = startTrial(kept, { ...draft, addition: "Prefer fd over find." }, 5);
   assert.equal(other[1].origin, undefined, "another change under the same lever and metric is not a second look at this one");

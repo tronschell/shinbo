@@ -477,14 +477,16 @@ impl Thread {
         token_budget: u64,
         at: Timestamp,
     ) -> Result<&Goal, ValidationError> {
-        let mut goal = Goal::new(objective, token_budget, at)?;
-        if let Some(spent) = self.goal.as_ref().filter(|goal| !goal.status.settled()) {
-            goal.tokens_used = spent.tokens_used;
-            goal.turns = spent.turns;
-            goal.time_used_seconds = spent.time_used_seconds;
-            goal.created_at = spent.created_at;
+        if self
+            .goal
+            .as_ref()
+            .is_some_and(|goal| !goal.status.settled())
+        {
+            return Err(ValidationError::new(
+                "this thread already has an unfinished goal; update or clear it first",
+            ));
         }
-        self.goal = Some(goal);
+        self.goal = Some(Goal::new(objective, token_budget, at)?);
         Ok(self.goal.as_ref().expect("a goal was just set"))
     }
 
@@ -550,6 +552,11 @@ impl Thread {
                 };
             }
             GoalStatus::Active => {
+                if goal.tokens_used >= goal.token_budget || goal.turns >= MAX_GOAL_TURNS {
+                    return Err(ValidationError::new(
+                        "this goal's allowance is exhausted; grant more tokens to continue",
+                    ));
+                }
                 goal.status = GoalStatus::Active;
                 goal.blocked_streak = 0;
                 goal.blocked_reason = String::new();
@@ -615,6 +622,15 @@ impl Thread {
         }
     }
 
+    pub fn check_turn_capacity(&self) -> Result<(), ValidationError> {
+        if self.messages.len() > MAX_THREAD_MESSAGES - 3 {
+            return Err(ValidationError::new(
+                "this conversation is full; start a new thread before running more work",
+            ));
+        }
+        Ok(())
+    }
+
     pub fn push(&mut self, message: ThreadMessage) -> Result<(), ValidationError> {
         if self.messages.len() >= MAX_THREAD_MESSAGES {
             return Err(ValidationError::new(format!(
@@ -637,7 +653,7 @@ impl Thread {
     }
 
     pub fn to_markdown(&self) -> String {
-        let mut output = format!("---\nemma-thread-format: {THREAD_FORMAT}\n");
+        let mut output = format!("---\nshinbo-thread-format: {THREAD_FORMAT}\n");
         field(&mut output, "id", self.id.as_str());
         field(&mut output, "title", &self.title);
         field(
@@ -749,7 +765,11 @@ impl Thread {
         let mut parser = Parser::new(markdown);
         parser.exact("---")?;
         let header = Header::read(&mut parser)?;
-        let format = header.number("emma-thread-format")?;
+        let format = header.number(if header.0.contains_key("shinbo-thread-format") {
+            "shinbo-thread-format"
+        } else {
+            "emma-thread-format"
+        })?;
         if format == 0 || format > THREAD_FORMAT {
             return Err(ValidationError::new("unsupported thread format"));
         }
@@ -957,6 +977,13 @@ impl Thread {
 }
 
 #[derive(Debug)]
+struct ParsedSummary {
+    modified: SystemTime,
+    length: u64,
+    summary: Arc<ThreadSummary>,
+}
+
+#[derive(Debug)]
 struct ParsedThread {
     modified: SystemTime,
     length: u64,
@@ -971,6 +998,8 @@ fn file_stamp(metadata: &Metadata) -> Option<(SystemTime, u64)> {
 pub struct ThreadStore {
     root: PathBuf,
     parsed: RefCell<HashMap<ThreadId, ParsedThread>>,
+    last_read: RefCell<Option<ThreadId>>,
+    summaries: RefCell<HashMap<ThreadId, ParsedSummary>>,
 }
 
 impl ThreadStore {
@@ -978,6 +1007,8 @@ impl ThreadStore {
         Self {
             root,
             parsed: RefCell::new(HashMap::new()),
+            last_read: RefCell::new(None),
+            summaries: RefCell::new(HashMap::new()),
         }
     }
 
@@ -1059,11 +1090,19 @@ impl ThreadStore {
                 self.parsed.borrow_mut().remove(&thread.id);
             }
         }
+        self.summaries.borrow_mut().remove(&thread.id);
         result.map_err(ThreadStoreError::Io)
     }
 
     pub fn load(&self, id: &ThreadId) -> Result<Thread, ThreadStoreError> {
-        self.cached(id).map(|thread| (*thread).clone())
+        self.read(id).map(|thread| (*thread).clone())
+    }
+
+    pub(crate) fn read(&self, id: &ThreadId) -> Result<Arc<Thread>, ThreadStoreError> {
+        let thread = self.cached(id)?;
+        self.parsed.borrow_mut().retain(|cached, _| cached == id);
+        *self.last_read.borrow_mut() = Some(id.clone());
+        Ok(thread)
     }
 
     fn cached(&self, id: &ThreadId) -> Result<Arc<Thread>, ThreadStoreError> {
@@ -1080,13 +1119,16 @@ impl ThreadStore {
     }
 
     fn parse_file(path: &Path, id: &ThreadId) -> Result<Arc<Thread>, ThreadStoreError> {
-        let markdown = fs::read_to_string(path)?;
-        let thread = Thread::from_markdown(&markdown).map_err(|error| {
-            ThreadStoreError::Malformed(MalformedThread {
-                path: path.to_path_buf(),
-                reason: error.to_string(),
-            })
-        })?;
+        let bytes = fs::read(path)?;
+        let thread = std::str::from_utf8(&bytes)
+            .map_err(|error| error.to_string())
+            .and_then(|markdown| Thread::from_markdown(markdown).map_err(|error| error.to_string()))
+            .map_err(|reason| {
+                ThreadStoreError::Malformed(MalformedThread {
+                    path: path.to_path_buf(),
+                    reason,
+                })
+            })?;
         if &thread.id != id {
             return Err(ThreadStoreError::Malformed(MalformedThread {
                 path: path.to_path_buf(),
@@ -1097,6 +1139,7 @@ impl ThreadStore {
     }
 
     pub fn delete(&self, id: &ThreadId) -> Result<(), ThreadStoreError> {
+        self.summaries.borrow_mut().remove(id);
         self.parsed.borrow_mut().remove(id);
         match fs::remove_file(self.path_for(id)) {
             Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error.into()),
@@ -1109,17 +1152,71 @@ impl ThreadStore {
     }
 
     pub(crate) fn list_uncached(&self) -> Result<ThreadListing, ThreadStoreError> {
-        let listing = self.list_with_cache(false);
-        self.parsed.borrow_mut().clear();
-        listing
+        self.parsed
+            .borrow_mut()
+            .retain(|id, _| self.last_read.borrow().as_ref() == Some(id));
+        self.list_with_cache(false)
+    }
+
+    pub fn list_summaries(&self) -> Result<ThreadListing<Arc<ThreadSummary>>, ThreadStoreError> {
+        self.parsed
+            .borrow_mut()
+            .retain(|id, _| self.last_read.borrow().as_ref() == Some(id));
+        self.list_records(|path, id| {
+            let stamp = fs::metadata(path)
+                .ok()
+                .and_then(|metadata| file_stamp(&metadata));
+            if let Some(cached) = self.summaries.borrow().get(id)
+                && stamp == Some((cached.modified, cached.length))
+            {
+                return Ok((cached.summary.updated_at, Arc::clone(&cached.summary)));
+            }
+            self.summaries.borrow_mut().remove(id);
+            let thread = match stamp.and_then(|stamp| self.take_parsed(id, stamp)) {
+                Some(thread) => thread,
+                None => Self::parse_file(path, id)?,
+            };
+            let summary = Arc::new(ThreadSummary::from(thread.as_ref()));
+            if let Some((modified, length)) = stamp {
+                self.summaries.borrow_mut().insert(
+                    id.clone(),
+                    ParsedSummary {
+                        modified,
+                        length,
+                        summary: Arc::clone(&summary),
+                    },
+                );
+            }
+            Ok((summary.updated_at, summary))
+        })
     }
 
     fn list_with_cache(&self, cache_threads: bool) -> Result<ThreadListing, ThreadStoreError> {
-        let mut listing = ThreadListing::default();
+        self.list_records(|path, id| {
+            let thread = if cache_threads || self.last_read.borrow().as_ref() == Some(id) {
+                self.cached(id)?
+            } else {
+                Self::parse_file(path, id)?
+            };
+            Ok((thread.updated_at, thread))
+        })
+    }
+
+    fn list_records<T>(
+        &self,
+        mut load: impl FnMut(&Path, &ThreadId) -> Result<(Timestamp, T), ThreadStoreError>,
+    ) -> Result<ThreadListing<T>, ThreadStoreError> {
+        let mut listing = ThreadListing {
+            threads: Vec::new(),
+            malformed: Vec::new(),
+        };
+        let mut records = Vec::new();
+        let mut present = HashSet::new();
         let entries = match fs::read_dir(&self.root) {
             Ok(entries) => entries,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 self.parsed.borrow_mut().clear();
+                self.summaries.borrow_mut().clear();
                 return Ok(listing);
             }
             Err(error) => return Err(ThreadStoreError::Io(error)),
@@ -1146,27 +1243,23 @@ impl ThreadStore {
                     continue;
                 }
             };
-            let loaded = if cache_threads {
-                self.cached(&id)
-            } else {
-                Self::parse_file(&path, &id)
-            };
-            match loaded {
-                Ok(thread) => listing.threads.push(thread),
+            match load(&path, &id) {
+                Ok((updated, record)) => {
+                    present.insert(id.clone());
+                    records.push((updated, id, record));
+                }
                 Err(ThreadStoreError::Malformed(thread)) => listing.malformed.push(thread),
                 Err(ThreadStoreError::Io(error)) => return Err(ThreadStoreError::Io(error)),
             }
         }
-        let present: HashSet<&ThreadId> = listing.threads.iter().map(|thread| &thread.id).collect();
         self.parsed
             .borrow_mut()
             .retain(|id, _| present.contains(id));
-        listing.threads.sort_by(|left, right| {
-            right
-                .updated_at
-                .cmp(&left.updated_at)
-                .then(right.id.cmp(&left.id))
-        });
+        self.summaries
+            .borrow_mut()
+            .retain(|id, _| present.contains(id));
+        records.sort_by(|left, right| right.0.cmp(&left.0).then(right.1.cmp(&left.1)));
+        listing.threads = records.into_iter().map(|(_, _, record)| record).collect();
         listing
             .malformed
             .sort_by(|left, right| left.path.cmp(&right.path));
@@ -1178,10 +1271,19 @@ impl ThreadStore {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct ThreadListing {
-    pub threads: Vec<Arc<Thread>>,
+#[derive(Debug)]
+pub struct ThreadListing<T = Arc<Thread>> {
+    pub threads: Vec<T>,
     pub malformed: Vec<MalformedThread>,
+}
+
+impl<T> Default for ThreadListing<T> {
+    fn default() -> Self {
+        Self {
+            threads: Vec::new(),
+            malformed: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1319,5 +1421,432 @@ impl<'a> Parser<'a> {
             .parse()
             .map(Some)
             .map_err(|_| ValidationError::new(format!("field {name} is not a number")))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadSummary {
+    pub id: ThreadId,
+    pub title: String,
+    pub parent_thread_id: Option<ThreadId>,
+    pub kind: ThreadKind,
+    pub scheduled_job_id: Option<ScheduledJobId>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub archived_at: Option<Timestamp>,
+    pub goal: Option<Goal>,
+    pub messages: usize,
+    pub message_dates: Vec<Timestamp>,
+    pub user_message_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label_prompt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subagent_brief: Option<String>,
+}
+
+fn sent_thread_body(content: &str) -> &str {
+    let Some(rest) = content.strip_prefix("[thread ") else {
+        return content;
+    };
+    let Some(marker_end) = rest.find(" messaged]\n") else {
+        return content;
+    };
+    let sender = &rest[..marker_end];
+    if !(1..=96).contains(&sender.len())
+        || !sender
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    {
+        return content;
+    }
+    &rest[marker_end + " messaged]\n".len()..]
+}
+
+fn normalized_prompt(content: &str, limit: usize) -> String {
+    let mut normalized = String::new();
+    let mut units = 0;
+    let mut whitespace = false;
+    for character in sent_thread_body(content).chars() {
+        if character.is_whitespace() {
+            whitespace = !normalized.is_empty();
+            continue;
+        }
+        if whitespace {
+            normalized.push(' ');
+            units += 1;
+            if units >= limit {
+                break;
+            }
+        }
+        normalized.push(character);
+        units += character.len_utf16();
+        if units >= limit {
+            break;
+        }
+        whitespace = false;
+    }
+    normalized
+}
+
+const SEARCHABLE_TITLE_UNITS: usize = 200;
+
+fn display_title(content: &str) -> String {
+    if content.encode_utf16().count() <= 48 {
+        return content.to_owned();
+    }
+    let mut title = String::new();
+    let mut units = 0;
+    for character in content.chars() {
+        let width = character.len_utf16();
+        if units + width > 47 {
+            break;
+        }
+        title.push(character);
+        units += width;
+    }
+    title.push('…');
+    title
+}
+
+fn utf16_prefix(content: &str, limit: usize) -> String {
+    let mut prefix = String::new();
+    let mut units = 0;
+    for character in content.chars() {
+        if units >= limit {
+            break;
+        }
+        prefix.push(character);
+        units += character.len_utf16();
+    }
+    prefix
+}
+
+impl From<&Thread> for ThreadSummary {
+    fn from(thread: &Thread) -> Self {
+        let default_title = thread.title.trim().is_empty() || thread.title.trim() == "New thread";
+        let first_user_message = (default_title || thread.kind == ThreadKind::Subagent)
+            .then(|| {
+                thread
+                    .messages
+                    .iter()
+                    .find(|message| message.role == ThreadRole::User)
+            })
+            .flatten()
+            .map(|message| {
+                normalized_prompt(
+                    &message.content,
+                    if thread.kind == ThreadKind::Subagent {
+                        usize::MAX
+                    } else {
+                        SEARCHABLE_TITLE_UNITS
+                    },
+                )
+            });
+        let display_title = if default_title {
+            first_user_message
+                .as_deref()
+                .map(display_title)
+                .filter(|content| !content.is_empty())
+        } else {
+            None
+        };
+        let label_prompt = if default_title {
+            first_user_message
+                .as_deref()
+                .filter(|content| content.encode_utf16().count() > 48)
+                .map(|content| utf16_prefix(content, SEARCHABLE_TITLE_UNITS))
+        } else {
+            None
+        };
+        Self {
+            id: thread.id.clone(),
+            title: thread.title.clone(),
+            parent_thread_id: thread.parent_thread_id.clone(),
+            kind: thread.kind,
+            scheduled_job_id: thread.scheduled_job_id.clone(),
+            created_at: thread.created_at,
+            updated_at: thread.updated_at,
+            archived_at: thread.archived_at,
+            goal: thread.goal.clone(),
+            messages: thread.messages.len(),
+            message_dates: thread
+                .messages
+                .iter()
+                .map(|message| message.timestamp)
+                .collect(),
+            user_message_count: thread
+                .messages
+                .iter()
+                .filter(|message| message.role == ThreadRole::User)
+                .count(),
+            display_title,
+            label_prompt,
+            subagent_brief: (thread.kind == ThreadKind::Subagent)
+                .then_some(first_user_message)
+                .flatten()
+                .filter(|content| !content.is_empty()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::*;
+
+    #[test]
+    fn targeted_library_reads_retain_only_the_last_full_record() {
+        let root = std::env::temp_dir().join(format!(
+            "shinbo-targeted-library-cache-{}",
+            std::process::id()
+        ));
+        let now = Timestamp::now();
+        let writer = ThreadStore::new(root.clone());
+        for index in 0..64 {
+            let mut thread = Thread::new(format!("Library {index}"), now).unwrap();
+            thread
+                .push(ThreadMessage::new(ThreadRole::User, "x".repeat(16 * 1024), now).unwrap())
+                .unwrap();
+            thread.record_trace(ThreadTrace::new(now, &"t".repeat(8 * 1024)).unwrap());
+            writer.save(&thread).unwrap();
+        }
+        drop(writer);
+        let store = ThreadStore::new(root.clone());
+        let summaries = store.list_summaries().unwrap();
+        assert_eq!(summaries.threads.len(), 64);
+        assert!(store.parsed.borrow().is_empty());
+        for summary in &summaries.threads {
+            let thread = store.read(&summary.id).unwrap();
+            assert_eq!(thread.messages[0].content.len(), 16 * 1024);
+            assert_eq!(thread.traces[0].text.len(), 8 * 1024);
+        }
+        let retained = store.parsed.borrow();
+        let records = retained.len();
+        let bytes: usize = retained
+            .values()
+            .map(|entry| {
+                entry
+                    .thread
+                    .messages
+                    .iter()
+                    .map(|message| message.content.len())
+                    .sum::<usize>()
+                    + entry
+                        .thread
+                        .traces
+                        .iter()
+                        .map(|trace| trace.text.len())
+                        .sum::<usize>()
+            })
+            .sum();
+        drop(retained);
+        println!("targeted library cache: {records} records, {bytes} payload bytes");
+        assert_eq!((records, bytes), (1, 24 * 1024));
+        let last = store.read(&summaries.threads.last().unwrap().id).unwrap();
+        store.list_summaries().unwrap();
+        assert!(Arc::ptr_eq(&last, &store.read(&last.id).unwrap()));
+        let first = store.read(&summaries.threads[0].id).unwrap();
+        assert_eq!(last.messages[0].content.len(), 16 * 1024);
+        assert_eq!(first.messages[0].content.len(), 16 * 1024);
+        assert_eq!(store.parsed.borrow().len(), 1);
+        assert!(
+            store
+                .read(&ThreadId::parse("missing-fixture-0000").unwrap())
+                .is_err()
+        );
+        assert!(Arc::ptr_eq(&first, &store.read(&first.id).unwrap()));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn summary_cache_keeps_projection_and_observes_every_file_change() {
+        let root =
+            std::env::temp_dir().join(format!("shinbo-summary-cache-{}", std::process::id()));
+        let now = Timestamp::now();
+        let mut first = Thread::new("New thread", now).unwrap();
+        first
+            .push(ThreadMessage::new(ThreadRole::User, "hello world", now).unwrap())
+            .unwrap();
+        first.record_trace(ThreadTrace::new(now, &"trace".repeat(20_000)).unwrap());
+        let second = Thread::new("Other", now).unwrap();
+        let writer = ThreadStore::new(root.clone());
+        writer.save(&first).unwrap();
+        writer.save(&second).unwrap();
+        drop(writer);
+        let store = ThreadStore::new(root.clone());
+        let summaries = store.list_summaries().unwrap();
+        let projected = summaries
+            .threads
+            .iter()
+            .find(|thread| thread.id == first.id)
+            .unwrap();
+        assert_eq!(**projected, ThreadSummary::from(&first));
+        assert!(store.parsed.borrow().is_empty());
+        let again = store.list_summaries().unwrap();
+        assert!(Arc::ptr_eq(
+            projected,
+            again
+                .threads
+                .iter()
+                .find(|thread| thread.id == first.id)
+                .unwrap()
+        ));
+        assert_eq!(store.summaries.borrow().len(), 2);
+        let path = store.path_for(&first.id);
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        first.messages[0].content = "HELLO WORLD".into();
+        fs::write(&path, first.to_markdown()).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(modified + std::time::Duration::from_secs(1))
+            .unwrap();
+        let changed = store.list_summaries().unwrap();
+        assert_eq!(
+            changed
+                .threads
+                .iter()
+                .find(|thread| thread.id == first.id)
+                .unwrap()
+                .display_title
+                .as_deref(),
+            Some("HELLO WORLD")
+        );
+        first.title = "Saved title".into();
+        store.save(&first).unwrap();
+        assert_eq!(
+            store
+                .list_summaries()
+                .unwrap()
+                .threads
+                .iter()
+                .find(|thread| thread.id == first.id)
+                .unwrap()
+                .title,
+            "Saved title"
+        );
+        fs::write(&path, "malformed").unwrap();
+        let malformed = store.list_summaries().unwrap();
+        assert_eq!(malformed.malformed.len(), 1);
+        assert_eq!(malformed.threads.len(), 1);
+        assert!(!store.summaries.borrow().contains_key(&first.id));
+        fs::remove_file(store.path_for(&second.id)).unwrap();
+        assert!(store.list_summaries().unwrap().threads.is_empty());
+        assert!(store.summaries.borrow().is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn summary_normalization_bounds_main_prompts_and_preserves_subagent_briefs() {
+        assert_eq!(
+            normalized_prompt("  hello\n\t🙂 world  ", 100),
+            "hello 🙂 world"
+        );
+        assert_eq!(normalized_prompt("a  b", 2), "a ");
+        assert_eq!(normalized_prompt("🙂x", 1), "🙂");
+        let now = Timestamp::now();
+        let prompt = "word ".repeat(12_000);
+        let mut thread = Thread::new("New thread", now).unwrap();
+        thread
+            .push(ThreadMessage::new(ThreadRole::User, &prompt, now).unwrap())
+            .unwrap();
+        assert_eq!(
+            ThreadSummary::from(&thread)
+                .label_prompt
+                .unwrap()
+                .encode_utf16()
+                .count(),
+            SEARCHABLE_TITLE_UNITS
+        );
+        thread.title = "Named".into();
+        let summary = ThreadSummary::from(&thread);
+        assert!(
+            summary.label_prompt.is_none()
+                && summary.display_title.is_none()
+                && summary.subagent_brief.is_none()
+        );
+        thread.kind = ThreadKind::Subagent;
+        assert_eq!(
+            ThreadSummary::from(&thread).subagent_brief.unwrap(),
+            prompt.trim()
+        );
+    }
+
+    #[test]
+    #[ignore]
+    fn benchmark_thread_summary_prompts() {
+        let now = Timestamp::now();
+        let mut thread = Thread::new("New thread", now).unwrap();
+        thread
+            .push(ThreadMessage::new(ThreadRole::User, "word ".repeat(12_000), now).unwrap())
+            .unwrap();
+        for title in ["New thread", "Named thread"] {
+            thread.title = title.into();
+            let mut samples = Vec::new();
+            for _ in 0..5 {
+                let start = std::time::Instant::now();
+                for _ in 0..1000 {
+                    std::hint::black_box(ThreadSummary::from(std::hint::black_box(&thread)));
+                }
+                samples.push(start.elapsed().as_micros());
+            }
+            samples.sort_unstable();
+            println!("summary {title}: 1000 operations median {} us", samples[2]);
+        }
+    }
+
+    #[test]
+    fn thread_summary_keeps_renderer_label_rules() {
+        fn summary(prompt: &str) -> ThreadSummary {
+            let now = Timestamp::now();
+            let mut thread = Thread::new("New thread", now).unwrap();
+            thread
+                .push(ThreadMessage::new(ThreadRole::User, prompt, now).unwrap())
+                .unwrap();
+            ThreadSummary::from(&thread)
+        }
+
+        let forty_eight = "a".repeat(48);
+        assert_eq!(
+            summary(&forty_eight).display_title.as_deref(),
+            Some(forty_eight.as_str())
+        );
+        let forty_nine = "a".repeat(49);
+        let expected = format!("{}…", "a".repeat(47));
+        assert_eq!(
+            summary(&forty_nine).display_title.as_deref(),
+            Some(expected.as_str())
+        );
+        let emoji = "🙂".repeat(24);
+        assert_eq!(
+            summary(&emoji).display_title.as_deref(),
+            Some(emoji.as_str())
+        );
+        let split = format!("{emoji}x");
+        assert!(summary(&split).label_prompt.is_some());
+        let buried = "Draft a one page memo for the pricing committee on semiconductor supply";
+        let summarised = summary(buried);
+        assert!(!summarised.display_title.unwrap().contains("semiconductor"));
+        assert_eq!(summarised.label_prompt.as_deref(), Some(buried));
+        let long = "word ".repeat(80);
+        assert_eq!(
+            summary(&long).label_prompt.unwrap().encode_utf16().count(),
+            SEARCHABLE_TITLE_UNITS
+        );
+        assert_eq!(
+            summary("[thread short! messaged]\nhello")
+                .display_title
+                .as_deref(),
+            Some("[thread short! messaged] hello")
+        );
+        assert_eq!(
+            summary("[thread short-id messaged]\nhello")
+                .display_title
+                .as_deref(),
+            Some("hello")
+        );
     }
 }

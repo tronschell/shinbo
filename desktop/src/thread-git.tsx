@@ -11,15 +11,15 @@ export function useThreadGit(folderIds: string): Record<string, GitSnapshot | nu
     const load = async () => {
       if (loading) return;
       loading = true;
-      const entries = await Promise.all(ids.map(async (id) => [id, await window.emma.gitStatus(id).catch(() => null)] as const));
+      const entries = await Promise.all(ids.map(async (id) => [id, await window.shinbo.gitStatus(id, false).catch(() => null)] as const));
       if (active) setRepos(Object.fromEntries(entries));
       loading = false;
     };
     void load();
     const timer = setInterval(() => void load(), 60_000);
-    const listener = window.emma.onChanged(() => void load());
+    const listener = window.shinbo.onChanged(() => void load());
     window.addEventListener("focus", load);
-    return () => { active = false; clearInterval(timer); window.emma.offChanged(listener); window.removeEventListener("focus", load); };
+    return () => { active = false; clearInterval(timer); window.shinbo.offChanged(listener); window.removeEventListener("focus", load); };
   }, [folderIds]);
   return repos;
 }

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import childProcess, { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -33,7 +33,7 @@ deleted file mode 100644
 type Repo = { root: string; repo: string; run: (...args: string[]) => string };
 
 function makeRepo(): Repo {
-  const root = realpathSync.native(mkdtempSync(path.join(tmpdir(), "emma-git-")));
+  const root = realpathSync.native(mkdtempSync(path.join(tmpdir(), "shinbo-git-")));
   const repo = path.join(root, "project");
   execFileSync("git", ["init", "-q", "-b", "main", repo], { cwd: root, stdio: "pipe" });
   const run = (...args: string[]) => execFileSync("git", args, { cwd: repo, stdio: "pipe" }).toString();
@@ -164,12 +164,12 @@ test("worktree porcelain records split on NULs and keep paths whole", () => {
 });
 
 test("a branch prefix joins onto a cleaned name and refuses an empty one", () => {
-  assert.equal(branchPrefixName("emma/", "happy otter"), "emma/happy-otter");
+  assert.equal(branchPrefixName("shinbo/", "happy otter"), "shinbo/happy-otter");
   assert.equal(branchPrefixName("", "feature"), "feature");
   assert.equal(branchPrefixName("anurag", "--weird--name--"), "anurag/weird-name");
-  assert.equal(branchPrefixName("emma/", "a/b"), "emma/a-b");
-  assert.throws(() => branchPrefixName("emma/", "   "), /name/);
-  assert.throws(() => branchPrefixName("emma/", "---"), /name/);
+  assert.equal(branchPrefixName("shinbo/", "a/b"), "shinbo/a-b");
+  assert.throws(() => branchPrefixName("shinbo/", "   "), /name/);
+  assert.throws(() => branchPrefixName("shinbo/", "---"), /name/);
 });
 
 test("the worktree list reports dirty state and removal is refused for the primary and unknown paths", async () => {
@@ -214,7 +214,7 @@ test("the worktree list reports dirty state and removal is refused for the prima
     run("commit", "-q", "-m", "first");
 
     const name = worktreeName("9f3c21ab-0000-4000-8000-000000000000");
-    assert.equal(name, "emma-9f3c21ab");
+    assert.equal(name, "shinbo-9f3c21ab");
     const tree = await addWorktree(repo, name);
     assert.equal(tree, path.join(root, "project-worktrees", name));
     assert.equal(await addWorktree(repo, name), tree);
@@ -229,7 +229,7 @@ test("the worktree list reports dirty state and removal is refused for the prima
     await switchBranch(repo, "spike", true);
     const started = await gitSnapshot(repo);
     assert.equal(started?.branch, "spike");
-    assert.deepEqual([...(started?.branches ?? [])].sort(), ["emma-9f3c21ab", "main", "spike"]);
+    assert.deepEqual([...(started?.branches ?? [])].sort(), ["main", "shinbo-9f3c21ab", "spike"]);
     await switchBranch(repo, "main", false);
     assert.equal((await gitSnapshot(repo))?.branch, "main");
     await assert.rejects(switchBranch(repo, "bad branch", true));
@@ -406,6 +406,59 @@ test("discarding restores a tracked file and deletes an untracked one", async ()
   }
 });
 
+test("discarding a filename with brackets leaves matching unselected files intact", async () => {
+  const { root, repo, run } = makeRepo();
+  try {
+    write(repo, "tracked.txt", "base");
+    run("add", ".");
+    run("commit", "-qm", "base");
+    write(repo, "notes[1].txt", "selected file");
+    write(repo, "notes1.txt", "unselected work");
+    await discard(repo, ["notes[1].txt"]);
+    assert.equal(existsSync(path.join(repo, "notes[1].txt")), false);
+    assert.equal(readFileSync(path.join(repo, "notes1.txt"), "utf8"), "unselected work");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an existing unrelated folder cannot become a thread worktree", async () => {
+  const { root, repo, run } = makeRepo();
+  try {
+    write(repo, "tracked.txt", "base");
+    run("add", ".");
+    run("commit", "-qm", "base");
+    const destination = path.join(root, "project-worktrees", "topic");
+    mkdirSync(destination, { recursive: true });
+    write(destination, "other.txt", "unrelated user work");
+    await assert.rejects(addWorktree(repo, "topic"), /not a worktree of this repository/);
+    assert.equal(readFileSync(path.join(destination, "other.txt"), "utf8"), "unrelated user work");
+    assert.equal(existsSync(path.join(destination, ".git")), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("status and selected commits preserve quoted filenames and rename origins", async () => {
+  const { root, repo, run } = makeRepo();
+  try {
+    write(repo, "base.txt", "base");
+    run("add", ".");
+    run("commit", "-qm", "base");
+    const files = process.platform === "win32" ? ["two words.txt", "日本語.txt"] : ["copy -> invoice.txt", 'quote".txt', "two\nlines.txt"];
+    for (const file of files) write(repo, file, `content of ${file}`);
+    const snapshot = await gitSnapshot(repo);
+    assert.deepEqual(snapshot!.files.map((file) => file.path).sort(), [...files].sort());
+    await commit(repo, { message: "selected file", paths: [files[0]] });
+    assert.equal(run("show", `HEAD:${files[0]}`), `content of ${files[0]}`);
+    run("mv", "--", files[0], "renamed.txt");
+    const renamed = (await gitSnapshot(repo))!.files.find((file) => file.path === "renamed.txt");
+    assert.equal(renamed?.from, files[0]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("an arbitrary git command comes back as output, failures included", async () => {
   const { root, repo, run } = makeRepo();
   try {
@@ -439,7 +492,7 @@ test("a git refusal is shown without execFile's preamble", () => {
 });
 
 test("a plain folder reports no repository, and git init turns it into one", async () => {
-  const root = realpathSync.native(mkdtempSync(path.join(tmpdir(), "emma-git-")));
+  const root = realpathSync.native(mkdtempSync(path.join(tmpdir(), "shinbo-git-")));
   const repo = path.join(root, "project");
   try {
     mkdirSync(repo, { recursive: true });
@@ -492,4 +545,37 @@ test("sidebar PR badges validate GitHub data and distinguish merge states", () =
     assert.equal(parsePullRequest(JSON.stringify(value)), undefined);
   }
   assert.equal(parsePullRequest("not JSON"), undefined);
+});
+
+test("summary snapshots omit diff subprocesses and concurrent readers share one scan", async (t) => {
+  const { root, repo, run } = makeRepo();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  write(repo, "tracked.txt", "before\n");
+  run("add", ".");
+  run("commit", "-qm", "initial");
+  write(repo, "tracked.txt", "after\n");
+  write(repo, "new.txt", "new\n");
+  const original = childProcess.execFile;
+  let running = 0;
+  let peak = 0;
+  const commands = t.mock.method(childProcess, "execFile", ((...args: unknown[]) => {
+    peak = Math.max(peak, ++running);
+    const callback = args.pop() as (...values: unknown[]) => void;
+    return Reflect.apply(original, childProcess, [...args, (...values: unknown[]) => { running--; callback(...values); }]);
+  }) as typeof childProcess.execFile);
+  const summaries = await Promise.all(Array.from({ length: 8 }, () => gitSnapshot(repo, false, false)));
+  assert.ok(summaries[0]);
+  for (const summary of summaries) assert.deepEqual(summary, summaries[0]);
+  assert.equal(summaries[0].diff, "");
+  assert.equal(summaries[0].files.length, 2);
+  const args = commands.mock.calls.map((call) => call.arguments[1] as string[]);
+  assert.equal(args.filter((argv) => argv.includes("status")).length, 1);
+  assert.ok(peak >= 4);
+  assert.equal(args.filter((argv) => argv.includes("diff") || argv.includes("ls-files")).length, 0);
+  const detailed = await gitSnapshot(repo);
+  assert.match(detailed!.diff, /\+after/);
+  assert.match(detailed!.diff, /\+new/);
+  write(repo, "later.txt", "later\n");
+  const fresh = await gitSnapshot(repo, false, false);
+  assert.equal(fresh!.files.length, 3);
 });

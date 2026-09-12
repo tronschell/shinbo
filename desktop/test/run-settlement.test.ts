@@ -11,8 +11,9 @@ const wait = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 let hold = false;
 let release: (() => void) | undefined;
 
-const emma = {
-  request: async (_method: string, params: Record<string, string>) => {
+const shinbo = {
+  request: async (method: string, params: Record<string, string>) => {
+    if (method === "thread") throw new Error("No saved thread");
     onDelta({ threadId: params.threadId, delta: `reply ${params.content}` });
     if (hold) await new Promise<void>((resolve) => { release = resolve; });
   },
@@ -23,6 +24,7 @@ const emma = {
   onContextExperiment: () => () => undefined,
   onRoutedModel: () => () => undefined,
   onContextBreakdown: () => () => undefined,
+  onChanged: () => 0,
   onAgents: () => () => undefined,
   listAgents: () => Promise.resolve([]),
   listSpans: () => Promise.resolve({}),
@@ -30,7 +32,7 @@ const emma = {
   stopAgent: () => undefined,
 };
 
-(globalThis as unknown as { window: unknown }).window = { emma };
+(globalThis as unknown as { window: unknown }).window = { shinbo };
 wire();
 
 const turn = (content: string): QueuedTurn => ({ content, after: 0, params: {} });
@@ -52,7 +54,6 @@ test("settleRun releases cached landed turns and only the transient fields", asy
   const blocks = await complete(id, "success");
   const [reply] = runMessage("success", "success-time");
   runOf(id).stopped = true;
-  runOf(id).draft = "draft";
   runOf(id).held = [turn("held")];
   runOf(id).routed = "model";
   settleRun(id, [reply], { [reply.timestamp]: blocks });
@@ -60,7 +61,6 @@ test("settleRun releases cached landed turns and only the transient fields", asy
   assert.deepEqual(runOf(id).landed, []);
   assert.equal(runOf(id).pending, null);
   assert.equal(runOf(id).stopped, true);
-  assert.equal(runOf(id).draft, "draft");
   assert.deepEqual(runOf(id).held, [turn("held")]);
   assert.equal(runOf(id).routed, "model");
 });

@@ -2,7 +2,7 @@
 
 Retrieved 2026-08-20. These files are bundled locally and are not fetched at
 runtime. The artwork is unmodified; the marks identify the referenced product
-or provider and do not imply endorsement by Emma.
+or provider and do not imply endorsement by Shinbo.
 
 | File | Source | License / use note |
 | --- | --- | --- |
@@ -21,13 +21,17 @@ or provider and do not imply endorsement by Emma.
 | `claude.png` | [Claude product icon](https://claude.ai/images/claude_app_icon.png) | Official Claude icon; Claude and Anthropic names and marks remain with their owners. |
 | `gemini.png` | [Google Press Corner Gemini Spark icon](https://storage.googleapis.com/gweb-uniblog-publish-prod/images/Gemini_SparkIcon_4C.original.png) | Official Gemini asset; use only to identify Gemini; Google and Gemini names and marks remain with Google. |
 | `pi.svg` | [Pi favicon](https://pi.dev/favicon.svg), provided through the [Pi press kit](https://pi.dev/press-kit) | Official Pi coding-agent badge; use only to identify Pi; Pi and Earendil names and marks remain with their owners. |
+| `lmstudio.svg` | [Simple Icons commit fadc823](https://raw.githubusercontent.com/simple-icons/simple-icons/fadc8239f9a45499f6a30e2dd5c73b84275e1ec7/icons/lmstudio.svg) | Simple Icons is CC0 1.0; recoloured #fff; LM Studio name and mark remain Element Labs trademarks. Retrieved 2026-09-11. |
+| `ollama.svg` | [Simple Icons commit 856e291](https://raw.githubusercontent.com/simple-icons/simple-icons/856e2915b49a4c4752e548de05fcb4a526a5ee40/icons/ollama.svg) | Simple Icons is CC0 1.0; recoloured #fff; Ollama name and mark remain Ollama trademarks. Retrieved 2026-09-11. |
+| `llamacpp.svg` | [ggml-org/llama.cpp `media/llama1-icon-transparent.svg` at 2cfef4d](https://raw.githubusercontent.com/ggml-org/llama.cpp/2cfef4d117d67ab1dec002915b48a15d11ee1973/media/llama1-icon-transparent.svg) | Project icon from the MIT-licensed repository; recoloured #fff; use only to identify llama.cpp; the mark remains with its owners. Retrieved 2026-09-11. |
+| `omlx.svg` | [jundot/omlx `docs/images/icon-rounded-dark.svg` at 4cee64c](https://raw.githubusercontent.com/jundot/omlx/4cee64cad10c83a783200700e3d49e1a244fd7c0/docs/images/icon-rounded-dark.svg) | App icon from the Apache-2.0 repository; rounded tile and drop shadow removed, white glyph kept; use only to identify oMLX; the mark remains with its owner. Retrieved 2026-09-11. |
 | `openrouter.svg` | [OpenRouter Team sign-in demo](https://openrouterteam.github.io/sign-in-with-openrouter/) and [brand refresh](https://openrouter.ai/blog/announcements/brand-refresh/) | Official OpenRouter logo; use exactly as supplied; OpenRouter name and mark remain OpenRouter trademarks. |
 
 Simple Icons’ source license does not grant trademark rights. Do not recolor,
-redraw, distort, or combine these marks with Emma branding; retain the
+redraw, distort, or combine these marks with Shinbo branding; retain the
 accessible product/provider label beside every image.
 
-The official xAI brand page links to the [SpaceXAI/Grok asset archive](https://data.x.ai/logos/SpaceXAI_Grok_Assets.zip), whose guidance requires the supplied artwork to be used exactly as provided. The archive returned HTTP 403 during this retrieval, so no xAI artwork is bundled; xAI uses Emma’s neutral fallback until the official kit can be retrieved.
+The official xAI brand page links to the [SpaceXAI/Grok asset archive](https://data.x.ai/logos/SpaceXAI_Grok_Assets.zip), whose guidance requires the supplied artwork to be used exactly as provided. The archive returned HTTP 403 during this retrieval, so no xAI artwork is bundled; xAI uses Shinbo’s neutral fallback until the official kit can be retrieved.
 
 ## Web search providers
 

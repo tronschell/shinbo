@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runInNewContext } from "node:vm";
@@ -14,7 +15,7 @@ const lift = (name: string) => source.statements.find((node) =>
   ts.isFunctionDeclaration(node) ? node.name?.text === name : ts.isVariableStatement(node) && node.declarationList.declarations.some((one) => one.name.getText(source) === name))!.getText(source);
 let getter = "";
 function findGetter(node: ts.Node) {
-  if (ts.isCallExpression(node) && node.expression.getText(source) === "ipcMain.handle" && node.arguments[0]?.getText(source) === '"emma:get-thread-context"') getter = node.getText(source);
+  if (ts.isCallExpression(node) && node.expression.getText(source) === "ipcMain.handle" && node.arguments[0]?.getText(source) === '"shinbo:get-thread-context"') getter = node.getText(source);
   ts.forEachChild(node, findGetter);
 }
 findGetter(source);
@@ -28,7 +29,7 @@ type Selection = { model: string; effort: string };
 type Context = Selection & { folderIds: string[]; mode: string };
 type Turn = { threadId: string; model?: string; effort?: string };
 function setup(t: test.TestContext) {
-  const dir = mkdtempSync(path.join(tmpdir(), "emma-thread-model-"));
+  const dir = mkdtempSync(path.join(tmpdir(), "shinbo-thread-model-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const threadContexts = new Map<string, Context>();
   let getContext: (event: unknown, value: unknown) => Selection;
@@ -36,7 +37,7 @@ function setup(t: test.TestContext) {
   const sender = { mainFrame: frame };
   const event = { sender, senderFrame: frame };
   const state = {
-    app: { getPath: () => dir }, path, readFileSync, writeFileSync, threadContexts,
+    app: { getPath: () => dir }, path, readFileSync, writeFileSync, renameSync, rmSync, randomUUID, threadContexts, AbortController, workflowRuns: new Map(), runtimeReady: Promise.resolve(),
     asPermissionMode, DEFAULT_PERMISSION_MODE, isThinkingLevel, MAX_AGENT_STEP_LIMIT: 10_000,
     selectedModel: "openrouter:alpha", selectedEffort: "high",
     CODEX_PREFIX, CODEX_MODEL_ID,
@@ -54,7 +55,7 @@ function setup(t: test.TestContext) {
     },
     host: { request: async (_request: unknown): Promise<unknown> => ({ id: "new" }) },
     inheritBench: () => false, stopThread: () => undefined,
-    harnessRuns: new Map(), agents: { forget: () => undefined },
+    harnessRuns: new Map(), pendingTurns: new Set(), goalStopped: new Set(), agents: { forget: () => undefined, isLive: () => false, list: () => [] },
     threadSubagent: () => undefined, threadStepLimit: () => undefined,
     recordUse: () => undefined, modelKey: (key: string) => key, modelName: (key: string) => key,
     activeGoal: () => undefined, harnessCwd: () => dir, turnRoute: async () => undefined,
@@ -77,7 +78,7 @@ function setup(t: test.TestContext) {
     runScheduledWorkflow(job: Record<string, unknown>): Promise<void>;
   };
   state.runDrivenTurn = api.runTurn;
-  return { api, state, get: (threadId: string) => ({ ...getContext(event, { threadId }) }), rawGet: (value: unknown) => getContext(event, value), foreignGet: () => getContext({ sender, senderFrame: {} }, { threadId: "new" }) };
+  return { api, state, get: (threadId: string) => { const { model, effort } = getContext(event, { threadId }); return { model, effort }; }, fullContext: (threadId: string) => getContext(event, { threadId }), rawGet: (value: unknown) => getContext(event, value), foreignGet: () => getContext({ sender, senderFrame: {} }, { threadId: "new" }) };
 }
 
 test("creation snapshots selection before awaiting the host and restores it after restart", async (t) => {
@@ -183,4 +184,13 @@ test("legacy threads pin the workspace default once and the getter rejects inval
   assert.equal(state.threadContexts.size, 1);
   for (const value of [null, {}, { threadId: 1 }, { threadId: "" }]) assert.throws(() => rawGet(value));
   assert.throws(foreignGet, /Untrusted sender/);
+});
+
+
+test("native task context reads preserve remote folders and permission choices", (t) => {
+  const { state, fullContext } = setup(t);
+  const held = { folderIds: ["remote-project"], mode: "ask", model: "openrouter:alpha", effort: "high", review: true };
+  state.threadContexts.set("remote-task", held);
+  assert.deepEqual(JSON.parse(JSON.stringify(fullContext("remote-task"))), held);
+  assert.equal(state.threadContexts.get("remote-task"), held);
 });

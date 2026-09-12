@@ -121,7 +121,7 @@ test("the arm map fills with subagents without ever evicting the turn still runn
 });
 
 test("the Settings prompt is the harness's own prompt, not a note under it", () => {
-  const home = mkdtempSync(path.join(tmpdir(), "emma-harness-"));
+  const home = mkdtempSync(path.join(tmpdir(), "shinbo-harness-"));
   setSystemPrompt("Answer in French.");
   writeHarnessPrompt(home);
   assert.match(readFileSync(path.join(home, ".fx", "system-prompt.md"), "utf8"), /Answer in French\./);
@@ -132,7 +132,7 @@ test("the Settings prompt is the harness's own prompt, not a note under it", () 
 });
 
 test("two threads running at once each get their own prompt file", () => {
-  const home = mkdtempSync(path.join(tmpdir(), "emma-harness-parallel-"));
+  const home = mkdtempSync(path.join(tmpdir(), "shinbo-harness-parallel-"));
   setSystemPrompt("Model {model}.");
   const first = harnessPromptFile(home, "/work\u0000thread-a");
   const second = harnessPromptFile(home, "/work\u0000thread-b");
@@ -145,7 +145,7 @@ test("two threads running at once each get their own prompt file", () => {
 });
 
 test("a conditional prompt reaches the harness only on the models it names", () => {
-  const home = mkdtempSync(path.join(tmpdir(), "emma-harness-scope-"));
+  const home = mkdtempSync(path.join(tmpdir(), "shinbo-harness-scope-"));
   const read = () => readFileSync(path.join(home, ".fx", "system-prompt.md"), "utf8");
   setSystemPrompt("Answer in French.");
   setPrompts([
@@ -167,7 +167,7 @@ test("a conditional prompt reaches the harness only on the models it names", () 
 });
 
 test("the variables a prompt writes are filled from the turn, and unknown braces are left alone", () => {
-  const home = mkdtempSync(path.join(tmpdir(), "emma-harness-vars-"));
+  const home = mkdtempSync(path.join(tmpdir(), "shinbo-harness-vars-"));
   setSystemPrompt("Model {model}, family {model_family}, in {workspace} on {mode}. Tools: {available_tools}. Left {alone}.");
   writeHarnessPrompt(home, { model: "anthropic/claude-sonnet-4.5", workspace: "/tmp/work", mode: "ask" });
   const written = readFileSync(path.join(home, ".fx", "system-prompt.md"), "utf8");
@@ -201,7 +201,7 @@ test("a fork copies the body and lands switched off, so it cannot change a turn 
   assert.deepEqual(fork, { id: "copy1", name: "Opus copy", body: "Plan first.", scope: "family:opus", enabled: false });
 });
 
-test("a variable is painted, a brace Emma cannot fill is not", () => {
+test("a variable is painted, a brace Shinbo cannot fill is not", () => {
   const segments = promptSegments("use {model} not {nope}");
   assert.deepEqual(segments.map((segment) => segment.text), ["use ", "{model}", " not ", "{nope}"]);
   assert.equal(typeof segments[1].hue, "number");

@@ -738,7 +738,7 @@ function startShellCommand(
       ];
   const env = [
     "-u",
-    "EMMA_PROVIDER_API_KEY",
+    "SHINBO_PROVIDER_API_KEY",
     "-u",
     `HOME=${shQuote(fixture.home)}`,
     `ZDOTDIR=${shQuote(fixture.zdotdir)}`,

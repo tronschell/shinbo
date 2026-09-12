@@ -70,7 +70,7 @@ const modelsDev = {
 };
 
 test("model metadata stays distinct for OpenRouter, direct API, and Codex subscription routes", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "emma-model-metadata-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "shinbo-model-metadata-"));
   const codexFile = path.join(dir, "codex-models.json");
   try {
     await writeFile(codexFile, JSON.stringify({
@@ -121,7 +121,7 @@ test("model metadata stays distinct for OpenRouter, direct API, and Codex subscr
 });
 
 test("Codex metadata hot reloads and keeps the last good file during a partial rewrite", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "emma-codex-metadata-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "shinbo-codex-metadata-"));
   const codexFile = path.join(dir, "codex-models.json");
   const save = async (slug: string, context: number, offset: number) => {
     await writeFile(codexFile, JSON.stringify({ models: [{ slug, context_window: context, effective_context_window_percent: 90 }] }));
@@ -154,7 +154,7 @@ test("Codex metadata hot reloads and keeps the last good file during a partial r
 });
 
 test("metadata refreshes once per age window and routes hundreds of new OpenRouter models", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "emma-model-scale-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "shinbo-model-scale-"));
   try {
     const catalog = new ModelMetadataCatalog(dir, path.join(dir, "missing-codex.json"));
     let loads = 0;

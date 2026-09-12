@@ -64,7 +64,7 @@ struct HoldBinding {
 };
 
 std::vector<HoldBinding> parse_holds(const std::string& line) {
-    static const std::regex item(R"emma(\{"id":"([^"]{1,31})","keyCode":([0-9]{1,3}),"ms":([0-9]{1,4})\})emma");
+    static const std::regex item(R"shinbo(\{"id":"([^"]{1,31})","keyCode":([0-9]{1,3}),"ms":([0-9]{1,4})\})shinbo");
     std::vector<HoldBinding> result;
     for (std::sregex_iterator current(line.begin(), line.end(), item), end; current != end && result.size() < 8; ++current) {
         const auto& match = *current;
@@ -72,7 +72,7 @@ std::vector<HoldBinding> parse_holds(const std::string& line) {
         const auto milliseconds = static_cast<DWORD>(std::stoul(match[3].str()));
         if ((keyCode == VK_LMENU || keyCode == VK_RMENU || keyCode == VK_LCONTROL || keyCode == VK_RCONTROL ||
              keyCode == VK_LWIN || keyCode == VK_RWIN || keyCode == VK_LSHIFT || keyCode == VK_RSHIFT) &&
-            milliseconds >= 100 && milliseconds <= 5000) {
+            (milliseconds == 0 || milliseconds >= 100) && milliseconds <= 5000) {
             result.push_back({keyCode, milliseconds, match[1].str()});
         }
     }
@@ -106,11 +106,11 @@ bool bare_key(UINT keyCode) {
 
 std::mutex holds_mutex;
 std::vector<HoldBinding> holds;
+std::vector<TapState> taps;
 std::mutex output_mutex;
 std::atomic<std::uint64_t> generation = 0;
 std::atomic<bool> running = true;
 DWORD message_thread = 0;
-TapState tap_state;
 
 void output_line(const std::string& line) {
     std::lock_guard<std::mutex> lock(output_mutex);
@@ -138,11 +138,13 @@ LRESULT CALLBACK keyboard_hook(int code, WPARAM message, LPARAM data) {
     if (!down && !up) return CallNextHookEx(nullptr, code, message, data);
     const auto keyCode = event->vkCode;
     const bool bare = bare_key(keyCode);
-    if (keyCode == VK_LMENU) {
-        if (!bare) reset_tap(tap_state);
-        else if (handle_tap(tap_state, down, GetTickCount64())) output_line("toggle");
-    } else {
-        reset_tap(tap_state);
+    {
+        std::lock_guard<std::mutex> lock(holds_mutex);
+        for (std::size_t index = 0; index < holds.size(); ++index) {
+            if (holds[index].milliseconds != 0) continue;
+            if (holds[index].keyCode != keyCode) reset_tap(taps[index]);
+            else if (handle_bare_tap(taps[index], down, GetTickCount64(), bare)) output_line("hold " + holds[index].id);
+        }
     }
     if (!modifier_key(keyCode)) {
         generation.fetch_add(1);
@@ -161,7 +163,7 @@ LRESULT CALLBACK keyboard_hook(int code, WPARAM message, LPARAM data) {
     {
         std::lock_guard<std::mutex> lock(holds_mutex);
         for (const auto& item : holds) {
-            if (item.keyCode == keyCode) {
+            if (item.keyCode == keyCode && item.milliseconds != 0) {
                 binding = item;
                 found = true;
                 break;
@@ -182,6 +184,7 @@ void read_updates() {
         {
             std::lock_guard<std::mutex> lock(holds_mutex);
             holds = std::move(next);
+            taps.assign(holds.size(), TapState{});
         }
         generation.fetch_add(1);
     }
@@ -215,8 +218,8 @@ int self_test() {
     if (no_other_key_down(keys, VK_LMENU)) return 1;
     reset_tap(state);
     if (handle_bare_tap(state, true, 0, true) || handle_bare_tap(state, false, 10, true) || handle_bare_tap(state, true, 100, false) || handle_bare_tap(state, false, 110, true) || handle_bare_tap(state, true, 200, true) || handle_bare_tap(state, false, 210, true) || !handle_bare_tap(state, true, 300, true)) return 1;
-    const auto parsed = parse_holds(R"({"holds":[{"id":"voice","keyCode":164,"ms":500},{"id":"bad","keyCode":65,"ms":500}]})");
-    if (parsed.size() != 1 || parsed[0].keyCode != VK_LMENU || parsed[0].milliseconds != 500 || parsed[0].id != "voice") return 1;
+    const auto parsed = parse_holds(R"({"holds":[{"id":"voice","keyCode":164,"ms":500},{"id":"bad","keyCode":65,"ms":500},{"id":"toggle","keyCode":164,"ms":0}]})");
+    if (parsed.size() != 2 || parsed[0].keyCode != VK_LMENU || parsed[0].milliseconds != 500 || parsed[0].id != "voice" || parsed[1].milliseconds != 0) return 1;
     return 0;
 }
 
@@ -230,7 +233,7 @@ int main(int argc, char** argv) {
     message_thread = GetCurrentThreadId();
     HHOOK hook = SetWindowsHookExW(WH_KEYBOARD_LL, keyboard_hook, GetModuleHandleW(nullptr), 0);
     if (!hook) {
-        std::cerr << "Emma: unable to start the Windows keyboard listener." << std::endl;
+        std::cerr << "Shinbo: unable to start the Windows keyboard listener." << std::endl;
         return 1;
     }
     std::thread(read_updates).detach();

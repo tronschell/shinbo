@@ -132,7 +132,7 @@ fn detachJob(handle: windows.HANDLE) void {
 }
 
 fn jobName(buffer: *[64]u16, process_id: u32, creation_time: u64) windows.LPCWSTR {
-    const prefix = "Local\\EmmaFxJob-";
+    const prefix = "Local\\ShinboFxJob-";
     var length: usize = 0;
     for (prefix) |byte| {
         buffer[length] = byte;

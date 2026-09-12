@@ -345,7 +345,7 @@ static int self_test(void) {
     close_handle(resize_write);
     return 1;
   }
-  const char input[] = "Emma\r";
+  const char input[] = "Shinbo\r";
   const char resize[] = "100 30\n";
   const DWORD input_length = (DWORD)strlen(input);
   const DWORD resize_length = (DWORD)strlen(resize);
@@ -372,13 +372,13 @@ static int self_test(void) {
   while (length + 1 < sizeof(output) && ReadFile(output_read, output + length, (DWORD)(sizeof(output) - length - 1), &got, NULL) && got > 0) length += got;
   close_handle(output_read);
   output[length] = 0;
-  return status == 0 && strstr(output, "received:Emma:100x30:26481") != NULL ? 0 : 1;
+  return status == 0 && strstr(output, "received:Shinbo:100x30:26481") != NULL ? 0 : 1;
 }
 
 int wmain(int argc, wchar_t **argv) {
   if (argc == 2 && wcscmp(argv[1], L"--self-test") == 0) return self_test();
   if (argc < 4) {
-    fprintf(stderr, "usage: emma-pty <columns> <rows> <command> [argument...]\n");
+    fprintf(stderr, "usage: shinbo-pty <columns> <rows> <command> [argument...]\n");
     return 2;
   }
   int columns = parse_dimension(argv[1], 80);

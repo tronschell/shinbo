@@ -117,7 +117,7 @@ test("a thread the user archived is never driven at on its own", () => {
 
 test("a turn stopped mid-way for spending its budget settles the goal instead of leaving it pursuing", async () => {
   const source = readFileSync(path.join(__dirname, "..", "..", "main", "main.ts"), "utf8");
-  const guard = source.split("\n").find((line) => line.includes("noteTurnSpend(threadId, usage) >="));
+  const guard = source.split("\n").find((line) => line.includes("spent >= goalTokensLeft(goal)"));
   assert.ok(guard, "the mid-turn budget guard is not where the test looks for it");
   assert.match(guard, /noteGoalOverspent\(threadId\)/, "stopping the thread without recording why leaves the goal card reading Pursuing forever");
 

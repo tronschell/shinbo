@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { pendingAttachments, rememberTurnAttachments, turnAttachments } from "../src/context";
 import type { Message } from "../src/types";
 
-/// The store is written when a turn is sent and read once its message exists, so
-/// the only thing worth checking is that the two line up. Renderer storage, in a
-/// test runner that has none.
+
+
+
 const store = new Map<string, string>();
 (globalThis as { localStorage?: unknown }).localStorage = {
   getItem: (key: string) => store.get(key) ?? null,
@@ -39,17 +39,17 @@ test("a turn whose message never landed shows nothing, and shifted messages stil
   store.clear();
   rememberTurnAttachments("t3", 0, "never sent", shot("lost.png"));
   assert.deepEqual(turnAttachments("t3", [said("something else"), replied()]), {});
-  // A turn the notch sent while this window was closed pushes the rest along; the
-  // record names what was typed, so it follows its own message rather than a position.
+
+
   rememberTurnAttachments("t3", 0, "mine", shot("mine.png"));
   assert.deepEqual(turnAttachments("t3", [said("from the notch"), replied(), said("mine"), replied()]), { 2: shot("mine.png") });
 });
 
 test("a half-written or hand-edited entry is a miss, not a crash", () => {
   store.clear();
-  store.set("emma.threadAttachments.v1.t4", '[{"after":0,"content":"hi"},{"nope":true},7]');
+  store.set("shinbo.threadAttachments.v1.t4", '[{"after":0,"content":"hi"},{"nope":true},7]');
   assert.deepEqual(turnAttachments("t4", [said("hi")]), {});
-  store.set("emma.threadAttachments.v1.t4", "not json at all");
+  store.set("shinbo.threadAttachments.v1.t4", "not json at all");
   assert.deepEqual(turnAttachments("t4", [said("hi")]), {});
 });
 

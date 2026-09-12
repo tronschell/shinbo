@@ -1,6 +1,6 @@
 # Self-optimization
 
-How Emma tunes the way she uses her own harness: fewer model requests per
+How Shinbo tunes the way she uses her own harness: fewer model requests per
 turn, fewer failed tool calls, less spend, same or better completion. Every
 change is a proposal, every proposal is a paired trial against a control, and
 only a finished bench run can keep one. This page is the program; the
@@ -27,7 +27,7 @@ before their model call, so changing models does not inherit another model's
 repair.
 
 Run evidence exposes recorded prompts, skill context, configuration, effective
-changes, calls, outcomes and usage. “Ask Emma to analyze these runs” opens a
+changes, calls, outcomes and usage. “Ask Shinbo to analyze these runs” opens a
 thread with the selected cohort and asks for evidence-based proposals across
 models, tools, skills, prompts and repeated work, including successful runs as
 comparisons. It requests a concrete scope, edit and measurement, and does not
@@ -52,7 +52,7 @@ evidence, not a promise of unlimited history or byte-for-byte provider requests.
 | Friction reader and proposal drafts | `frictionOf`, `spendOf`, `draftProposal` in improvement.ts | Ranks failing tools and where the tokens go, drafts one change |
 | Family- and model-scoped prompt presets | [prompts.ts](../desktop/shared/prompts.ts) | `scope: family:glm` or `model:<id>`, seven variables |
 | Harness knobs per turn | `HarnessExperiments` in [settings.ts](../desktop/shared/settings.ts) | compact %, fresh context, reinject, prune tools, command timeout, semantic grep, embedding model |
-| Lazy tool discovery | `advertisement_order` in [tools.zig](../harness/src/builtins/tools.zig) | The harness's 24 file, shell and discovery tools are always advertised; of Emma's 27 only `task_list` is, and every other schema costs a `select_tool` model step to load |
+| Lazy tool discovery | `advertisement_order` in [tools.zig](../harness/src/builtins/tools.zig) | The harness's 24 file, shell and discovery tools are always advertised; of Shinbo's 27 only `task_list` is, and every other schema costs a `select_tool` model step to load |
 | Model-specific prompt hook | `modelPromptOverlay` in [context.zig](../harness/src/builtins/context.zig) | Returns null for every model today; the desktop's family-scoped presets are the live branch |
 
 The baseline this page was written against: 334 threads, 377 traces, 1 427
@@ -106,7 +106,7 @@ stamped with; `failed` is read beside every one.
 
 | # | Hypothesis | Lever | Metric | Expect |
 | --- | --- | --- | --- | --- |
-| 1 | Pre-select the most-called Emma tools: `artifact`, `computer`, `workflow`, `threads`, `memory`, `web_search` | `advertise` | `requests` | fewer discovery steps, slightly more prompt tokens, net cost down |
+| 1 | Pre-select the most-called Shinbo tools: `artifact`, `computer`, `workflow`, `threads`, `memory`, `web_search` | `advertise` | `requests` | fewer discovery steps, slightly more prompt tokens, net cost down |
 | 2 | `terminal` description leads with the one-object call shape and the per-action required fields | `tools` | `failures` | 15 of 57 terminal failures were shape errors |
 | 3 | Trim the Working section for Opus and GPT families | `prompt` | `tokens` | same `failed`, fewer tokens per turn |
 | 4 | Add a worked tool-call example block for GLM-flash and Nemotron | `prompt` | `failures` | fewer malformed calls on free and flash models |
@@ -122,7 +122,7 @@ directly rather than measured:
 | Failure | Count | Fix |
 | --- | --- | --- |
 | `read_tool_result` rejects `start_byte` sent as a quoted number (`"0"`, `"8192"`) | 54 | fixed: a digits-only JSON string decodes as the integer, and `start_byte` 0 reads as 1 |
-| `computer` answers *Computer run thread is invalid* | 13 | resolve the run thread the way the other Emma tools do |
+| `computer` answers *Computer run thread is invalid* | 13 | resolve the run thread the way the other Shinbo tools do |
 
 Counts are failed spans over the 377 traces on this machine as of
 2026-09-03. Permission denials (13 `terminal`, 5 `vision`) are the user's
@@ -138,7 +138,7 @@ runs because the ledger already points at them.
 | 2026-09-03 | control, 7 investigation cases, `glm-5.3-flash` on the plan route | 142 requests, 396k tokens, 69 min; `discovery` 0 on every turn, `cost` 0 (the plan route reports none) |
 | 2026-09-03 | row 1 `advertise`, 14 turns | stopped at 1 of 14, no verdict: no headroom while `discovery` is 0, and the same case on the same arm ran 18 vs 44 requests, so n=7 cannot separate a lever from noise |
 
-| 2026-09-03 | 12 real tasks (7 SWE, 5 knowledge work, mechanical checks) in `~/emma-bench/tasks`, control vs the three-lever bundle (preselect six Emma tools, `terminal` hint, `family:glm` call-shape prompt), `glm-5.3-flash` on OpenRouter, mode `full`, 80 steps / 15 min per case, 26 min wall | arm B: requests -20%, steps -19%, ms -40%, cost -18%, tokens +6%, check pass 10/12 on both arms; every metric `unproven` at n=12 (requests p=0.23, steps clears t but not the sign test); reverted |
+| 2026-09-03 | 12 real tasks (7 SWE, 5 knowledge work, mechanical checks) in `~/shinbo-bench/tasks`, control vs the three-lever bundle (preselect six Shinbo tools, `terminal` hint, `family:glm` call-shape prompt), `glm-5.3-flash` on OpenRouter, mode `full`, 80 steps / 15 min per case, 26 min wall | arm B: requests -20%, steps -19%, ms -40%, cost -18%, tokens +6%, check pass 10/12 on both arms; every metric `unproven` at n=12 (requests p=0.23, steps clears t but not the sign test); reverted |
 
 Row 1 needs cases that actually call `select_tool`. Every row needs the
 per-run cap raised past 25 min and a step cap per case: one case looped on

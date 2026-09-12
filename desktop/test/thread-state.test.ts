@@ -81,7 +81,7 @@ test("desktop refreshes summaries and keeps targeted reads read-only", () => {
 
 test("the sidebar filter searches the full name the host sends, not the truncated one", () => {
   const app = readFileSync(resolve(__dirname, "../../src/App.tsx"), "utf8");
-  const host = readFileSync(resolve(__dirname, "../../../crates/host/src/main.rs"), "utf8");
+  const host = readFileSync(resolve(__dirname, "../../../crates/core/src/thread.rs"), "utf8");
   assert.match(app, /group\.threads\.filter\(\(item\) => threadTitle\(item\)\.toLowerCase\(\)\.includes\(search\)/);
   assert.match(host, /\.filter\(\|content\| content\.encode_utf16\(\)\.count\(\) > 48\)\s+\.map\(\|content\| utf16_prefix\(content, SEARCHABLE_TITLE_UNITS\)\)/);
   const buried = "Draft a one page memo for the pricing committee on semiconductor supply";
@@ -92,7 +92,7 @@ test("the sidebar filter searches the full name the host sends, not the truncate
 test("a window takes every store change, frontmost or not, and a mid-turn write is one of them", () => {
   const app = readFileSync(resolve(__dirname, "../../src/App.tsx"), "utf8");
   const main = readFileSync(resolve(__dirname, "../../main/main.ts"), "utf8");
-  assert.match(app, /const listener = window\.emma\.onChanged\(refresh\);/);
+  assert.match(app, /const listener = window\.shinbo\.onChanged\(refresh\);/);
   assert.doesNotMatch(app, /onChanged\(refreshVisible\)/);
   assert.match(main, /this\.storeChanged\(\);\s+const written = this\.send\(request\);\s+void written\.then\(\(\) => changed\(\), \(\) => undefined\);/);
 });

@@ -6,7 +6,7 @@ import { reasonText } from "./errors";
 type MobileDevice = { id: number; connected: boolean; lastSeen: number };
 type MobileStatus = { devices: MobileDevice[]; listening: boolean; pairing: boolean; full: boolean; reason: string; name: string; addr: string; threads?: string[]; activeAt?: number };
 
-const bridge = window.emma as typeof window.emma & {
+const bridge = window.shinbo as typeof window.shinbo & {
   mobileStatus(): Promise<MobileStatus>;
   mobilePair(pin: string): Promise<PairingPayload>;
   mobileCancelPair(): Promise<MobileStatus>;
@@ -165,8 +165,8 @@ export function MobileSettings({ busy }: { busy: boolean }) {
   const ready = isPin(pin);
   return <div className="mobile-settings">
     <header className="settings-intro">
-      <div><h3>Emma, from your phone</h3><p>Continue threads, answer approval requests, and work with git from Emma Mobile.</p></div>
-      <a href="https://github.com/tronschell/emma-mobile" target="_blank" rel="noreferrer">Get Emma Mobile ↗</a>
+      <div><h3>Shinbo, from your phone</h3><p>Continue threads, answer approval requests, and work with git from Shinbo Mobile.</p></div>
+      <a href="https://github.com/tronschell/shinbo-mobile" target="_blank" rel="noreferrer">Get Shinbo Mobile ↗</a>
     </header>
     {(error || status.reason) && <p className="local-model-error" role="alert">{error || status.reason}</p>}
     {status.devices.length > 0 && <section className="mobile-devices" aria-labelledby="mobile-devices-title">
@@ -180,8 +180,8 @@ export function MobileSettings({ busy }: { busy: boolean }) {
     <section className="mobile-pairing" aria-labelledby="mobile-pairing-title">
       <div className="mobile-pairing-heading"><h3 id="mobile-pairing-title">{pairing ? "Scan to connect" : status.devices.length ? "Pair another phone" : "Pair your first phone"}</h3><span className="settings-count">{pairing ? "Step 2 of 2" : status.full ? "Device limit reached" : "Step 1 of 2"}</span></div>
       {status.full && !pairing ? <p>All three device slots are in use. Remove a phone above to pair another.</p> : pairing ? <div className="mobile-scan">
-        <canvas ref={canvas} role="img" aria-label="Pairing code for Emma Mobile" />
-        <div><p>Open Emma Mobile and scan this code. Enter the PIN you just chose when the phone asks.</p><span className="mobile-expiry">Expires in {left}s</span><p>Keep this code private. Pair only a phone you are holding.</p></div>
+        <canvas ref={canvas} role="img" aria-label="Pairing code for Shinbo Mobile" />
+        <div><p>Open Shinbo Mobile and scan this code. Enter the PIN you just chose when the phone asks.</p><span className="mobile-expiry">Expires in {left}s</span><p>Keep this code private. Pair only a phone you are holding.</p></div>
       </div> : <form className="mobile-pair-form" onSubmit={(event) => { event.preventDefault(); if (ready && !locked && !status.full) void pair(); }}>
         <p>Keep both devices on the same Wi-Fi or Tailscale network. Choose a PIN, then scan the code on your phone.</p>
         <div className="mobile-pair-controls"><label htmlFor="mobile-pair-pin">Pairing PIN<input

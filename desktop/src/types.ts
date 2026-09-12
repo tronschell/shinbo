@@ -40,6 +40,8 @@ export type HeldAttachment = { id: string; name: string; path: string; thumbnail
 
 export type VoiceSettings = Pick<UserSettings, "transcriptionEngine" | "transcriptionEndpoint" | "transcriptionModel" | "voiceCleanup" | "voiceCleanupEndpoint" | "voiceCleanupModel">;
 
+export type ThreadContext = { folderIds: string[]; mode: PermissionMode; model: string; effort: ThinkingLevel; review: boolean };
+
 export type ThreadRole = "user" | "assistant" | "system";
 
 export interface Message {
@@ -216,10 +218,12 @@ export type OverlaySurface = "notch" | "pill" | "popout";
 
 declare global {
   interface Window {
-    emma: {
+    shinbo: {
       platform: string;
       request<T>(method: string, params?: Record<string, string>): Promise<T>;
-      setOverlayPreferences(value: unknown): void;
+      setOverlayPreferences(value: unknown): Promise<void>;
+      runtimeReady(error: string): Promise<void>;
+      setDefaultMode(value: PermissionMode): Promise<PermissionMode>;
       setOverlayBusy(value: boolean): void;
       setKeybinds(value: unknown): Promise<string[]>;
       onShortcutRequest(listener: (value: ShortcutRequest & { id: string }) => void): () => void;
@@ -247,7 +251,7 @@ declare global {
       onStep(listener: (value: ThreadStep) => void): () => void;
       onCompacted(listener: (value: { threadId: string; removedTurns: number; summaryChars: number; modelWritten: boolean; fresh: boolean; handoff?: string; historyChars?: number }) => void): () => void;
       onContextExperiment(listener: (value: { threadId: string; prunedResults: number; reinjected: boolean; savedTokens: number; addedTokens: number; checkpoint?: string }) => void): () => void;
-      onRoutedModel(listener: (value: { threadId: string; model: string; fellBack: boolean }) => void): () => void;
+      onRoutedModel(listener: (value: { threadId: string; model: string; fellBack: boolean; skipped: string[] }) => void): () => void;
       onContextBreakdown(listener: (value: { threadId: string; systemPromptBytes: number; systemToolsBytes: number; mcpToolsBytes: number; skillsBytes: number; memoryBytes: number }) => void): () => void;
       startScreenAnnotation(): Promise<void>;
       captureScreenContext(): Promise<{ id: string; image: string; source?: FrontApplication }>;
@@ -317,7 +321,7 @@ declare global {
       pickFolder(): Promise<FolderGrant[]>;
       forgetFolder(id: string): Promise<FolderGrant[]>;
       listFolderFiles(id: string): Promise<FolderListing>;
-      gitStatus(id: string): Promise<GitSnapshot | null>;
+      gitStatus(id: string, includeDiff?: boolean): Promise<GitSnapshot | null>;
       gitReady(id: string): Promise<GitReady>;
       gitInit(id: string): Promise<void>;
       gitHistory(value: { folderId: string; skip?: number; limit?: number }): Promise<GitHistory>;
@@ -367,7 +371,7 @@ declare global {
       closeCouncil(threadId: string): Promise<void>;
       councilState(threadId: string): Promise<CouncilState | null>;
       onCouncil(listener: (state: CouncilState) => void): () => void;
-      getThreadContext(threadId: string): Promise<{ model: string; effort: ThinkingLevel }>;
+      getThreadContext(threadId: string): Promise<ThreadContext>;
       setThreadContext(value: { threadId: string; folderIds: string[]; mode: PermissionMode; model?: string; effort?: string; subagentModel?: string; subagentEffort?: string; review?: boolean; stepLimit?: number }): Promise<PermissionMode>;
       runCommand(value: { command: string; folderId?: string }): Promise<BackgroundTask>;
       listBackground(): Promise<BackgroundTask[]>;
@@ -441,7 +445,7 @@ declare global {
       onChanged(listener: () => void): number;
       offChanged(id: number): void;
     };
-    emmaBench: {
+    shinboBench: {
       importCases(cases: { title: string; prompt: string; folderId: string; rubric?: string; setup?: string; check?: string }[]): string[];
       start(options: { metric?: BenchMetric; arms?: "a" | "ab"; model?: string; effort?: string; mode?: string; stepLimit?: number; caseMinutes?: number; caseIds?: string[] }): string;
       read(): Bench;

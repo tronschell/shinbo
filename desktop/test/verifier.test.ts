@@ -71,7 +71,7 @@ test("the prohibited list is long enough to be worth enforcing", () => {
 test("an endpoint the review would travel to in the clear is refused", () => {
   assert.deepEqual(validateVerifier(undefined), defaultVerifier);
   assert.equal(validateVerifier({ model: " x ", endpoint: "http://127.0.0.1:1234/v1/chat/completions", credentialEnv: "" }).model, "x");
-  // The rules are the user's to rewrite, and emptying the box asks for the shipped ones back.
+
   assert.equal(validateVerifier({ ...settings, system: "  only allow reads  " }).system, "only allow reads");
   assert.equal(validateVerifier({ ...settings, system: "   " }).system, defaultVerifierSystem);
   assert.throws(() => validateVerifier({ ...settings, system: "x".repeat(9000) }), /characters/);
@@ -92,8 +92,8 @@ test("picking a catalogued model is picking a route, and only a stranger needs t
   assert.equal(verifierFromKey("", profiles, "rules").model, "");
   assert.equal(verifierKey(verifierFromKey("", profiles, "rules"), profiles), "");
   assert.equal(verifierKey({ model: "x", endpoint: "https://elsewhere.test/v1/chat/completions", credentialEnv: "", system: "" }, profiles), "custom");
-  // A router is a list of models, best first: picking one gives the second model
-  // the same fallbacks the main model gets, and reads back as the router again.
+
+
   const routers = [{ id: "free", name: "Free", models: ["a/one:free", "b/two:free"] }];
   const chained = verifierFromKey(routerKey("free"), profiles, "rules", routers);
   assert.equal(chained.model, "a/one:free,b/two:free");
@@ -112,7 +112,7 @@ test("a chained second model asks OpenRouter to fall through for it", async () =
     const chain = { ...settings, model: " a/one:free , b/two:free " };
     assert.equal(await chatCompletion(chain, [{ role: "user", content: "hi" }], "", { maxTokens: 10, timeoutMs: 5_000, label: "verifier" }), "ok");
     assert.deepEqual(sent[0], { model: "a/one:free", models: ["a/one:free", "b/two:free"], messages: [{ role: "user", content: "hi" }], temperature: 0, max_tokens: 10, stream: false });
-    // One model is one model: nothing extra travels for the common case.
+
     await chatCompletion(settings, [{ role: "user", content: "hi" }], "", { maxTokens: 10, timeoutMs: 5_000, label: "verifier" });
     assert.equal((sent[1] as { models?: unknown }).models, undefined);
     const long = { ...settings, model: "a/one:free,b/two:free,c/three:free,d/four:free" };
@@ -139,7 +139,7 @@ test("auto gates exactly what ask gates, so the verifier is asked the same quest
   assert.equal(toolGate("auto", "run_tool"), "ask");
   assert.equal(toolGate("auto", "computer"), "ask");
   assert.equal(toolGate("auto", "keep"), "auto");
-  // Auto is not a way to reach a tool the mode table hides from everyone.
+
   assert.equal(toolGate("auto", "rm_rf"), "hidden");
 });
 
@@ -185,7 +185,7 @@ test("a verifier that cannot answer asks the user rather than deciding for them"
     verify: async () => ({ model: "", prompt: "p", reply: "", attempts: 1, error: "No verifier model is configured in Settings → Models." }),
     answer: true,
   });
-  // The user said yes, so the call still runs: a missing verifier costs a dialog, not the turn.
+
   assert.equal(await gate(), true);
   assert.equal(asked.length, 1);
   assert.match(asked[0].detail, /\[auto agent\] could not answer: No verifier model is configured/);
@@ -196,11 +196,11 @@ function request(): VerifierRequest {
   return { goal: "run the tests", title: "This thread", activity: "running npm test", tool: "terminal", summary: "running npm test", detail: "rm -rf /tmp/build && npm test" };
 }
 
-/**
- * One gated command put through the channel the harness uses — `question` — with
- * the answers the test wants. The turn itself is the harness's; all Emma sees is
- * the one call it stopped to ask about.
- */
+
+
+
+
+
 function harness({ verify, answer }: { verify: (request: VerifierRequest) => Promise<VerifierReview>; answer?: boolean }) {
   const asked: PermissionAsk[] = [];
   const live: ThreadStep[] = [];

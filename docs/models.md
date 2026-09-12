@@ -1,9 +1,9 @@
 # Models and providers
 
-Emma talks to any OpenAI-compatible Chat Completions endpoint. Out of the box
+Shinbo talks to any OpenAI-compatible Chat Completions endpoint. Out of the box
 that endpoint is [OpenRouter](https://openrouter.ai). Paste an OpenRouter key
 into **Settings → Models**, pick a model from the catalog, and the composer's
-picker switches models per thread. No account inside Emma, no config file.
+picker switches models per thread. No account inside Shinbo, no config file.
 
 Anything else that speaks the same shape — Z.AI, DeepSeek, a GPU host, LM Studio
 on this computer, llama.cpp on a box down the hall — is a **provider profile** you add
@@ -13,23 +13,23 @@ per-vendor adapters, because there is nothing to adapt.
 
 ## What runs a turn
 
-One process runs the agent loop: `emma-cli`, the Zig harness in
-[harness/](../harness) — Emma's fork of
+One process runs the agent loop: `shinbo-cli`, the Zig harness in
+[harness/](../harness) — Shinbo's fork of
 [vercel-labs/fx](https://github.com/vercel-labs/fx) (Apache-2.0). Electron owns
 the UI, the tools and the permission answers; the Rust host is the store and is
 not in the model path at all. `sendMessage` from the renderer becomes `driveTurn`
 in [main.ts](../desktop/main/main.ts), which runs the turn over ACP; the finished
-turn goes back to the host as `recordTurn`. A missing `emma-cli` binary is a
+turn goes back to the host as `recordTurn`. A missing `shinbo-cli` binary is a
 broken install, not a reason to fall back.
 
-[emma_openai.zig](../harness/src/gateway/emma_openai.zig) and
+[shinbo_openai.zig](../harness/src/gateway/shinbo_openai.zig) and
 [gateway.zig](../harness/src/builtins/gateway.zig) hold the wire defaults:
 
 | Constant | Value |
 | --- | --- |
 | `default_chat_url` | `https://openrouter.ai/api/v1/chat/completions` |
-| `chat_url_env` | `EMMA_PROVIDER_CHAT_URL` |
-| `zero_retention_env` | `EMMA_OPENROUTER_ZDR` |
+| `chat_url_env` | `SHINBO_PROVIDER_CHAT_URL` |
+| `zero_retention_env` | `SHINBO_OPENROUTER_ZDR` |
 | `default_model` | `nvidia/nemotron-3-super-120b-a12b:free` |
 | `default_model_catalog_base_url` | `https://openrouter.ai/api/v1` |
 | `retry_count` | `3` |
@@ -63,7 +63,7 @@ The picker deals in keys, not raw model ids ([settings.ts](../desktop/shared/set
 | `openrouter:<id>` | A model from the OpenRouter catalog | that id |
 | `router:<id>` | One of the router profiles | that router's whole chain, comma-separated |
 | `provider:<profileId>` | A provider profile | that profile's `modelId`, to that profile's endpoint |
-| `codex:<slug>` | A ChatGPT subscription model | that slug, to Emma's loopback relay onto the ChatGPT plan endpoint |
+| `codex:<slug>` | A ChatGPT subscription model | that slug, to Shinbo's loopback relay onto the ChatGPT plan endpoint |
 | `fallback` | The shipped default | nothing — see below |
 
 `defaultSettings.selectedModel` is `"fallback"` and `favoriteModels` starts as
@@ -79,7 +79,7 @@ same way.
 
 ### How a provider profile routes the whole loop
 
-`EMMA_PROVIDER_CHAT_URL` is read by `emma-cli` once, at spawn — so the route is a
+`SHINBO_PROVIDER_CHAT_URL` is read by `shinbo-cli` once, at spawn — so the route is a
 property of the *process*, not of the turn. `harnessKey(cwd, nestedThreadId,
 providerId)` therefore puts the provider id in the harness map key, and
 `harnessClient` hands that harness `chatUrl` and the provider's own `apiKey` in
@@ -88,7 +88,7 @@ DeepSeek and a thread on OpenRouter run side by side, each against its own
 endpoint. `MAX_HARNESSES` (4) still reaps the idle ones.
 
 A profile with an empty `credentialEnv` is a server that wants no key, but
-`emma-cli` refuses to start without `EMMA_PROVIDER_API_KEY`, so Emma sends the
+`shinbo-cli` refuses to start without `SHINBO_PROVIDER_API_KEY`, so Shinbo sends the
 literal `no-key` and the server ignores it.
 
 `contextWindow` on the profile is sent as the harness's `context_window` config
@@ -96,7 +96,7 @@ option. Leave it 0 and `ModelMetadataCatalog` looks up the exact provider and
 model in the live metadata cache. Fill it in to override that source or for an
 off-catalog endpoint; the manual value always wins.
 
-Main learns the table over `emma:set-providers`, which validates and then calls
+Main learns the table over `shinbo:set-providers`, which validates and then calls
 `recycleHarnesses()`. Like the verifier and the free chain, it is renderer state
 pushed into main: until the window has loaded once, `providers` is empty and a
 `provider:` key resolves to nothing.
@@ -109,7 +109,7 @@ OpenRouter's `models` fallback array: the next link answers when the one above i
 is rate-limited, down, or has retired. OpenRouter rejects more than three entries
 there, so the transport sends the first three links only
 (`max_routed_models_per_request` in
-[emma_openai.zig](../harness/src/gateway/emma_openai.zig), `MAX_FALLBACK_MODELS`
+[shinbo_openai.zig](../harness/src/gateway/shinbo_openai.zig), `MAX_FALLBACK_MODELS`
 for the second models); the whole chain stays for the picker and the window lookup.
 
 `routers` on `UserSettings` holds 0 to `MAX_ROUTERS` (5) of them, each
@@ -121,7 +121,7 @@ request and holds none until the renderer sends one. A settings file written
 before routers existed carries a `freeRouterModels` array, which becomes the
 first router.
 
-The shipped default is one router, `free`, named **Emma Free Router**, holding
+The shipped default is one router, `free`, named **Shinbo Free Router**, holding
 `FREE_ROUTER_MODELS` — ten free ids:
 
 ```
@@ -132,7 +132,7 @@ poolside/laguna-s-2.1:free                  cohere/north-mini-code:free
 nvidia/nemotron-3-super-120b-a12b:free      nvidia/nemotron-3.5-lightning:free
 ```
 
-Every chain is filtered against the catalog Emma actually has, so a retired id is
+Every chain is filtered against the catalog Shinbo actually has, so a retired id is
 dropped rather than sent; an empty catalog means the list goes unfiltered, so a
 first launch still routes. OpenRouter refuses a request that names more than
 three models, so the harness sends the surviving chain's first three and drops
@@ -169,7 +169,7 @@ https://openrouter.ai/api/v1/models?supported_parameters=tools&sort=most-popular
 `fetchOpenRouterCatalog` sends no credential, so you can read every model and
 compare prices before you have an account. The key is only needed to run a turn.
 
-**Only tool-capable models.** Emma advertises tools on every turn, so a model
+**Only tool-capable models.** Shinbo advertises tools on every turn, so a model
 without tool support fails the moment it is used: `supported_parameters=tools`
 filters at the source and `supportsParameter` checks again on the way in.
 
@@ -244,17 +244,17 @@ the harness.
 
 1. You paste a key in **Settings → Models → provider keys**. It goes over IPC to main and no further.
 2. `set(env, secret)` validates: the name against `isEnvName` (`/^[A-Za-z_][A-Za-z0-9_]{0,63}$/`), the secret 1–`MAX_SECRET_CHARS` (512) printable ASCII (`/^[!-~]+$/`).
-3. `save()` encrypts each secret with Electron `safeStorage.encryptString` — the operating system's secure credential store — and base64s it. If `isEncryptionAvailable()` is false it throws: *"This computer's secure credential store is unavailable, so Emma will not store a key in plain text."*
-4. The blob lands at `<userData>/credentials.json`, written to a `.tmp` with mode `0o600` in a directory created `0o700`, then renamed. `userData` is Electron's profile directory; packaged Windows builds use `%APPDATA%/Emma`, while macOS builds use `~/Library/Application Support/Emma`. See [data.md](data.md).
+3. `save()` encrypts each secret with Electron `safeStorage.encryptString` — the operating system's secure credential store — and base64s it. If `isEncryptionAvailable()` is false it throws: *"This computer's secure credential store is unavailable, so Shinbo will not store a key in plain text."*
+4. The blob lands at `<userData>/credentials.json`, written to a `.tmp` with mode `0o600` in a directory created `0o700`, then renamed. `userData` is Electron's profile directory; packaged Windows builds use `%APPDATA%/Shinbo`, while macOS builds use `~/Library/Application Support/Shinbo`. See [data.md](data.md).
 5. `applyToEnv(process.env)` decrypts and mirrors the secrets onto Electron's own environment, clearing names it set on an earlier pass.
-6. `Harness` spawns `emma-cli` with `{ ...process.env, HOME: <userData>/harness, AI_GATEWAY_API_KEY: key, EMMA_PROVIDER_API_KEY: key }`, where `key` is `process.env.OPENROUTER_API_KEY`.
+6. `Harness` spawns `shinbo-cli` with `{ ...process.env, HOME: <userData>/harness, AI_GATEWAY_API_KEY: key, SHINBO_PROVIDER_API_KEY: key }`, where `key` is `process.env.OPENROUTER_API_KEY`.
 
 The renderer never gets a value back: `list()` returns `{ env, masked }`, and
 `maskSecret` shows the first 6 characters, ten bullets and the last 4 — or eight
 bullets alone under 12 characters.
 
-`emma-cli` reads the key from its spawn environment, so a new key takes effect on
-a fresh process: `emma:save-credential` calls `recycleHarnesses()`, which closes
+`shinbo-cli` reads the key from its spawn environment, so a new key takes effect on
+a fresh process: `shinbo:save-credential` calls `recycleHarnesses()`, which closes
 every idle harness and leaves a busy one alone. Electron main's own provider calls
 read `process.env` per call and pick it up immediately.
 
@@ -278,7 +278,7 @@ own endpoint instead of OpenRouter. It is not a new mechanism. `withPlanProfile`
 ([settings.ts](../desktop/shared/settings.ts)) writes a `ProviderProfile` with id
 `plan-<planId>` into `settings.providers`, adding a numbered suffix when another
 model already uses that plan. The existing `provider:` key carries it from there:
-`providerRoute` in [main.ts](../desktop/main/main.ts), `EMMA_PROVIDER_CHAT_URL`
+`providerRoute` in [main.ts](../desktop/main/main.ts), `SHINBO_PROVIDER_CHAT_URL`
 at spawn, one harness per provider. The harness, the IPC surface and main
 learned nothing new. Delete the profile and the plan is gone.
 
@@ -374,7 +374,7 @@ uses. Nothing else is available: Qwen and Mistral publish no endpoint at all;
 OpenAI and Anthropic gate usage behind an Admin key that by design cannot also
 run inference; Z.AI's and Kimi Code's quota endpoints exist but appear in no
 vendor documentation — two independent third-party clients disagree over whether
-Z.AI even wants a `Bearer` prefix — so Emma does not call them. The five-hour
+Z.AI even wants a `Bearer` prefix — so Shinbo does not call them. The five-hour
 windows on the GLM and Kimi plans are therefore counted locally or not at all.
 
 ### Gateways are not plans
@@ -393,7 +393,7 @@ so both are `PROVIDER_PRESETS` chips rather than plan rows:
 
 **Only part of each catalog answers on `/chat/completions`.** OpenCode binds each
 model id to one protocol: GPT, Grok and Muse are on `/responses`, Claude, Qwen and
-MiniMax are on `/messages`, and Gemini is on `/models/<id>`. Emma speaks
+MiniMax are on `/messages`, and Gemini is on `/models/<id>`. Shinbo speaks
 chat-completions, so the usable set is the rest — GLM, Kimi, DeepSeek, MiniMax on
 Zen, LongCat and MiMo on Go, plus the free tier. Pick the model with **Test**
 before trusting a row: a wrong protocol answers 500, not 404.
@@ -412,7 +412,7 @@ are `billing: "metered"` and why each note says the subscription does not pay fo
 the key. Paste a key there if you want the metered route; it is not the plan you
 are already buying.
 
-The subscription path for those three is their **own CLI**, which Emma already
+The subscription path for those three is their **own CLI**, which Shinbo already
 spawns through the `cli` tool ([cli.ts](../desktop/main/cli.ts),
 [cli.md](cli.md)). `CLI_PLANS` holds three rows, shown under the key rows:
 
@@ -422,12 +422,12 @@ spawns through the `cli` tool ([cli.ts](../desktop/main/cli.ts),
 | Codex | ChatGPT Plus, Pro or Business | `codex login` | [the plan's five-hour message window, shared with other ChatGPT use](https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan) |
 | Gemini CLI | Google AI Pro or Ultra | `gemini` | [1,000 requests a day free, 1,500 on AI Pro, 2,000 on AI Ultra](https://ai.google.dev/gemini-api/docs/google-ai-plans) |
 
-**Emma spawns the binary and never touches the login.** Anthropic's
+**Shinbo spawns the binary and never touches the login.** Anthropic's
 [legal and compliance page](https://code.claude.com/docs/en/legal-and-compliance)
 permits an end user signing in to the **unmodified** Claude Code binary with
 their own subscription, and explicitly forbids a third-party application routing
 Pro or Max credentials through itself or storing or intermediating Claude session
-tokens. Emma spawns the unmodified binary you signed in to yourself and never
+tokens. Shinbo spawns the unmodified binary you signed in to yourself and never
 sees, stores or forwards that login. Codex is the same shape. Google is stricter
 still: the Gemini CLI terms forbid third-party software reaching Gemini Code
 Assist through that OAuth login, and the sanction falls on the user's account —
@@ -435,7 +435,7 @@ so the binary spawns as itself or not at all. Google AI Plus is not supported.
 
 **A CLI run is a delegated side channel, not the thread model.** The call goes
 out through the `cli` tool and comes back as one tool result;
-[harness.ts](../desktop/main/harness.ts) only ever speaks ACP to `emma-cli`, so
+[harness.ts](../desktop/main/harness.ts) only ever speaks ACP to `shinbo-cli`, so
 no plan changes which process runs the loop. This is not "use Claude as your
 model" and should not be read as one. A ChatGPT plan can also answer as a model,
 and that route spawns no binary at all — the next section says how.
@@ -444,17 +444,17 @@ and that route spawns no binary at all — the next section says how.
 
 A GPT row in the catalog offers three buttons, not two: OpenRouter, the metered
 OpenAI key, and **ChatGPT**. The third picks the key `codex:<slug>`. The turn
-still runs on Emma's own loop in the harness; only the endpoint changes.
+still runs on Shinbo's own loop in the harness; only the endpoint changes.
 `chatgptRoute` in [chatgpt.ts](../desktop/main/chatgpt.ts) opens a loopback
 server on `127.0.0.1`, hands the harness that `chatUrl` and a random bearer
 token, and relays each call to
 `https://chatgpt.com/backend-api/codex/responses` — Chat Completions in, the
 Responses API out, streamed back as chat chunks with usage and cached-token
-counts. Emma's system prompt, tool permissions, disabled-tool list and approval
-prompts all apply, because it is Emma's loop.
+counts. Shinbo's system prompt, tool permissions, disabled-tool list and approval
+prompts all apply, because it is Shinbo's loop.
 
 No binary is spawned. The credential is the ChatGPT sign-in `codex login` wrote
-to `~/.codex/auth.json`: Emma reads that file, sends its access token as
+to `~/.codex/auth.json`: Shinbo reads that file, sends its access token as
 `authorization` and the account id as `chatgpt-account-id`, and never writes it
 back or stores a copy. Turns draw on the plan's five-hour window, shared with
 your other ChatGPT use. This is the shape OpenAI documents and ships itself —
@@ -477,6 +477,12 @@ slug that is not a plain model id, and refuses outright when
 `~/.codex/auth.json` holds no ChatGPT sign-in. A ChatGPT-plan model cannot take
 a council seat either; the seats call the chat endpoint directly.
 
+Stopping a council aborts its pending model requests and prevents further seats
+from starting. A task's Stop also cancels its advisor and vision requests; other
+tasks keep running. A council checks conversation capacity before making model
+calls. Its answer is marked complete only after it is saved. If saving fails,
+the answer remains available to land again without rerunning the models.
+
 The button only appears on rows Codex can actually run. `useCodexSlugs` reads the
 route metadata returned with the live catalog and falls back to Codex's model
 list, cached for one hour, so `openai/gpt-5.4-mini` offers the route and
@@ -492,11 +498,11 @@ Those rows have one route and no provider buttons.
 and per-task pickers, with their effective local context window. Quota is not
 read — the endpoint reports per-response usage and nothing about the five-hour
 window, so a ChatGPT turn shows up in the local ledger like any other and the
-remaining-quota line stays empty. Signing in from inside Emma still needs
+remaining-quota line stays empty. Signing in from inside Shinbo still needs
 `codex app-server`, which is the upgrade path when it becomes worth an
 experimental JSON-RPC surface that has no compatibility policy.
 
-**Emma detects installed, not signed in.** `installedClis` resolves each binary
+**Shinbo detects installed, not signed in.** `installedClis` resolves each binary
 with `command -v` in a login shell, and the row reads **Installed** with the
 resolved path or **Not found**. Whether that binary has a session is between you
 and the vendor.
@@ -517,19 +523,19 @@ Each row's `note`, which the panel shows behind its (i):
 
 ## Environment variables
 
-Read by `emma-cli`, the process that runs your turn:
+Read by `shinbo-cli`, the process that runs your turn:
 
 | Variable | Effect |
 | --- | --- |
-| `EMMA_PROVIDER_API_KEY` | The bearer token. Without it: *"emma-cli has no provider credential. Set EMMA_PROVIDER_API_KEY."* ([credentials.zig](../harness/src/core/auth/credentials.zig)) |
+| `SHINBO_PROVIDER_API_KEY` | The bearer token. Without it: *"shinbo-cli has no provider credential. Set SHINBO_PROVIDER_API_KEY."* ([credentials.zig](../harness/src/core/auth/credentials.zig)) |
 | `AI_GATEWAY_API_KEY` | Set to the same value by [harness.ts](../desktop/main/harness.ts) |
-| `EMMA_PROVIDER_CHAT_URL` | Chat Completions URL. Empty or unset means OpenRouter |
-| `EMMA_OPENROUTER_ZDR` | Any non-empty value turns on zero-retention routing |
+| `SHINBO_PROVIDER_CHAT_URL` | Chat Completions URL. Empty or unset means OpenRouter |
+| `SHINBO_OPENROUTER_ZDR` | Any non-empty value turns on zero-retention routing |
 | `FX_MODEL` | Overrides the startup model ([app_lifecycle.zig](../harness/src/core/app/app_lifecycle.zig)) |
 | `FX_GATEWAY_BASE_URL` | Overrides the gateway base URL (`https://openrouter.ai/api`); ignored unless it is loopback http |
 
-Read by the Rust host: `EMMA_DATA_DIR` alone, which moves the platform data root
-(`%APPDATA%/Emma` on Windows or `~/Library/Application Support/Emma` on macOS).
+Read by the Rust host: `SHINBO_DATA_DIR` alone, which moves the platform data root
+(`%APPDATA%/Shinbo` on Windows or `~/Library/Application Support/Shinbo` on macOS).
 [runtime.rs](../crates/host/src/runtime.rs)
 resolves the data root, starts the store, and answers requests — it spawns no
 child, holds no credential and makes no network request.
@@ -537,7 +543,7 @@ child, holds no credential and makes no network request.
 ## Settings → Models
 
 [App.tsx](../desktop/src/App.tsx) renders, in order: **ModelCatalog** (the full
-list, a "Free only" filter persisted under `emma.freeModelsOnly.v1`, a `Free`/`Paid`
+list, a "Free only" filter persisted under `shinbo.freeModelsOnly.v1`, a `Free`/`Paid`
 badge, a reload that names what was added and removed, `CATALOG_PAGE` 15 rows at
 a time, and the shared provider control under the selected row when a plan covers it) ·
 **ModelPlans** (Subscriptions, above — keys only) · **ProviderSettings** · **VerifierPanel** · **AdvisorPanel** ·
@@ -549,7 +555,7 @@ Z.AI, DeepSeek, OpenCode Zen, OpenCode Go, LM Studio, Ollama, llama.cpp, Custom 
 with a base URL and a key variable name; a chip is prefill and nothing more. **Test** hits
 `GET <baseUrl>/models` and then posts one throwaway completion with a single tool
 advertised, and reports two things: how many models the endpoint lists, and
-whether the model you named actually came back with a `tool_calls` array. Emma
+whether the model you named actually came back with a `tool_calls` array. Shinbo
 advertises tools on every turn, so a model that fails the second dot will fail on
 its first real use; the listed ids also fill the Model ID field's datalist.
 
@@ -588,7 +594,7 @@ render time.
 
 ### Private routing
 
-The switch writes `EMMA_OPENROUTER_ZDR=1` into Electron's environment and calls
+The switch writes `SHINBO_OPENROUTER_ZDR=1` into Electron's environment and calls
 `recycleHarnesses()`, so **it restarts the local agent**. With it on, and only for
 an `openrouter.ai` chat URL, the harness appends
 `"provider":{"data_collection":"deny","zdr":true}` to every request body.
@@ -599,7 +605,7 @@ free or paid badge does not establish the endpoint's data policy.
 
 The flag rides the harness request body only: verifier, vision, advisor, secrets
 and note-tagger calls go out with no routing flags. It does not change your
-OpenRouter account's prompt-logging settings, which Emma cannot read or change.
+OpenRouter account's prompt-logging settings, which Shinbo cannot read or change.
 Check them yourself at
 [openrouter.ai/settings/privacy](https://openrouter.ai/settings/privacy). See
 [privacy.md](privacy.md). This is not an app-wide offline or privacy switch.
@@ -645,7 +651,7 @@ mid-turn with the transcript so far, clamped at `MAX_ADVISOR_TRANSCRIPT_CHARS`
 
 **Vision** — the `vision` tool, for a selected model that cannot see. It posts an
 `image_url` data URL; it is the deliberate exception to screenshots staying in
-Emma's process. See [privacy.md](privacy.md).
+Shinbo's process. See [privacy.md](privacy.md).
 
 **Secrets** — the `secret` tool. The command runs in Electron, its output goes
 to this model and nowhere else, and the thread's own model gets the answer only.
@@ -656,7 +662,7 @@ them on this computer. See [privacy.md](privacy.md).
 **Note tagger** — titles and tags a note kept into your vault
 (`MAX_TAG_TEXT_CHARS` 6000, at most `MAX_TAGS` tags). See
 [knowledge.md](knowledge.md). Its rules are `defaultTaggerSystem` and it sends
-them; a stored `system` replaces them. It has no panel: `emma:set-tagger` exists
+them; a stored `system` replaces them. It has no panel: `shinbo:set-tagger` exists
 on the IPC surface but nothing in the renderer calls it, so its model is
 whatever `defaultTagger` says — a three-model chain, none of which reasons
 unless asked to.
@@ -700,7 +706,7 @@ line of its own. The last such line wins, and anything unparseable counts as
 loop. On `revise` the critique goes back to the thread's own model as a fresh
 turn, quoted as a reviewer's opinion rather than as something the user said, and
 the result is reviewed again — at most `MAX_REVIEW_ROUNDS` (2) rounds, after which
-Emma stops and leaves the last word to you. Stopping the thread, archiving it, or
+Shinbo stops and leaves the last word to you. Stopping the thread, archiving it, or
 starting a turn of your own ends the loop too.
 
 **Cost.** Up to two extra agentic turns per round, on two bills.
@@ -730,7 +736,7 @@ off the cached catalog ([catalog.ts](../desktop/main/catalog.ts)). The context
 bar reads the rest of `usage.ts`: `MAX_USES` 32, `RATE_FLOOR` 4096. See
 [context-bar.md](context-bar.md).
 
-## Pointing Emma at a local server
+## Pointing Shinbo at a local server
 
 LM Studio serves an OpenAI-compatible API on `http://127.0.0.1:1234/v1`; Ollama
 does the same on `http://127.0.0.1:11434/v1`; llama.cpp's `llama-server` on
@@ -747,18 +753,18 @@ header. That traffic never leaves the computer.
 
 **As the main thread model**, add it as a provider and pick it — that is what the
 provider profile is for. The environment variables below still work and still
-override, which is what to reach for when you want the route decided before Emma
+override, which is what to reach for when you want the route decided before Shinbo
 starts:
 
 ```sh
-export EMMA_PROVIDER_CHAT_URL=http://127.0.0.1:1234/v1/chat/completions
-export EMMA_PROVIDER_API_KEY=not-used-but-required
+export SHINBO_PROVIDER_CHAT_URL=http://127.0.0.1:1234/v1/chat/completions
+export SHINBO_PROVIDER_API_KEY=not-used-but-required
 export FX_MODEL=qwen3-8b
-open -a Emma
+open -a Shinbo
 ```
 
-`EMMA_PROVIDER_API_KEY` must be non-empty or `emma-cli` refuses to run; LM Studio
-ignores the value. Leave `EMMA_OPENROUTER_ZDR` unset — the flags are
+`SHINBO_PROVIDER_API_KEY` must be non-empty or `shinbo-cli` refuses to run; LM Studio
+ignores the value. Leave `SHINBO_OPENROUTER_ZDR` unset — the flags are
 OpenRouter-specific and `isOpenRouter()` will not match a loopback URL. The
 catalog page still lists OpenRouter models, because Electron's catalog fetch is a
 separate thing, and your local server has to support tool calls.
@@ -766,14 +772,14 @@ separate thing, and your local server has to support tool calls.
 ## When no provider is configured
 
 `fallback` is the shipped default `selectedModel`, and `selectFallbackModel` does
-one thing: it clears the selection. Nothing else follows from it. Emma sends no
+one thing: it clears the selection. Nothing else follows from it. Shinbo sends no
 `model` config option, and the harness answers on its own `default_model` —
 `nvidia/nemotron-3-super-120b-a12b:free`, over the network, on the free
 OpenRouter route. With no key at all the turn fails with the harness's missing
 credential message.
 
 **There is no local answer path on this branch.** The Settings copy that reads
-*"Without a selected provider, Emma uses its deterministic local fallback"*, the
+*"Without a selected provider, Shinbo uses its deterministic local fallback"*, the
 "Automatic fallback" panel, and the picker row *"Deterministic local fallback ·
 On this computer"* all describe a mechanism that no longer exists in `desktop/main`.
 
@@ -790,10 +796,10 @@ before use.
 
 ## See also
 
-- [harness.md](harness.md) — `emma-cli` in detail
+- [harness.md](harness.md) — `shinbo-cli` in detail
 - [privacy.md](privacy.md) — what leaves this computer
 - [permissions.md](permissions.md) — the four modes the verifier plugs into
-- [tools.md](tools.md) — the tools Emma advertises every turn
+- [tools.md](tools.md) — the tools Shinbo advertises every turn
 - [voice.md](voice.md) — the two dictation models
 - [data.md](data.md) — what lives in `<userData>`
 - [troubleshooting.md](troubleshooting.md) — when a model will not answer

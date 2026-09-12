@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { CLI_PLANS, MAX_SECRET_CHARS, MODEL_PLANS, OPENROUTER_KEYS_URL, PLAN_WEEK_MS, PLAN_WINDOW_MS, emptySpend, planBalanceLine, planForProfile, planSpend, type CliPlan, type KeyBalance, type ModelPlan, type PlanGeneration, type PlanSpend, type UserSettings } from "../shared/settings";
+import { CLI_PLANS, MAX_SECRET_CHARS, MODEL_PLANS, OPENROUTER_KEYS_URL, PLAN_WEEK_MS, PLAN_WINDOW_MS, PROVIDER_PRESETS, emptySpend, planBalanceLine, planForProfile, planSpend, providerReach, type CliPlan, type KeyBalance, type ModelPlan, type PlanGeneration, type PlanSpend, type ProviderProfile, type UserSettings } from "../shared/settings";
 import { charLabel } from "../shared/usage";
 import { localDevice, unreadableKeyNotice } from "../shared/platform-copy";
 import { reasonText } from "./errors";
 import { BrandIcon, InfoDot } from "./icons";
 import { TerminalSurface } from "./terminal";
 import type { TerminalTab } from "../shared/terminal";
-import { brandForImporter, brandForProvider } from "./brands";
-import type { CredentialSummary, Snapshot } from "./types";
+import { brandForEngine, brandForImporter, brandForProvider } from "./brands";
+import type { CompactSnapshot, CredentialSummary, Snapshot, Thread } from "./types";
 
-const RUNTIME_PLATFORM = typeof window === "undefined" ? "" : window.emma?.platform ?? "";
+const RUNTIME_PLATFORM = typeof window === "undefined" ? "" : window.shinbo?.platform ?? "";
 const LOCAL_DEVICE = localDevice(RUNTIME_PLATFORM);
 
 type InstalledCli = { id: string; label: string; bin: string; path: string; signedIn?: boolean };
@@ -24,12 +24,12 @@ export function ModelPlans({ settings, busy }: { settings: UserSettings; busy: b
   const [status, setStatus] = useState("");
   const [ledger, setLedger] = useState<{ at: number; generations: PlanGeneration[] }>({ at: 0, generations: [] });
   const [balance, setBalance] = useState<KeyBalance | null>(null);
-  const readClis = useCallback(() => void window.emma.installedClis().then(setClis).catch(() => undefined), []);
+  const readClis = useCallback(() => void window.shinbo.installedClis().then(setClis).catch(() => undefined), []);
   useEffect(() => {
-    void window.emma.listCredentials().then(setStored).catch(() => undefined);
+    void window.shinbo.listCredentials().then(setStored).catch(() => undefined);
     readClis();
-    void window.emma.deepseekBalance().then(setBalance).catch(() => undefined);
-    void window.emma.request<Snapshot>("snapshot").then((snapshot) => setLedger({ at: Date.now(), generations: planGenerations(snapshot) })).catch(() => undefined);
+    void window.shinbo.deepseekBalance().then(setBalance).catch(() => undefined);
+    void readPlanLedger().then(setLedger).catch(() => undefined);
   }, [readClis]);
   const window5h = useMemo(() => planSpend(ledger.generations, settings.providers, ledger.at - PLAN_WINDOW_MS), [ledger, settings.providers]);
   const week = useMemo(() => planSpend(ledger.generations, settings.providers, ledger.at - PLAN_WEEK_MS), [ledger, settings.providers]);
@@ -43,7 +43,7 @@ export function ModelPlans({ settings, busy }: { settings: UserSettings; busy: b
     setError("");
     setStatus("");
     try {
-      setStored(await window.emma.saveCredential(secret === undefined ? { env: plan.credentialEnv } : { env: plan.credentialEnv, secret }));
+      setStored(await window.shinbo.saveCredential(secret === undefined ? { env: plan.credentialEnv } : { env: plan.credentialEnv, secret }));
       setKeys((current) => ({ ...current, [plan.id]: "" }));
       setStatus(secret === undefined ? `${plan.credentialEnv} removed. The agent restarted without it.` : `${plan.credentialEnv} saved. The agent restarted with it.`);
     } catch (reason) { setError(reasonText(reason)); }
@@ -54,7 +54,7 @@ export function ModelPlans({ settings, busy }: { settings: UserSettings; busy: b
         <span>Subscriptions</span>
         <div className="settings-head">
           <h3>Run a model on a plan you already pay for</h3>
-          <InfoDot>Most makers sell a flat monthly coding plan alongside metered credit, on its own endpoint. Emma routes the whole agent loop at that endpoint, so a plan model answers turns exactly like an OpenRouter one. OpenAI and Anthropic are the exception: neither sells a plan endpoint you can buy a key for, so Emma reaches those from the sign-in their own CLI stores, listed below. A ChatGPT plan then answers turns here like any other; a Claude plan still runs inside the claude binary.</InfoDot>
+          <InfoDot>Most makers sell a flat monthly coding plan alongside metered credit, on its own endpoint. Shinbo routes the whole agent loop at that endpoint, so a plan model answers turns exactly like an OpenRouter one. OpenAI and Anthropic are the exception: neither sells a plan endpoint you can buy a key for, so Shinbo reaches those from the sign-in their own CLI stores, listed below. A ChatGPT plan then answers turns here like any other; a Claude plan still runs inside the claude binary.</InfoDot>
         </div>
         <p>Paste a key here, select a supported model, then choose its provider under the selected row.</p>
       </div>
@@ -94,20 +94,25 @@ const SUBSCRIPTION_TILES: readonly ProviderTile[] = [
   ...CLI_PLANS.filter((cli) => cli.id === "codex").map((cli) => ({ id: `cli:${cli.id}`, label: "ChatGPT", detail: cli.plan, brand: cli.brand, cli })),
 ];
 
-export function ProviderGrid({ busy, onReady }: { busy: boolean; onReady: (ready: boolean) => void }) {
+type LocalPreset = (typeof PROVIDER_PRESETS)[number];
+const LOCAL_PRESETS = PROVIDER_PRESETS.filter((item) => !item.credentialEnv && (item.id !== "omlx" || RUNTIME_PLATFORM === "darwin"));
+const localBrand = (item: LocalPreset) => brandForEngine(item.id) ?? { id: "custom", label: "Custom", fallback: "◇" };
+
+export function ProviderGrid({ busy, onReady, onAddProvider }: { busy: boolean; onReady: (ready: boolean) => void; onAddProvider: (profile: ProviderProfile) => Promise<void> }) {
   const [stored, setStored] = useState<CredentialSummary[]>([]);
   const [clis, setClis] = useState<InstalledCli[]>([]);
   const [picked, setPicked] = useState("");
+  const [mode, setMode] = useState<"plans" | "local">("plans");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [balance, setBalance] = useState<KeyBalance | null>(null);
   const [checking, setChecking] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const readClis = useCallback(() => void window.emma.installedClis().then(setClis).catch((reason: unknown) => setError(reasonText(reason))), []);
+  const readClis = useCallback(() => void window.shinbo.installedClis().then(setClis).catch((reason: unknown) => setError(reasonText(reason))), []);
   useEffect(() => {
     let active = true;
-    void window.emma.listCredentials().then((next) => { if (active) setStored(next); }).catch((reason: unknown) => { if (active) setError(reasonText(reason)); });
-    void window.emma.openRouterBalance().then((next) => { if (active) setBalance(next); }).catch((reason: unknown) => { if (active) setError(reasonText(reason)); }).finally(() => { if (active) setChecking(false); });
+    void window.shinbo.listCredentials().then((next) => { if (active) setStored(next); }).catch((reason: unknown) => { if (active) setError(reasonText(reason)); });
+    void window.shinbo.openRouterBalance().then((next) => { if (active) setBalance(next); }).catch((reason: unknown) => { if (active) setError(reasonText(reason)); }).finally(() => { if (active) setChecking(false); });
     readClis();
     window.addEventListener("focus", readClis);
     return () => { active = false; window.removeEventListener("focus", readClis); };
@@ -120,9 +125,9 @@ export function ProviderGrid({ busy, onReady }: { busy: boolean; onReady: (ready
     setSaving(true);
     if (env === OPENROUTER_ENV) setBalance(null);
     try {
-      setStored(await window.emma.saveCredential(secret === undefined ? { env } : { env, secret }));
+      setStored(await window.shinbo.saveCredential(secret === undefined ? { env } : { env, secret }));
       setDrafts((current) => ({ ...current, [env]: "" }));
-      if (env === OPENROUTER_ENV) setBalance(await window.emma.openRouterBalance());
+      if (env === OPENROUTER_ENV) setBalance(await window.shinbo.openRouterBalance());
     } catch (reason) { setError(reasonText(reason)); }
     finally { setSaving(false); }
   };
@@ -131,11 +136,13 @@ export function ProviderGrid({ busy, onReady }: { busy: boolean; onReady: (ready
     if (draft) { await saveKey(OPENROUTER_ENV, draft); return; }
     setChecking(true);
     setError("");
-    try { setBalance(await window.emma.openRouterBalance()); }
+    try { setBalance(await window.shinbo.openRouterBalance()); }
     catch (reason) { setBalance(null); setError(reasonText(reason)); }
     finally { setChecking(false); }
   };
   const tile = SUBSCRIPTION_TILES.find((item) => item.id === picked);
+  const preset = LOCAL_PRESETS.find((item) => `local:${item.id}` === picked);
+  const switchMode = (next: typeof mode) => { setMode(next); setPicked(""); };
   const openRouter = stored.find((item) => item.env === OPENROUTER_ENV && item.masked);
   const openRouterLost = stored.some((item) => item.env === OPENROUTER_ENV && !item.readable);
   const locked = busy || saving || checking;
@@ -143,34 +150,88 @@ export function ProviderGrid({ busy, onReady }: { busy: boolean; onReady: (ready
     <section className="setup-router" aria-labelledby="setup-router-title">
       <div className="setup-wash" aria-hidden="true" />
       <header><BrandIcon brand={brandForProvider("openrouter")} className="setup-router-mark" /><div><h3 id="setup-router-title">OpenRouter</h3><p>A free API key is enough to get started.</p></div><span className="setup-badge">{ready ? "Connected" : "Required"}</span></header>
-      <p>Create a key in your OpenRouter account, then paste it here.</p>
       <a className="setup-button" href={OPENROUTER_KEYS_URL} target="_blank" rel="noreferrer">Create a free API key ↗</a>
       <form className="setup-key" onSubmit={(event) => { event.preventDefault(); void verify(); }}>
         <label htmlFor="setup-router-key">OpenRouter API key</label>
         <div><input id="setup-router-key" type="password" autoComplete="off" spellCheck={false} maxLength={MAX_SECRET_CHARS} disabled={locked} value={drafts[OPENROUTER_ENV] ?? ""} placeholder={openRouter?.masked ?? "sk-or-v1-…"} onChange={(event) => { setBalance(null); setDrafts((current) => ({ ...current, [OPENROUTER_ENV]: event.target.value })); }} /><button type="submit" className="setup-primary" disabled={locked || (!openRouter && !balance?.keyed && !(drafts[OPENROUTER_ENV] ?? "").trim())}>{checking || saving ? "Checking…" : ready ? "Check again" : "Verify key"}</button></div>
       </form>
-      <small className={ready ? "setup-success" : ""} role="status">{ready ? "✓ Key verified. OpenRouter is ready." : checking ? "Checking your saved OpenRouter key…" : "Your key is encrypted using this computer’s credential store."}</small>
-      {openRouterLost && <p className="dialog-error" role="alert">{unreadableKeyNotice("OpenRouter", RUNTIME_PLATFORM)} Emma kept the unreadable one on disk and replaces it the moment you save a new one.</p>}
+      {(ready || checking) && <small className={ready ? "setup-success" : ""} role="status">{ready ? "✓ Key verified. OpenRouter is ready." : "Checking your saved OpenRouter key…"}</small>}
+      {openRouterLost && <p className="dialog-error" role="alert">{unreadableKeyNotice("OpenRouter", RUNTIME_PLATFORM)} Shinbo kept the unreadable one on disk and replaces it the moment you save a new one.</p>}
       {balance?.error && <p className="dialog-error" role="alert">{balance.error} Check the key or try again.</p>}
     </section>
-    <div className="setup-subscription-head"><h3>Already have a subscription?</h3><span>Optional</span></div>
-    <p>Connect one or more. OpenRouter stays connected alongside them.</p>
-    <div className="setup-subscriptions" aria-label="Subscriptions and plans">{SUBSCRIPTION_TILES.map((item) => <button key={item.id} type="button" className={`setup-subscription subscription-${item.brand}`} data-connected={connected(item)} aria-pressed={item.id === picked} aria-expanded={item.id === picked} aria-controls="setup-subscription-detail" disabled={locked} onClick={() => setPicked(item.id === picked ? "" : item.id)}>
+    <div className="setup-subscription-head">
+      <div className="setup-tabs" role="tablist"><button type="button" role="tab" className="setup-link" aria-selected={mode === "plans"} disabled={locked} onClick={() => switchMode("plans")}>Already have a subscription?</button><button type="button" role="tab" className="setup-link" aria-selected={mode === "local"} disabled={locked} onClick={() => switchMode("local")}>Run a local model</button></div>
+      <span>Optional</span>
+    </div>
+    {mode === "local" && <div className="setup-subscriptions setup-engines" aria-label="Local model servers">{LOCAL_PRESETS.map((item) => <button key={item.id} type="button" className="setup-subscription subscription-local" aria-pressed={`local:${item.id}` === picked} aria-expanded={`local:${item.id}` === picked} aria-controls="setup-subscription-detail" disabled={locked} onClick={() => setPicked(`local:${item.id}` === picked ? "" : `local:${item.id}`)}>
+      <span className="setup-wash" aria-hidden="true" />
+      <span className="setup-subscription-mark"><BrandIcon brand={localBrand(item)} className="provider-mark" /></span>
+      <strong>{item.name || "Custom"}</strong><small>{item.detail}</small>
+    </button>)}</div>}
+    {mode === "plans" && <div className="setup-subscriptions" aria-label="Subscriptions and plans">{SUBSCRIPTION_TILES.map((item) => <button key={item.id} type="button" className={`setup-subscription subscription-${item.brand}`} data-connected={connected(item)} aria-pressed={item.id === picked} aria-expanded={item.id === picked} aria-controls="setup-subscription-detail" disabled={locked} onClick={() => setPicked(item.id === picked ? "" : item.id)}>
       <span className="setup-wash" aria-hidden="true" />
       <span className="setup-subscription-mark"><BrandIcon brand={item.cli?.id === "claude" ? brandForImporter("claude") : brandForProvider(item.brand)} className="provider-mark" />{connected(item) && <span className="setup-success" aria-label="Connected">✓</span>}</span>
       <strong>{item.label}</strong><small>{item.detail}</small>
-    </button>)}</div>
-    <div id="setup-subscription-detail" className="setup-subscription-detail" hidden={!tile}>
-      {tile && <><div className="setup-subscription-heading"><h3>{tile.label}</h3><button type="button" className="setup-link" disabled={locked} onClick={() => setPicked("")}>Close</button></div>
-      {tile.plan && <PlanKeyRow plan={tile.plan} stored={stored} draft={drafts[tile.plan.credentialEnv] ?? ""} setDraft={(value) => setDrafts((current) => ({ ...current, [tile.plan!.credentialEnv]: value }))} busy={locked} onSave={(plan, secret) => saveKey(plan.credentialEnv, secret)} />}
+    </button>)}</div>}
+    <div id="setup-subscription-detail" className="setup-subscription-detail" hidden={!tile && !preset}>
+      {(tile || preset) && <div className="setup-subscription-heading"><h3>{tile?.label ?? preset?.name ?? "Custom endpoint"}</h3><button type="button" className="setup-link" disabled={locked} onClick={() => setPicked("")}>Close</button></div>}
+      {preset && <LocalProviderForm key={preset.id} preset={preset} busy={locked} onAdd={onAddProvider} />}
+      {tile && <>{tile.plan && <PlanKeyRow plan={tile.plan} stored={stored} draft={drafts[tile.plan.credentialEnv] ?? ""} setDraft={(value) => setDrafts((current) => ({ ...current, [tile.plan!.credentialEnv]: value }))} busy={locked} onSave={(plan, secret) => saveKey(plan.credentialEnv, secret)} />}
       {tile.cli && <CliPlanRow plan={tile.cli} installed={clis.find((item) => item.id === tile.cli?.id)} busy={locked} onDone={readClis} />}</>}
     </div>
-    <small className="setup-subscription-note">Mistral uses plan credits, then metered billing. Other API keys and local models are in Settings.</small>
     {error && <p className="dialog-error" role="alert">{error}</p>}
   </div>;
 }
 
-function planGenerations(snapshot: Snapshot): PlanGeneration[] {
+function LocalProviderForm({ preset, busy, onAdd }: { preset: LocalPreset; busy: boolean; onAdd: (profile: ProviderProfile) => Promise<void> }) {
+  const [baseUrl, setBaseUrl] = useState<string>(preset.baseUrl);
+  const [modelId, setModelId] = useState("");
+  const [insecure, setInsecure] = useState(false);
+  const [probe, setProbe] = useState<{ models: string[]; tools: boolean; error: string } | null>(null);
+  const [working, setWorking] = useState(false);
+  const [note, setNote] = useState({ text: "", bad: false });
+  const run = async (task: () => Promise<void>) => {
+    setWorking(true);
+    setNote({ text: "", bad: false });
+    try { await task(); }
+    catch (reason) { setNote({ text: reasonText(reason), bad: true }); }
+    finally { setWorking(false); }
+  };
+  const test = () => run(async () => setProbe(await window.shinbo.testProvider({ baseUrl, credentialEnv: "", modelId, insecure })));
+  const add = () => run(async () => {
+    const name = preset.name || (() => { try { return new URL(baseUrl).host; } catch { return "Custom"; } })();
+    await onAdd({ id: `p-${Date.now().toString(36)}`, name, modelId, baseUrl, credentialEnv: "", contextWindow: 0, insecure });
+    setNote({ text: `${name} · ${modelId} answers the next turn. OpenRouter is still needed for search, vision and other core features.`, bad: false });
+  });
+  return <form className="setup-local-form" onSubmit={(event) => { event.preventDefault(); void add(); }}>
+    <label><span>Base URL</span><input required maxLength={2048} disabled={busy || working} value={baseUrl} placeholder="http://127.0.0.1:1234/v1" onChange={(event) => { setBaseUrl(event.target.value); setProbe(null); }} /></label>
+    <label><span>Model ID</span><input required maxLength={128} list="setup-local-models" disabled={busy || working} value={modelId} placeholder="qwen3-8b" onChange={(event) => setModelId(event.target.value)} /></label>
+    <datalist id="setup-local-models">{(probe?.models ?? []).map((id) => <option key={id} value={id} />)}</datalist>
+    {providerReach(baseUrl) === "network" && <label className="check"><input type="checkbox" checked={insecure} onChange={(event) => setInsecure(event.target.checked)} /> Send prompts unencrypted over my network</label>}
+    <div><button type="button" disabled={busy || working || !baseUrl} onClick={() => void test()}>{working ? "Working…" : "Test"}</button><button type="submit" className="setup-primary" disabled={busy || working || !baseUrl || !modelId}>Use this model</button></div>
+    {probe && <small role="status">{probe.models.length ? `${probe.models.length} models` : "No model list"} · {probe.tools ? "Tool calls ✓" : modelId ? "No tool calls — Shinbo needs them every turn" : "Fill in a model id to check tool calls"}{probe.error && ` · ${probe.error}`}</small>}
+    {note.text && <small className={note.bad ? "dialog-error" : "setup-success"} role="status">{note.text}</small>}
+  </form>;
+}
+
+async function readPlanLedger(): Promise<{ at: number; generations: PlanGeneration[] }> {
+  const began = Date.now();
+  const snapshot = await window.shinbo.request<CompactSnapshot>("threadSummaries");
+  const generations: PlanGeneration[] = [];
+  for (const summary of snapshot.threads) {
+    if (summary.messageDates?.every((date) => Date.parse(date) < began - PLAN_WEEK_MS)) continue;
+    const thread = await window.shinbo.request<Thread>("thread", { threadId: summary.id });
+    for (const generation of planGenerations({ threads: [thread] })) generations.push(generation);
+  }
+  const at = Date.now();
+  if (at < began) {
+    const full = await window.shinbo.request<Snapshot>("snapshot");
+    return { at: Date.now(), generations: planGenerations(full) };
+  }
+  return { at, generations };
+}
+
+function planGenerations(snapshot: Pick<Snapshot, "threads">): PlanGeneration[] {
   const rows: PlanGeneration[] = [];
   for (const thread of snapshot.threads) {
     for (const message of thread.messages) {
@@ -200,12 +261,12 @@ export function CliPlanRow({ plan, installed, busy, onDone }: { plan: CliPlan; i
   const signedIn = installed?.signedIn === true;
   useEffect(() => {
     if (!tab) return;
-    const stop = window.emma.onTerminals(() => void window.emma.listTerminals(tab.threadId)
+    const stop = window.shinbo.onTerminals(() => void window.shinbo.listTerminals(tab.threadId)
       .then((found) => { if (!found.some((item) => item.id === tab.id && item.running)) { setTab(undefined); onDone(); } })
       .catch(() => undefined));
-    return () => { stop(); void window.emma.closeTerminal(tab.id); };
+    return () => { stop(); void window.shinbo.closeTerminal(tab.id); };
   }, [onDone, tab]);
-  const signIn = () => void window.emma.signInCli({ signIn: plan.id, columns: 80, rows: 16 })
+  const signIn = () => void window.shinbo.signInCli({ signIn: plan.id, columns: 80, rows: 16 })
     .then(setTab).catch((reason: unknown) => setError(reasonText(reason)));
   return <div className={`provider-key-row cli-plan-row ${signedIn ? "set" : ""}`}>
     <BrandIcon brand={brandForProvider(plan.brand)} className="provider-mark" />

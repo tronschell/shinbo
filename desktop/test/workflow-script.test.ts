@@ -7,7 +7,7 @@ import { runWorkflowScript, workflowScriptPath } from "../main/workflow-script";
 import { symlinksAllowed } from "./symlinks";
 
 test("a workflow script reads stdin and stays inside a connected folder", async (context) => {
-  const base = await mkdtemp(path.join(tmpdir(), "emma-workflow-"));
+  const base = await mkdtemp(path.join(tmpdir(), "shinbo-workflow-"));
   context.after(() => rm(base, { recursive: true, force: true }));
   const windows = process.platform === "win32";
   const extension = windows ? ".ps1" : ".sh";

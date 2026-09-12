@@ -18,7 +18,7 @@ export function parseVisual(value: unknown): Visual {
   return { title, html };
 }
 
-export const VISUAL_SCHEME = "emma-visual";
+export const VISUAL_SCHEME = "shinbo-visual";
 export const visualFrameUrl = (id: string) => `${VISUAL_SCHEME}://${id}/`;
 export const VISUAL_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:";
 
@@ -42,12 +42,12 @@ const VISUAL_TOKENS = [
   "--text-2:#e8e6dfad",
   "--text-3:#e8e6df8c",
   "--rose:#ed7a9b",
-  "--orange:#ff6a3d",
+  "--pink:#ff5c94",
   "--lime:#c3d64b",
   "--teal:#3fd8c0",
   "--blue:#6faee6",
   "--violet:#ae78f0",
-  "--accent:#ff6a3d",
+  "--accent:#ff5c94",
   '--font:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
   '--font-mono:ui-monospace,SFMono-Regular,Menlo,monospace',
 ].join(";");
@@ -64,8 +64,8 @@ h1,h2,h3,h4{margin:0 0 6px;font-size:13px;font-weight:600}
 p{margin:0 0 8px;color:var(--text-2)}
 small{color:var(--text-3);font-size:11px}
 a{color:var(--accent)}
-[data-emma-pick] *{cursor:crosshair}
-[data-emma-lit]{outline:2px solid var(--accent);outline-offset:1px;background:#ff6a3d2e!important}`;
+[data-shinbo-pick] *{cursor:crosshair}
+[data-shinbo-lit]{outline:2px solid var(--accent);outline-offset:1px;background:#ff5c942e!important}`;
 
 export const VISUAL_HEIGHT_MESSAGE = "visual-height";
 export const VISUAL_PICK_MESSAGE = "visual-pick";
@@ -74,15 +74,15 @@ export const VISUAL_HEIGHT_JS = "Math.ceil(document.body.scrollHeight)";
 
 const VISUAL_MEASURE = `<script>(()=>{
 let last=0;
-const tell=()=>{const h=${VISUAL_HEIGHT_JS};if(h===last)return;last=h;parent.postMessage({emma:${JSON.stringify(VISUAL_HEIGHT_MESSAGE)},height:h},"*")};
+const tell=()=>{const h=${VISUAL_HEIGHT_JS};if(h===last)return;last=h;parent.postMessage({shinbo:${JSON.stringify(VISUAL_HEIGHT_MESSAGE)},height:h},"*")};
 new ResizeObserver(tell).observe(document.body);addEventListener("load",tell);tell();
 let lit=null,picking=false;
-const light=(el)=>{if(lit===el)return;lit&&lit.removeAttribute("data-emma-lit");lit=el;lit&&lit.setAttribute("data-emma-lit","")};
+const light=(el)=>{if(lit===el)return;lit&&lit.removeAttribute("data-shinbo-lit");lit=el;lit&&lit.setAttribute("data-shinbo-lit","")};
 const name=(el)=>el.tagName.toLowerCase()+(el.id?"#"+el.id:"")+[...el.classList].map((one)=>"."+one).join("");
 const path=(el)=>{const parts=[];for(let at=el;at&&at!==document.body&&parts.length<3;at=at.parentElement)parts.unshift(name(at));return parts.join(" > ")};
 addEventListener("message",(event)=>{
-picking=!!event.data&&event.data.emma===${JSON.stringify(VISUAL_PICK_MESSAGE)}&&!!event.data.on;
-document.documentElement.toggleAttribute("data-emma-pick",picking);
+picking=!!event.data&&event.data.shinbo===${JSON.stringify(VISUAL_PICK_MESSAGE)}&&!!event.data.on;
+document.documentElement.toggleAttribute("data-shinbo-pick",picking);
 if(!picking)light(null)});
 addEventListener("pointerover",(event)=>{if(picking&&event.target instanceof Element)light(event.target)},true);
 addEventListener("pointerdown",(event)=>{if(picking)event.preventDefault()},true);
@@ -90,7 +90,7 @@ addEventListener("click",(event)=>{
 if(!picking||!(event.target instanceof Element))return;
 event.preventDefault();event.stopPropagation();
 const el=event.target;light(null);
-parent.postMessage({emma:${JSON.stringify(VISUAL_PICKED_MESSAGE)},label:path(el),html:el.outerHTML.slice(0,${MAX_VISUAL_PICK_CHARS})},"*");
+parent.postMessage({shinbo:${JSON.stringify(VISUAL_PICKED_MESSAGE)},label:path(el),html:el.outerHTML.slice(0,${MAX_VISUAL_PICK_CHARS})},"*");
 light(el)},true);
 })()</script>`;
 

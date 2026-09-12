@@ -103,7 +103,7 @@ pub const top_level_specs = [_]TopLevelSpec{
             "Modes:",
             "  ask    Prompt before sensitive tool calls",
             "  auto   Apply rules, then review unresolved sensitive tool calls (default)",
-            "  yolo   Disable emma-cli permissions and sandboxing",
+            "  yolo   Disable shinbo-cli permissions and sandboxing",
             "",
             "Change the mode from the interactive shell with `/permissions [ask|auto|yolo|reset]`,",
             "and manage persistent allow rules with `/allowlist`.",
@@ -183,20 +183,20 @@ pub const top_level_specs = [_]TopLevelSpec{
         .kind = .usage,
         .token = "usage",
         .usage = "usage [--period <24h|7d|30d>] [--json]",
-        .summary = "Show local emma-cli token usage and spend",
+        .summary = "Show local shinbo-cli token usage and spend",
         .options = &.{
             .{ .flag = "--period <24h|7d|30d>", .description = "Select a rolling window (default: 30d)" },
             json_option,
         },
         .details = &.{
-            "Reports only usage recorded by emma-cli on this machine.",
+            "Reports only usage recorded by shinbo-cli on this machine.",
         },
     },
     .{
         .kind = .upgrade,
         .token = "upgrade",
         .usage = "upgrade [--channel <stable|dev>] [--json]",
-        .summary = "Upgrade emma-cli on the selected release channel",
+        .summary = "Upgrade shinbo-cli on the selected release channel",
         .options = &.{
             .{ .flag = "--channel <stable|dev>", .description = "Select and remember the release channel" },
             json_option,
@@ -310,19 +310,19 @@ pub const top_level_flags = [_]TopLevelFlag{
     },
     .{
         .usage = "-v, --version",
-        .description = "Print the emma-cli version and exit",
+        .description = "Print the shinbo-cli version and exit",
     },
 };
 
 pub const top_level_examples = [_]TopLevelExample{
-    .{ .command = "emma-cli", .description = "Start a fresh interactive session" },
-    .{ .command = "emma-cli ask \"Explain the changes in this repository\"", .description = "Run one request and exit" },
-    .{ .command = "emma-cli session resume last", .description = "Continue the latest session for this workspace" },
-    .{ .command = "emma-cli status --json", .description = "Inspect the current configuration as JSON" },
+    .{ .command = "shinbo-cli", .description = "Start a fresh interactive session" },
+    .{ .command = "shinbo-cli ask \"Explain the changes in this repository\"", .description = "Run one request and exit" },
+    .{ .command = "shinbo-cli session resume last", .description = "Continue the latest session for this workspace" },
+    .{ .command = "shinbo-cli status --json", .description = "Inspect the current configuration as JSON" },
 };
 
 pub const top_level_notes = [_][]const u8{
-    "Run `emma-cli <command> --help` for command-specific options and examples.",
+    "Run `shinbo-cli <command> --help` for command-specific options and examples.",
     "Run `/help` inside an interactive session for slash commands.",
 };
 
@@ -331,7 +331,7 @@ pub const top_level_resources = [_]TopLevelResource{};
 pub const top_level_registry = TopLevelRegistry{
     .specs = top_level_specs[0..],
     .description = "Fast, native coding agent for the terminal.",
-    .interactive_hint = "emma-cli starts an interactive session by default. Use `emma-cli ask` to run one noninteractive request.",
+    .interactive_hint = "shinbo-cli starts an interactive session by default. Use `shinbo-cli ask` to run one noninteractive request.",
     .help_groups = top_level_help_groups[0..],
     .flags = top_level_flags[0..],
     .examples = top_level_examples[0..],
@@ -372,7 +372,7 @@ pub const slash_specs = [_]SlashSpec{
     .{ .kind = .continue_recovery, .command = "/continue", .help_entry = "/continue", .completion_description = "continue a paused model response", .presentation_category = .session, .requires_prompt_credential = true },
     .{ .kind = .rename_session, .command = "/rename", .help_entry = "/rename <title>", .completion_description = "rename the current session", .presentation_category = .session, .has_args = true, .accepts_payload = true },
     .{ .kind = .stats, .command = "/stats", .help_entry = "/stats", .completion_description = "show token and turn statistics", .presentation_category = .account },
-    .{ .kind = .usage, .command = "/usage", .aliases = &.{"/cost"}, .help_entry = "/usage (/cost)", .completion_description = "show local emma-cli tokens, models, and spend", .presentation_category = .account },
+    .{ .kind = .usage, .command = "/usage", .aliases = &.{"/cost"}, .help_entry = "/usage (/cost)", .completion_description = "show local shinbo-cli tokens, models, and spend", .presentation_category = .account },
     .{ .kind = .status, .command = "/status", .help_entry = "/status", .completion_description = "show runtime configuration", .presentation_category = .general, .show_in_welcome = true },
     .{ .kind = .background, .command = "/background", .help_entry = "/background [open|logs|stop <id|last>]", .completion_description = "inspect background command history", .presentation_category = .agents, .show_in_welcome = true, .has_args = true },
     .{ .kind = .background_stop, .command = "/background stop", .accepts_payload = true },
@@ -382,7 +382,7 @@ pub const slash_specs = [_]SlashSpec{
     .{ .kind = .images, .command = "/images", .help_entry = "/images [clear]", .completion_description = "manage pending image attachments", .presentation_category = .media, .has_args = true, .accepts_payload = true },
     .{ .kind = .model, .command = "/model", .help_entry = "/model <id-or-query>", .completion_description = "choose what model and reasoning effort to use", .presentation_category = .model, .has_args = true, .accepts_payload = true },
     .{ .kind = .models, .command = "/models", .help_entry = "/models", .completion_description = "browse available models", .presentation_category = .model },
-    .{ .kind = .permissions, .command = "/permissions", .help_entry = "/permissions [ask|auto|yolo|reset]", .completion_description = "choose what emma-cli is allowed to do", .presentation_category = .security, .show_in_welcome = true, .has_args = true, .accepts_payload = true },
+    .{ .kind = .permissions, .command = "/permissions", .help_entry = "/permissions [ask|auto|yolo|reset]", .completion_description = "choose what shinbo-cli is allowed to do", .presentation_category = .security, .show_in_welcome = true, .has_args = true, .accepts_payload = true },
     .{ .kind = .allowlist, .command = "/allowlist", .help_entry = "/allowlist [view [effective|local|user]|[local|user] add|remove|reset ...]", .completion_description = "manage trusted commands, tools, and URLs", .presentation_category = .security, .show_in_welcome = true, .has_args = true, .accepts_payload = true },
     .{ .kind = .undo, .command = "/undo", .help_entry = "/undo", .completion_description = "undo the latest tracked file operation", .presentation_category = .session },
     .{ .kind = .mcp, .command = "/mcp", .help_entry = "/mcp [list|resource|prompt|add|remove|path|reload|auth|logout]", .completion_description = "manage local and remote MCP servers, resources, and prompts", .presentation_category = .extensions, .has_args = true, .accepts_payload = true },
@@ -399,7 +399,7 @@ pub const slash_specs = [_]SlashSpec{
     .{ .kind = .statusline, .command = "/statusline", .help_entry = "/statusline [sandbox|context|session|workspace]", .completion_description = "toggle status line segments", .presentation_category = .appearance, .has_args = true, .accepts_payload = true },
     .{ .kind = .notifications, .command = "/sound", .help_entry = "/sound [on|off|max]", .completion_description = "toggle sounds and terminal bells", .presentation_category = .appearance, .has_args = true, .accepts_payload = true },
     .{ .kind = .workspace, .command = "/workspace", .help_entry = "/workspace [list|add PATH|remove PATH|clear]", .completion_description = "manage additional workspace directories", .presentation_category = .workspace, .show_in_welcome = true, .has_args = true, .accepts_payload = true },
-    .{ .kind = .version, .command = "/version", .help_entry = "/version", .completion_description = "show the emma-cli version", .presentation_category = .general },
+    .{ .kind = .version, .command = "/version", .help_entry = "/version", .completion_description = "show the shinbo-cli version", .presentation_category = .general },
     .{ .kind = .quit, .command = "/quit", .aliases = &.{"/exit"}, .help_entry = "/quit", .completion_description = "exit the interactive shell", .presentation_category = .general, .show_in_welcome = true },
 };
 

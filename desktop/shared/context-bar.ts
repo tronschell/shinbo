@@ -16,7 +16,7 @@ export type ContextWidgetType = (typeof CONTEXT_WIDGETS)[number]["type"];
 
 export const CONTEXT_METRICS = [
   { id: "messages", label: "Messages" },
-  { id: "replies", label: "Emma replies" },
+  { id: "replies", label: "Shinbo replies" },
   { id: "attachments", label: "Attachments" },
   { id: "calls", label: "Tool calls" },
   { id: "rate", label: "Avg tok/s" },
@@ -91,7 +91,7 @@ export const WIDGET_COLORS = [
   { id: "accent", label: "Numbers & highlights", value: "#ffffff" },
   { id: "text", label: "Text", value: "#e8e6df" },
   { id: "muted", label: "Labels", value: "#969591" },
-  { id: "orange", label: "Chart · primary", value: "#ffffff" },
+  { id: "pink", label: "Chart · primary", value: "#ffffff" },
   { id: "teal", label: "Chart · teal", value: "#3fd8c0" },
   { id: "blue", label: "Chart · blue", value: "#6faee6" },
   { id: "violet", label: "Chart · violet", value: "#ae78f0" },

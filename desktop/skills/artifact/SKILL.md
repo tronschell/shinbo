@@ -1,6 +1,6 @@
 ---
 name: artifact
-description: How to decide whether a piece of work deserves an artifact, and how to make and edit one with the `artifact` tool — a document, code file, web page, SVG, diagram or React component the user keeps, edits and reuses outside the conversation, or a live module that replaces one whole region of Emma's own interface — her sidebar, conversation pane, notch or context bar. Something *new* in the interface is the `component` tool instead, which builds a widget into the context bar, not an artifact. Use whenever the user asks you to write, save, edit or keep something of that shape, whenever they ask you to build or change part of Emma's interface, when they point at the Artifacts page, and before you paste anything long enough that they would want it as a file.
+description: How to decide whether a piece of work deserves an artifact, and how to make and edit one with the `artifact` tool — a document, code file, web page, SVG, diagram or React component the user keeps, edits and reuses outside the conversation, or a live module that replaces one whole region of Shinbo's own interface — her sidebar, conversation pane, notch or context bar. Something *new* in the interface is the `component` tool instead, which builds a widget into the context bar, not an artifact. Use whenever the user asks you to write, save, edit or keep something of that shape, whenever they ask you to build or change part of Shinbo's interface, when they point at the Artifacts page, and before you paste anything long enough that they would want it as a file.
 ---
 
 # Artifacts
@@ -9,7 +9,7 @@ An artifact is the thing a conversation leaves behind. It lives on the Artifacts
 page in the sidebar, it has an id, and any later thread or scheduled task can
 read it and rewrite it.
 
-Unlike the other bundled skills, **this one is yours to edit**. Emma reseeds the
+Unlike the other bundled skills, **this one is yours to edit**. Shinbo reseeds the
 rest from the app on every launch; this one is left alone once you have changed
 it, so tighten the criteria below to taste and the change survives.
 
@@ -47,7 +47,7 @@ puts a file on their page that nobody wanted and nobody will delete.
 | `mermaid` | a flowchart, sequence or state diagram | `.mmd` |
 | `react` | one component, default-exported | `.jsx` |
 
-`react` is **shown as source, never run** — Emma renders no model-written
+`react` is **shown as source, never run** — Shinbo renders no model-written
 component. If it is meant to be looked at rather than read, it is an `html`.
 
 `html` when the page shows what you already wrote into it. `app` when the *user*
@@ -68,7 +68,7 @@ where they are asked first. If they want one gone, say so and let them do it.
 
 `create` chooses the id from the title and hands it back — that is what you
 address it by from then on. Every answer that changed an artifact *starts* with
-a `[artifact:…]` token, which is how Emma draws it in the transcript. Leave the
+a `[artifact:…]` token, which is how Shinbo draws it in the transcript. Leave the
 token where it is and do not repeat it in your own prose.
 
 ## update or rewrite
@@ -133,13 +133,13 @@ An `svg` artifact is framed with no script at all — `<script>` inside one is d
 
 An `app` is framed exactly as an `html` page is, and gets two more things.
 
-**`emma.sql(statement, ...params)`** — one statement, returns a promise of rows.
+**`shinbo.sql(statement, ...params)`** — one statement, returns a promise of rows.
 It is already defined; do not write it, do not feature-detect it.
 
 ```js
-await emma.sql("create table if not exists task (id integer primary key, body text, done integer default 0)");
-await emma.sql("insert into task (body) values (?)", body);
-const open = await emma.sql("select id, body from task where done = 0 order by id desc limit 50");
+await shinbo.sql("create table if not exists task (id integer primary key, body text, done integer default 0)");
+await shinbo.sql("insert into task (body) values (?)", body);
+const open = await shinbo.sql("select id, body from task where done = 0 order by id desc limit 50");
 ```
 
 - Real SQLite in the artifact's own folder, and **only** that artifact's. It
@@ -174,7 +174,7 @@ The card in the transcript clips to **150px**, the Artifacts page to 190px.
 Whatever the artifact is *for* goes in that first 150px — a title bar and a
 hero margin means every card looks identical.
 
-## Writing Emma's own interface
+## Writing Shinbo's own interface
 
 **First, the fork in the road.** If the user wants something *new* in the
 interface — a panel, a counter, a tracker, a small tool — that is the `component`
@@ -201,7 +201,7 @@ The module is plain JS — no build step, so **no JSX and no imports**. It defau
 exports a factory that is handed everything it needs and returns the component:
 
 ```js
-export default ({ h, useState, emma }) => ({ threads, threadId, openThread, newThread }) =>
+export default ({ h, useState, shinbo }) => ({ threads, threadId, openThread, newThread }) =>
   h("aside", { className: "sidebar" },
     h("button", { className: "new-thread", onClick: newThread }, "New thread"),
     h("nav", { className: "thread-list" }, threads.map((thread) =>
@@ -223,9 +223,9 @@ it four times while the user watches and they see four versions, with the rest o
 the app untouched. That is the loop to work in — put something small in, then edit
 it in front of them rather than writing a perfect one blind.
 
-- The factory gets `{ h, Fragment, useState, useEffect, useMemo, useRef, useCallback, emma }`.
-  `h` is React's `createElement`, the hooks are React's, and `emma` is the same
-  bridge the app uses — `emma.request("snapshot", {})`, `emma.machineSample()`, and the rest.
+- The factory gets `{ h, Fragment, useState, useEffect, useMemo, useRef, useCallback, shinbo }`.
+  `h` is React's `createElement`, the hooks are React's, and `shinbo` is the same
+  bridge the app uses — `shinbo.request("snapshot", {})`, `shinbo.machineSample()`, and the rest.
 - **You are inside the app, so use its CSS.** `className: "sidebar"` *is* the
   sidebar's styling. Read the app's classes off what you are replacing and reuse
   them; hand-rolled inline styles are what makes a region look bolted on. This is
@@ -357,7 +357,7 @@ inline script, so a scheduled task can rewrite that one array and leave the
 whole page alone. Sorting and filtering are 15 lines of vanilla JS on the array;
 no framework earns its keep at this size.
 
-**A one-page brief** — a `markdown` artifact, because Emma renders markdown in
+**A one-page brief** — a `markdown` artifact, because Shinbo renders markdown in
 her own prose styles and an `html` version would only be a worse one. No CSS to
 write at all: the design is the outline. A one-line summary at the top that
 answers the question on its own, then sections that each hold one idea, then a

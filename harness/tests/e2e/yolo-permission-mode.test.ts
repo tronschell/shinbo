@@ -105,7 +105,7 @@ describe("yolo permission mode", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "fake-yolo-key",
+            SHINBO_PROVIDER_API_KEY: "fake-yolo-key",
             FX_AUTO_UPGRADE: "0",
             FX_GATEWAY_BASE_URL: fake.baseUrl,
             FX_GATEWAY_CHAT_URL: fake.chatUrl,
@@ -165,7 +165,7 @@ describe("yolo permission mode", () => {
         cwd: fixture.workspace,
         env: {
           HOME: fixture.home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_PERMISSION_MODE: undefined,
         },
       });
@@ -206,7 +206,7 @@ describe.skipIf(!tmuxAvailable())("yolo interactive mode", () => {
         height: 40,
         env: {
           HOME: fixture.home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: undefined,
         },
@@ -446,7 +446,7 @@ describe.skipIf(!tmuxAvailable())("yolo interactive mode", () => {
         height: 24,
         env: {
           HOME: fixture.home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: undefined,
         },
@@ -459,8 +459,8 @@ describe.skipIf(!tmuxAvailable())("yolo interactive mode", () => {
       expect(quitPane).not.toContain(WARNING);
       expect(quitPane).not.toContain(COMPACT_WARNING);
 
-      // The quit arm lapses after 3s. The warning only survives that long
-      // because its visible budget paused while the hint owned the footer.
+
+
       const resumedPane = await session.waitForText(WARNING, TIMEOUT);
       expect(resumedPane).not.toContain(QUIT_HINT);
       expect(session.isAlive()).toBe(true);

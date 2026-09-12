@@ -15,17 +15,17 @@ import { parseWindowsFrontContext } from "../dist-main/main/windows-front.js";
 import { keybindLabel, validateKeybinds } from "../dist-main/shared/settings.js";
 
 test("Squirrel lifecycle ignores firstrun and handles install events", () => {
-  assert.equal(squirrelEvent(["Emma.exe", "--squirrel-firstrun"]), null);
-  assert.equal(squirrelEvent(["Emma.exe", "--squirrel-install"]), "install");
-  assert.equal(squirrelEvent(["Emma.exe", "--squirrel-updated"]), "updated");
-  assert.equal(squirrelEvent(["Emma.exe", "--squirrel-uninstall"]), "uninstall");
-  assert.equal(squirrelEvent(["Emma.exe", "--squirrel-obsolete"]), "obsolete");
+  assert.equal(squirrelEvent(["Shinbo.exe", "--squirrel-firstrun"]), null);
+  assert.equal(squirrelEvent(["Shinbo.exe", "--squirrel-install"]), "install");
+  assert.equal(squirrelEvent(["Shinbo.exe", "--squirrel-updated"]), "updated");
+  assert.equal(squirrelEvent(["Shinbo.exe", "--squirrel-uninstall"]), "uninstall");
+  assert.equal(squirrelEvent(["Shinbo.exe", "--squirrel-obsolete"]), "obsolete");
 });
 
 test("Windows package locale trimming retains English and refuses unidentified packages", async (t) => {
-  const root = await mkdtemp(path.join(tmpdir(), "emma-locales-"));
+  const root = await mkdtemp(path.join(tmpdir(), "shinbo-locales-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const app = path.join(root, "Emma-win32-x64");
+  const app = path.join(root, "Shinbo-win32-x64");
   const source = path.join(root, "source");
   const locales = path.join(app, "locales");
   await mkdir(source);
@@ -40,7 +40,7 @@ test("Windows package locale trimming retains English and refuses unidentified p
   await createPackage(source, path.join(app, "resources/app.asar"));
   assert.notEqual(await run(), 0);
   assert.ok(existsSync(path.join(locales, "de.pak")));
-  await writeFile(path.join(source, "package.json"), JSON.stringify({ productName: "Emma" }));
+  await writeFile(path.join(source, "package.json"), JSON.stringify({ productName: "Shinbo" }));
   await createPackage(source, path.join(app, "resources/app.asar"));
   assert.equal(await run(), 0);
   assert.deepEqual((await readdir(locales)).sort(), ["en-GB.pak", "en-US.pak", "other.txt"]);
@@ -53,7 +53,7 @@ test("Windows package locale trimming retains English and refuses unidentified p
 });
 
 test("Squirrel shortcut and Electron use the same app identity", () => {
-  assert.equal(WINDOWS_APP_USER_MODEL_ID, "com.squirrel.Emma.Emma");
+  assert.equal(WINDOWS_APP_USER_MODEL_ID, "com.squirrel.Shinbo.Shinbo");
 });
 
 test("Windows command shims preserve metacharacters as argv", () => {
@@ -111,7 +111,7 @@ test("Windows packaging command shims preserve spaces and metacharacters", () =>
 
 test("Windows command shims round-trip hostile argv without executing it", async () => {
   if (process.platform !== "win32") return;
-  const root = await mkdtemp(path.join(tmpdir(), "emma-shim-"));
+  const root = await mkdtemp(path.join(tmpdir(), "shinbo-shim-"));
   const shim = path.join(root, "fixture.cmd");
   const marker = path.join(root, "injected.txt");
   const values = ["spaces here", "a&b", "x|y", "%PATH%", "!bang!", "^caret^", "(paren)", "quote\"value", "trailing\\", `& echo injected > ${marker}`];
@@ -140,7 +140,7 @@ test("Windows command shims round-trip hostile argv without executing it", async
 });
 
 test("Windows front-window context accepts only bounded browser metadata", () => {
-  const page = { application: "Microsoft Edge", window: "Emma docs", url: "https://example.com", title: "Emma docs" };
+  const page = { application: "Microsoft Edge", window: "Shinbo docs", url: "https://example.com", title: "Shinbo docs" };
   assert.deepEqual(parseWindowsFrontContext(JSON.stringify({ front: page, browsers: [page] })), { front: page, browsers: [page] });
   assert.throws(() => parseWindowsFrontContext("not json"));
   assert.throws(() => parseWindowsFrontContext(JSON.stringify({ front: page, browsers: Array.from({ length: 65 }, () => page) })));
@@ -157,13 +157,13 @@ test("Windows keybinds normalize legacy Command and Control collisions", () => {
 });
 
 test("Windows path containment handles drive roots, UNC shares, and case", () => {
-  assert.equal(pathInside("C:\\", "c:\\Users\\Emma\\notes", "win32"), true);
-  assert.equal(pathInside("C:\\Users\\Emma", "c:\\users\\emma\\notes", "win32"), true);
-  assert.equal(pathInside("C:\\Users\\Emma", "C:\\Users\\Emma2", "win32"), false);
-  assert.equal(pathInside("C:\\Users\\Emma", "D:\\Users\\Emma", "win32"), false);
+  assert.equal(pathInside("C:\\", "c:\\Users\\Shinbo\\notes", "win32"), true);
+  assert.equal(pathInside("C:\\Users\\Shinbo", "c:\\users\\shinbo\\notes", "win32"), true);
+  assert.equal(pathInside("C:\\Users\\Shinbo", "C:\\Users\\Shinbo2", "win32"), false);
+  assert.equal(pathInside("C:\\Users\\Shinbo", "D:\\Users\\Shinbo", "win32"), false);
   assert.equal(pathInside("\\\\server\\share", "\\\\SERVER\\SHARE\\folder", "win32"), true);
   assert.equal(pathInside("\\\\server\\share", "\\\\server\\other\\folder", "win32"), false);
-  assert.equal(samePath("C:\\Users\\Emma", "c:\\users\\emma", "win32"), true);
+  assert.equal(samePath("C:\\Users\\Shinbo", "c:\\users\\shinbo", "win32"), true);
 });
 
 test("Windows native helpers embed the long-path manifest", () => {
@@ -182,43 +182,43 @@ test("Windows native helpers embed the long-path manifest", () => {
 
 test("Reset data roots reject Windows protected locations and retain app descendants", () => {
   const environment = {
-    USERPROFILE: "C:\\Users\\Emma",
+    USERPROFILE: "C:\\Users\\Shinbo",
     SystemRoot: "C:\\Windows",
     WINDIR: "C:\\Windows",
     ProgramFiles: "C:\\Program Files",
     "ProgramFiles(x86)": "C:\\Program Files (x86)",
     ProgramW6432: "C:\\Program Files",
     ProgramData: "C:\\ProgramData",
-    APPDATA: "C:\\Users\\Emma\\AppData\\Roaming",
-    LOCALAPPDATA: "C:\\Users\\Emma\\AppData\\Local",
-    TEMP: "C:\\Users\\Emma\\AppData\\Local\\Temp",
-    TMP: "C:\\Users\\Emma\\AppData\\Local\\Temp",
+    APPDATA: "C:\\Users\\Shinbo\\AppData\\Roaming",
+    LOCALAPPDATA: "C:\\Users\\Shinbo\\AppData\\Local",
+    TEMP: "C:\\Users\\Shinbo\\AppData\\Local\\Temp",
+    TMP: "C:\\Users\\Shinbo\\AppData\\Local\\Temp",
   };
-  const userData = "C:\\Users\\Emma\\AppData\\Roaming\\Emma";
+  const userData = "C:\\Users\\Shinbo\\AppData\\Roaming\\Shinbo";
   for (const candidate of [
     "C:\\",
-    "C:\\Users\\Emma",
+    "C:\\Users\\Shinbo",
     "C:\\Windows\\System32",
     environment.APPDATA,
-    "C:\\Users\\Emma\\AppData",
+    "C:\\Users\\Shinbo\\AppData",
     environment.LOCALAPPDATA,
     environment.TEMP,
     environment.ProgramFiles,
-    "C:\\Program Files\\Emma",
+    "C:\\Program Files\\Shinbo",
     environment["ProgramFiles(x86)"],
-    "C:\\Program Files (x86)\\Emma",
-    "C:\\Windows\\Emma",
+    "C:\\Program Files (x86)\\Shinbo",
+    "C:\\Windows\\Shinbo",
     environment.ProgramData,
-    "C:\\ProgramData\\Emma",
+    "C:\\ProgramData\\Shinbo",
   ]) assert.throws(() => resetDataRoots(userData, candidate, "win32", environment.USERPROFILE, environment), /Reset blocked/);
   assert.deepEqual(resetDataRoots(userData, undefined, "win32", environment.USERPROFILE, environment), [userData]);
-  assert.deepEqual(resetDataRoots(userData, "C:\\Users\\Emma\\AppData\\Roaming\\Emma\\Extra", "win32", environment.USERPROFILE, environment), ["C:\\Users\\Emma\\AppData\\Roaming\\Emma\\Extra", userData]);
-  assert.deepEqual(resetDataRoots(userData, "C:\\Users\\Emma\\AppData\\Local\\Temp\\Emma", "win32", environment.USERPROFILE, environment), ["C:\\Users\\Emma\\AppData\\Local\\Temp\\Emma", userData]);
-  assert.deepEqual(resetDataRoots(userData, "c:\\users\\emma\\appdata\\roaming\\emma", "win32", environment.USERPROFILE, environment), ["c:\\users\\emma\\appdata\\roaming\\emma"]);
+  assert.deepEqual(resetDataRoots(userData, "C:\\Users\\Shinbo\\AppData\\Roaming\\Shinbo\\Extra", "win32", environment.USERPROFILE, environment), ["C:\\Users\\Shinbo\\AppData\\Roaming\\Shinbo\\Extra", userData]);
+  assert.deepEqual(resetDataRoots(userData, "C:\\Users\\Shinbo\\AppData\\Local\\Temp\\Shinbo", "win32", environment.USERPROFILE, environment), ["C:\\Users\\Shinbo\\AppData\\Local\\Temp\\Shinbo", userData]);
+  assert.deepEqual(resetDataRoots(userData, "c:\\users\\shinbo\\appdata\\roaming\\shinbo", "win32", environment.USERPROFILE, environment), ["c:\\users\\shinbo\\appdata\\roaming\\shinbo"]);
 });
 
 test("Reset canonical paths expose symlink targets before deletion", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "emma-reset-canonical-"));
+  const root = await mkdtemp(path.join(tmpdir(), "shinbo-reset-canonical-"));
   const target = path.join(root, "target");
   const link = path.join(root, "link");
   await mkdir(target, { recursive: true });
@@ -228,9 +228,9 @@ test("Reset canonical paths expose symlink targets before deletion", async () =>
     } catch {
       return;
     }
-    const requested = path.join(link, "Emma");
+    const requested = path.join(link, "Shinbo");
     const canonical = canonicalResetPath(requested);
-    assert.equal(canonical, canonicalResetPath(path.join(target, "Emma")));
+    assert.equal(canonical, canonicalResetPath(path.join(target, "Shinbo")));
     assert.equal(samePath(canonical, requested, process.platform), false);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -239,7 +239,7 @@ test("Reset canonical paths expose symlink targets before deletion", async () =>
 
 test("Windows git execution does not use a repo-local shim", async () => {
   if (process.platform !== "win32") return;
-  const root = await mkdtemp(path.join(tmpdir(), "emma-git-shadow-"));
+  const root = await mkdtemp(path.join(tmpdir(), "shinbo-git-shadow-"));
   const previous = process.cwd();
   const marker = path.join(root, "executed.txt");
   await writeFile(path.join(root, "git.cmd"), "@echo off\r\n>\"%~dp0executed.txt\" echo ran\r\nexit /b 0\r\n", "utf8");
@@ -255,7 +255,7 @@ test("Windows git execution does not use a repo-local shim", async () => {
 
 test("Windows npm shims resolve to the executable or script they run", async () => {
   if (process.platform !== "win32") return;
-  const root = await mkdtemp(path.join(tmpdir(), "emma-shim-target-"));
+  const root = await mkdtemp(path.join(tmpdir(), "shinbo-shim-target-"));
   try {
     const script = path.join(root, "cli.js");
     const executable = path.join(root, "cli.exe");
@@ -285,15 +285,15 @@ test("Windows npm shims resolve to the executable or script they run", async () 
 
 test("Windows uninstall clears every Start Menu shortcut the installer leaves behind", () => {
   const expected = [
-    "C:\\Users\\Emma\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Emma.lnk",
-    `C:\\Users\\Emma\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\${WINDOWS_INSTALLER_COMPANY}\\Emma.lnk`,
+    "C:\\Users\\Shinbo\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Shinbo.lnk",
+    `C:\\Users\\Shinbo\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\${WINDOWS_INSTALLER_COMPANY}\\Shinbo.lnk`,
   ];
-  assert.deepEqual(windowsShortcutFiles({ APPDATA: "C:\\Users\\Emma\\AppData\\Roaming" }), expected);
-  assert.deepEqual(windowsShortcutFiles({ USERPROFILE: "C:\\Users\\Emma" }), expected);
+  assert.deepEqual(windowsShortcutFiles({ APPDATA: "C:\\Users\\Shinbo\\AppData\\Roaming" }), expected);
+  assert.deepEqual(windowsShortcutFiles({ USERPROFILE: "C:\\Users\\Shinbo" }), expected);
 
   const main = readFileSync(new URL("../main/main.ts", import.meta.url), "utf8");
   const uninstall = main.slice(main.indexOf('if (event === "uninstall")')).slice(0, 400);
-  assert.match(uninstall, /"--removeShortcut", "Emma\.exe"/);
+  assert.match(uninstall, /"--removeShortcut", "Shinbo\.exe"/);
   assert.match(uninstall, /windowsShortcutFiles\(\)\) rmSync\(link, \{ force: true \}\)/);
 
   const packaging = readFileSync(new URL("../scripts/package-windows.mjs", import.meta.url), "utf8");
@@ -302,8 +302,8 @@ test("Windows uninstall clears every Start Menu shortcut the installer leaves be
 
 test("Windows packaging stages Squirrel work in a short temp directory and publishes it", async () => {
   const staging = squirrelStagingDirectory();
-  assert.ok(staging.startsWith(path.join(tmpdir(), "emma-squirrel-")), staging);
-  const out = await mkdtemp(path.join(tmpdir(), "emma-release-"));
+  assert.ok(staging.startsWith(path.join(tmpdir(), "shinbo-squirrel-")), staging);
+  const out = await mkdtemp(path.join(tmpdir(), "shinbo-release-"));
   try {
     await mkdir(path.join(staging, "squirrel"), { recursive: true });
     await writeFile(path.join(staging, "squirrel", "RELEASES"), "feed");

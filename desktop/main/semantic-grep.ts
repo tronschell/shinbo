@@ -1,4 +1,4 @@
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -40,6 +40,9 @@ export function failureDetail(text: string): string {
 
 export function embeddingProxy(model: HostedEmbeddingModel, token: string, key: () => string): http.Server {
   return http.createServer(async (req, res) => {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    res.once("close", abort);
     const reply = (status: number, body: unknown) => {
       res.writeHead(status, { "content-type": "application/json" });
       res.end(JSON.stringify(body));
@@ -54,7 +57,9 @@ export function embeddingProxy(model: HostedEmbeddingModel, token: string, key: 
       if (!body || !Array.isArray(body.input) || !body.input.every((item) => typeof item === "string")) return fail(400, "input must be an array of strings");
       const secret = key();
       if (!secret) return fail(401, `Needs ${model.credentialEnv}`);
+      controller.signal.throwIfAborted();
       const upstream = await fetch(model.endpoint, {
+        signal: controller.signal,
         method: "POST",
         headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
         body: JSON.stringify({ model: model.model, input: body.input, encoding_format: "float", ...(model.acceptsDimensions ? { dimensions: DIMENSIONS } : {}) }),
@@ -69,7 +74,10 @@ export function embeddingProxy(model: HostedEmbeddingModel, token: string, key: 
       }
       return reply(200, json);
     } catch (error) {
-      return fail(502, error instanceof Error ? error.message : String(error));
+      if (!res.destroyed) return fail(502, error instanceof Error ? error.message : String(error));
+    } finally {
+      res.removeListener("close", abort);
+      controller.abort();
     }
   });
 }
@@ -88,7 +96,7 @@ export async function verifyEmbeddingKey(model: HostedEmbeddingModel, key: strin
     const response = await fetch(model.endpoint, {
       method: "POST",
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-      body: JSON.stringify({ model: model.model, input: ["emma"], encoding_format: "float", ...(model.acceptsDimensions ? { dimensions: DIMENSIONS } : {}) }),
+      body: JSON.stringify({ model: model.model, input: ["shinbo"], encoding_format: "float", ...(model.acceptsDimensions ? { dimensions: DIMENSIONS } : {}) }),
     });
     const json = (await response.json()) as { data?: { embedding?: unknown }[]; error?: { message?: unknown } };
     if (!response.ok) return { ok: false, detail: String(json.error?.message ?? `${model.label} answered ${response.status}`).slice(0, 200) };
@@ -172,8 +180,7 @@ export class SemanticGrep {
     const changed = previous !== undefined && previous.embeddingModel !== experiments.embeddingModel;
     if (changed) {
       const indexed = [...this.folders.keys()];
-      for (const child of this.children.values()) child.kill();
-      this.children.clear();
+      this.stopIndexing();
       this.folders.clear();
       this.failedAt.clear();
       this.rebuild = new Set(indexed);
@@ -187,15 +194,28 @@ export class SemanticGrep {
       this.started = true;
       this.restartDaemon(experiments);
     }
-    if (!experiments.semanticGrep && this.started) {
+    if (!experiments.semanticGrep) {
+      this.stopIndexing();
+      if (this.started) this.stopDaemon();
       this.started = false;
-      this.stopDaemon();
     }
   }
 
   stop() {
-    if (this.started && this.available) spawnSync(this.node, [this.entry(), "server", "off"], { env: this.env(), timeout: 5000, windowsHide: true });
+    if (this.started && this.available) this.stopDaemon();
+    this.started = false;
+    this.stopIndexing();
     this.closeProxy();
+  }
+
+  private stopIndexing() {
+    if (!this.children.size) return;
+    for (const [root, child] of this.children) {
+      this.folders.delete(root);
+      child.kill();
+    }
+    this.children.clear();
+    this.onChange();
   }
 
   private closeProxy() {
@@ -238,13 +258,13 @@ export class SemanticGrep {
     return { ...Object.fromEntries(inherited), ELECTRON_RUN_AS_NODE: "1", ZVEC_GREP_HOME: zvecHome(), ...Object.fromEntries(embedding.map((item) => [item.name, item.value])) };
   }
 
-  private run(args: string[], extra: Record<string, string> = {}) {
-    return spawn(this.node, [this.entry(), ...args], { env: { ...this.env(), ...extra }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+  private run(args: string[], extra: Record<string, string> = {}, timeout?: number) {
+    return spawn(this.node, [this.entry(), ...args], { env: { ...this.env(), ...extra }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, timeout });
   }
 
   private restartDaemon(experiments: HarnessExperiments) {
     this.stopDaemon().once("close", () => {
-      if (this.experiments === experiments && experiments.semanticGrep) this.daemon("on");
+      if (this.started && this.experiments === experiments && experiments.semanticGrep) this.daemon("on");
     });
   }
 
@@ -254,7 +274,7 @@ export class SemanticGrep {
 
   private daemon(action: "on" | "off") {
     const tokenFile = action === "on" ? daemonTokenFile() : "";
-    const child = this.run(["server", action], tokenFile ? { ZVEC_GREP_SERVER_TOKEN_FILE: tokenFile } : {});
+    const child = this.run(["server", action], tokenFile ? { ZVEC_GREP_SERVER_TOKEN_FILE: tokenFile } : {}, action === "off" ? 5000 : undefined);
     child.stdout?.resume();
     child.stderr?.resume();
     child.once("error", () => undefined);

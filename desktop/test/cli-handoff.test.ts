@@ -9,7 +9,7 @@ import { parseToolArgs } from "../main/tools";
 import { writeFakeCli } from "./fake-cli";
 
 test("CLI handoffs validate sources and pass only the latest stdout through a chain", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "emma-cli-chain-"));
+  const directory = await mkdtemp(join(tmpdir(), "shinbo-cli-chain-"));
   const binary = await writeFakeCli(directory, `const prompt = process.argv.at(-1);\nprocess.stderr.write('diagnostic-only\\n');\nif (prompt === 'fail') process.exit(2);\nprocess.stdout.write(prompt === 'large' ? 'x'.repeat(270000) : 'Result: ' + prompt);\n`);
   const runs = new CliRuns(() => undefined);
   const paths = Reflect.get(runs, "paths") as Map<string, string>;
@@ -52,7 +52,7 @@ test("CLI handoffs validate sources and pass only the latest stdout through a ch
 });
 
 test("a harness reached through a Windows shim receives a multi-line prompt intact", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "emma-cli-multiline-"));
+  const directory = await mkdtemp(join(tmpdir(), "shinbo-cli-multiline-"));
   const binary = await writeFakeCli(directory, "process.stdout.write(process.argv.at(-1));\n");
   const runs = new CliRuns(() => undefined);
   (Reflect.get(runs, "paths") as Map<string, string>).set("claude", binary);

@@ -24,20 +24,20 @@ test("release notes collect the published range, preserve summaries, and include
   ];
   const requests = [];
   const pages = {
-    "repos/team/emma/commits/dev": [{ sha: target }],
-    "repos/team/emma/releases?per_page=100": [
+    "repos/team/shinbo/commits/dev": [{ sha: target }],
+    "repos/team/shinbo/releases?per_page=100": [
       { tag_name: "v3.0.0", draft: true, published_at: "2026-09-04T00:00:00Z" },
       { tag_name: "v2.0.0-beta.1", prerelease: true, published_at: "2026-09-03T00:00:00Z" },
       { tag_name: "v0.9.0", published_at: "2026-08-01T00:00:00Z" },
       { tag_name: "v1.0.0", published_at: "2026-09-02T00:00:00Z" },
     ],
-    [`repos/team/emma/compare/v1.0.0...${target}?per_page=100`]: [
+    [`repos/team/shinbo/compare/v1.0.0...${target}?per_page=100`]: [
       { commits: changes.slice(0, 100) },
       { commits: changes.slice(100, 200) },
       { commits: changes.slice(200) },
     ],
   };
-  const notes = generateReleaseNotes("team/emma", {}, (endpoint) => {
+  const notes = generateReleaseNotes("team/shinbo", {}, (endpoint) => {
     requests.push(endpoint);
     assert.ok(Object.hasOwn(pages, endpoint), endpoint);
     return pages[endpoint];
@@ -45,8 +45,8 @@ test("release notes collect the published range, preserve summaries, and include
   assert.equal(requests.length, 3);
   assert.equal((notes.match(/^- /gm) ?? []).length, changes.length - 1);
   assert.match(notes, /^## Breaking changes\n/);
-  assert.match(notes, /## Features\n\n- attach folders \(\[#91\]\(https:\/\/github.com\/team\/emma\/pull\/91\)\) by @contributor\n {2}- Search attached folders\.\n {2}- Select which folders to share\./);
-  assert.match(notes, /## Fixes\n\n- restore drafts \(\[0000000\]\(https:\/\/github.com\/team\/emma\/commit\/0000000000000000000000000000000000000002\)\)/);
+  assert.match(notes, /## Features\n\n- attach folders \(\[#91\]\(https:\/\/github.com\/team\/shinbo\/pull\/91\)\) by @contributor\n {2}- Search attached folders\.\n {2}- Select which folders to share\./);
+  assert.match(notes, /## Fixes\n\n- restore drafts \(\[0000000\]\(https:\/\/github.com\/team\/shinbo\/commit\/0000000000000000000000000000000000000002\)\)/);
   assert.match(notes, /## Performance\n/);
   assert.match(notes, /## Documentation\n/);
   assert.match(notes, /## Other changes\n\n- An ordinary commit title/);
@@ -55,22 +55,22 @@ test("release notes collect the published range, preserve summaries, and include
   assert.match(notes, /\*\*Breaking change:\*\* Export old archives before upgrading\.\n {2}Keep a backup until migration finishes\./);
   assert.ok(notes.indexOf("- migrate old records") < notes.indexOf("## Features"));
   assert.doesNotMatch(notes, /Merge pull request|Private test details|private@example.com|Co-authored-by/);
-  assert.match(notes, new RegExp(`https://github.com/team/emma/compare/v1.0.0\\.\\.\\.${target}`));
+  assert.match(notes, new RegExp(`https://github.com/team/shinbo/compare/v1.0.0\\.\\.\\.${target}`));
 
-  const first = generateReleaseNotes("team/emma", {}, (endpoint) => {
+  const first = generateReleaseNotes("team/shinbo", {}, (endpoint) => {
     if (endpoint.endsWith("/commits/dev")) return [{ sha: target }];
     if (endpoint.endsWith("/releases?per_page=100")) return [];
-    assert.equal(endpoint, `repos/team/emma/commits?sha=${target}&per_page=100`);
+    assert.equal(endpoint, `repos/team/shinbo/commits?sha=${target}&per_page=100`);
     return [commit("feat: second"), commit("feat: first")];
   });
   assert.ok(first.indexOf("- first") < first.indexOf("- second"));
   assert.match(first, /\[All commits\]/);
 
-  const empty = generateReleaseNotes("team/emma", { from: "release/1", to: "feature/next" }, (endpoint) => {
+  const empty = generateReleaseNotes("team/shinbo", { from: "release/1", to: "feature/next" }, (endpoint) => {
     if (endpoint.endsWith("/commits/feature%2Fnext")) return [{ sha: target }];
-    assert.equal(endpoint, `repos/team/emma/compare/release%2F1...${target}?per_page=100`);
+    assert.equal(endpoint, `repos/team/shinbo/compare/release%2F1...${target}?per_page=100`);
     return [{ commits: [] }];
   });
   assert.match(empty, /^No changes since the previous release\./);
-  assert.throws(() => generateReleaseNotes("team/emma", {}, () => { throw new Error("GitHub unavailable"); }), /GitHub unavailable/);
+  assert.throws(() => generateReleaseNotes("team/shinbo", {}, () => { throw new Error("GitHub unavailable"); }), /GitHub unavailable/);
 });

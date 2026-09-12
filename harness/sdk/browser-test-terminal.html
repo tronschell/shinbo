@@ -103,7 +103,7 @@
     runtime = await createFxTerminal({
       wasm: "../zig-out/bin/fx-term.wasm",
       terminal,
-      env: { EMMA_PROVIDER_API_KEY: "browser-terminal-test-key" },
+      env: { SHINBO_PROVIDER_API_KEY: "browser-terminal-test-key" },
       fetch: mockFetch,
     });
     testState.stage = "waiting-interactive";

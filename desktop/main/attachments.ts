@@ -1,32 +1,96 @@
-/* Files the user hands the composer: dropped, pasted, or chosen in the native
-   dialog. They are not knowledge and not a folder grant — they belong to one
-   message, and the turn carries their text (or, for a picture, their path).
 
-   The renderer names an attachment by id and never by path, the same rule folder
-   grants follow: a picked file keeps the path the dialog returned, and dropped or
-   pasted bytes are written under userData, because a drop hands the renderer the
-   contents and never the path. Either way main is the only side that knows where
-   the file is, and `holds` is what lets the vision tool look at one. */
+
+
+
+
+
+
+
+
 
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { nativeImage } from "electron";
 import { isImageAttachment, MAX_FILE_BYTES } from "../shared/folders";
+import { writeAtomicSync } from "./write-atomic";
 
 export { isImageAttachment };
 
-/** What the composer shows for one attached file. The path stays main-side. */
+
 export type Attachment = { id: string; name: string; path: string };
 
-/** A screenshot at retina scale is a couple of megabytes; a photo from a phone is more. */
+
 export const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 export const MAX_MODEL_IMAGE_BYTES = 1024 * 1024;
 export const MAX_MODEL_IMAGE_EDGE = 1568;
-/** Copies of dropped files, swept after a week — a message that old has been sent. */
-const KEEP_MILLISECONDS = 7 * 24 * 60 * 60 * 1000;
 
-/** One path segment, so a name off a drop cannot walk anywhere. */
+const exec = promisify(execFile);
+
+type ImageSize = { height: number } | { maxEdge: number } | { maxWidth: number };
+
+let imagePreparation: Promise<void> = Promise.resolve();
+
+function resizedPng(file: string, size: ImageSize): Promise<Buffer | undefined> {
+  const next = imagePreparation.then(() => preparePng(file, size));
+  imagePreparation = next.then(() => undefined, () => undefined);
+  return next;
+}
+
+async function preparePng(file: string, size: ImageSize): Promise<Buffer | undefined> {
+  if (process.platform !== "darwin") return undefined;
+  const { dir, name, ext } = path.parse(file);
+  const scales = ["1", "1.25", "1.33", "1.4", "1.5", "1.8", "2", "2.5", "3", "4", "5"];
+  if (/@[\d.]+x$/.test(name) || (await Promise.all(scales.map((scale) =>
+    access(path.join(dir, `${name}@${scale}x${ext}`)).then(() => true, () => false)))).some(Boolean)) return undefined;
+  let directory: string | undefined;
+  try {
+    let resize: string[];
+    if ("height" in size) resize = ["--resampleHeight", String(size.height)];
+    else {
+      const { stdout } = await exec("/usr/bin/sips", ["-g", "pixelWidth", "-g", "pixelHeight", file], { timeout: 10_000, maxBuffer: 16 * 1024 });
+      const width = Number(/pixelWidth:\s+(\d+)/.exec(stdout)?.[1]);
+      const height = Number(/pixelHeight:\s+(\d+)/.exec(stdout)?.[1]);
+      const limit = "maxWidth" in size ? size.maxWidth : size.maxEdge;
+      const longest = "maxWidth" in size ? width : Math.max(width, height);
+      if (!width || !height || longest <= limit) return undefined;
+      const ratio = limit / longest;
+      resize = ["--resampleHeightWidth", String(Math.max(1, Math.round(height * ratio))), String(Math.max(1, Math.round(width * ratio)))];
+    }
+    directory = await mkdtemp(path.join(tmpdir(), "shinbo-image-"));
+    const preview = path.join(directory, "image.png");
+    await exec("/usr/bin/sips", ["-s", "format", "png", ...resize, file, "--out", preview], { timeout: 10_000, maxBuffer: 16 * 1024 });
+    const png = await readFile(preview);
+    return png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ? png : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    if (directory) await rm(directory, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+export async function attachmentImage(file: string, size: ImageSize): Promise<Electron.NativeImage> {
+  const png = await resizedPng(file, size);
+  if (png) {
+    const image = nativeImage.createFromBuffer(png);
+    if (!image.isEmpty()) return image;
+  }
+  return nativeImage.createFromPath(file);
+}
+
+export async function attachmentPreview(file: string, maxWidth: number): Promise<string | null> {
+  const png = await resizedPng(file, { maxWidth });
+  if (png) return `data:image/png;base64,${png.toString("base64")}`;
+  const image = nativeImage.createFromPath(file);
+  if (image.isEmpty()) return null;
+  return (image.getSize().width > maxWidth ? image.resize({ width: maxWidth }) : image).toDataURL();
+}
+
+
 function safeName(value: unknown): string {
   const name = typeof value === "string" ? path.basename(value).replace(/[/\\]/g, "").trim() : "";
   if (!name || name.startsWith(".") || name.length > 128) throw new Error("That file name cannot be attached.");
@@ -38,9 +102,9 @@ export class AttachmentStore {
   private readonly index: string;
   private readonly held = new Map<string, Attachment>();
 
-  /* The index is what survives a relaunch. Without it every attachment in an
-     open thread became un-openable the moment Emma restarted: `holds` is the
-     only thing that says the user chose this file, and it lived in memory. */
+
+
+
   constructor(userData: string) {
     this.directory = path.join(userData, "attachments");
     this.index = path.join(this.directory, "held.json");
@@ -48,16 +112,16 @@ export class AttachmentStore {
       const stored = JSON.parse(readFileSync(this.index, "utf8")) as unknown;
       if (Array.isArray(stored)) {
         for (const item of stored as Attachment[]) {
-          // A swept copy, or a picked file the user has since moved: forgotten
-          // rather than kept as a path that opens nothing.
+
+
           if (!item || typeof item.id !== "string" || typeof item.name !== "string" || typeof item.path !== "string") continue;
           if (existsSync(item.path)) this.held.set(item.id, { id: item.id, name: item.name, path: item.path });
         }
       }
-    } catch { /* no index yet, or one written by a half-finished write */ }
+    } catch { return; }
   }
 
-  /** A file the user chose in the native dialog: read where it already is. */
+
   hold(file: string): Attachment {
     const full = realpathSync(file);
     const stats = statSync(full);
@@ -65,47 +129,49 @@ export class AttachmentStore {
     const name = path.basename(full);
     this.check(name, stats.size);
     const attachment = { id: randomUUID(), name, path: full };
-    this.held.set(attachment.id, attachment);
-    this.remember();
+    this.remember(attachment);
     return attachment;
   }
 
-  /** Bytes dropped or pasted into the composer, written where the tools can reach them. */
+
   save(rawName: unknown, data: Uint8Array): Attachment {
     const name = safeName(rawName);
     this.check(name, data.byteLength);
     const id = randomUUID();
     mkdirSync(this.directory, { recursive: true });
-    this.sweep();
     const full = path.join(this.directory, `${id}-${name}`);
-    writeFileSync(full, data);
     const attachment = { id, name, path: full };
-    this.held.set(id, attachment);
-    this.remember();
-    return attachment;
+    try {
+      writeFileSync(full, data);
+      this.remember(attachment);
+      return attachment;
+    } catch (error) {
+      try { rmSync(full, { force: true }); } catch { throw error; }
+      throw error;
+    }
   }
 
-  /** What the turn carries: a text file's contents, or a picture's path to look at. */
+
   read(id: unknown): Attachment & { text?: string } {
     const attachment = typeof id === "string" ? this.held.get(id) : undefined;
     if (!attachment) throw new Error("That attachment is no longer held.");
     if (isImageAttachment(attachment.name)) return { ...attachment };
     if (statSync(attachment.path).size > MAX_FILE_BYTES) throw new Error(`${attachment.name} is larger than an attachment can carry.`);
     const bytes = readFileSync(attachment.path);
-    // Extensions run out — a Makefile, a .env, a file with none at all — so what
-    // decides is whether the bytes read as text at all.
+
+
     if (bytes.includes(0)) throw new Error(`${attachment.name} is not a text file, so there is nothing to attach.`);
     return { ...attachment, text: bytes.toString("utf8") };
   }
 
-  forModel(attachment: Attachment): string {
+  async forModel(attachment: Attachment): Promise<string> {
     if (!isImageAttachment(attachment.name)) return attachment.path;
     try {
       const source = statSync(attachment.path);
       if (source.size <= MAX_MODEL_IMAGE_BYTES) return attachment.path;
       const smaller = path.join(this.directory, `${attachment.id}-model.jpg`);
       if (existsSync(smaller) && statSync(smaller).mtimeMs >= source.mtimeMs) return smaller;
-      const image = nativeImage.createFromPath(attachment.path);
+      const image = await attachmentImage(attachment.path, { maxEdge: MAX_MODEL_IMAGE_EDGE });
       if (image.isEmpty()) return attachment.path;
       const { width, height } = image.getSize();
       const longest = Math.max(width, height);
@@ -114,14 +180,16 @@ export class AttachmentStore {
         : image;
       let bytes = fitted.toJPEG(80);
       if (bytes.byteLength > MAX_MODEL_IMAGE_BYTES) bytes = fitted.toJPEG(45);
+      const current = statSync(attachment.path);
+      if (current.mtimeMs !== source.mtimeMs || current.ctimeMs !== source.ctimeMs || current.size !== source.size || current.ino !== source.ino) return attachment.path;
       mkdirSync(this.directory, { recursive: true });
-      writeFileSync(smaller, bytes);
+      writeAtomicSync(smaller, bytes);
       return smaller;
     } catch { return attachment.path; }
   }
 
-  /** Whether the model may look at this path: it may, if the user attached it.
-      The same question the preview and the editor doors ask before a bare path. */
+
+
   holds(file: string): boolean {
     for (const attachment of this.held.values()) if (attachment.path === file) return true;
     return false;
@@ -132,22 +200,11 @@ export class AttachmentStore {
     if (bytes > max) throw new Error(`${name} is ${Math.round(bytes / 1024)} KB; attachments stop at ${Math.round(max / 1024)} KB.`);
   }
 
-  private remember() {
-    try {
-      mkdirSync(this.directory, { recursive: true, mode: 0o700 });
-      const temporary = `${this.index}.tmp`;
-      writeFileSync(temporary, `${JSON.stringify([...this.held.values()], null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-      renameSync(temporary, this.index);
-    } catch { /* the attachment is held for this launch either way */ }
+  private remember(attachment: Attachment) {
+    mkdirSync(this.directory, { recursive: true, mode: 0o700 });
+    writeAtomicSync(this.index, `${JSON.stringify([...this.held.values(), attachment], null, 2)}\n`);
+    this.held.set(attachment.id, attachment);
   }
 
-  /** ponytail: age, not a count. A quota only matters if someone attaches gigabytes in a week. */
-  private sweep() {
-    const stale = Date.now() - KEEP_MILLISECONDS;
-    for (const entry of readdirSync(this.directory)) {
-      if (entry === path.basename(this.index)) continue;
-      const full = path.join(this.directory, entry);
-      try { if (statSync(full).mtimeMs < stale) rmSync(full, { force: true }); } catch { /* raced with another sweep */ }
-    }
-  }
+
 }

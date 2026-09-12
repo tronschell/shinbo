@@ -415,8 +415,6 @@ fn oversizedVisionProviderResult(alloc: Allocator, summary_bytes: usize) ![]u8 {
     );
 }
 
-/// Drives `vision_executor.execute` against a scripted provider so a single batch's
-/// retry classification can be observed without the surrounding prompt pipeline.
 const VisionProviderScript = struct {
     responses: []const Response,
     calls: usize = 0,
@@ -437,7 +435,7 @@ const VisionProviderScript = struct {
         const response = self.responses[self.calls];
         self.calls += 1;
         return switch (response) {
-            .content => |text| .{ .status = .ok, .completion = .{ .content = text } },
+            .content => |text| .{ .status = .ok, .completion = .{ .content = text, .finish_reason = .stop } },
             .http_status => |status| .{ .status = status },
             .cancel => blk: {
                 request.cancel_flag.store(true, .seq_cst);

@@ -114,7 +114,7 @@ test("mobile pairing guards submission and replaces the PIN form during pairing 
   }
   assert.deepEqual(calls, ["1234"]);
   const scanning = collect(renderMobile("1234", empty, {}));
-  assert.ok(scanning.some((node) => node.type === "canvas" && node.props["aria-label"] === "Pairing code for Emma Mobile"));
+  assert.ok(scanning.some((node) => node.type === "canvas" && node.props["aria-label"] === "Pairing code for Shinbo Mobile"));
   assert.ok(!scanning.some((node) => node.type === "input" || node.type === "form"));
   const full = collect(renderMobile("1234", { ...empty, full: true }));
   assert.ok(!full.some((node) => node.type === "form" || node.type === "canvas"));

@@ -12,7 +12,7 @@ import { componentCall, componentLookup, ComponentRequests, componentRoot, delet
 import { MAX_COMPONENT_FETCH_BYTES, MAX_COMPONENT_REQUEST_BYTES, parseVariables, type ComponentMeta } from "../shared/components";
 import { parseToolArgs } from "../main/tools";
 
-const userData = () => mkdtemp(path.join(tmpdir(), "emma-components-"));
+const userData = () => mkdtemp(path.join(tmpdir(), "shinbo-components-"));
 
 test("a component round-trips, and a rewrite counts up", async () => {
   const directory = await userData();

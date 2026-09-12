@@ -30,42 +30,42 @@ require.cache[electronPath] = { id: electronPath, filename: electronPath, loaded
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AttachmentStore, MAX_MODEL_IMAGE_BYTES, MAX_MODEL_IMAGE_EDGE }: typeof import("../main/attachments") = require("../main/attachments");
 
-const userData = () => mkdtempSync(path.join(tmpdir(), "emma-attachment-image-"));
+const userData = () => mkdtempSync(path.join(tmpdir(), "shinbo-attachment-image-"));
 const big = () => new Uint8Array(MAX_MODEL_IMAGE_BYTES + 1024);
 
-test("an image too big for the model is downscaled once, and the original is left alone", () => {
+test("an image too big for the model is downscaled once, and the original is left alone", async () => {
   asked.length = 0;
   resizes.length = 0;
   const root = userData();
   const store = new AttachmentStore(root);
   const held = store.save("retina.png", big());
 
-  const sent = store.forModel(held);
+  const sent = await store.forModel(held);
   assert.notEqual(sent, held.path);
   assert.equal(path.basename(sent), `${held.id}-model.jpg`);
   assert.deepEqual(readFileSync(sent), jpeg);
   assert.deepEqual(resizes, [{ width: MAX_MODEL_IMAGE_EDGE, height: Math.round(MAX_MODEL_IMAGE_EDGE * 2 / 3), quality: "good" }]);
   assert.equal(readFileSync(held.path).byteLength, MAX_MODEL_IMAGE_BYTES + 1024);
 
-  assert.equal(store.forModel(held), sent);
+  assert.equal(await store.forModel(held), sent);
   assert.equal(asked.length, 1);
 });
 
-test("an image already under the ceiling travels as it is, and a file nothing can decode falls back to it", () => {
+test("an image already under the ceiling travels as it is, and a file nothing can decode falls back to it", async () => {
   asked.length = 0;
   const root = userData();
   const store = new AttachmentStore(root);
   const small = store.save("thumb.png", new Uint8Array(2048));
-  assert.equal(store.forModel(small), small.path);
+  assert.equal(await store.forModel(small), small.path);
   assert.equal(asked.length, 0);
 
   broken = true;
   const corrupt = store.save("corrupt.png", big());
-  assert.equal(store.forModel(corrupt), corrupt.path);
+  assert.equal(await store.forModel(corrupt), corrupt.path);
   broken = false;
 
   const notes = path.join(root, "notes.md");
   writeFileSync(notes, "# not an image");
   const held = store.hold(notes);
-  assert.equal(store.forModel(held), held.path);
+  assert.equal(await store.forModel(held), held.path);
 });

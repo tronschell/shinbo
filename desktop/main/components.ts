@@ -83,7 +83,7 @@ export async function writeComponent(userData: string, input: ComponentInput): P
   const taken = (await readdir(root).catch(() => [])).slice(0, MAX_COMPONENTS + 1);
   const id = input.id ?? unique(componentSlug(title), taken);
   const directory = componentDirectory(userData, id);
-  if (!taken.includes(id) && taken.length >= MAX_COMPONENTS) throw new Error(`Emma already holds the maximum of ${MAX_COMPONENTS} components. The user deletes one from its ⋯ menu.`);
+  if (!taken.includes(id) && taken.length >= MAX_COMPONENTS) throw new Error(`Shinbo already holds the maximum of ${MAX_COMPONENTS} components. The user deletes one from its ⋯ menu.`);
   const previous = await readMeta(directory, id).catch(() => undefined);
   const variables = input.variables === undefined ? previous?.variables : parseVariables(input.variables);
   const meta: ComponentMeta = {
@@ -215,7 +215,7 @@ export const componentLookup: LookupFunction = (hostname, options, callback) => 
 function componentCredentials(call: ComponentCall, secrets: NodeJS.ProcessEnv): Record<string, string> {
   return Object.fromEntries(call.variables.map((name) => {
     const value = Object.hasOwn(secrets, name) ? secrets[name] : undefined;
-    if (typeof value !== "string" || !value || Buffer.byteLength(value) > MAX_COMPONENT_REQUEST_BYTES) throw new Error(`${name} is missing or too large. Open Settings → Built by Emma to set it.`);
+    if (typeof value !== "string" || !value || Buffer.byteLength(value) > MAX_COMPONENT_REQUEST_BYTES) throw new Error(`${name} is missing or too large. Open Settings → Built by Shinbo to set it.`);
     return [name, value];
   }));
 }
@@ -307,5 +307,5 @@ function unique(slug: string, taken: readonly string[]) {
   for (let suffix = 2; suffix <= MAX_COMPONENTS; suffix += 1) {
     if (!taken.includes(`${stem}-${suffix}`)) return `${stem}-${suffix}`;
   }
-  throw new Error(`Emma already holds too many components called "${slug}". Rewrite one of them instead.`);
+  throw new Error(`Shinbo already holds too many components called "${slug}". Rewrite one of them instead.`);
 }

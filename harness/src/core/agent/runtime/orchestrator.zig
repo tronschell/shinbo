@@ -71,7 +71,7 @@ const repeated_malformed_arguments_notice =
 pub const vision_not_looked_notice =
     "This model did not look at the attached image, so the answer above ignores it. Try a model that accepts images.";
 const repeated_failing_tool_call_notice =
-    "Emma stopped this run: the model repeated the same failing tool call three times. Adjust the request or tell it what to do differently.";
+    "Shinbo stopped this run: the model repeated the same failing tool call three times. Adjust the request or tell it what to do differently.";
 const Config = runtime_config.Config;
 const LifecycleContext = runtime_lifecycle.LifecycleContext;
 const PreparedToolCall = runtime_lifecycle.PreparedToolCall;
@@ -605,11 +605,6 @@ const ParentTurnDeliveryState = struct {
     acknowledgements: []const runtime_deps.ParentTurnDeliveryAck = &.{},
     acknowledged: bool = false,
 
-    /// `possibly_sent` is the delivery-certainty boundary: successful requests
-    /// cross it before their first body write, and failures after it are
-    /// ambiguous. Acknowledging both prevents duplicate parent context after a
-    /// request may have reached the model. Definitely-unsent attempts stay
-    /// pending so the next parent turn projects the same deliveries again.
     fn observeGatewayDelivery(
         self: *ParentTurnDeliveryState,
         deps: *const AgentRuntimeDeps,
@@ -1554,7 +1549,7 @@ fn isRetryableModelStatus(status: std.http.Status) bool {
 
 const request_too_large_diagnostic =
     "The request is still too large after older tool results were pruned. " ++
-    "Send another message and Emma will compact the thread first.";
+    "Send another message and Shinbo will compact the thread first.";
 
 fn isContextOverflowRejection(status: std.http.Status, detail: []const u8) bool {
     if (status == .payload_too_large) return true;
@@ -2112,9 +2107,6 @@ fn request_max_output_tokens(capabilities: model_capabilities.Capabilities) ?u32
     return max_output_tokens;
 }
 
-/// The experiment settings for this turn, with the model's own context window
-/// filled in when the host did not send one. The percent triggers are inert
-/// without a window, and the host only knows it when its catalog does.
 fn experimentSettings(
     config: Config,
     capabilities: model_capabilities.Capabilities,
@@ -2228,8 +2220,6 @@ fn processQueuedPromptInner(
         );
     }
 
-    // The overlay arena is reset for every model step so refreshed env,
-    // sandbox, and background snapshots do not accumulate for the whole turn.
     var overlay_arena_state = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer overlay_arena_state.deinit();
 
@@ -3047,9 +3037,7 @@ fn processQueuedPromptLoop(
     var tool_call_repair_injected = false;
     var last_step_ctx = finish_trace.ctx;
     var current_step_index: usize = 0;
-    // What the previous step's response was billed for, and the context
-    // experiment's only view of how warm the prompt cache is. Zero until a step
-    // comes back with billing metadata, and an unknown reads as a cold cache.
+
     var previous_cache_read_tokens: u64 = 0;
     var previous_input_tokens: u64 = 0;
     var last_tool_call_name: []const u8 = "none";
@@ -3109,10 +3097,7 @@ fn processQueuedPromptLoop(
     else
         .transport_interrupted;
     var latest_recovery_diagnostic: ?types.ModelFailureDiagnostic = null;
-    // A request body over the provider's byte cap never left the machine, so it
-    // costs no provider attempt: prune older tool results and build it again.
-    // Sticky for the rest of the turn, because every later step would only
-    // overflow the same way.
+
     var prune_oversized = false;
     var checkpoint_sent = false;
     var vision_required_downgraded = false;
@@ -3325,10 +3310,7 @@ fn processQueuedPromptLoop(
                 current_user_effective,
                 within_turn_suffix.items,
             );
-            // Applied here rather than on the projection built at the top of the
-            // step: this is the one that becomes the request, and it is rebuilt
-            // per provider attempt, so anything done to the earlier copy is
-            // thrown away before it reaches a model.
+
             var experiment_settings = experimentSettings(config, request_capabilities);
             experiment_settings.previous_cache_read_tokens = previous_cache_read_tokens;
             experiment_settings.previous_input_tokens = previous_input_tokens;
@@ -4459,9 +4441,7 @@ fn processQueuedPromptLoop(
         };
 
         var completion = stream_result.completion;
-        // Carried into the next step's context experiment: a prefix the provider
-        // mostly answered out of its cache is one that pruning would pay to have
-        // re-processed. A provider that reports no billing leaves it unknown.
+
         if (completion.billing) |billing| {
             previous_cache_read_tokens = billing.cache_read_tokens;
             previous_input_tokens = billing.input_tokens;

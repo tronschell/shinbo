@@ -48,7 +48,7 @@ test("IPC accepts only exact allowlisted payloads", () => {
   assert.equal(validateRequest({ method: "sendMessage", params: { threadId: "thread-123456789", content: "hello", skillAttachmentId: "skill:codex:0:review" } }).params.skillAttachmentId, "skill:codex:0:review");
   assert.equal(validateRequest({ method: "sendMessage", params: { threadId: "thread-123456789", content: "hello", attachedImages: "[\"a\",\"b\"]" } }).params.attachedImages, "[\"a\",\"b\"]");
   assert.throws(() => validateRequest({ method: "sendMessage", params: { threadId: "thread-123456789", content: "hello", screenContext: "data:image/jpeg;base64,/9j/" } }), /Invalid parameters/);
-  assert.throws(() => validateRequest({ method: "sendMessage", params: { threadId: "thread-123456789", content: "x".repeat(65_537) } }), /65,537 characters; Emma sends at most 65,536/);
+  assert.throws(() => validateRequest({ method: "sendMessage", params: { threadId: "thread-123456789", content: "x".repeat(65_537) } }), /65,537 characters; Shinbo sends at most 65,536/);
   assert.throws(() => validateRequest({ method: "shell", params: {} }), /not allowed/);
   assert.throws(() => validateRequest({ method: "recordTurn", params: { threadId: "thread-123456789", prompt: "p", response: "r" } }), /not allowed/);
   assert.throws(() => validateRequest({ method: "submitToolResult", params: { threadId: "thread-123456789", results: "[]" } }), /not allowed/);
@@ -60,6 +60,8 @@ test("IPC accepts only exact allowlisted payloads", () => {
   assert.throws(() => validateRequest({ method: "sendMessage", params: { threadId: "x" } }), /Invalid parameters/);
   assert.deepEqual(validateRequest({ method: "selectProviderModel", params: { providerId: "p-1", effort: "" } }).params, { providerId: "p-1", effort: "" });
   assert.throws(() => validateRequest({ method: "selectProviderModel", params: { providerId: "" } }), /Invalid parameters/);
+  assert.deepEqual(validateRequest({ method: "selectRouterModel", params: { routerId: "free" } }).params, { routerId: "free" });
+  assert.throws(() => validateRequest({ method: "selectRouterModel", params: {} }), /Invalid parameters/);
   assert.deepEqual(validateRequest({ method: "selectOpenRouterModel", params: { modelId: "google/gemma-4-26b-a4b-it:free", effort: "" } }).params, { modelId: "google/gemma-4-26b-a4b-it:free", effort: "" });
   assert.equal(validateRequest({ method: "selectOpenRouterModel", params: { modelId: "x/y" } }).params.modelId, "x/y");
   assert.equal(validateRequest({ method: "setThreadModel", params: { threadId: "thread-123456789", modelId: "" } }).params.modelId, "");
@@ -167,7 +169,7 @@ test("a capture tells the agent whose screen it is", () => {
 });
 
 test("agent import discovery returns metadata without reading config contents", async () => {
-  const home = await mkdtemp(path.join(tmpdir(), "emma-imports-"));
+  const home = await mkdtemp(path.join(tmpdir(), "shinbo-imports-"));
   try {
     await mkdir(path.join(home, ".codex", "skills", "review"), { recursive: true });
     await writeFile(path.join(home, ".codex", "skills", "review", "SKILL.md"), "secret instructions");
@@ -181,7 +183,7 @@ test("agent import discovery returns metadata without reading config contents", 
 });
 
 test("UI plugins are local CSS-only manifests with remote resources blocked", async () => {
-  const userData = await mkdtemp(path.join(tmpdir(), "emma-plugins-"));
+  const userData = await mkdtemp(path.join(tmpdir(), "shinbo-plugins-"));
   try {
     const plugin = path.join(userData, "plugins", "dense-theme");
     await mkdir(plugin, { recursive: true });
@@ -421,16 +423,16 @@ test("external navigation is limited to HTTP(S)", () => {
 });
 
 test("IPC sender is limited to the local renderer location", () => {
-  assert.equal(trustedSender("file:///Applications/Emma/dist-renderer/index.html", "/Applications/Emma"), true);
-  assert.equal(trustedSender("file://remote-host/Applications/Emma/dist-renderer/index.html", "/Applications/Emma"), false);
-  assert.equal(trustedSender("file://remote-host/C:/Applications/Emma/dist-renderer/index.html", "C:/Applications/Emma"), false);
-  assert.equal(trustedSender("file:///tmp/untrusted.html", "/Applications/Emma"), false);
-  assert.equal(trustedSender("https://evil.test/", "/Applications/Emma", "http://127.0.0.1:5173"), false);
-  assert.equal(trustedSender("http://127.0.0.1:5173/?overlay=1", "/Applications/Emma", "http://127.0.0.1:5173"), true);
+  assert.equal(trustedSender("file:///Applications/Shinbo/dist-renderer/index.html", "/Applications/Shinbo"), true);
+  assert.equal(trustedSender("file://remote-host/Applications/Shinbo/dist-renderer/index.html", "/Applications/Shinbo"), false);
+  assert.equal(trustedSender("file://remote-host/C:/Applications/Shinbo/dist-renderer/index.html", "C:/Applications/Shinbo"), false);
+  assert.equal(trustedSender("file:///tmp/untrusted.html", "/Applications/Shinbo"), false);
+  assert.equal(trustedSender("https://evil.test/", "/Applications/Shinbo", "http://127.0.0.1:5173"), false);
+  assert.equal(trustedSender("http://127.0.0.1:5173/?overlay=1", "/Applications/Shinbo", "http://127.0.0.1:5173"), true);
 });
 
 test("the packaged renderer is trusted from the file URL this platform actually loads", () => {
-  const appRoot = path.join(tmpdir(), "Emma", "resources", "app.asar");
+  const appRoot = path.join(tmpdir(), "Shinbo", "resources", "app.asar");
   const entry = pathToFileURL(path.join(appRoot, "dist-renderer", "index.html")).href;
   assert.equal(trustedSender(entry, appRoot), true);
   assert.equal(trustedSender(pathToFileURL(path.join(appRoot, "dist-renderer", "overlay.html")).href, appRoot), false);
@@ -527,7 +529,12 @@ test("holds are modifiers only, and reach the native listener as key codes", () 
   const held = validateSettings({ ...defaultSettings, keybinds: { voice: holdKeybind("AltLeft", 500) } }).keybinds;
   assert.deepEqual(held, { voice: holdKeybind("AltLeft", 500) });
   assert.equal(keybindLabel(held.voice!), "Hold ⌥ left · 500ms");
-  assert.deepEqual(holdBindings({ voice: holdKeybind("AltRight", 750), toggle: comboKeybind("Control+Alt+E") }), [{ id: "voice", keyCode: 61, ms: 750 }]);
+  assert.deepEqual(holdBindings({ voice: holdKeybind("AltRight", 750), toggle: comboKeybind("Control+Alt+E") }), [{ id: "voice", keyCode: 61, ms: 750 }, { id: "toggle", keyCode: 58, ms: 0 }]);
+  assert.deepEqual(holdBindings({ voice: holdKeybind("AltLeft", 0) }), [{ id: "voice", keyCode: 58, ms: 0 }]);
+  assert.deepEqual(holdBindings({ toggle: holdKeybind("Fn", 0) }, "win32"), [{ id: "toggle", keyCode: 0xa4, ms: 0 }]);
+  assert.deepEqual(validateSettings({ ...defaultSettings, keybinds: { toggle: holdKeybind("Fn", 0), voice: holdKeybind("Fn", 500) } }).keybinds, { toggle: holdKeybind("Fn", 0), voice: holdKeybind("Fn", 500) });
+  assert.equal(keybindLabel(holdKeybind("Fn", 0)), "Double-tap fn");
+  assert.throws(() => validateSettings({ ...defaultSettings, keybinds: { voice: holdKeybind("AltLeft", 50) } }), /too short or too long/);
   assert.throws(() => validateSettings({ ...defaultSettings, keybinds: { voice: holdKeybind("KeyE", 500) } }), /modifier key/);
   assert.throws(() => validateSettings({ ...defaultSettings, keybinds: { voice: holdKeybind("AltLeft", 5000) } }), /too short or too long/);
   assert.throws(() => validateSettings({ ...defaultSettings, keybinds: { voice: holdKeybind("AltLeft", 500), draw: holdKeybind("AltLeft", 1000) } }), /bound twice/);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { appendText, arrived, dropQueued, groupBlocks, joinPartial, mergeStep, pairBlocks, releaseHeld, restoreBlocks, runOf, sendTurn, turnToRetry, stopTurn, takeDraft, thinkingOf, tracedBlocks, wire, withoutThinking, wrote, type Block } from "../src/runs";
+import { appendText, arrived, dropQueued, fallbackNotice, groupBlocks, joinPartial, mergeStep, pairBlocks, releaseHeld, restoreBlocks, runOf, sendTurn, turnToRetry, stopTurn, thinkingOf, tracedBlocks, wire, withoutThinking, wrote, type Block } from "../src/runs";
 import type { LiveAgent, ThreadStep } from "../shared/agents";
 import { compactionNotice, decodeSpans, type TraceSpan } from "../shared/trace";
 import { cachedBlocks, rememberBlocks, setThreadFolders, threadFolders, threadBreakdown, recordBreakdown } from "../src/context";
@@ -25,11 +25,11 @@ const stopped: string[] = [];
 let liveSpans: Record<string, TraceSpan[]> = {};
 let livePartials: Record<string, { text: string; thinking: string }> = {};
 let pushDelta: (value: { threadId: string; delta: string; thinking?: boolean; recovery?: boolean }) => void = () => undefined;
-let pushCompacted: Parameters<Window["emma"]["onCompacted"]>[0] = () => undefined;
+let pushCompacted: Parameters<Window["shinbo"]["onCompacted"]>[0] = () => undefined;
 let pushAgents: (value: LiveAgent[]) => void = () => undefined;
 (globalThis as unknown as { window: unknown }).window = {
-  emma: {
-    request: (method: string, params: { content: string }) => request(method, params),
+  shinbo: {
+    request: (method: string, params: { content: string }) => method === "thread" ? Promise.reject(new Error("No saved thread")) : request(method, params),
     onDelta: (listener: typeof pushDelta) => { pushDelta = listener; return () => undefined; },
     onActivity: () => () => undefined,
     onStep: () => () => undefined,
@@ -37,6 +37,7 @@ let pushAgents: (value: LiveAgent[]) => void = () => undefined;
     onContextExperiment: () => () => undefined,
     onRoutedModel: () => () => undefined,
     onContextBreakdown: () => () => undefined,
+    onChanged: () => 0,
     onAgents: (listener: typeof pushAgents) => { pushAgents = listener; return () => undefined; },
     listAgents: () => Promise.resolve([]),
     listSpans: () => Promise.resolve(liveSpans),
@@ -256,8 +257,8 @@ test("a restore that lands after its run ended is dropped", async () => {
   livePartials = { "stale-restore": { text: "the previous answer", thinking: "" } };
   let release: (() => void) | undefined;
   const held = new Promise<void>((resolve) => { release = resolve; });
-  const spansOf = window.emma.listSpans;
-  window.emma.listSpans = () => held.then(() => liveSpans);
+  const spansOf = window.shinbo.listSpans;
+  window.shinbo.listSpans = () => held.then(() => liveSpans);
   wire();
   pushAgents([liveAgent("stale-restore", "the old prompt")]);
   await settle();
@@ -266,7 +267,7 @@ test("a restore that lands after its run ended is dropped", async () => {
   release?.();
   await settle();
   assert.deepEqual(runOf("stale-restore").blocks, []);
-  window.emma.listSpans = spansOf;
+  window.shinbo.listSpans = spansOf;
   liveSpans = {};
   livePartials = {};
 });
@@ -315,7 +316,7 @@ test("landed turns are kept against the message each one wrote, and read back af
 test("a thread keeps one folder, and one stored before that was true collapses onto its project", () => {
   setThreadFolders("bound", ["project", "beside-it", "and-another"]);
   assert.deepEqual(threadFolders("bound"), ["project"]);
-  stored.set("emma.threadFolders.v1", JSON.stringify({ legacy: ["first", "second"] }));
+  stored.set("shinbo.threadFolders.v1", JSON.stringify({ legacy: ["first", "second"] }));
   assert.deepEqual(threadFolders("legacy"), ["first"]);
   assert.deepEqual(threadFolders("never-opened"), []);
 });
@@ -401,25 +402,21 @@ test("the stall swap only resends a turn that is still running", async () => {
   assert.equal(turnToRetry("stalling"), null);
 });
 
-test("a turn the host refuses hands its text back once", async () => {
+test("a turn the host refuses holds its text for retry", async () => {
   let reloaded = 0;
   request = () => Promise.reject(new Error("host is down"));
   sendTurn("failed", turn("lost prompt"), () => { reloaded += 1; });
   await settle();
   assert.equal(reloaded, 1);
-  assert.equal(takeDraft("failed"), "lost prompt");
-  assert.equal(takeDraft("failed"), "");
+  assert.equal(runOf("failed").held[0].content, "lost prompt");
 });
 
 test("a refused turn keeps the reason beside the text it held back", async () => {
   request = () => Promise.reject(new Error("host is down"));
   sendTurn("refused", turn("lost prompt"), () => {});
   await settle();
-  assert.equal(runOf("refused").draft, "lost prompt");
-  assert.equal(runOf("refused").failure, "host is down");
-  takeDraft("refused");
-  assert.equal(runOf("refused").draft, "");
-  assert.equal(runOf("refused").failure, "");
+  assert.equal(runOf("refused").held[0].content, "lost prompt");
+  assert.equal(runOf("refused").held[0].failure, "host is down");
 });
 
 const traceOf = (thread: string, startedAt: number, calls: [string, string, number?][], recovered = false) => [
@@ -619,4 +616,70 @@ test("a retry notice refreshes activity without becoming the model's answer", as
   assert.equal(runOf("retrying").activeAt, 2000);
   release!();
   await settle();
+});
+
+test("a fallback notice names the links that failed and admits OpenRouter gives no reason", () => {
+  assert.equal(fallbackNotice("b/two:free", ["a/one:free"]), "Fell back to b/two:free — a/one:free was rate-limited, down, over context, or refused the request; OpenRouter reports the switch but not which");
+  assert.match(fallbackNotice("c/three:free", ["a/one:free", "b/two:free"]), /a\/one:free and b\/two:free were/);
+  assert.match(fallbackNotice("b/two:free", []), /the model above it was/);
+});
+
+test("a send during refresh has one drainer and preserves following prompts", async () => {
+  const sent: string[] = [];
+  const completed = new Map<string, () => void>();
+  request = async (_method, params) => {
+    sent.push(params.content);
+    if (params.content !== "first") await new Promise<void>((resolve) => { completed.set(params.content, resolve); });
+  };
+  let finishRefresh!: () => void;
+  let refreshes = 0;
+  const refresh = () => ++refreshes === 1 ? new Promise<void>((resolve) => { finishRefresh = resolve; }) : undefined;
+  sendTurn("refresh-race", turn("first"), refresh);
+  await settle();
+  sendTurn("refresh-race", turn("second"), refresh);
+  sendTurn("refresh-race", turn("third"), refresh);
+  finishRefresh();
+  await settle();
+  assert.deepEqual(sent, ["first", "second"]);
+  assert.equal(runOf("refresh-race").sending, true);
+  completed.get("second")!();
+  await settle();
+  assert.deepEqual(sent, ["first", "second", "third"]);
+  completed.get("third")!();
+  await settle();
+  assert.equal(runOf("refresh-race").sending, false);
+  assert.deepEqual(runOf("refresh-race").queue, []);
+});
+
+test("a failed refresh cannot strand the queue's drainer", async () => {
+  const sent: string[] = [];
+  request = async (_method, params) => { sent.push(params.content); };
+  const reload = async () => { throw new Error("refresh failed"); };
+  sendTurn("refresh-failed", turn("one"), reload);
+  sendTurn("refresh-failed", turn("two"), reload);
+  await settle();
+  sendTurn("refresh-failed", turn("three"), () => undefined);
+  await settle();
+  assert.deepEqual(sent, ["one", "two", "three"]);
+  assert.equal(runOf("refresh-failed").sending, false);
+});
+
+test("failed queued turns retain every prompt and its prepared context for retry", async () => {
+  request = async () => { throw new Error("model unavailable"); };
+  const params = { attachedImages: '["image-one"]', skillAttachmentId: "skill-one" };
+  sendTurn("failed-context", { ...turn("first"), attached: true, prepare: async () => ({ params }) }, () => undefined);
+  sendTurn("failed-context", turn("second"), () => undefined);
+  await settle();
+  assert.deepEqual(runOf("failed-context").held.map((item) => item.content), ["first", "second"]);
+  assert.deepEqual(runOf("failed-context").held[0].params, params);
+  const retries: unknown[] = [];
+  request = async (_method, params) => { retries.push(params); };
+  releaseHeld("failed-context", 0, () => undefined);
+  releaseHeld("failed-context", 0, () => undefined);
+  await settle();
+  assert.deepEqual(retries, [
+    { threadId: "failed-context", content: "first", ...params },
+    { threadId: "failed-context", content: "second" },
+  ]);
+  assert.deepEqual(runOf("failed-context").held, []);
 });

@@ -14,7 +14,7 @@ import { extractTarGz, tarEntryPath, ZvecGrepTool } from "../main/zvec-grep";
 const DEEP = "node_modules/@zvec/zvec-grep/dist/cli/very/deeply/nested/directory/that/pushes/the/entry/name/past/one/hundred/characters/leaf.txt";
 
 async function fixture(): Promise<{ root: string; tarball: string; digest: string }> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "emma-zvec-fixture-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "shinbo-zvec-fixture-"));
   const tree = path.join(root, "tree");
   const entry = path.join(tree, ZVEC_GREP_ENTRY);
   mkdirSync(path.dirname(entry), { recursive: true });
@@ -71,7 +71,7 @@ test("a tar entry may not escape the directory it unpacks into", () => {
 });
 
 test("the download URL and its checksum sit under the tools release for this platform", () => {
-  assert.equal(zvecGrepUrl("https://github.com", "win32", "x64"), `https://github.com/tronschell/emma/releases/download/zvec-grep-v${ZVEC_GREP_VERSION}/zvec-grep-${ZVEC_GREP_VERSION}-win32-x64.tar.gz`);
+  assert.equal(zvecGrepUrl("https://github.com", "win32", "x64"), `https://github.com/tronschell/shinbo/releases/download/zvec-grep-v${ZVEC_GREP_VERSION}/zvec-grep-${ZVEC_GREP_VERSION}-win32-x64.tar.gz`);
   assert.equal(zvecGrepAsset("darwin", "arm64"), `zvec-grep-${ZVEC_GREP_VERSION}-darwin-arm64.tar.gz`);
   assert.equal(zvecGrepProgressLabel({ phase: "ready", version: ZVEC_GREP_VERSION, bytes: 0, total: 0, detail: "" }), `Installed · v${ZVEC_GREP_VERSION}`);
   assert.equal(zvecGrepProgressLabel({ phase: "downloading", version: ZVEC_GREP_VERSION, bytes: 5 * 1024 * 1024, total: 20 * 1024 * 1024, detail: "" }), "5 MB of 20 MB");

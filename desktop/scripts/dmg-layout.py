@@ -5,7 +5,7 @@ from ds_store import DSStore
 from mac_alias import ALIAS_EJECTABLE_DISK, Alias
 
 root = Path(sys.argv[1]).resolve()
-positions = {"Emma.app": (192, 192), "Applications": (448, 192)}
+positions = {"Shinbo.app": (192, 192), "Applications": (448, 192)}
 window = {
     "ShowToolbar": False,
     "ShowSidebar": False,

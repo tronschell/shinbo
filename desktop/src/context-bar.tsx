@@ -37,7 +37,7 @@ export function useThreadCalls(threadId: string | undefined, sending: boolean): 
     if (!threadId) return;
     let alive = true;
     const take = (calls: number) => { if (alive) setCounted({ threadId, calls }); };
-    void window.emma.threadTraces(threadId)
+    void window.shinbo.threadTraces(threadId)
       .then((traces) => take(traces.reduce((sum, trace) => sum + countCalls(decodeSpans(trace.text)), 0)))
       .catch(() => take(0));
     return () => { alive = false; };
@@ -61,7 +61,7 @@ function metricCell(id: ContextMetric, ledger: Ledger, context: WidgetContext): 
   const { messages, replies, attachments, calls, tokens, elapsed, total, capacity, free, whole, largest, experiments } = ledger;
   switch (id) {
     case "messages": return { value: `${messages}`, label: plural(messages, "message") };
-    case "replies": return { value: `${replies}`, label: `Emma ${plural(replies, "reply", "replies")}` };
+    case "replies": return { value: `${replies}`, label: `Shinbo ${plural(replies, "reply", "replies")}` };
     case "attachments": return { value: `${attachments}`, label: plural(attachments, "attachment") };
     case "calls": return { value: `${calls}`, label: `tool ${plural(calls, "call")}` };
     case "rate": return { value: elapsed ? `${Math.round(tokens / elapsed * 1000)}` : "—", label: "avg tok/s" };
@@ -209,7 +209,7 @@ function SegmentPanel({ source, messages, threadId }: { source: SegmentSource; m
   const sized = items?.some((item) => item.chars !== undefined);
   const ordered = sized ? [...(items ?? [])].sort((left, right) => (right.chars ?? 0) - (left.chars ?? 0)) : items ?? [];
   return <div className="context-items">
-    <p>{failed ? "Emma could not read what is in this segment." : SEGMENT_NOTES[source]}</p>
+    <p>{failed ? "Shinbo could not read what is in this segment." : SEGMENT_NOTES[source]}</p>
     {items === undefined && <span className="context-items-wait">Reading…</span>}
     {!!ordered.length && <ul>
       {ordered.map((item, index) => <li key={`${item.name}-${index}`}>
@@ -232,9 +232,18 @@ function SubagentRail({ agents, all, active, onPick, orientation }: {
 }) {
   const live = agents.filter(alive);
   const done = agents.filter((agent) => !alive(agent));
-  const roots = (list: AgentRow[]) => list.filter((agent) => !list.some((other) => other.threadId === agent.parentThreadId));
+  const roots = (list: AgentRow[]) => {
+    const ids = new Set<string | undefined>(list.map((agent) => agent.threadId));
+    return list.filter((agent) => !ids.has(agent.parentThreadId));
+  };
+  const children = new Map<string | undefined, AgentRow[]>();
+  for (const agent of all) {
+    const siblings = children.get(agent.parentThreadId);
+    if (siblings) siblings.push(agent);
+    else children.set(agent.parentThreadId, [agent]);
+  }
   const branch = (agent: AgentRow) => {
-    const kids = all.filter((other) => other.parentThreadId === agent.threadId && alive(other) === alive(agent));
+    const kids = (children.get(agent.threadId) ?? []).filter((other) => alive(other) === alive(agent));
     return <li key={agent.threadId}>
       <button type="button" className={`subagent ${agent.threadId === active ? "active" : ""}`} title={`${agent.title} — ${agent.activity}${agent.model ? ` · ${agent.model}` : ""}`} onClick={() => onPick(agent.threadId)}>
         <i className="subagent-square" style={{ background: agent.color }} data-status={agent.status} aria-hidden="true" />
@@ -276,11 +285,11 @@ function SubthreadRail({ threads, agents, onOpen, orientation }: {
             <span>{label}</span>
             <em>{alive(agent) ? agent!.status : since(thread)}</em>
           </button>
-          {alive(agent) && <button type="button" className="subthread-stop" title={`Stop ${label}`} aria-label={`Stop ${label}`} onClick={() => window.emma.stopAgent(thread.id)}>■</button>}
+          {alive(agent) && <button type="button" className="subthread-stop" title={`Stop ${label}`} aria-label={`Stop ${label}`} onClick={() => window.shinbo.stopAgent(thread.id)}>■</button>}
         </li>;
       })}
     </ul>
-    {!threads.length && <p className="subagent-empty">Nothing branched off yet — Emma opens one per <code>threads spawn</code>.</p>}
+    {!threads.length && <p className="subagent-empty">Nothing branched off yet — Shinbo opens one per <code>threads spawn</code>.</p>}
   </section>;
 }
 
@@ -367,7 +376,7 @@ export function ContextWidgets({ page, context, onChange }: { page: ContextPage;
   </>;
 }
 
-const PAGE_KEY = "emma.contextPage.v1";
+const PAGE_KEY = "shinbo.contextPage.v1";
 export const readContextPage = (): string => localStorage.getItem(PAGE_KEY) ?? "";
 export const writeContextPage = (id: string): void => localStorage.setItem(PAGE_KEY, id);
 

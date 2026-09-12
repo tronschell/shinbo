@@ -36,7 +36,7 @@ export async function loadUiPlugins(userData: string): Promise<UiPlugin[]> {
       if (!pathInside(realDirectory, stylesheet) || (await stat(stylesheet)).size > 128 * 1024) throw new Error("plugin stylesheet is outside its plugin");
       plugins.push({ id: manifest.id, name: manifest.name, version: manifest.version, css: validatePluginCss(await readFile(stylesheet, "utf8")) });
     } catch (error) {
-      console.warn(`Emma skipped UI plugin ${entry.name}:`, error instanceof Error ? error.message : error);
+      console.warn(`Shinbo skipped UI plugin ${entry.name}:`, error instanceof Error ? error.message : error);
     }
   }
   return plugins;

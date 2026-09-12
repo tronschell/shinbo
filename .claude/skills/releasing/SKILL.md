@@ -1,9 +1,9 @@
 ---
 name: releasing
-description: Capture Emma changelog entries when preparing feature PRs and prepare or publish releases. Feature PRs land on dev, the owner merges dev into main, and main publishes the signed macOS app and the Windows x64 installer from the root package.json version. Use for PR release summaries, release workflows, versioning, packaging, and distribution changes.
+description: Capture Shinbo changelog entries when preparing feature PRs and prepare or publish releases. Feature PRs land on dev, the owner merges dev into main, and main publishes the signed macOS app and the Windows x64 installer from the root package.json version. Use for PR release summaries, release workflows, versioning, packaging, and distribution changes.
 ---
 
-# Releasing Emma
+# Releasing Shinbo
 
 Read [`docs/releases.md`](../../../docs/releases.md) for the branch flow,
 credentials, verification, and recovery before changing or running release
@@ -28,7 +28,7 @@ automation.
 - `ci.yml` runs on every pull request and on pushes to `main`. `package-mac` and
   `package-win` also run on PRs targeting `main` and packaging/workflow changes,
   and a successful main run for an unpublished version
-  uploads the `emma-release-candidate` and `emma-release-candidate-windows`
+  uploads the `shinbo-release-candidate` and `shinbo-release-candidate-windows`
   artifacts for that exact commit. `release.yml` consumes both from the
   completed main CI run. It skips when the `vX.Y.Z` release already exists.
   Otherwise candidate verification, signing, notarization, stapling, Gatekeeper
@@ -43,8 +43,8 @@ automation.
   exercises both installers without publishing. PR updates cancel obsolete CI;
   a main build already producing release candidates is not cancelled.
 - Keep release names exactly `vX.Y.Z`. The updater's asset contract:
-  `Emma-vX.Y.Z-darwin-arm64.zip` on macOS, and on Windows an installer named
-  `Emma-vX.Y.Z-win32-x64-Setup.exe` as the only asset containing `-win32-x64`,
+  `Shinbo-vX.Y.Z-darwin-arm64.zip` on macOS, and on Windows an installer named
+  `Shinbo-vX.Y.Z-win32-x64-Setup.exe` as the only asset containing `-win32-x64`,
   a single `.nupkg` under the exact name Squirrel wrote, and `RELEASES`
   published byte for byte. `docs/releases.md` explains why each rule exists.
 
@@ -65,7 +65,7 @@ separate level-two headings. Update the notes when the scope changes; describe
 only changes present in the final diff. For direct commits, put the same section
 in the commit body when the title alone is insufficient.
 
-GitHub already uses `PR_TITLE` and `PR_BODY` for Emma squash commits. Preserve
+GitHub already uses `PR_TITLE` and `PR_BODY` for Shinbo squash commits. Preserve
 the release section when supplying a custom squash message. The release job
 reads this committed snapshot, so edits to a merged PR do not rewrite history.
 Older commits without this section fall back to their titles. No extra labels,

@@ -1202,7 +1202,7 @@ async function runCanonicalLifecycleFixture(
     cwd: workspace,
     env: {
       HOME: home,
-      EMMA_PROVIDER_API_KEY: "fake-streamed-tool-lifecycle-key",
+      SHINBO_PROVIDER_API_KEY: "fake-streamed-tool-lifecycle-key",
       FX_AUTO_UPGRADE: "0",
       FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
       FX_GATEWAY_CHAT_URL: queuedGateway.chatUrl,
@@ -1383,7 +1383,7 @@ async function launchRouteRecoveryTui(
     stderrPath,
     env: {
       HOME: home,
-      EMMA_PROVIDER_API_KEY: "fake-route-recovery-key",
+      SHINBO_PROVIDER_API_KEY: "fake-route-recovery-key",
       FX_AUTO_UPGRADE: "0",
       FX_PERMISSION_MODE: "auto",
       FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
@@ -1529,8 +1529,8 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
     async () => {
       const hold: ToolPayloadHoldState = { started: false, cancelled: false };
       const payloadPath = "payload-progress.md";
-      // Preserve two substantial streamed input chunks for the live
-      // activity-row assertions.
+
+
       const payloadContent = "staged tool payload content\n".repeat(64);
       const assistantText = "I will write the staged payload now.";
       const finalSentinel = "FX_TOOL_PAYLOAD_PROGRESS_COMPLETE";
@@ -1759,7 +1759,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-empty-assistant-history-key",
+          SHINBO_PROVIDER_API_KEY: "fake-empty-assistant-history-key",
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: "auto",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
@@ -1851,7 +1851,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-route-recovery-key",
+          SHINBO_PROVIDER_API_KEY: "fake-route-recovery-key",
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: "auto",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
@@ -2135,7 +2135,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath: resumedStderrPath,
         env: {
           HOME: join(root!, "home"),
-          EMMA_PROVIDER_API_KEY: "fake-route-recovery-key",
+          SHINBO_PROVIDER_API_KEY: "fake-route-recovery-key",
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: "auto",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
@@ -2382,7 +2382,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-read-tool-result-failure-key",
+          SHINBO_PROVIDER_API_KEY: "fake-read-tool-result-failure-key",
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: "auto",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
@@ -2467,7 +2467,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-tui-streaming-caret-key",
+          SHINBO_PROVIDER_API_KEY: "fake-tui-streaming-caret-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: streamingGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: streamingGateway.chatUrl,
@@ -2535,7 +2535,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-idle-submit-order-key",
+          SHINBO_PROVIDER_API_KEY: "fake-idle-submit-order-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: heldGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: heldGateway.chatUrl,
@@ -2610,7 +2610,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-prompt-boundary-key",
+          SHINBO_PROVIDER_API_KEY: "fake-prompt-boundary-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: splitGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: splitGateway.chatUrl,
@@ -2715,7 +2715,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-queued-cancel-integrity-key",
+          SHINBO_PROVIDER_API_KEY: "fake-queued-cancel-integrity-key",
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: "auto",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
@@ -2871,7 +2871,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         minimumHistoryLines: 2_000,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-queued-transcript-key",
+          SHINBO_PROVIDER_API_KEY: "fake-queued-transcript-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: queuedGateway.chatUrl,
@@ -3027,7 +3027,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         height: 40,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-active-permission-key",
+          SHINBO_PROVIDER_API_KEY: "fake-active-permission-key",
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: "auto",
           FX_GATEWAY_BASE_URL: heldGateway.baseUrl,
@@ -3131,7 +3131,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         height: 40,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-queued-review-key",
+          SHINBO_PROVIDER_API_KEY: "fake-queued-review-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: queuedGateway.chatUrl,
@@ -3259,7 +3259,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         height: 40,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-queued-review-escape-key",
+          SHINBO_PROVIDER_API_KEY: "fake-queued-review-escape-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: queuedGateway.chatUrl,
@@ -3360,7 +3360,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         height: 24,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-queued-semantic-draft-key",
+          SHINBO_PROVIDER_API_KEY: "fake-queued-semantic-draft-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: queuedGateway.chatUrl,
@@ -3483,7 +3483,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         height: 24,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-queued-file-picker-key",
+          SHINBO_PROVIDER_API_KEY: "fake-queued-file-picker-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: queuedGateway.chatUrl,
@@ -3604,7 +3604,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         height: 24,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-next-turn-model-key",
+          SHINBO_PROVIDER_API_KEY: "fake-next-turn-model-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: queuedGateway.chatUrl,
@@ -3700,7 +3700,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         height: 24,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-queued-model-picker-key",
+          SHINBO_PROVIDER_API_KEY: "fake-queued-model-picker-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: queuedGateway.chatUrl,
@@ -3787,7 +3787,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         height: 40,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-queued-empty-enter-key",
+          SHINBO_PROVIDER_API_KEY: "fake-queued-empty-enter-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: queuedGateway.chatUrl,
@@ -3889,7 +3889,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         height: 40,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-queued-inline-delete-key",
+          SHINBO_PROVIDER_API_KEY: "fake-queued-inline-delete-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: queuedGateway.chatUrl,
@@ -4074,7 +4074,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         height: 30,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-queued-image-yank-key",
+          SHINBO_PROVIDER_API_KEY: "fake-queued-image-yank-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: queuedGateway.chatUrl,
@@ -4206,7 +4206,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         height: 40,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-queued-post-cancel-key",
+          SHINBO_PROVIDER_API_KEY: "fake-queued-post-cancel-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: queuedGateway.chatUrl,
@@ -4378,7 +4378,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
           minimumHistoryLines: 2_000,
           env: {
             HOME: home,
-            EMMA_PROVIDER_API_KEY: "fake-queue-scrollback-key",
+            SHINBO_PROVIDER_API_KEY: "fake-queue-scrollback-key",
             FX_AUTO_UPGRADE: "0",
             FX_PERMISSION_MODE: "auto",
             FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
@@ -4543,7 +4543,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         height: 40,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-queued-cancel-all-key",
+          SHINBO_PROVIDER_API_KEY: "fake-queued-cancel-all-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: queuedGateway.chatUrl,
@@ -4638,7 +4638,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         height: 40,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-active-ctrlc-exit-key",
+          SHINBO_PROVIDER_API_KEY: "fake-active-ctrlc-exit-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: heldGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: heldGateway.chatUrl,
@@ -4724,7 +4724,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         height: 40,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-ctrl-c-history-key",
+          SHINBO_PROVIDER_API_KEY: "fake-ctrl-c-history-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: fakeGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: fakeGateway.chatUrl,
@@ -4981,7 +4981,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-status-scrollback-key",
+          SHINBO_PROVIDER_API_KEY: "fake-status-scrollback-key",
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: "auto",
           FX_GATEWAY_BASE_URL: scrollback_gateway.baseUrl,
@@ -5095,7 +5095,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-launch-history-key",
+          SHINBO_PROVIDER_API_KEY: "fake-launch-history-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: tableGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: tableGateway.chatUrl,
@@ -5205,7 +5205,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
             stderrPath,
             env: {
               HOME: home,
-              EMMA_PROVIDER_API_KEY: "fake-mcp-approval-key",
+              SHINBO_PROVIDER_API_KEY: "fake-mcp-approval-key",
               FX_AUTO_UPGRADE: "0",
               FX_PERMISSION_MODE: "ask",
               FX_GATEWAY_BASE_URL: mcpGateway.baseUrl,
@@ -5337,7 +5337,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
             stderrPath,
             env: {
               HOME: home,
-              EMMA_PROVIDER_API_KEY: "fake-child-mcp-approval-key",
+              SHINBO_PROVIDER_API_KEY: "fake-child-mcp-approval-key",
               FX_AUTO_UPGRADE: "0",
               FX_PERMISSION_MODE: "ask",
               FX_GATEWAY_BASE_URL: mcpGateway.baseUrl,
@@ -5444,7 +5444,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-narrow-mcp-approval-key",
+          SHINBO_PROVIDER_API_KEY: "fake-narrow-mcp-approval-key",
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: "ask",
           FX_GATEWAY_BASE_URL: mcpGateway.baseUrl,
@@ -5530,7 +5530,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-mcp-lifecycle-key",
+          SHINBO_PROVIDER_API_KEY: "fake-mcp-lifecycle-key",
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: "auto",
           FX_GATEWAY_BASE_URL: mcpGateway.baseUrl,
@@ -5634,7 +5634,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
 
       const gatewayEnv = {
         HOME: home,
-        EMMA_PROVIDER_API_KEY: "fake-unsupported-tool-key",
+        SHINBO_PROVIDER_API_KEY: "fake-unsupported-tool-key",
         FX_AUTO_UPGRADE: "0",
         FX_PERMISSION_MODE: "auto",
         FX_GATEWAY_BASE_URL: unsupportedGateway.baseUrl,
@@ -5807,7 +5807,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
 
       const gatewayEnv = {
         HOME: home,
-        EMMA_PROVIDER_API_KEY: "fake-tool-summary-key",
+        SHINBO_PROVIDER_API_KEY: "fake-tool-summary-key",
         FX_AUTO_UPGRADE: "0",
         FX_PERMISSION_MODE: "auto",
         FX_GATEWAY_BASE_URL: summaryGateway.baseUrl,
@@ -6045,7 +6045,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-minimal-tool-group-key",
+          SHINBO_PROVIDER_API_KEY: "fake-minimal-tool-group-key",
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: "auto",
           FX_GATEWAY_BASE_URL: groupedGateway.baseUrl,
@@ -6174,7 +6174,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-minimal-cancelled-tool-key",
+          SHINBO_PROVIDER_API_KEY: "fake-minimal-cancelled-tool-key",
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: "auto",
           FX_GATEWAY_BASE_URL: cancelledGateway.baseUrl,
@@ -6278,7 +6278,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-minimal-not-executed-key",
+          SHINBO_PROVIDER_API_KEY: "fake-minimal-not-executed-key",
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: "auto",
           FX_GATEWAY_BASE_URL: provisionalGateway.baseUrl,
@@ -6361,7 +6361,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         height: 3,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
           FX_TEST_BIN: FX_BIN,
           FX_LIFECYCLE_ARTIFACT_DIR: artifacts,
@@ -6410,7 +6410,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         cwd: realpathSync(workspacePath),
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
           FX_TEST_BIN: FX_BIN,
           FX_INVALID_ADDED_ROOT: invalidRoot,
@@ -6457,7 +6457,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         cwd: realpathSync(workspace),
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-tui-gateway-lifecycle-key",
+          SHINBO_PROVIDER_API_KEY: "fake-tui-gateway-lifecycle-key",
           FX_GATEWAY_BASE_URL: queuedGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: queuedGateway.chatUrl,
           FX_E2E_GATEWAY_CHAT_URL: queuedGateway.chatUrl,
@@ -6510,7 +6510,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-run-command-provisional-key",
+          SHINBO_PROVIDER_API_KEY: "fake-run-command-provisional-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: streamingGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: streamingGateway.chatUrl,
@@ -6606,7 +6606,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-provider-search-key",
+          SHINBO_PROVIDER_API_KEY: "fake-provider-search-key",
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: "auto",
           FX_GATEWAY_BASE_URL: providerGateway.baseUrl,
@@ -6718,7 +6718,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-multiline-command-key",
+          SHINBO_PROVIDER_API_KEY: "fake-multiline-command-key",
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: "ask",
           FX_GATEWAY_BASE_URL: commandGateway.baseUrl,
@@ -6867,7 +6867,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-same-step-command-key",
+          SHINBO_PROVIDER_API_KEY: "fake-same-step-command-key",
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: "auto",
           FX_GATEWAY_BASE_URL: commandGateway.baseUrl,
@@ -7045,7 +7045,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-command-followup-scrollback-key",
+          SHINBO_PROVIDER_API_KEY: "fake-command-followup-scrollback-key",
           FX_AUTO_UPGRADE: "0",
           FX_PERMISSION_MODE: "auto",
           FX_GATEWAY_BASE_URL: followupGateway.baseUrl,
@@ -7141,7 +7141,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         cwd: realpathSync(workspace),
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-tui-gateway-length-key",
+          SHINBO_PROVIDER_API_KEY: "fake-tui-gateway-length-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_E2E_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -7203,7 +7203,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-model-cache-picker-key",
+          SHINBO_PROVIDER_API_KEY: "fake-model-cache-picker-key",
           FX_AUTO_UPGRADE: "0",
           FX_E2E_GATEWAY_MODELS_URL: heldGateway.modelsUrl,
           FX_MODEL: MODEL,
@@ -7258,7 +7258,7 @@ describe.skipIf(!tmuxAvailable())("TUI gateway stream lifecycle", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-model-cache-exit-key",
+          SHINBO_PROVIDER_API_KEY: "fake-model-cache-exit-key",
           FX_AUTO_UPGRADE: "0",
           FX_E2E_GATEWAY_MODELS_URL: heldGateway.modelsUrl,
           FX_RECORD: tapePath,
@@ -7370,9 +7370,9 @@ describe.skipIf(!tmuxAvailable())("transcript scrollback release", () => {
       );
   }
 
-  // Models an ordinary model/network wait: the transcript sits byte-stable
-  // for several render ticks while this response is already pending. Release
-  // must not treat that quiet window as finality.
+
+
+
   function sbHeldSerializedToolCall(
     id: string,
     name: string,
@@ -7619,7 +7619,7 @@ describe.skipIf(!tmuxAvailable())("transcript scrollback release", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-sb-tool-groups-key",
+          SHINBO_PROVIDER_API_KEY: "fake-sb-tool-groups-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: fakeGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: fakeGateway.chatUrl,
@@ -7755,7 +7755,7 @@ describe.skipIf(!tmuxAvailable())("transcript scrollback release", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-sb-release-key",
+          SHINBO_PROVIDER_API_KEY: "fake-sb-release-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: fakeGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: fakeGateway.chatUrl,
@@ -7774,8 +7774,8 @@ describe.skipIf(!tmuxAvailable())("transcript scrollback release", () => {
 
       const scrollback = await session.captureFullScrollback();
 
-      // The group header must survive as its final text exactly once; a
-      // frozen intermediate count would add another "tool call" line.
+
+
       expect(countOccurrences(scrollback, "tool call")).toBe(1);
       expect(scrollback).toContain("18 tool calls");
       for (let index = 1; index <= 17; index += 1) {
@@ -7962,7 +7962,7 @@ describe.skipIf(!tmuxAvailable())("transcript scrollback release", () => {
         stderrPath,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-sb-batch-key",
+          SHINBO_PROVIDER_API_KEY: "fake-sb-batch-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: fakeGateway.baseUrl,
           FX_GATEWAY_CHAT_URL: fakeGateway.chatUrl,

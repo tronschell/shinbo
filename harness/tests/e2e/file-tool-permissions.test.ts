@@ -62,7 +62,7 @@ async function runWithFakeGateway(
       cwd: root.workspace,
       env: {
         HOME: root.home,
-        EMMA_PROVIDER_API_KEY: "fake-file-permission-key",
+        SHINBO_PROVIDER_API_KEY: "fake-file-permission-key",
         ...env,
         FX_GATEWAY_BASE_URL: gateway.baseUrl,
         FX_GATEWAY_CHAT_URL: gateway.chatUrl,

@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { FileMark } from "./git";
 import { GlobeIcon } from "./icons";
 import { parseBlocks, type Item, type Row, type Span } from "./markdown-parse";
@@ -13,16 +13,33 @@ function PathSpan({ path, text }: { path: string; text: string }) {
 }
 
 function Picture({ path, alt }: { path: string; alt: string }) {
-  const [source, setSource] = useState("");
+  const [preview, setPreview] = useState<{ path: string; image: string }>();
+  const target = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     let live = true;
-    void window.emma.previewPath(path)
-      .then((found) => { if (live) setSource(found?.image ?? ""); })
-      .catch(() => { if (live) setSource(""); });
-    return () => { live = false; };
+    const read = () => void window.shinbo.previewPath(path)
+      .then((found) => { if (live) setPreview({ path, image: found?.image ?? "" }); })
+      .catch(() => { if (live) setPreview({ path, image: "" }); });
+    if (typeof IntersectionObserver === "undefined") {
+      read();
+      return () => { live = false; };
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const observer = new IntersectionObserver(([entry]) => {
+      clearTimeout(timer);
+      if (!live || !entry?.isIntersecting) return;
+      timer = setTimeout(() => {
+        observer.disconnect();
+        read();
+      }, 100);
+    }, { rootMargin: "400px" });
+    if (target.current) observer.observe(target.current);
+    return () => { live = false; clearTimeout(timer); observer.disconnect(); };
   }, [path]);
-  if (!source) return <PathSpan path={path} text={alt} />;
-  return <img className="md-image" src={source} alt={alt} title={path} onClick={() => openPreview(path, alt || undefined)} />;
+  const source = preview?.path === path ? preview.image : "";
+  return <span ref={target}>{source
+    ? <img className="md-image" src={source} alt={alt} title={path} onClick={() => openPreview(path, alt || undefined)} />
+    : <PathSpan path={path} text={alt} />}</span>;
 }
 
 function Spans({ spans }: { spans: Span[] }) {
