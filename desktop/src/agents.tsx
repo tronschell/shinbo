@@ -1,6 +1,7 @@
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import { diffLines, diffStat, tokensPerSecond, type BackgroundTask, type FileChange, type LiveAgent, type PermissionAsk } from "../shared/agents";
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { diffStat, tokensPerSecond, type BackgroundTask, type FileChange, type LiveAgent, type PermissionAsk } from "../shared/agents";
+import { ChangeDiff } from "./diff";
 import { PERMISSION_MODES, permissionModeGlyphs, permissionModeHints, permissionModeNames, type PermissionMode } from "../shared/permissions";
 import { isThinkingLevel, THINKING_LABELS } from "../shared/settings";
 import { CaretIcon } from "./icons";
@@ -328,7 +329,6 @@ export function SubagentChips({ spawned, onOpen }: { spawned: Spawned[]; onOpen:
 
 export function ChangesPanel({ changes, busy, onReverted }: { changes: FileChange[]; busy: boolean; onReverted: () => void }) {
   const [error, setError] = useState("");
-  const stat = useMemo(() => diffStat(changes), [changes]);
   const revert = (change: FileChange) => {
     setError("");
     void window.shinbo.revertChange({ folderId: change.folderId, path: change.path, before: change.before ?? "" })
@@ -336,10 +336,6 @@ export function ChangesPanel({ changes, busy, onReverted }: { changes: FileChang
       .catch((reason: unknown) => setError(reasonText(reason)));
   };
   return <section className="conversation changes-view" aria-label="Changes">
-    <header className="thread-bar">
-      <h2>Changes</h2>
-      <div className="thread-actions"><ChangeCount stat={stat} /></div>
-    </header>
     {error && <p className="capability-error" role="alert">{error}</p>}
     <div className="transcript">
       {!changes.length && <p className="waiting">Nothing has been written from this thread yet.</p>}
@@ -351,7 +347,7 @@ export function ChangesPanel({ changes, busy, onReverted }: { changes: FileChang
           <ReadMarkdown folderId={change.folderId} path={change.path} />
           <button type="button" disabled={busy || change.before === null} title={change.before === null ? "Shinbo created this file — delete it yourself if you don't want it" : "Restore the text from before this turn"} onClick={() => revert(change)}>Revert</button>
         </header>
-        <pre className="diff">{diffLines(change.before ?? "", change.after).map((line, index) => <span key={index} className={line.kind === "+" ? "added" : line.kind === "-" ? "removed" : undefined}>{line.kind}{line.text}{"\n"}</span>)}</pre>
+        <ChangeDiff before={change.before ?? ""} after={change.after} />
       </article>)}
     </div>
   </section>;

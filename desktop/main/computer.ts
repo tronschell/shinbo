@@ -7,7 +7,6 @@ import { MAX_SCREEN_CONTEXT_CHARS, validJpegDataUrl } from "./ipc";
 import type { PermissionAnswer } from "../shared/agents";
 import { computerActionLabels, validComputerCursor, type ComputerCursor, type ComputerRunProgress } from "../shared/computer";
 
-export const MAX_RUN_STEPS = 20;
 const MAX_RUN_MS = 10 * 60_000;
 const MIN_ACTION_INTERVAL_MS = 40;
 const MAX_HELPER_BYTES = 128 * 1024;
@@ -278,7 +277,7 @@ export class ComputerUseRuntime {
 
   private async perform(run: ActiveRun, action: ComputerAction, approve: ApproveApp): Promise<string> {
     this.check(run);
-    if (++run.steps > MAX_RUN_STEPS) { this.abort("reached its step limit"); throw new Error("This computer run reached its step limit"); }
+    run.steps++;
     this.progress({ step: run.steps, actions: run.actions, action: computerActionLabels[action.action] });
     if (action.app && run.denied.has(action.app)) throw new Error("The user did not allow this app. Do not try it again this turn.");
     if (action.action === "launch_app") return await this.launch(run, action.name!, approve);
@@ -358,8 +357,9 @@ export class ComputerUseRuntime {
     const run = this.run;
     if (!run || run.controller.signal.aborted) return;
     clearTimeout(run.timer);
-    run.controller.abort(new Error(`Computer run ${reason}`));
-    for (const grant of run.approved.values()) grant.helper?.close();
+    const error = new Error(`Computer run ${reason}. Computer use is unavailable for the rest of this turn. Continue without computer control; do not retry it or stop the agent.`);
+    for (const grant of run.approved.values()) grant.helper?.close(error);
+    run.controller.abort(error);
     run.approved.clear();
     this.log(`Shinbo computer run ${reason} after ${run.actions} actions`);
     this.ended();

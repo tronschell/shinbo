@@ -131,3 +131,15 @@ test("streaming keeps completed tool rows while changed tool results still rende
     console.log(JSON.stringify({ issue: "streaming-tool-rows", baseline, steps: steps.length, outputBytes: output.length, renders: 20, inspectedOutputs: finalCalls, medianMs: times.sort((a, b) => a - b)[2] }));
   }
 });
+
+test("failed and interrupted tool rows name their status without relying on color", () => {
+  const { Step } = compile(componentSource(root, "Step"), {
+    memo: (render) => render, spawnedThread: () => undefined, markedGoal: () => undefined,
+    artifactWritten: () => undefined, stepActive: () => false, StepMark: "mark", StepTitle: "title",
+  });
+  for (const [status, label] of [["failed", "failed"], ["cancelled", "interrupted"], ["completed", undefined]]) {
+    const row = Step({ step: { status, title: "Run command" } });
+    const note = row.props.children.find((child) => child?.props?.className === "step-note");
+    assert.equal(note?.props.children, label);
+  }
+});

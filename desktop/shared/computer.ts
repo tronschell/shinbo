@@ -36,8 +36,8 @@ export function validComputerCursor(value: unknown): value is ComputerCursor {
 
 export function validComputerProgress(value: unknown): value is ComputerRunProgress {
   if (!record(value)) return false;
-  return Number.isInteger(value.step) && (value.step as number) >= 0 && (value.step as number) <= 20
-    && Number.isInteger(value.actions) && (value.actions as number) >= 0 && (value.actions as number) <= 20
+  return Number.isSafeInteger(value.step) && (value.step as number) >= 0
+    && Number.isSafeInteger(value.actions) && (value.actions as number) >= 0
     && typeof value.action === "string" && value.action.length <= 80
     && (value.app === undefined || (typeof value.app === "string" && value.app.length <= 256))
     && (value.cursor === undefined || value.cursor === null || validComputerCursor(value.cursor));

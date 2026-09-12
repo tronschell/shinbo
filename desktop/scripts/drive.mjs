@@ -17,7 +17,7 @@ if (!expression) {
 const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
 
 
-const page = targets.find((target) => target.type === "page" && target.url.endsWith("index.html"));
+const page = targets.find((target) => target.type === "page" && (target.url.endsWith("index.html") || (process.env.SHINBO_DEV_SERVER_URL && new URL(target.url).origin === new URL(process.env.SHINBO_DEV_SERVER_URL).origin)));
 if (!page) {
   console.error("no Shinbo window found");
   process.exit(1);

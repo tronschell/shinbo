@@ -194,7 +194,7 @@
 .council-ask { display: grid; gap: var(--s-2); padding: var(--s-4); border-bottom: 1px solid var(--border); }
 .council-ask span { color: var(--text-3); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: var(--ls-caps); }
 .council-ask textarea { border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: var(--font); font-size: var(--fs-sm); padding: var(--s-2); resize: vertical; }
-.council-ask textarea:focus-visible { outline: 1px solid var(--accent); }
+.council-ask textarea:focus-visible { outline: 1px solid var(--text-2); }
 
 .council-seats { display: grid; }
 .council-seat-row { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-4); border-bottom: 1px solid var(--border); }

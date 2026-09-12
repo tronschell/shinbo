@@ -51,6 +51,22 @@ npm install --prefix desktop
 npm run dev
 ```
 
+## Verification environment
+
+Resolve `node` and `npm` once with `command -v node npm`. If absent, use the
+installed version manager's executable directory in `PATH` for subsequent
+commands. On macOS, if the sandbox cannot write the system temporary directory,
+run checks with `TMPDIR=/tmp` after confirming `/tmp` is writable.
+
+Use the isolated workflow in [start-shinbo](../.agents/skills/start-shinbo/SKILL.md).
+Electron chooses a debugging port dynamically: read the owned process's
+`DevTools listening` endpoint and pass that port as `SHINBO_CDP_PORT`.
+For Vite, also pass the same `SHINBO_DEV_SERVER_URL` used to launch Electron to
+`desktop/scripts/drive.mjs`; this selects the development renderer. Attach the
+fixture folder through the app before testing its inventory. If required
+permissions block the interaction, report it as unverified instead of extending
+the task into environment repair.
+
 ## Checks
 
 All six, straight from [`AGENTS.md`](../AGENTS.md). Nothing else is a check.
