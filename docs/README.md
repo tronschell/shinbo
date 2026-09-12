@@ -30,6 +30,7 @@ is the tour; this is the reference.
 | [Computer use](computer-use.md) | Shinbo driving approved apps on macOS or Windows, and every safety rail as implemented |
 | [Goals](goals.md) | One objective a thread keeps working at: the ledger, the continuation loop, evidence, the blocked audit |
 | [Agents](agents.md) | Self-improvement: friction, trials, the replay bench, and how a change is proved |
+| [Self-optimization](self-optimization.md) | Model-aware run review, scoped trials, evidence, and retained improvements |
 | [Jobs](jobs.md) | Scheduled workflows: triggers, node graphs, validation, execution |
 | [CLI](cli.md) | Driving the user's other coding CLIs and using `shinbo-cli` directly |
 

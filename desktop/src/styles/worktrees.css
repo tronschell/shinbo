@@ -5,7 +5,7 @@
 .worktree-prefix > div > p { margin-top: var(--s-2); color: var(--text-2); font: var(--fs-sm)/1.5 var(--font); }
 .worktree-prefix > div > p b { color: var(--accent); font-family: var(--font-mono); font-weight: 400; }
 .worktree-prefix input { width: 16ch; min-height: 28px; padding: var(--s-1) var(--s-2); border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text); font: var(--fs-sm)/1.4 var(--font-mono); transition: border-color var(--t); }
-.worktree-prefix input:focus-visible { border-color: var(--accent); outline: none; }
+.worktree-prefix input:focus-visible { border-color: var(--text-2); outline: none; }
 
 .worktree-bar { display: flex; align-items: center; gap: var(--s-3); }
 .worktree-bar select { min-height: 28px; max-width: 32ch; padding: 0 var(--s-2); border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text); font: var(--fs-sm)/1.4 var(--font-mono); }
@@ -25,7 +25,7 @@
 .worktree-controls { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-3); border-bottom: 1px solid var(--border); }
 .worktree-search { display: flex; align-items: center; gap: var(--s-2); flex: 1; min-width: 0; color: var(--text-3); }
 .worktree-search input { flex: 1; min-width: 0; min-height: 28px; padding: var(--s-1) var(--s-2); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: var(--fs-sm)/1.4 var(--font); transition: border-color var(--t); }
-.worktree-search input:focus-visible { border-color: var(--accent); outline: none; }
+.worktree-search input:focus-visible { border-color: var(--text-2); outline: none; }
 .worktree-search button { flex: 0 0 auto; width: 20px; height: 20px; padding: 0; color: var(--text-3); background: transparent; font-size: var(--fs-sm); transition: color var(--t); }
 .worktree-search button:hover { color: var(--text); }
 .worktree-count { flex: 0 0 auto; color: var(--text-3); font: var(--fs-2xs)/1 var(--font-mono); letter-spacing: var(--ls-caps); text-transform: uppercase; }

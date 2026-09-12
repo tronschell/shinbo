@@ -15,4 +15,4 @@
 .color-row { display: flex; align-items: center; gap: var(--s-2); }
 .color-chip { flex: 0 0 auto; width: 22px; height: 22px; border: 1px solid var(--border); }
 .color-menu input { flex: 1; min-width: 0; min-height: 22px; padding: 0 var(--s-2); color: var(--text); background: var(--surface-2); border: 1px solid var(--border); font: var(--fs-sm)/1 var(--font-mono); outline: none; }
-.color-menu input:focus-visible { border-color: var(--accent); }
+.color-menu input:focus-visible { border-color: var(--text-2); }

@@ -52,7 +52,7 @@
 .settings-view select { padding-right: var(--s-1); }
 .settings-view textarea { min-height: 56px; padding: var(--s-2); resize: vertical; }
 .settings-view input:hover:not(:disabled), .settings-view select:hover:not(:disabled), .settings-view textarea:hover:not(:disabled), .setup-grants input:not(.model-search):hover:not(:disabled) { border-color: var(--text-3); }
-.settings-view input:focus, .settings-view select:focus, .settings-view textarea:focus, .setup-grants input:not(.model-search):focus { border-color: var(--accent); }
+.settings-view input:focus, .settings-view select:focus, .settings-view textarea:focus, .setup-grants input:not(.model-search):focus { border-color: var(--text-2); }
 .settings-view ::placeholder, .setup-grants ::placeholder { color: var(--text-3); opacity: 1; }
 .settings-view input:disabled, .settings-view select:disabled, .settings-view textarea:disabled { color: var(--text-2); background: transparent; border-color: var(--border); }
 
@@ -139,7 +139,7 @@
 
 .prompt-editor { display: grid; gap: var(--s-2); padding: var(--s-3) var(--s-4); }
 .prompt-canvas { position: relative; background: var(--surface-2); border: 1px solid var(--border-strong); transition: border-color var(--t); }
-.prompt-canvas:focus-within { border-color: var(--accent); }
+.prompt-canvas:focus-within { border-color: var(--text-2); }
 .prompt-canvas > .prompt-highlight, .settings-view .prompt-canvas > textarea {
   padding: var(--s-2); font: var(--fs-sm)/1.6 var(--font-code); white-space: pre-wrap; overflow-wrap: break-word; word-break: normal;
 }
@@ -269,7 +269,7 @@
 
 
 .catalog-search input { display: block; width: 100%; min-height: 30px; padding: 0 var(--s-2); color: var(--text); border: 1px solid var(--border); background: var(--surface-2); font: var(--fs-sm)/1.4 var(--font-mono); }
-.catalog-search input:focus { border-color: var(--accent); outline: none; }
+.catalog-search input:focus { border-color: var(--text-2); outline: none; }
 
 .catalog-marks { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 0 var(--s-4); }
 .settings-view .catalog-mark { display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: var(--s-2); min-height: 30px; padding: 0 var(--s-2); margin-inline: calc(var(--s-2) * -1); text-align: left; border: 0; background: transparent; transition: background-color var(--t), color var(--t); }
@@ -304,7 +304,7 @@
 .settings-view .catalog-drop:hover { color: var(--text); background: var(--surface-3); border: 0; }
 .router-name { min-width: 0; padding: 0; color: var(--text); background: transparent; border: 0; border-bottom: 1px solid transparent; font: var(--fs-sm)/1.4 var(--font-mono); }
 .router-name:hover { border-bottom-color: var(--border); }
-.router-name:focus { border-bottom-color: var(--accent); outline: none; }
+.router-name:focus { border-bottom-color: var(--text-2); outline: none; }
 .settings-view .catalog-gear { display: grid; place-items: center; width: 26px; height: 26px; min-height: 26px; padding: 0; color: var(--text-3); background: transparent; border: 0; transition: color var(--t), background-color var(--t); }
 .settings-view .catalog-gear:hover { color: var(--text); background: var(--surface-3); border: 0; }
 .settings-view .catalog-gear[aria-expanded="true"] { color: var(--accent); }
@@ -321,7 +321,7 @@
 .settings-view .router-drop:disabled { opacity: 0.3; }
 .router-add { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--s-2); margin-top: var(--s-3); }
 .router-add input { min-height: 28px; padding: 0 var(--s-2); color: var(--text); border: 1px solid var(--border); background: var(--surface); font: var(--fs-xs)/1.4 var(--font-mono); }
-.router-add input:focus { border-color: var(--accent); outline: none; }
+.router-add input:focus { border-color: var(--text-2); outline: none; }
 .settings-view .router-add button { min-height: 28px; }
 .model-catalog .load-models { display: block; width: 100%; min-height: 34px; margin: 0; border: 0; border-top: 1px solid var(--border); }
 .catalog-setup { display: grid; place-items: center; text-decoration: none; }

@@ -144,9 +144,9 @@ function ContextLedger({ ledger, messages: history, threadId, orientation }: { l
       </li>}
     </ul>
     {rewritten && <p className="context-experiments" title={experimentTitle(experiments)}>Experiments · {experimentLabel(experiments)}</p>}
-    {expanded && <dialog ref={dialog} className="modal-backdrop" aria-labelledby="ledger-title" onClose={() => setExpanded(false)} onCancel={(event) => { event.preventDefault(); dismiss(); }} onMouseDown={(event) => { if (event.target === event.currentTarget) dismiss(); }}>
+    {expanded && <dialog ref={dialog} className="modal-backdrop" aria-label="Context ledger" onClose={() => setExpanded(false)} onCancel={(event) => { event.preventDefault(); dismiss(); }} onMouseDown={(event) => { if (event.target === event.currentTarget) dismiss(); }}>
       <section className="agent-dialog context-dialog">
-        <header><div><span>{capacity ? `${tokenLabel(capacity)}-token window` : "No stated window"}</span><h2 id="ledger-title">Context ledger</h2></div><button type="button" onClick={dismiss} aria-label="Close context ledger">×</button></header>
+        <header><div><span>{capacity ? `${tokenLabel(capacity)}-token window` : "No stated window"}</span></div><button type="button" onClick={dismiss} aria-label="Close context ledger">×</button></header>
         <div className="context-summary">
           <p className="context-hero">
             <b>{tokenLabel(total)}</b>

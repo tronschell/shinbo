@@ -161,7 +161,8 @@ test("the turn is told the objective, the numbers, and what completion costs", (
   assert.match(block, /never redefine success/);
   assert.match(block, /Never call it complete because the budget is nearly gone/);
   assert.match(block, new RegExp(`${GOAL_BLOCKED_TURNS} consecutive goal turns`));
-  assert.match(block, /plan tool/);
+  assert.match(block, /substantial independent tasks/);
+  assert.match(block, /a goal does not itself require a plan or subagent/);
 });
 
 test("what a thread starts while pursuing a goal is told what it is part of", () => {

@@ -82,7 +82,7 @@ Every ceiling below applies in **every** permission mode, `full` included.
 
 | Problem | Cause | Fix |
 | --- | --- | --- |
-| `This computer run reached its step limit` | `MAX_RUN_STEPS` = 20 ([computer.ts](../desktop/main/computer.ts)). | Ask again with a narrower goal |
+| `Computer run expired after ten minutes` | Computer access expires after ten minutes ([computer.ts](../desktop/main/computer.ts)). There is no computer-tool call count cap. | The agent can continue without computer control; start a new turn to grant computer access again |
 | `The user did not allow this app. Do not try it again this turn.` | Exact-app approval is required even in Full access. | Do not retry or work around the denial |
 | `Computer use must be performed by the parent turn with a current tool call.` | Child agents cannot use the parent's app grant ([harness.ts](../desktop/main/harness.ts)). | Ask the parent turn to perform app actions |
 | `Computer action timed out and may already have happened. Do not retry it automatically.` | `shinbo-computer` did not answer within 10 seconds ([computer.ts](../desktop/main/computer.ts)). | Inspect the app before starting a new turn; do not repeat the action automatically |

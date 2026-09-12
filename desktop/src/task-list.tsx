@@ -159,23 +159,28 @@ function TaskListFile({ list, initial, close }: { list: TaskList; initial?: stri
         </aside>
         <div className="plan-doc" ref={doc}>
           {list.goal.trim() && <div className="message-body plan-goal"><Markdown text={list.goal} /></div>}
-          {flat.map((entry, index) => <TaskEntry key={entry.task.id} entry={entry} at={index + 1} active={entry.task.id === picked} onPick={() => setPicked(entry.task.id)} />)}
+          {flat.filter((entry) => entry.depth === 0).map((entry) => <TaskEntry key={entry.task.id} entry={entry} flat={flat} picked={picked} onPick={setPicked} />)}
         </div>
       </div>
     </section>
   </dialog>;
 }
 
-function TaskEntry({ entry, at, active, onPick }: { entry: FlatTaskListTask; at: number; active: boolean; onPick: () => void }) {
-  const { task, parentId, depth } = entry;
-  return <section data-task={task.id} className={`plan-entry ${active ? "active" : ""}`} style={{ marginLeft: `${depth * 18}px` }}>
-    <h3 className="plan-entry-title">
-      <b>{at}</b>
-      <button type="button" onClick={onPick}>{task.title}</button>
-      <span className="plan-key"><span data-status={visualState(task.status)}><i aria-hidden="true" />{task.status.replace("_", " ")}</span></span>
-    </h3>
-    <p className="plan-entry-needs"><code>{task.id}</code>{parentId ? <>subtask of <code>{parentId}</code></> : <em>top-level task</em>}</p>
-  </section>;
+function TaskEntry({ entry, flat, picked, onPick }: { entry: FlatTaskListTask; flat: readonly FlatTaskListTask[]; picked: string; onPick: (id: string) => void }) {
+  const { task, parentId } = entry;
+  return <div className="task-plan-branch">
+    <section data-task={task.id} className={`plan-entry ${task.id === picked ? "active" : ""}`}>
+      <h3 className="plan-entry-title">
+        <b>{flat.indexOf(entry) + 1}</b>
+        <button type="button" onClick={() => onPick(task.id)}>{task.title}</button>
+        <span className="plan-key"><span data-status={visualState(task.status)}><i aria-hidden="true" />{task.status.replace("_", " ")}</span></span>
+      </h3>
+      <p className="plan-entry-needs"><code>{task.id}</code>{parentId ? <>subtask of <code>{parentId}</code></> : <em>top-level task</em>}</p>
+    </section>
+    {task.subtasks.length > 0 && <div className="task-plan-children">
+      {task.subtasks.map((subtask) => <TaskEntry key={subtask.id} entry={flat.find((item) => item.task === subtask)!} flat={flat} picked={picked} onPick={onPick} />)}
+    </div>}
+  </div>;
 }
 
 export function TaskListBar({ threadId, sample }: { threadId: string; sample?: TaskList[] }) {
@@ -198,10 +203,17 @@ export function TaskListBar({ threadId, sample }: { threadId: string; sample?: T
       </span>
       <CaretIcon />
     </button>
-    {open && <ol className="task-bar-list">
-      {flattenTaskListTasks(tasks).map(({ task, depth }) => <li key={task.id} data-status={visualState(task.status)} style={{ marginLeft: `calc(${depth} * var(--s-4))` }}>
-        <i aria-hidden="true" /><span>{task.title}</span><em>{task.status.replace("_", " ")}</em>
-      </li>)}
-    </ol>}
+    {open && <div className="task-bar-list"><TaskBarTasks tasks={tasks} /></div>}
   </div>;
+}
+
+function TaskBarTasks({ tasks }: { tasks: readonly TaskListTask[] }) {
+  return <ol>
+    {tasks.map((task) => <li key={task.id}>
+      <div className="task-bar-row" data-status={visualState(task.status)}>
+        <i aria-hidden="true" /><span>{task.title}</span><em>{task.status.replace("_", " ")}</em>
+      </div>
+      {task.subtasks.length > 0 && <TaskBarTasks tasks={task.subtasks} />}
+    </li>)}
+  </ol>;
 }

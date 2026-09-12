@@ -155,14 +155,10 @@
 .annotation-toolbar .annotation-done:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
 .annotation-error { position: fixed; z-index: 4; left: 50%; bottom: var(--s-6); padding: var(--s-2) var(--s-3); transform: translateX(-50%); color: var(--danger); background: var(--bg); border: 1px solid var(--border-strong); font: var(--fs-sm)/1.45 var(--font); }
 
-.run-banner { display: flex; align-items: center; gap: var(--s-3); height: calc(100% - var(--s-2)); margin: var(--s-1); padding: 0 var(--s-3); background: var(--bg); border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg); }
-.run-banner-pulse { width: 6px; height: 6px; flex: 0 0 auto; background: var(--accent); animation: run-pulse 1.4s ease-in-out infinite; }
-.run-banner-body { display: grid; gap: 2px; min-width: 0; flex: 1; }
-.run-banner-body strong { overflow: hidden; color: var(--text); font-size: var(--fs-sm); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
-.run-banner-body small { overflow: hidden; color: var(--text-3); font: var(--fs-2xs)/1.4 var(--font-mono); letter-spacing: var(--ls-caps); text-transform: uppercase; text-overflow: ellipsis; white-space: nowrap; }
+.run-banner { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); height: calc(100% - 2 * var(--s-1)); margin: var(--s-1); padding: 0 var(--s-1); background: var(--bg); border: 1px solid var(--border-strong); }
+.run-banner-icon { display: grid; place-items: center; flex: none; width: 24px; height: 24px; color: var(--accent); }
 .run-banner button { min-height: 28px; padding: 0 var(--s-3); color: var(--accent); background: transparent; border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); font: var(--fs-xs)/1 var(--font-mono); letter-spacing: var(--ls-caps); text-transform: uppercase; white-space: nowrap; transition: border-color var(--t), background-color var(--t); }
 .run-banner button:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
-@keyframes run-pulse { 50% { opacity: .25; } }
 
 .computer-cursor-surface { position: fixed; inset: 0; overflow: hidden; pointer-events: none; user-select: none; }
 .computer-cursor { position: absolute; top: 0; left: 0; width: 0; height: 0; color: var(--accent-2); transition: transform 280ms cubic-bezier(.22, .75, .25, 1); will-change: transform; }

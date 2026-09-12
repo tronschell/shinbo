@@ -17,3 +17,5 @@
 /.claude/worktrees
 *.p12
 *.p8
+*.py[cod]
+__pycache__/

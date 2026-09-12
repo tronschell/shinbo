@@ -1,3 +1,4 @@
+import { Minimap } from "./minimap";
 import { useEffect, useRef, useState } from "react";
 import { FRONTMATTER, isKeepKind, keepKindLabel, parseFrontmatter } from "../shared/vault";
 import { zoned } from "./dates";
@@ -114,7 +115,7 @@ export function PreviewHost() {
       <button type="button" className="preview-location" title="Reveal in the file manager" onClick={() => void window.shinbo.revealPath(shown)}>{shown}</button>
       {error && <p className="dialog-error">{error}</p>}
       {file && file.text === null && !file.image && !error && <p className="preview-empty">Shinbo can only read files inside a connected folder or attached to a message, and only text under 256 KB. Open it above, or reveal it in the file manager.</p>}
-      {(file?.text != null || file?.image) && <div className="preview-body"><Body path={shown} name={called} text={file.text ?? ""} {...(file.image ? { image: file.image } : {})} {...(asked.image ? { embed: asked.image } : {})} source={source} /></div>}
+      {(file?.text != null || file?.image) && <Minimap key={shown} className="preview-body"><Body path={shown} name={called} text={file.text ?? ""} {...(file.image ? { image: file.image } : {})} {...(asked.image ? { embed: asked.image } : {})} source={source} /></Minimap>}
     </section>
   </dialog>;
 }

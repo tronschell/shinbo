@@ -203,14 +203,15 @@ or control an app unless a user explicitly answers that turn's app prompt.
 Nothing here consults the table, and `full` does not switch any of it off.
 
 - **Escape.** While a computer run is live, main registers `Escape` as a
-  *system-wide* shortcut that aborts the run and closes the banner — so it works
+  *system-wide* shortcut that revokes computer access and closes the indicator — so it works
   while Shinbo is behind whatever app it is driving.
-- **The run banner.** Always-on-top at the `screen-saver` level, visible on every
-  workspace including fullscreen, `focusable: false`, carrying the step count and
-  a Stop button. The main window and banner can send `shinbo:stop-computer-run`.
+- **The computer indicator.** Always-on-top at the `screen-saver` level, visible on every
+  workspace including fullscreen, `focusable: false`, with a compact monitor icon
+  and Stop button at the top right. Stop ends computer use only. The main window
+  and indicator can send `shinbo:stop-computer-run`.
 - **App grants.** Exact running-app approval, revoked on Stop, Escape, lock,
   suspend, turn end and quit. No persistent grant and no global-input fallback.
-- **The ceilings.** `MAX_RUN_STEPS` 20,
+- **The ceilings.** No computer-tool call count cap.
   `MIN_ACTION_INTERVAL_MS` 40, `MAX_RUN_MS` 10 min, and the rest in
   [computer-use.md](computer-use.md). Tool argument and output caps in
   [tools.md](tools.md).

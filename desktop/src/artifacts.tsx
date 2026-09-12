@@ -1,3 +1,4 @@
+import { Minimap } from "./minimap";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ARTIFACT_EXTENSIONS, ARTIFACT_KINDS, ARTIFACT_LABELS, artifactFrameUrl, SURFACE_LABELS, type Artifact, type ArtifactKind, type ArtifactMeta } from "../shared/artifacts";
 import { reasonText } from "./errors";
@@ -188,7 +189,7 @@ function ArtifactPanel({ id, className, busy, close, edit, remove }: { id: strin
   return <section className={className}>
     <header>
       <div>
-        <span>{artifact ? `${ARTIFACT_LABELS[artifact.kind]} · v${artifact.version}` : "Artifact"}</span>
+        {artifact && <span>v{artifact.version}</span>}
         <h2 id="artifact-title">{artifact ? artifact.title : id}</h2>
       </div>
       {artifact && <button type="button" className="artifact-icon" aria-pressed={source} aria-label={source ? "Show the preview" : "Show the code"} title={source ? "Preview" : "Code"} onClick={() => setSource((current) => !current)}><CodeIcon /></button>}
@@ -198,7 +199,9 @@ function ArtifactPanel({ id, className, busy, close, edit, remove }: { id: strin
     </header>
     {artifact && <button type="button" className="artifact-location" title={REVEAL_LABEL} onClick={() => void window.shinbo.revealArtifact(artifact.id)}>{artifact.path}</button>}
     {artifact === false && <p className="dialog-error">{GONE}</p>}
-    {artifact && <div className="artifact-body"><ArtifactRender artifact={artifact} source={source} /></div>}
+    {artifact && (source || ["code", "react", "markdown"].includes(artifact.kind)
+      ? <Minimap key={id} className="artifact-body"><ArtifactRender artifact={artifact} source={source} /></Minimap>
+      : <div className="artifact-body"><ArtifactRender artifact={artifact} source={source} /></div>)}
     {artifact && <div className="artifact-actions">
       <button type="button" disabled={busy} onClick={() => edit(artifact)}>Edit in a thread</button>
       <button type="button" className="artifact-danger" disabled={busy} onClick={() => remove(artifact)}>Delete</button>

@@ -68,7 +68,7 @@
 .dash-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(184px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-top: 0; }
 .dash-tiles button { display: grid; align-content: start; gap: var(--s-2); padding: var(--s-4); color: inherit; border: 0; background: var(--bg); text-align: left; transition: background-color var(--t); }
 .dash-tiles button:hover { background: var(--surface-2); }
-.dash-tiles button:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.dash-tiles button:focus-visible { outline: 1px solid var(--text-2); outline-offset: -1px; }
 .dash-tiles em { color: var(--text-3); font: var(--fs-2xs)/1 var(--font-mono); font-style: normal; letter-spacing: var(--ls-caps); }
 .dash-tiles button[data-hue="rose"] em { color: var(--rose); }
 .dash-tiles button[data-hue="pink"] em { color: var(--pink); }

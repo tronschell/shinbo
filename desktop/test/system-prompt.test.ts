@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { forceArm, harnessPromptFile, setImprovements, setPrompts, setSystemPrompt, takeArm, turnArm, withTrialArm, writeHarnessPrompt } from "../main/system-prompt";
+import { forceArm, harnessPromptFile, resolveHarnessPrompt, setImprovements, setPrompts, setSystemPrompt, takeArm, turnArm, withTrialArm, writeHarnessPrompt } from "../main/system-prompt";
 import { validateImprovements, type Lever } from "../shared/improvement";
 import { DEFAULT_SYSTEM_PROMPT, familiesOf, forkPreset, promptSegments, resolvePrompt, validatePrompts, type PromptPreset } from "../shared/prompts";
 import { defaultHarnessExperiments, defaultSettings, MAX_SYSTEM_PROMPT_CHARS, validateOverlayPreferences, validateSettings } from "../shared/settings";
@@ -258,4 +258,11 @@ test("the shipped prompt stays stable across runtime context while custom templa
     resolvePrompt("{available_tools}|{model}|{model_family}|{workspace}|{os}|{date}|{mode}", [], first.model, first),
     "memory, goal|anthropic/claude-opus-4.5|Opus|/tmp/work|darwin 24.0.0|2026-01-01|ask",
   );
+});
+
+test("unconfigured advisor is explicitly skipped without changing configured runs", () => {
+  setSystemPrompt("Work directly.");
+  assert.match(resolveHarnessPrompt({ advisorConfigured: false }), /Do not search for, select, or call advisor/);
+  assert.doesNotMatch(resolveHarnessPrompt({ advisorConfigured: true }), /Advisor is not configured/);
+  setSystemPrompt("");
 });

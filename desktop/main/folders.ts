@@ -7,7 +7,7 @@ import { MAX_FILE_BYTES, MAX_FOLDER_COUNT, MAX_FOLDER_FILES, MAX_FOLDERS, missin
 import { pathInside, realPath, realPathInside, samePath } from "./platform";
 import { writeAtomicSync } from "./write-atomic";
 
-const SKIP_DIRECTORIES = new Set(["node_modules", "target", "dist", "build", "__pycache__", ".venv", "vendor"]);
+const SKIP_DIRECTORIES = new Set(["node_modules", "target", "dist", "dist-main", "dist-native", "dist-renderer", "build", "coverage", "out", "zig-cache", "zig-out", "__pycache__", ".venv", "vendor"]);
 const TEXT_FILE = /\.(md|markdown|txt|rst|org|json|jsonc|ya?ml|toml|ini|csv|tsv|tsx?|jsx?|mjs|cjs|rs|zig|py|go|rb|java|kt|swift|c|h|cc|cpp|hpp|cs|php|sh|zsh|sql|css|scss|html?|xml|tex|env|gitignore)$/i;
 const MAX_DEPTH = 6;
 

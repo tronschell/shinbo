@@ -65,7 +65,7 @@ require.cache[electronPath] = {
 } as unknown as NodeModule;
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { ComputerUseRuntime, computerAction, computerTools, MAX_RUN_STEPS }: typeof import("../main/computer") = require("../main/computer");
+const { ComputerUseRuntime, computerAction, computerTools }: typeof import("../main/computer") = require("../main/computer");
 
 const thread = "1755000000-1a2b-3c4d5e6f-0";
 const runtimes: InstanceType<typeof ComputerUseRuntime>[] = [];
@@ -166,7 +166,7 @@ test("stopping at a cursor event discards the action reply and kills its helper"
   const computer = runtime((value) => { if (value.cursor) computer.abort(); });
   const snapshot = token(await computer.execute(thread, state(), allow));
   cursorEvents = () => [{ event: "cursor", cursor }];
-  await assert.rejects(computer.execute(thread, click(snapshot), allow), /Computer run ended/);
+  await assert.rejects(computer.execute(thread, click(snapshot), allow), /stopped by the user/);
   assert.equal(computer.active, false);
   assert.equal(spawned.at(-1)!.child.killed, true);
 });
@@ -409,12 +409,15 @@ test("ambiguous app names need an exact PID and self control is refused", async 
   await assert.rejects(computer.execute(thread, { ...state(), pid: process.pid }, allow), /Shinbo itself/);
 });
 
-test("the step ceiling revokes access and the next turn asks again", async () => {
+test("computer use continues past twenty calls until stopped, then the next turn asks again", async () => {
   const computer = runtime();
-  for (let step = 0; step < MAX_RUN_STEPS; step++) await computer.execute(thread, { action: "list_apps" }, allow);
-  await assert.rejects(computer.execute(thread, state(), allow), /step limit/);
+  for (let step = 0; step < 25; step++) await computer.execute(thread, state(), allow);
+  assert.equal(computer.steps, 25);
+  assert.equal(computer.active, true);
+  computer.abort();
+  await assert.rejects(computer.execute(thread, state(), allow), /Continue without computer control/);
   assert.equal(computer.active, false);
-  assert.equal(spawned.length, 0);
+  assert.ok(spawned.every((item) => item.child.killed));
   computer.end(thread);
   computer.start(thread);
   let asked = false;
