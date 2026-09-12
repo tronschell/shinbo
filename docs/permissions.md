@@ -70,7 +70,7 @@ See [components.md](components.md).
 Tools switch or an unknown name, checked first, and applies in every mode. A
 hidden tool is never advertised and is refused if the model guesses the name.
 
-`acceptEdits` is identical to `ask` for all 27 of Emma's own tools. The whole
+`acceptEdits` is identical to `ask` for all 27 of Shinbo's own tools. The whole
 difference between those two modes is on the harness's side: `onPermission` in
 [main.ts](../desktop/main/main.ts) allows a harness `kind === "edit"` call
 silently under `acceptEdits`, and asks for everything else.
@@ -126,37 +126,37 @@ offered.
 
 1. `toolDefinitions` ([tools.ts](../desktop/main/tools.ts)) drops `hidden` tools
    from the advertised catalog.
-2. `runEmmaTool` ([main.ts](../desktop/main/main.ts)) checks the gate again when
+2. `runShinboTool` ([main.ts](../desktop/main/main.ts)) checks the gate again when
    the call actually arrives, and raises the dialog on `ask` for ordinary tools.
    `computer` instead resolves the running app and requests explicit approval
    before reading its state or creating its app-bound helper.
 
-Emma's tools are registered in the harness with `requires_approval = false`
-([emma_tools.zig](../harness/src/builtins/emma_tools.zig)) precisely because Emma
+Shinbo's tools are registered in the harness with `requires_approval = false`
+([shinbo_tools.zig](../harness/src/builtins/shinbo_tools.zig)) precisely because Shinbo
 gates them itself; a test asserts it for every one.
 
-Every Emma mode maps to the harness's `ask` (`HARNESS_MODE_ID = "ask"` in
+Every Shinbo mode maps to the harness's `ask` (`HARNESS_MODE_ID = "ask"` in
 [harness.ts](../desktop/main/harness.ts)), so every harness tool decision comes
-back to Emma. `onPermission` then resolves, in order:
+back to Shinbo. `onPermission` then resolves, in order:
 
 1. `context.outsideWorkspace` → deny, and broadcast a `blocked: <tool> is outside
    the connected folder` step. Not overridable, `full` included.
 2. `mode === "full"` → allow.
 3. `mode === "acceptEdits" && kind === "edit"` → allow.
-4. Otherwise → `agents.question(...)`, the same funnel `runEmmaTool` uses, so the
+4. Otherwise → `agents.question(...)`, the same funnel `runShinboTool` uses, so the
    verifier sits in front of the harness's tools too.
 
 A denial picks the harness's reject option so the turn continues with a "no"
 rather than being cancelled. `pick("allow_once", "allow_always")` prefers
 `allow_once` by name, not list position, so an upstream reordering cannot turn one
-yes into a session-wide grant. Emma's own dialog has no "allow always".
+yes into a session-wide grant. Shinbo's own dialog has no "allow always".
 
 ## The prompt
 
 `PermissionAsk` is `{ id, threadId, tool, summary, detail }`
 ([agents.ts](../desktop/shared/agents.ts)). For ordinary tools, `summary` is the
 short phrase from `describeToolCall`; `detail` is the pretty-printed arguments, capped at 4096
-characters on both the Emma and harness paths. `install_mcp` renders its whole
+characters on both the Shinbo and harness paths. `install_mcp` renders its whole
 `env` object, values included — its schema warns the model about that.
 
 The dialog is `PermissionPrompt` ([agents.tsx](../desktop/src/agents.tsx)): a real
@@ -178,7 +178,7 @@ The renderer cannot bypass any of this: its whole permission vocabulary in
 `answerPermission({ id, allowed })` and `onPermissionResolved`. The last event
 removes prompts resolved elsewhere or by cancellation. It cannot name a tool or
 ask for one to run.
-`emma:answer-permission` checks the sender is the main window's main frame before
+`shinbo:answer-permission` checks the sender is the main window's main frame before
 looking at the payload, ids are `randomUUID()` and are deleted on first settle.
 
 ## Unattended runs carry their saved mode
@@ -204,10 +204,10 @@ Nothing here consults the table, and `full` does not switch any of it off.
 
 - **Escape.** While a computer run is live, main registers `Escape` as a
   *system-wide* shortcut that aborts the run and closes the banner — so it works
-  while Emma is behind whatever app it is driving.
+  while Shinbo is behind whatever app it is driving.
 - **The run banner.** Always-on-top at the `screen-saver` level, visible on every
   workspace including fullscreen, `focusable: false`, carrying the step count and
-  a Stop button. The main window and banner can send `emma:stop-computer-run`.
+  a Stop button. The main window and banner can send `shinbo:stop-computer-run`.
 - **App grants.** Exact running-app approval, revoked on Stop, Escape, lock,
   suspend, turn end and quit. No persistent grant and no global-input fallback.
 - **The ceilings.** `MAX_RUN_STEPS` 20,
@@ -216,8 +216,8 @@ Nothing here consults the table, and `full` does not switch any of it off.
   [tools.md](tools.md).
 - **The workspace grant.** `context.outsideWorkspace` denies before any mode
   check.
-- **Folder grants on the file IPC.** `emma:preview-path`, `emma:reveal-path` and
-  `emma:open-in-editor` resolve a path and then refuse it unless it sits inside a
+- **Folder grants on the file IPC.** `shinbo:preview-path`, `shinbo:reveal-path` and
+  `shinbo:open-in-editor` resolve a path and then refuse it unless it sits inside a
   connected folder or is an attachment this session holds. Being an image is not
   a way in.
 - **The artifact database.** `artifactSql` runs one statement against that app
@@ -236,8 +236,8 @@ commands the user reviewed once, pinned to a hash of the exact command text and
 revoked the moment it changes ([plugins.md](plugins.md#trust)).
 
 Two renderer actions deliberately skip the mode check because the click *is* the
-consent: `emma:run-command` (the play button beside a command in the transcript,
-bounded to 4096 characters) and `emma:send-cli-run` (sending a prompt into a CLI
+consent: `shinbo:run-command` (the play button beside a command in the transcript,
+bounded to 4096 characters) and `shinbo:send-cli-run` (sending a prompt into a CLI
 run the user named).
 
 ## Rule patterns and Windows volumes
@@ -273,7 +273,7 @@ Command patterns for `bash` and `sandbox` rules stay exact.
 ## Commands, and what the classifier can read
 
 A `terminal` command meets two classifiers inside the harness before it meets
-Emma's dialog.
+Shinbo's dialog.
 
 1. **The planner**,
    [`command_effect.plan`](../harness/src/core/shell_command/command_effect.zig).
@@ -317,6 +317,6 @@ saves tokens and gates nothing.
 - [tools.md](tools.md) — what each tool does, and the harness's own builtins
 - [computer-use.md](computer-use.md) — app grants, background controls and Escape
 - [privacy.md](privacy.md) — what leaves this computer
-- [harness.md](harness.md) — `emma-cli`, ACP, and the permission channel
+- [harness.md](harness.md) — `shinbo-cli`, ACP, and the permission channel
 - [jobs.md](jobs.md) — unattended runs
 - [models.md](models.md) — configuring the verifier and advisor routes

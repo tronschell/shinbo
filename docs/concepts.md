@@ -1,6 +1,6 @@
 # Concepts
 
-Emma's vocabulary, one entry each. Where an entry has more to it than a
+Shinbo's vocabulary, one entry each. Where an entry has more to it than a
 paragraph, that detail lives in the feature's own doc, linked.
 
 ## Thread
@@ -13,7 +13,7 @@ and renamed over the destination so a half-written thread never exists
 `{ id, title, parent_thread_id, kind, scheduled_job_id, created_at, updated_at,
 archived_at, goal, messages, traces }`; `kind` is `main` or `subagent` and `goal`
 is present only on a thread pursuing one. Front matter is versioned as
-`emma-thread-format` — 13 today, and every older version still parses.
+`shinbo-thread-format` — 13 today, and every older version still parses.
 Ceilings: `MAX_THREAD_MESSAGES` 1024, `MAX_THREAD_TRACES` 64,
 `MAX_TRACE_BYTES` 16 KiB. `traces` is `#[serde(skip)]`, so it never rides a
 snapshot.
@@ -29,7 +29,7 @@ would need an index the compact snapshot does not carry.
 A thread can be **pinned**: right-click the row, or use the pin that appears on
 hover. Pinned threads leave their project group and stand in a `Pinned` section
 above every project, each row prefixed with the name of the folder it is filed
-under. The list is local to the machine (`emma.threadPins.v1` in the renderer's
+under. The list is local to the machine (`shinbo.threadPins.v1` in the renderer's
 storage), most recently pinned first.
 
 ## Run · turn
@@ -85,8 +85,8 @@ lands with the child's next tool result.
 ## Subagent
 
 **A worker that dissolves once it answers.** It is the harness's own tool, not
-Emma's — a child runs inside the `emma-cli` process, so it does not queue behind
-its parent's turn. Emma sees it because its updates ride the parent's ACP stream
+Shinbo's — a child runs inside the `shinbo-cli` process, so it does not queue behind
+its parent's turn. Shinbo sees it because its updates ride the parent's ACP stream
 tagged `_meta.fx.child`, and gives it a thread with `kind: subagent` so it gets a
 real transcript and telemetry, opened from the Subagents component of the context
 bar or from the sidebar's agent rail. It is not in the sidebar's thread list, and
@@ -106,11 +106,11 @@ which is what the transcript draws its card from
 
 ## Artifact
 
-**A file Emma produced that outlives the conversation**, stored at
+**A file Shinbo produced that outlives the conversation**, stored at
 `<userData>/artifacts/<id>/` as `meta.json` plus `content.<ext>` — Electron's,
 not the host's. Seven kinds: `markdown`, `code`, `html`, `app`, `svg`, `mermaid`,
 `react`. `html` and `app` are framed `sandbox="allow-scripts"` over the
-`emma-artifact://` scheme with their own CSP; `svg` is framed with scripting off;
+`shinbo-artifact://` scheme with their own CSP; `svg` is framed with scripting off;
 `code` and `react` are shown as highlighted source and never executed. Limits in
 [`shared/artifacts.ts`](../desktop/shared/artifacts.ts): `MAX_ARTIFACTS` 512,
 `MAX_ARTIFACT_BYTES` 512 KiB, `MAX_ARTIFACT_FILES` 16, `MAX_ARTIFACT_DB_BYTES`
@@ -121,10 +121,10 @@ it.
 
 ## Component
 
-**A widget in Emma's own interface that Emma built.** Not an artifact: it does
+**A widget in Shinbo's own interface that Shinbo built.** Not an artifact: it does
 not outlive the interface, it *is* the interface, and it never appears on the
 Artifacts page. Stored at `<userData>/components/<id>/` as `meta.json`,
-`module.js` and `shot.png`, served over the `emma-component://` scheme, and
+`module.js` and `shot.png`, served over the `shinbo-component://` scheme, and
 mounted into the running React tree by `createPortal`.
 
 There is one place it can go: the context bar, under the built-in widgets and in
@@ -132,9 +132,9 @@ their chrome, so a component gets the column's padding and reveal rather than it
 own. That is enforced in main, not asked for in the prompt — a component that can
 land anywhere is a component that can break the layout it lands in.
 
-It reads the app through `emma` and the outside through `fetch`, which goes out
+It reads the app through `shinbo` and the outside through `fetch`, which goes out
 through main against public https only. Secrets are environment variable names it
-declares in `variables`; the user fills them in **Settings → Built by Emma** and
+declares in `variables`; the user fills them in **Settings → Built by Shinbo** and
 the module writes `{{NAME}}` into a url, header or body. The values never reach
 the renderer.
 
@@ -144,7 +144,7 @@ module URL carries it, and the mounted copy reloads in place — that is the
 iteration loop. A new version wipes in behind a left-to-right ASCII reveal.
 
 Deleting is the user's, from the ⋯ in the component's own header or from
-**Settings → Built by Emma**, which shows each one's picture, switches it off,
+**Settings → Built by Shinbo**, which shows each one's picture, switches it off,
 fills in its variables, and sends it back to a thread as an attachment to keep
 working on. Limits in
 [`shared/components.ts`](../desktop/shared/components.ts): `MAX_COMPONENTS` 64,
@@ -153,7 +153,7 @@ working on. Limits in
 ## Context
 
 **Everything a turn carries besides the user's sentence.** One attached folder
-per thread, which is the directory `emma-cli` is spawned in and the grant that
+per thread, which is the directory `shinbo-cli` is spawned in and the grant that
 makes file and shell tools mean anything; a thread with no folder has no
 filesystem at all. In the composer `/` names a capability and `@` names a file
 ([`shared/slash.ts`](../desktop/shared/slash.ts)); `buildAttachedContext` in
@@ -165,7 +165,7 @@ costs a bounded walk rather than a full one. `listFolderFiles` returns that page
 with the count and whether the walk was cut short, so the Files picker reads
 `Showing 400 of N files` — or `of 2000+` when the count is a floor rather than a
 total. The count admits exactly what the listing admits, so an oversized file is
-neither shown nor counted. Any file can still be read by path past the cap. Emma's own standing
+neither shown nor counted. Any file can still be read by path past the cap. Shinbo's own standing
 text goes to one file under the `HOME` she hands the harness: the resolved
 Settings prompt, plus any kept Agent-page improvement, to
 `<userData>/harness/.fx/system-prompt-<hash>.md`, which stands in for the
@@ -187,10 +187,10 @@ timeline, the prompt ledger and the Git panel are all covered in
 ## Knowledge base · vault
 
 **"Knowledge base" is the label; the vault is the storage.** The user picks an
-[Obsidian](https://obsidian.md) vault or any plain folder, and Emma writes one
+[Obsidian](https://obsidian.md) vault or any plain folder, and Shinbo writes one
 Markdown note per save into `<vault>/knowledge-base` (`DEFAULT_VAULT_FOLDER`)
 with attachments under `attachments/`. There is no second copy and no mirror —
-the vault *is* the store, readable and editable without Emma. Limits in
+the vault *is* the store, readable and editable without Shinbo. Limits in
 [`shared/vault.ts`](../desktop/shared/vault.ts): `MAX_NOTE_BYTES` 256 KiB,
 `MAX_ATTACHMENT_BYTES` 8 MiB, `MAX_TAGS` 8, `MAX_VAULT_NOTES` 2000. See
 [knowledge.md](knowledge.md).
@@ -226,7 +226,7 @@ the status of ids that remain. Use `plan` when the point is parallel subagents.
 
 ## Goal
 
-**One objective a thread keeps working at on its own.** Set one and Emma re-drives
+**One objective a thread keeps working at on its own.** Set one and Shinbo re-drives
 the thread turn after turn without being asked again, stopping when the objective
 is met *with evidence*, when the same blocker has stood three consecutive goal
 turns, or when the allowance — 200,000 tokens and 40 turns by default — runs out.
@@ -261,12 +261,12 @@ variables between them. The trigger is a five-field UTC cron expression,
 [`shared/workflow.ts`](../desktop/shared/workflow.ts) serves three callers: main
 runs it, the `workflow` tool dry-runs it, the workspace draws it and refuses a
 bad edit. Core stores the graph as opaque JSON. `MAX_WORKFLOW_NODES` 24,
-`MAX_WORKFLOW_STEPS` 32, `MAX_VARIABLE_CHARS` 8192. Jobs run only while Emma is
+`MAX_WORKFLOW_STEPS` 32, `MAX_VARIABLE_CHARS` 8192. Jobs run only while Shinbo is
 open. See [jobs.md](jobs.md).
 
 ## Computer use
 
-**Emma operating an approved app on this computer.** The agent loop asks;
+**Shinbo operating an approved app on this computer.** The agent loop asks;
 Electron main executes, because it is the process that owns the screen. The
 `computer` tool requires a separate approval for the named running app in every
 permission mode. Every ceiling applies in *every* mode:
@@ -274,21 +274,21 @@ permission mode. Every ceiling applies in *every* mode:
 `MAX_RUN_MS` 10 minutes, `MAX_TYPED_CHARACTERS` 4096, `MAX_WAIT_SECONDS` 300,
 `MAX_KEY_REPEAT` 32, `HELPER_TIMEOUT_MS` 5000 — plus the always-on-top banner,
 the per-action log line, and Escape as a system-wide kill switch registered only
-for the life of a run. Screenshots stay in Emma's process and the tool answers in
+for the life of a run. Screenshots stay in Shinbo's process and the tool answers in
 text; `vision` is the deliberate exception that posts an image to a model. See
 [computer-use.md](computer-use.md).
 
 ## Skill · MCP server · tool
 
-A **skill** is a folder with a `SKILL.md` that Emma can attach to a turn; seven
+A **skill** is a folder with a `SKILL.md` that Shinbo can attach to a turn; seven
 ship in [`desktop/skills/`](../desktop/skills). An **MCP server** is an external
-process the harness starts and calls tools on — Emma speaks no
+process the harness starts and calls tools on — Shinbo speaks no
 [MCP](https://github.com/modelcontextprotocol/modelcontextprotocol) herself, she parses the configured
 servers and hands them to the harness at `session/new`. A **tool** is one
-callable the agent may reach for: Emma's own 27 are in `AGENT_TOOLS` and
+callable the agent may reach for: Shinbo's own 27 are in `AGENT_TOOLS` and
 `TOOL_CATALOG` ([`shared/permissions.ts`](../desktop/shared/permissions.ts)), the
 harness has its own builtins (file read/write/edit, ripgrep search, shell,
-subagent, skills, MCP), and Emma can write more with `write_tool`. See
+subagent, skills, MCP), and Shinbo can write more with `write_tool`. See
 [tools.md](tools.md) and [plugins.md](plugins.md).
 
 ## See also

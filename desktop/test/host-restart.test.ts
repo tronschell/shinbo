@@ -63,7 +63,7 @@ function hostClass(spawned: FakeChild[], callMs: number) {
 
 test("a host that never answers is killed, and the next call gets a fresh one", async () => {
   const spawned: FakeChild[] = [];
-  const host = new (hostClass(spawned, 30))("emma-host");
+  const host = new (hostClass(spawned, 30))("shinbo-host");
 
   await assert.rejects(host.request({ method: "createThread", params: {} }), /stopped answering/);
   assert.equal(spawned.length, 1);
@@ -78,7 +78,7 @@ test("a host that never answers is killed, and the next call gets a fresh one", 
 
 test("a host closed on purpose stays closed", async () => {
   const spawned: FakeChild[] = [];
-  const host = new (hostClass(spawned, 30))("emma-host");
+  const host = new (hostClass(spawned, 30))("shinbo-host");
   host.close();
 
   await assert.rejects(host.request({ method: "thread", params: {} }), /closed/);
@@ -87,7 +87,7 @@ test("a host closed on purpose stays closed", async () => {
 
 test("a late write failure from a replaced host cannot fail its replacement", async () => {
   const spawned: FakeChild[] = [];
-  const host = new (hostClass(spawned, 1000))("emma-host");
+  const host = new (hostClass(spawned, 1000))("shinbo-host");
   let finishWrite: ((error?: Error) => void) | undefined;
   spawned[0].stdin.write = (line, done) => {
     spawned[0].written.push(line);

@@ -21,10 +21,10 @@ test("a packaged duplicate explains its own version and path without touching th
     },
     isMac: true,
     path: path.posix,
-    process: { execPath: "/Volumes/Emma/Emma.app/Contents/MacOS/Emma" },
+    process: { execPath: "/Volumes/Shinbo/Shinbo.app/Contents/MacOS/Shinbo" },
     dialog: { showErrorBox: (title: string, detail: string) => {
-      assert.equal(title, "Another copy of Emma is running");
-      assert.match(detail, /Emma 0\.5\.0 at \/Volumes\/Emma\/Emma\.app could not start/);
+      assert.equal(title, "Another copy of Shinbo is running");
+      assert.match(detail, /Shinbo 0\.5\.0 at \/Volumes\/Shinbo\/Shinbo\.app could not start/);
       assert.match(detail, /Command-Q/);
       assert.match(detail, /Replacing the app keeps your settings and conversations/);
       calls.push("warning");

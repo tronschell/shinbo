@@ -1,6 +1,6 @@
 ---
 name: threads
-description: How to run work across several of Emma's threads with the `threads` tool — starting one per job so each gets its own agent and its own timeline, checking on them, reading what they found, and steering or messaging one mid-flight. Use whenever the user asks to spin up, split, fan out, check on, steer or message threads, and whenever a request holds two or more jobs that each deserve a conversation of their own.
+description: How to run work across several of Shinbo's threads with the `threads` tool — starting one per job so each gets its own agent and its own timeline, checking on them, reading what they found, and steering or messaging one mid-flight. Use whenever the user asks to spin up, split, fan out, check on, steer or message threads, and whenever a request holds two or more jobs that each deserve a conversation of their own.
 ---
 
 # Threads
@@ -49,7 +49,7 @@ Spawn **without** a prompt when the thread is a place for the *user* to work,
 not an agent: a parked idea, the next piece of a project, somewhere to come back
 to. It is created empty and nothing runs in it.
 
-Emma runs at most eight threads at once. Over that, a spawn is refused rather
+Shinbo runs at most eight threads at once. Over that, a spawn is refused rather
 than queued — start the important ones first.
 
 ## Checking on them

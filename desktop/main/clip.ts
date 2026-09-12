@@ -25,9 +25,9 @@ export function browserScript(application: string): string | null {
 
 function scriptFailure(stderr: string): string {
   if (stderr.includes("-1743") || stderr.includes("Not authorized to send Apple events")) {
-    return "macOS has not allowed Emma to read your browser — grant it in System Settings → Privacy & Security → Automation → Emma.";
+    return "macOS has not allowed Shinbo to read your browser — grant it in System Settings → Privacy & Security → Automation → Shinbo.";
   }
-  return stderr || "Emma could not read the front window";
+  return stderr || "Shinbo could not read the front window";
 }
 
 function osascript(script: string): Promise<string> {
@@ -59,7 +59,7 @@ export async function frontmostPage(): Promise<FrontPage> {
     ? front
     : firstBrowser((await osascript('tell application "System Events" to return name of every application process whose visible is true')).split(","));
   const script = application ? browserScript(application) : null;
-  if (!application || !script) throw new Error(`${front || "That app"} is not a browser Emma can read, and no browser window is open behind it. Put a browser window in front and try again.`);
+  if (!application || !script) throw new Error(`${front || "That app"} is not a browser Shinbo can read, and no browser window is open behind it. Put a browser window in front and try again.`);
   const [url = "", title = ""] = (await osascript(script)).split("\n");
   if (!externalUrl(url)) throw new Error(`${application} has no web page in front`);
   return { application, url, title: title.trim().slice(0, 256) };
@@ -121,7 +121,7 @@ function requestPage(first: URL, guard: (value: string) => URL | null, limit = M
       hops += 1;
       if (hops > MAX_REDIRECTS) return refuse("That link redirects too many times");
       const next = guard(redirectUrl);
-      if (!next) return refuse("That link redirects somewhere Emma will not follow");
+      if (!next) return refuse("That link redirects somewhere Shinbo will not follow");
       url = next.toString();
       request.followRedirect();
     });

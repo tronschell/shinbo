@@ -47,6 +47,8 @@ export type RecordedTurn = {
   durationMilliseconds: string;
   outputTokens: string;
   inputTokens: string;
+  goalTokens?: string;
+  goalTurn?: string;
   cacheInputTokens?: string;
   cacheReadTokens?: string;
   cacheWriteTokens?: string;

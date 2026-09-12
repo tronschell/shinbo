@@ -29,7 +29,7 @@ The `cli` tool accepts `fromRuns` for sequences, combined inputs, and review loo
   separate Latest result / Run log sections using local demo fixtures.
 - Website docs, agent references, roadmap, and a real-app screenshot were
   updated. Its production build and targeted checks passed; the full website
-  check still encounters unrelated formatting and existing EmmaWindow lint
+  check still encounters unrelated formatting and existing ShinboWindow lint
   errors.
 
 ## Limits
@@ -37,7 +37,7 @@ The `cli` tool accepts `fromRuns` for sequences, combined inputs, and review loo
 Runs, captured output, and source metadata last for the app session. The UI
 hands off one run at a time; chat can combine up to eight. Large deliverables
 must be saved to files and passed by path. New UI runs use default CLI approvals;
-existing destinations retain theirs. Other terminal sessions are outside Emma's
+existing destinations retain theirs. Other terminal sessions are outside Shinbo's
 session tracking.
 
 Live vendor authentication, vendor CLI flags, unattended permission behavior,
@@ -93,7 +93,7 @@ flags. Codex's parser accepted the corrected resume flag placement in a help-onl
 invocation. Antigravity's `agy` adapter follows its official headless reference.
 No live vendor model turn, provider billing, Antigravity/Gemini/Cursor installation,
 VoiceOver, signing, Windows, privacy permission, global shortcut, or multiple
-display path was exercised. These settings are requested values; Emma does not
+display path was exercised. These settings are requested values; Shinbo does not
 measure the vendor's actual reasoning budget or override its model restrictions.
 
 [Configured handoff](../desktop/screenshots/harness-model-handoff.png) ·

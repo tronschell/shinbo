@@ -21,7 +21,7 @@ try {
         nativeAddon: workerData.addonPath,
         backend: "native",
         env: {
-          EMMA_PROVIDER_API_KEY: "worker-termination-key",
+          SHINBO_PROVIDER_API_KEY: "worker-termination-key",
           FX_GATEWAY_CHAT_URL: workerData.gatewayUrl,
           FX_MODEL: "native/test-model",
         },

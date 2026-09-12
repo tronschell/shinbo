@@ -7,6 +7,7 @@ import path from "node:path";
 import ts from "typescript";
 import { MAX_TERMINAL_SCROLLBACK, MAX_TERMINAL_SELECTION_CHARS, MAX_TERMINAL_SELECTION_LINES, terminalSelection, terminalTitle, type TerminalTab } from "../shared/terminal";
 import { Terminals } from "../main/terminal";
+import { isWindows } from "../main/platform";
 import { defaultPaneLayout, validatePaneLayout } from "../src/layout";
 
 test("terminal scrollback preserves output and offsets through repeated eviction and compaction", (t) => {
@@ -52,7 +53,7 @@ test("terminal subscriptions follow the selected thread and ignore stale tabs an
       thread = id;
       effect = next;
     },
-    window: { emma: {
+    window: { shinbo: {
       listTerminals: (threadId: string) => new Promise<TerminalTab[]>((resolve) => { requests.push({ threadId, resolve }); }),
       onTerminals: (listener: () => void) => {
         listeners.add(listener);
@@ -125,7 +126,6 @@ test("the terminal pane retries when the thread is pointed at another folder", (
   const [body, deps] = found[0].arguments;
   assert.ok(ts.isArrayLiteralExpression(deps));
   assert.deepEqual(deps.elements.map((item) => item.getText(source)).sort(), ["folderId", "start", "threadId"]);
-  assert.match(body.getText(source), /started\.current = where/);
   assert.match(body.getText(source), /setError\(""\)/);
 });
 
@@ -139,8 +139,8 @@ test("xterm stays behind the terminal implementation lazy boundary", () => {
 });
 
 test("a shell is named after the folder it was opened in", () => {
-  assert.equal(terminalTitle("/Users/someone/Documents/emma"), "emma");
-  assert.equal(terminalTitle("/Users/someone/Documents/emma/"), "emma");
+  assert.equal(terminalTitle("/Users/someone/Documents/shinbo"), "shinbo");
+  assert.equal(terminalTitle("/Users/someone/Documents/shinbo/"), "shinbo");
   assert.equal(terminalTitle("/"), "shell");
   assert.equal(terminalTitle(`/tmp/${"a".repeat(41)}`), "shell");
 });
@@ -193,4 +193,60 @@ test("output that arrived during a failed replay is still written to the pane", 
   const failed = replay.slice(replay.indexOf(".catch("));
   assert.match(failed, /for \(const chunk of queued\) term\.write\(chunk\.data\)/);
   assert.match(failed, /queued\.length = 0/);
+});
+
+test("stopping terminals resolves on exit and removes the grace-period listener", async (t) => {
+  if (isWindows) return t.skip("Windows taskkill is exercised by the platform integration tests.");
+  const child = Object.assign(new EventEmitter(), {
+    stdin: new EventEmitter(), stdout: new EventEmitter(), stderr: new EventEmitter(),
+    pid: 123, exitCode: null as number | null, signalCode: null as NodeJS.Signals | null,
+    kill(signal: NodeJS.Signals) {
+      setImmediate(() => { child.signalCode = signal; child.emit("exit", null, signal); });
+      return true;
+    },
+  });
+  t.mock.method(childProcess, "spawn", () => child);
+  const terminals = new Terminals(() => "pty", () => undefined, () => undefined);
+  terminals.open({ threadId: "thread", cwd: process.cwd(), columns: 80, rows: 24 });
+  const began = performance.now();
+  await terminals.stopAll();
+  assert.ok(performance.now() - began < 1000);
+  assert.equal(child.listenerCount("exit"), 1);
+  assert.deepEqual(terminals.list(), []);
+});
+
+test("a terminal pane abandoned during lookup never starts a hidden shell and remount still starts one", async () => {
+  const source = ts.createSourceFile("terminal-implementation.tsx", readFileSync(path.join(__dirname, "../../src/terminal-implementation.tsx"), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let body: ts.Expression | undefined;
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node) && node.expression.getText(source) === "useEffect" && node.getText(source).includes("listTerminals")) body = node.arguments[0];
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  assert.ok(body);
+  const pending: { resolve: (tabs: TerminalTab[]) => void; reject: (error: Error) => void }[] = [];
+  let opened = 0;
+  const scope = {
+    threadId: "task", folderId: "folder", started: { current: "" }, setError: () => undefined,
+    start: () => { opened++; },
+    window: { shinbo: { listTerminals: () => new Promise<TerminalTab[]>((resolve, reject) => pending.push({ resolve, reject })) } },
+  };
+  const effect = Function(...Object.keys(scope), ts.transpile(`return (${body.getText(source)});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(scope)) as () => (() => void) | undefined;
+  const cleanup = effect();
+  cleanup?.();
+  const mountedCleanup = effect();
+  pending[0].resolve([]);
+  await Promise.resolve();
+  assert.equal(opened, 0);
+  assert.equal(pending.length, 2);
+  pending[1].resolve([]);
+  await Promise.resolve();
+  assert.equal(opened, 1);
+  mountedCleanup?.();
+  const failedCleanup = effect();
+  failedCleanup?.();
+  pending[2].reject(new Error("task removed"));
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(opened, 1);
 });

@@ -51,7 +51,7 @@ function setup() {
     persistSettings: (next: UserSettings) => { if (state.persistFailure) throw new Error("Storage full"); saved = validateSettings(next); return saved; },
     setSettings: (next: UserSettings) => { settings = next; },
     onModelChanged: (next: UserSettings) => { assert.deepEqual(providers, next.providers); },
-    window: { emma: { setProviders: async (next: ProviderProfile[]) => {
+    window: { shinbo: { setProviders: async (next: ProviderProfile[]) => {
       state.registrations++;
       if (state.pause) await new Promise<void>((resolve) => { state.release = resolve; });
       if (state.failure || state.registrations === state.failRegistration) throw new Error("Registration failed");
@@ -198,20 +198,24 @@ test("a saved ChatGPT model is restored on boot instead of being reset to fallba
   const calls: { method: string; params: Record<string, string> }[] = [];
   let error = "";
   let persisted: UserSettings | undefined;
+  const initialization: string[] = [];
   compile(effect, {
     restoredModel: { current: false }, settings, SETTINGS_KEY, CODEX_PREFIX, codexSlug,
     routerIdFor: () => undefined, selectModelKey: () => assert.fail("routers do not own Codex keys"),
     reasonText: (reason: Error) => reason.message,
     setError: (value: string) => { error = value; },
     setSettings() {}, persistSettings: (next: UserSettings) => { persisted = next; return next; },
-    window: { emma: {
+    syncMainPreferences: async (value: UserSettings) => { assert.equal(value, settings); initialization.push("preferences"); },
+    window: { shinbo: {
       setZeroRetention: async () => undefined,
       setProviders: async () => [],
-      request: async (method: string, params: Record<string, string> = {}) => { calls.push({ method, params }); return undefined; },
+      request: async (method: string, params: Record<string, string> = {}) => { initialization.push("model"); calls.push({ method, params }); return undefined; },
+      runtimeReady: async (value: string) => { assert.equal(value, ""); initialization.push("ready"); },
     } },
   })();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.deepEqual(calls, [{ method: "selectCodexModel", params: { modelId: "gpt-5.6-luna", effort: "max" } }]);
   assert.equal(error, "");
   assert.equal(persisted, undefined);
+  assert.deepEqual(initialization, ["preferences", "model", "ready"]);
 });

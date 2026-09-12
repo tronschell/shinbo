@@ -15,7 +15,7 @@ import type { PermissionAsk } from "../shared/agents";
 import type { VerifierReview } from "../main/verifier";
 
 const source = ts.createSourceFile("main.ts", readFileSync(path.join(process.cwd(), "main/main.ts"), "utf8"), ts.ScriptTarget.Latest, true);
-const execute = source.statements.find((node): node is ts.FunctionDeclaration => ts.isFunctionDeclaration(node) && node.name?.text === "runEmmaTool")!;
+const execute = source.statements.find((node): node is ts.FunctionDeclaration => ts.isFunctionDeclaration(node) && node.name?.text === "runShinboTool")!;
 const compiled = ts.transpileModule(`(${execute.getText(source)})`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 const turn: TurnRequest = { threadId: "t", title: "inert", content: "inert", mode: "auto" };
 const allow: VerifierReview = { model: "fake", prompt: "", reply: "", attempts: 1, verdict: { allow: true, reason: "inert" } };
@@ -134,7 +134,7 @@ for (const mode of ["auto", "ask", "full"] as const) {
 
 for (const cancel of ["none", "parent", "child", "parent-of-child"] as const) {
   test(`fake ACP peer receives ${cancel === "none" ? "normal allow" : `no allow after ${cancel} cancel`}`, async () => {
-    const home = mkdtempSync(path.join(tmpdir(), "emma-cancel-test-"));
+    const home = mkdtempSync(path.join(tmpdir(), "shinbo-cancel-test-"));
     const entered = deferred<void>();
     const decision = deferred<string>();
     const logs: HarnessLogLine[] = [];
@@ -184,7 +184,7 @@ test("a rejected verifier after stop cannot execute", async () => {
 
 for (const child of [false, true]) {
   test(`a new parent turn ${child ? "preserves a surviving child's approval" : "invalidates its own stale approval"}`, async () => {
-    const home = mkdtempSync(path.join(tmpdir(), "emma-replacement-test-"));
+    const home = mkdtempSync(path.join(tmpdir(), "shinbo-replacement-test-"));
     const entered = deferred<void>();
     const decision = deferred<string>();
     const logs: HarnessLogLine[] = [];
@@ -366,7 +366,7 @@ for (const channel of ["desktop", "mobile"] as const) {
         setter = `(params) => ${node.statements[0].getText(source)}`;
       }
       if (channel === "desktop" && ts.isCallExpression(node) && node.expression.getText(source) === "ipcMain.handle"
-        && node.arguments[0]?.getText(source) === '"emma:set-thread-context"') setter = node.arguments[1].getText(source);
+        && node.arguments[0]?.getText(source) === '"shinbo:set-thread-context"') setter = node.arguments[1].getText(source);
       ts.forEachChild(node, visit);
     };
     visit(source);

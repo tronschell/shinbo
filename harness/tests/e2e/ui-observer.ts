@@ -1,10 +1,10 @@
-/**
- * Deterministic UI observer runner.
- *
- * This is an inspection tool, not a golden test suite. It launches the
- * freshly built fx binary in tmux, arms one observer checkpoint, releases one
- * fixture transition, and saves terminal plus replay artifacts for review.
- */
+
+
+
+
+
+
+
 import { execFileSync } from "node:child_process";
 import {
   copyFileSync,
@@ -180,7 +180,7 @@ function gatewayEnv(
 ) {
   return {
     HOME: fixture.home,
-    EMMA_PROVIDER_API_KEY: "ui-observer-local",
+    SHINBO_PROVIDER_API_KEY: "ui-observer-local",
     FX_GATEWAY_BASE_URL: gateway.baseUrl,
     FX_GATEWAY_CHAT_URL: gateway.chatUrl,
     FX_MODEL: FAKE_GATEWAY_MODEL,

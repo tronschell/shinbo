@@ -9,10 +9,6 @@ pub const ModeSpec = mode_contract.ModeSpec;
 pub const ToolPolicy = mode_contract.ToolPolicy;
 pub const default_mode_id = "ask";
 
-/// Emma's picker and this table are the same four rungs, in the same order, so a
-/// mode means one thing across the app and the harness. Upstream shipped only
-/// `ask` and `code`; `code` is `acceptEdits` under its real behaviour, since
-/// `.auto` still gates commands, and `plan` and `full` are the ends it lacked.
 pub const all = [_]ModeSpec{
     .{
         .id = "plan",
@@ -37,7 +33,6 @@ pub fn lookup(id: []const u8) ?*const ModeSpec {
 }
 
 test "built-in modes register exact ACP order and permission policy" {
-    // Order is the ladder, least power first, because it is what the picker shows.
     const expected_ids = [_][]const u8{ "plan", "ask", "acceptEdits", "full" };
     try std.testing.expectEqual(expected_ids.len, all.len);
     for (expected_ids, all) |expected, mode| {
@@ -50,16 +45,15 @@ test "built-in modes register exact ACP order and permission policy" {
     try std.testing.expectEqual(@as(Mode, .ask), lookup("plan").?.permission_mode);
     try std.testing.expectEqual(@as(Mode, .ask), lookup("ask").?.permission_mode);
     try std.testing.expectEqual(@as(Mode, .auto), lookup("acceptEdits").?.permission_mode);
-    // The unattended rung is the only one that asks for nothing; if this ever
-    // reads .auto again, "full" silently starts prompting a job nobody is watching.
+
     try std.testing.expectEqual(@as(Mode, .yolo), lookup("full").?.permission_mode);
-    // Plan is the only rung that may not reach a tool that changes the machine.
+
     try std.testing.expectEqual(ToolPolicy.read_only, lookup("plan").?.tool_policy);
     try std.testing.expectEqual(ToolPolicy.full, lookup("ask").?.tool_policy);
     try std.testing.expectEqual(ToolPolicy.full, lookup("acceptEdits").?.tool_policy);
     try std.testing.expectEqual(ToolPolicy.full, lookup("full").?.tool_policy);
     try std.testing.expect(lookup("unknown") == null);
-    // Upstream's id is gone rather than aliased, so a stale caller fails loudly.
+
     try std.testing.expect(lookup("code") == null);
 }
 
@@ -96,7 +90,7 @@ fn advertisesTool(advertised: []const std.json.Value, name: []const u8) bool {
 
 test "built-in mode projections use the supplied tool set" {
     var read_file = builtin_tools.lookup("read_file") orelse return error.TestExpectedEqual;
-    // The supplied set is what is under test, not the advertisement policy.
+
     read_file.advertisement = .always;
     const tools = [_]builtin_tools.ToolSpec{read_file};
     const ordered_names = [_][]const u8{ "write_file", "read_file" };

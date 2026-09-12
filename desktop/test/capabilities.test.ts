@@ -1,30 +1,30 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { harnessMcpServers, ImportedCapabilityRuntime, listEmmaTools, MAX_SKILL_RESULTS, parseMcpConfig, seedBuiltinSkills, SkillAttachmentStore, writeEmmaTool } from "../main/capabilities";
+import { harnessMcpServers, ImportedCapabilityRuntime, listShinboTools, MAX_SKILL_RESULTS, parseMcpConfig, seedBuiltinSkills, SkillAttachmentStore, writeShinboTool } from "../main/capabilities";
 import { shellQuoted } from "../main/tools";
 import { isWindows } from "../main/platform";
 
 test("bundled skills are seeded into both skill roots and are searchable without an import", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "emma-builtin-"));
+  const root = await mkdtemp(path.join(tmpdir(), "shinbo-builtin-"));
   try {
     const builtin = path.join(root, "bundle");
     const userData = path.join(root, "user-data");
     const harnessHome = path.join(userData, "harness");
-    await mkdir(path.join(builtin, "building-emma"), { recursive: true });
+    await mkdir(path.join(builtin, "building-shinbo"), { recursive: true });
     await mkdir(path.join(builtin, "not-a-skill"), { recursive: true });
-    await writeFile(path.join(builtin, "building-emma", "SKILL.md"), "---\nname: building-emma\n---\nRebuild, then verify.");
+    await writeFile(path.join(builtin, "building-shinbo", "SKILL.md"), "---\nname: building-shinbo\n---\nRebuild, then verify.");
 
-    assert.deepEqual(await seedBuiltinSkills(builtin, userData, harnessHome), ["building-emma"]);
-    assert.equal(await readFile(path.join(harnessHome, ".fx", "skills", "building-emma", "SKILL.md"), "utf8"), "---\nname: building-emma\n---\nRebuild, then verify.");
+    assert.deepEqual(await seedBuiltinSkills(builtin, userData, harnessHome), ["building-shinbo"]);
+    assert.equal(await readFile(path.join(harnessHome, ".fx", "skills", "building-shinbo", "SKILL.md"), "utf8"), "---\nname: building-shinbo\n---\nRebuild, then verify.");
 
     const runtime = new ImportedCapabilityRuntime(userData);
     const [found] = await runtime.searchSkills("build");
-    assert.deepEqual(found, { id: "skill:emma:0:building-emma", source: "emma", name: "building-emma" });
+    assert.deepEqual(found, { id: "skill:shinbo:0:building-shinbo", source: "shinbo", name: "building-shinbo" });
     assert.ok(await runtime.searchSkills("", MAX_SKILL_RESULTS));
     assert.match((await runtime.selectSkill(found.id)).instructions, /Rebuild, then verify\./);
   } finally {
@@ -46,7 +46,7 @@ test("skill attachments are one-turn, retryable, and bound to their thread", () 
 });
 
 test("imported skills stay metadata-only until selected", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "emma-capabilities-"));
+  const root = await mkdtemp(path.join(tmpdir(), "shinbo-capabilities-"));
   try {
     const skillRoot = path.join(root, "skills");
     const userData = path.join(root, "user-data");
@@ -60,33 +60,34 @@ test("imported skills stay metadata-only until selected", async () => {
     assert.deepEqual(results, [{ id: "skill:codex:0:review", source: "codex", name: "review" }]);
     assert.equal(JSON.stringify(results).includes("secret"), false);
     assert.deepEqual(await runtime.selectSkill(results[0].id), { id: results[0].id, source: "codex", name: "review", instructions: "secret skill instructions" });
+    assert.deepEqual(await runtime.previewSkill("review"), { path: path.join(await realpath(skillRoot), "review", "SKILL.md"), text: "secret skill instructions" });
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("a tool Emma writes is executable, listed with its description, and replaced by name", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "emma-tools-"));
+test("a tool Shinbo writes is executable, listed with its description, and replaced by name", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "shinbo-tools-"));
   try {
-    const written = await writeEmmaTool(root, "count-lines", "Counts the lines of the file named in its input.", "#!/bin/sh\nwc -l < \"$1\"\n");
-    assert.deepEqual(await listEmmaTools(root), [written]);
+    const written = await writeShinboTool(root, "count-lines", "Counts the lines of the file named in its input.", "#!/bin/sh\nwc -l < \"$1\"\n");
+    assert.deepEqual(await listShinboTools(root), [written]);
 
-    const fixed = await writeEmmaTool(root, "count-lines", "Counts lines, words and bytes.", "#!/bin/sh\nwc \"$1\"\n");
-    assert.equal((await listEmmaTools(root)).length, 1);
-    assert.equal((await listEmmaTools(root))[0].description, fixed.description);
+    const fixed = await writeShinboTool(root, "count-lines", "Counts lines, words and bytes.", "#!/bin/sh\nwc \"$1\"\n");
+    assert.equal((await listShinboTools(root)).length, 1);
+    assert.equal((await listShinboTools(root))[0].description, fixed.description);
 
-    await assert.rejects(() => writeEmmaTool(root, "count-lines", "No interpreter.", "wc -l < \"$1\"\n"), /#!/);
-    await assert.rejects(() => writeEmmaTool(root, "../escape", "Outside the folder.", "#!/bin/sh\n:\n"), /invalid/);
-    assert.deepEqual(await listEmmaTools(path.join(root, "nothing-here")), []);
+    await assert.rejects(() => writeShinboTool(root, "count-lines", "No interpreter.", "wc -l < \"$1\"\n"), /#!/);
+    await assert.rejects(() => writeShinboTool(root, "../escape", "Outside the folder.", "#!/bin/sh\n:\n"), /invalid/);
+    assert.deepEqual(await listShinboTools(path.join(root, "nothing-here")), []);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test("a written tool runs under bash with its input as one argument", { skip: isWindows && "main launches written tools through their shebang interpreter on Windows" }, async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "emma-tools-run-"));
+  const root = await mkdtemp(path.join(tmpdir(), "shinbo-tools-run-"));
   try {
-    const written = await writeEmmaTool(root, "count-lines", "Counts the lines of the file named in its input.", "#!/bin/sh\nwc -l < \"$1\"\n");
+    const written = await writeShinboTool(root, "count-lines", "Counts the lines of the file named in its input.", "#!/bin/sh\nwc -l < \"$1\"\n");
     const sample = path.join(root, "it's a sample.txt");
     await writeFile(sample, "a\nb\nc\n");
     const { stdout } = await promisify(execFile)("/bin/bash", ["-lc", `${shellQuoted(written.run)} ${shellQuoted(sample)}`], { cwd: root });
@@ -97,7 +98,7 @@ test("a written tool runs under bash with its input as one argument", { skip: is
 });
 
 test("an imported stdio server is listed with its arguments redacted and its environment values withheld", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "emma-mcp-"));
+  const root = await mkdtemp(path.join(tmpdir(), "shinbo-mcp-"));
   try {
     const userData = path.join(root, "user-data");
     const config = path.join(root, "claude.json");
@@ -119,7 +120,7 @@ test("an imported stdio server is listed with its arguments redacted and its env
 });
 
 test("a remote server is kept only over https and reaches the harness with its headers", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "emma-remote-mcp-"));
+  const root = await mkdtemp(path.join(tmpdir(), "shinbo-remote-mcp-"));
   try {
     const userData = path.join(root, "user-data");
     const config = path.join(root, "cursor.json");
@@ -134,16 +135,16 @@ test("a remote server is kept only over https and reaches the harness with its h
     } }));
     await writeFile(path.join(userData, "imports.json"), JSON.stringify({ version: 1, sources: [{ id: "cursor", skillRoots: [], mcpFiles: [config] }] }));
 
-    // Everything the harness would refuse is refused here, where refusing costs one entry rather
-    // than every thread's session/new. A declared stdio transport wins over the url beside it.
+
+
     assert.deepEqual(parseMcpConfig(await readFile(config, "utf8"), "cursor.json").map((server) => server.name), ["remote", "local"]);
-    // A keyless map of url-bearing objects is not a server list until an entry names its transport.
+
     assert.deepEqual(parseMcpConfig(JSON.stringify({ docs: { url: "https://example.com/one" } }), "cursor.json"), []);
 
     const listed = await new ImportedCapabilityRuntime(userData).listMcpServers();
     assert.deepEqual(listed.map((server) => [server.name, server.type, server.url]), [["remote", "http", "https://mcp.example.com"], ["local", undefined, undefined]]);
-    // Header values are credentials and so is the rest of the endpoint, which is where hosted MCP
-    // usually puts its token; the renderer gets the origin, as it gets env names and not values.
+
+
     assert.equal(JSON.stringify(listed).includes("do-not-render"), false);
 
     assert.deepEqual(await harnessMcpServers(userData), [{
@@ -158,16 +159,16 @@ test("a remote server is kept only over https and reaches the harness with its h
 });
 
 test("an installed MCP server is listed with no import and no relaunch", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "emma-install-mcp-"));
+  const root = await mkdtemp(path.join(tmpdir(), "shinbo-install-mcp-"));
   const userData = path.join(root, "user-data");
   const runtime = new ImportedCapabilityRuntime(userData);
   try {
     const definition = { name: "fixture", command: process.execPath, args: ["-e", "process.exit(0)"], env: { WHO: "installed" } };
 
-    assert.deepEqual(await runtime.installMcpServer(definition), { id: "mcp:emma:0:fixture" });
+    assert.deepEqual(await runtime.installMcpServer(definition), { id: "mcp:shinbo:0:fixture" });
 
     const listed = await new ImportedCapabilityRuntime(userData).listMcpServers();
-    assert.deepEqual(listed.map((server) => server.id), ["mcp:emma:0:fixture"]);
+    assert.deepEqual(listed.map((server) => server.id), ["mcp:shinbo:0:fixture"]);
     assert.deepEqual(listed[0].environmentKeys, ["WHO"]);
     assert.equal(JSON.stringify(listed).includes("installed"), false);
 

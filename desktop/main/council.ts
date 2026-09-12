@@ -26,7 +26,7 @@ export function configureCouncil(next: CouncilDeps) {
   deps = next;
 }
 
-type Sitting = { state: CouncilState; stopped: boolean };
+type Sitting = { state: CouncilState; stopped: boolean; abort: AbortController; landing: boolean };
 
 const sittings = new Map<string, Sitting>();
 
@@ -36,6 +36,7 @@ export function stopCouncil(threadId: string) {
   const sitting = sittings.get(threadId);
   if (!sitting) return;
   sitting.stopped = true;
+  sitting.abort.abort();
   if (councilRunning(sitting.state.phase)) {
     sitting.state = { ...sitting.state, phase: "stopped", floor: "" };
     deps!.emit(sitting.state);
@@ -43,6 +44,7 @@ export function stopCouncil(threadId: string) {
 }
 
 export function closeCouncil(threadId: string) {
+  stopCouncil(threadId);
   sittings.delete(threadId);
 }
 
@@ -96,9 +98,10 @@ function discussion(state: CouncilState): string {
 const table = (state: CouncilState, question: string) =>
   `The question:\n${question}\n\nOpening drafts:\n${drafts(state)}\n\nThe discussion so far:\n${discussion(state) || "(nobody has spoken yet)"}`;
 
-async function speak(seat: CouncilSeat, round: CouncilRound, messages: ChatMessage[], maxTokens: number): Promise<CouncilVoice> {
+async function speak(seat: CouncilSeat, round: CouncilRound, messages: ChatMessage[], maxTokens: number, signal: AbortSignal): Promise<CouncilVoice> {
   const voice: CouncilVoice = { seatId: seat.id, round, text: "", at: Date.now(), error: "", inputTokens: 0, outputTokens: 0, microDollars: 0, plan: "" };
   try {
+    signal.throwIfAborted();
     const route = deps!.route(seat.model);
     voice.plan = route.plan;
     const rates = deps!.rates(route.modelId);
@@ -106,6 +109,7 @@ async function speak(seat: CouncilSeat, round: CouncilRound, messages: ChatMessa
       maxTokens,
       timeoutMs: SEAT_TIMEOUT_MS,
       label: "council",
+      signal,
       onUsage: (usage) => {
         voice.inputTokens = usage.inputTokens;
         voice.outputTokens = usage.outputTokens;
@@ -122,7 +126,7 @@ async function speak(seat: CouncilSeat, round: CouncilRound, messages: ChatMessa
 }
 
 async function turn(sitting: Sitting, seat: CouncilSeat, round: CouncilRound, messages: ChatMessage[], maxTokens: number) {
-  const voice = await speak(seat, round, messages, maxTokens);
+  const voice = await speak(seat, round, messages, maxTokens, sitting.abort.signal);
   if (sitting.stopped) return voice;
   sitting.state = { ...sitting.state, voices: [...sitting.state.voices, voice] };
   deps!.emit(sitting.state);
@@ -134,9 +138,11 @@ const spoke = (state: CouncilState, round: CouncilRound) => state.voices.some((v
 export async function startCouncil(request: CouncilStart): Promise<CouncilState> {
   if (!deps) throw new Error("The council is not wired up yet.");
   const running = sittings.get(request.threadId);
-  if (running && councilRunning(running.state.phase)) throw new Error("This thread already has a council sitting. Stop it before you seat another.");
+  if (running && (councilRunning(running.state.phase) || running.landing)) throw new Error("This thread already has a council sitting. Stop it before you seat another.");
   const sitting: Sitting = {
     stopped: false,
+    abort: new AbortController(),
+    landing: false,
     state: {
       threadId: request.threadId,
       question: request.question,
@@ -155,6 +161,7 @@ export async function startCouncil(request: CouncilStart): Promise<CouncilState>
   sittings.set(request.threadId, sitting);
   deps.emit(sitting.state);
   void sit(sitting).catch((error: unknown) => {
+    if (sitting.stopped || sittings.get(request.threadId) !== sitting) return;
     sitting.state = { ...sitting.state, phase: "failed", floor: "", error: error instanceof Error ? error.message : String(error) };
     deps!.emit(sitting.state);
   });
@@ -163,12 +170,14 @@ export async function startCouncil(request: CouncilStart): Promise<CouncilState>
 
 function move(sitting: Sitting, patch: Partial<CouncilState>) {
   sitting.state = { ...sitting.state, ...patch };
+  if (sittings.get(sitting.state.threadId) !== sitting) return;
   deps!.emit(sitting.state);
 }
 
 async function sit(sitting: Sitting) {
   const seats = sitting.state.seats;
   const carried = clip(await deps!.carried(sitting.state.threadId), CARRIED_CHARS);
+  if (sitting.stopped) return;
   const asked = carried ? `What the thread has covered so far:\n${carried}\n\nThe question:\n${sitting.state.question}` : sitting.state.question;
 
   await Promise.all(seats.map((seat) => turn(sitting, seat, "draft", [
@@ -205,16 +214,27 @@ async function sit(sitting: Sitting) {
     move(sitting, { phase: "failed", floor: "", error: `The chair could not write it up: ${answer.error}` });
     return;
   }
-  move(sitting, { floor: "", verdict: body(answer.text), phase: councilAutoPicks(sitting.state.mode) ? "done" : "waiting" });
-  if (sitting.state.phase === "done") await deps!.land(sitting.state);
+  move(sitting, { floor: "", verdict: body(answer.text), phase: "waiting" });
+  if (councilAutoPicks(sitting.state.mode)) await adoptCouncil(sitting.state.threadId, "").catch(() => undefined);
 }
 
 export async function adoptCouncil(threadId: string, seatId: string): Promise<CouncilState> {
   const sitting = sittings.get(threadId);
   if (!sitting || sitting.state.phase !== "waiting") throw new Error("That council is not waiting on you.");
-  move(sitting, { winnerId: sitting.state.seats.some((seat) => seat.id === seatId) ? seatId : "", phase: "done" });
-  await deps!.land(sitting.state);
-  return sitting.state;
+  if (sitting.landing) throw new Error("That council's answer is still being saved.");
+  sitting.landing = true;
+  const winnerId = sitting.state.seats.some((seat) => seat.id === seatId) ? seatId : "";
+  const adopted: CouncilState = { ...sitting.state, winnerId, phase: "done", error: "" };
+  try {
+    await deps!.land(adopted);
+    move(sitting, adopted);
+    return sitting.state;
+  } catch (error) {
+    move(sitting, { winnerId, phase: "waiting", error: error instanceof Error ? error.message : String(error) });
+    throw error;
+  } finally {
+    sitting.landing = false;
+  }
 }
 
 export function councilAnswer(state: CouncilState): string {

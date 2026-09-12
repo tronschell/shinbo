@@ -1479,7 +1479,7 @@ const FakeApp = struct {
         errdefer app.context_snapshot.deinit(alloc);
         var credential = credentials.Credential{
             .token = try alloc.dupe(u8, "api-key"),
-            .source = .emma_provider_api_key,
+            .source = .shinbo_provider_api_key,
         };
         defer credential.deinit(alloc);
         _ = app.auth.adoptCredential(alloc, &credential);
@@ -1704,7 +1704,7 @@ const TestCatalogProvider = struct {
         const self: *TestCatalogProvider = @ptrCast(@alignCast(raw_context.?));
         self.saw_expected_input =
             std.mem.eql(u8, input.access.authorizationCredential() orelse "", "api-key") and
-            input.access.credentialSource() == .emma_provider_api_key and
+            input.access.credentialSource() == .shinbo_provider_api_key and
             std.mem.eql(u8, input.endpoint, "/catalog") and
             input.cancel_flag == null and
             input.view == .full;

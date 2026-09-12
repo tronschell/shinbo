@@ -593,7 +593,7 @@ function baseEnv(root: ReturnType<typeof createRoot>) {
   return {
     HOME: root.home,
     PATH: `${root.bin}${delimiter}${process.env.PATH ?? ""}`,
-    EMMA_PROVIDER_API_KEY: "fake-mcp-auth-key",
+    SHINBO_PROVIDER_API_KEY: "fake-mcp-auth-key",
     FX_AUTO_UPGRADE: "0",
     FX_PERMISSION_MODE: "auto",
     FX_MODEL: MODEL,
@@ -1227,7 +1227,7 @@ describe("MCP remote authentication lifecycle", () => {
       request.authorization === `Bearer ${ACCESS_REFRESHED}`
     );
     expect(initialResourceLists).toHaveLength(2);
-    // A later resource read may cross the failed-refresh backoff and retry once.
+
     expect(refreshedResourceLists.length).toBeGreaterThanOrEqual(1);
     expect(refreshedResourceLists.length).toBeLessThanOrEqual(2);
     expect(new Set(resourceListRequests.map((request) =>

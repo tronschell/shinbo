@@ -1,9 +1,11 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { readdir, stat } from "node:fs/promises";
 import { MAX_FILE_BYTES, MAX_FOLDER_COUNT, MAX_FOLDER_FILES, MAX_FOLDERS, missingFolderMessage, type FolderFile, type FolderGrant, type FolderListing } from "../shared/folders";
 import { pathInside, realPath, realPathInside, samePath } from "./platform";
+import { writeAtomicSync } from "./write-atomic";
 
 const SKIP_DIRECTORIES = new Set(["node_modules", "target", "dist", "build", "__pycache__", ".venv", "vendor"]);
 const TEXT_FILE = /\.(md|markdown|txt|rst|org|json|jsonc|ya?ml|toml|ini|csv|tsv|tsx?|jsx?|mjs|cjs|rs|zig|py|go|rb|java|kt|swift|c|h|cc|cpp|hpp|cs|php|sh|zsh|sql|css|scss|html?|xml|tex|env|gitignore)$/i;
@@ -32,7 +34,7 @@ export class FolderStore {
     const resolved = realpathSync.native(directory);
     if (!statSync(resolved).isDirectory()) throw new Error("That is not a folder.");
     if (!this.grants.some((grant) => samePath(grant.path, resolved))) {
-      if (this.grants.length >= MAX_FOLDERS) throw new Error(`Emma keeps at most ${MAX_FOLDERS} folders; remove one first.`);
+      if (this.grants.length >= MAX_FOLDERS) throw new Error(`Shinbo keeps at most ${MAX_FOLDERS} folders; remove one first.`);
       this.grants.push({ id: randomUUID(), path: resolved, name: path.basename(resolved) || resolved });
       this.save();
     }
@@ -45,29 +47,38 @@ export class FolderStore {
     return this.list();
   }
 
-  files(id: string): FolderListing {
+  async files(id: string): Promise<FolderListing> {
     const root = this.root(id);
     const found: FolderFile[] = [];
     let total = 0;
-    const walk = (directory: string, depth: number) => {
+    let visited = 0;
+    const maxEntries = MAX_FOLDER_COUNT * 8;
+    const walk = async (directory: string, depth: number): Promise<void> => {
       if (depth > MAX_DEPTH) return;
-      let entries: import("node:fs").Dirent<string>[];
-      try { entries = readdirSync(directory, { withFileTypes: true }); } catch { return; }
-      for (const entry of entries) {
-        if (total >= MAX_FOLDER_COUNT) return;
-        if (entry.name.startsWith(".") || SKIP_DIRECTORIES.has(entry.name)) continue;
-        const full = path.join(directory, entry.name);
-        if (entry.isDirectory()) walk(full, depth + 1);
-        else if (entry.isFile() && TEXT_FILE.test(entry.name)) {
-          const bytes = statSync(full).size;
-          if (bytes > MAX_FILE_BYTES) continue;
-          total += 1;
-          if (found.length < MAX_FOLDER_FILES) found.push({ path: path.relative(root, full), bytes });
+      const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+      for (let offset = 0; offset < entries.length; offset += 32) {
+        const batch = entries.slice(offset, offset + Math.min(32, maxEntries - visited));
+        const stats = await Promise.all(batch.map((entry) =>
+          !entry.name.startsWith(".") && !SKIP_DIRECTORIES.has(entry.name) && entry.isFile() && TEXT_FILE.test(entry.name)
+            ? stat(path.join(directory, entry.name)).catch(() => undefined) : undefined));
+        for (const [index, entry] of batch.entries()) {
+          if (total >= MAX_FOLDER_COUNT || visited >= maxEntries) return;
+          visited += 1;
+          if (entry.name.startsWith(".") || SKIP_DIRECTORIES.has(entry.name)) continue;
+          const full = path.join(directory, entry.name);
+          if (entry.isDirectory()) await walk(full, depth + 1);
+          else {
+            const info = stats[index];
+            if (!info || info.size > MAX_FILE_BYTES) continue;
+            total += 1;
+            if (found.length < MAX_FOLDER_FILES) found.push({ path: path.relative(root, full), bytes: info.size });
+          }
         }
+        if (total >= MAX_FOLDER_COUNT || visited >= maxEntries) return;
       }
     };
-    walk(root, 0);
-    return { files: found.sort((left, right) => left.path.localeCompare(right.path)), total, capped: total >= MAX_FOLDER_COUNT };
+    await walk(root, 0);
+    return { files: found.sort((left, right) => left.path.localeCompare(right.path)), total, capped: total >= MAX_FOLDER_COUNT || visited >= maxEntries };
   }
 
   read(id: string, relative: string): { path: string; text: string; missing?: boolean } {
@@ -83,18 +94,22 @@ export class FolderStore {
 
   write(id: string, relative: string, text: string): { path: string; before: string | null } {
     const root = this.root(id);
-    if (Buffer.byteLength(text, "utf8") > MAX_FILE_BYTES) throw new Error(`Emma writes at most ${MAX_FILE_BYTES} bytes to one file.`);
+    if (Buffer.byteLength(text, "utf8") > MAX_FILE_BYTES) throw new Error(`Shinbo writes at most ${MAX_FILE_BYTES} bytes to one file.`);
     const full = this.contain(root, relative);
     mkdirSync(path.dirname(full), { recursive: true });
     let before: string | null = null;
+    let destination = full;
+    let mode = 0o600;
     try {
       const stats = statSync(full);
       if (!stats.isFile()) throw new Error("That path is not a file.");
+      destination = realpathSync.native(full);
+      mode = stats.mode & 0o777;
       if (stats.size <= MAX_FILE_BYTES) before = readFileSync(full, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
-    writeFileSync(full, text, "utf8");
+    writeAtomicSync(destination, text, mode);
     return { path: path.relative(root, full), before };
   }
 

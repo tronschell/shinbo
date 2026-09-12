@@ -52,7 +52,7 @@ export async function saveTaskList(userData: string, list: Omit<TaskList, "id" |
     taken = [];
   }
   const id = list.id ?? unique(taskListSlug(title), taken);
-  if (!taken.includes(id) && taken.length >= MAX_TASK_LISTS) throw new Error(`Emma already holds ${MAX_TASK_LISTS} task lists. Delete one before writing another.`);
+  if (!taken.includes(id) && taken.length >= MAX_TASK_LISTS) throw new Error(`Shinbo already holds ${MAX_TASK_LISTS} task lists. Delete one before writing another.`);
   const saved: TaskList = { ...list, id, title, updatedAt: new Date().toISOString() };
   const markdown = renderTaskList(saved);
   if (Buffer.byteLength(markdown, "utf8") > MAX_TASK_LIST_BYTES) throw new Error(`That task list is larger than ${Math.round(MAX_TASK_LIST_BYTES / 1024)}K.`);
@@ -88,5 +88,5 @@ function unique(slug: string, taken: readonly string[]): string {
   for (let suffix = 2; suffix <= MAX_TASK_LISTS; suffix += 1) {
     if (!taken.includes(`${stem}-${suffix}`)) return `${stem}-${suffix}`;
   }
-  throw new Error(`Emma already holds too many task lists called "${slug}".`);
+  throw new Error(`Shinbo already holds too many task lists called "${slug}".`);
 }

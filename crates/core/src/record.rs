@@ -32,6 +32,10 @@ impl Timestamp {
         self.0
     }
 
+    pub(crate) const fn next(self) -> Self {
+        Self(self.0.saturating_add(1))
+    }
+
     pub(crate) fn utc_components(self) -> (u32, u32, u32, u32, u32) {
         let days = self.0.div_euclid(86_400);
         let seconds = self.0.rem_euclid(86_400);
@@ -155,40 +159,44 @@ pub(crate) fn validate_text(
 pub(crate) fn append_quoted(output: &mut String, value: &str) {
     output.reserve(value.len() + 2);
     output.push('"');
-    for character in value.chars() {
-        match character {
-            '"' => output.push_str("\\\""),
-            '\\' => output.push_str("\\\\"),
-            '\n' => output.push_str("\\n"),
-            '\r' => output.push_str("\\r"),
-            '\t' => output.push_str("\\t"),
-            character => output.push(character),
-        }
+    let mut start = 0;
+    for (index, byte) in value.bytes().enumerate() {
+        let escaped = match byte {
+            b'"' => "\\\"",
+            b'\\' => "\\\\",
+            b'\n' => "\\n",
+            b'\r' => "\\r",
+            b'\t' => "\\t",
+            _ => continue,
+        };
+        output.push_str(&value[start..index]);
+        output.push_str(escaped);
+        start = index + 1;
     }
+    output.push_str(&value[start..]);
     output.push('"');
 }
 
 pub(crate) fn unquote(value: &str) -> Result<String, ValidationError> {
-    let value = value
+    let mut remaining = value
         .strip_prefix('"')
         .and_then(|v| v.strip_suffix('"'))
         .ok_or_else(|| ValidationError::new("expected a quoted string"))?;
-    let mut output = String::new();
-    let mut characters = value.chars();
-    while let Some(character) = characters.next() {
-        if character != '\\' {
-            output.push(character);
-            continue;
-        }
-        output.push(match characters.next() {
-            Some('"') => '"',
-            Some('\\') => '\\',
-            Some('n') => '\n',
-            Some('r') => '\r',
-            Some('t') => '\t',
+    let mut output = String::with_capacity(remaining.len());
+    while let Some(index) = remaining.find('\\') {
+        output.push_str(&remaining[..index]);
+        remaining = &remaining[index + 1..];
+        output.push(match remaining.as_bytes().first() {
+            Some(b'"') => '"',
+            Some(b'\\') => '\\',
+            Some(b'n') => '\n',
+            Some(b'r') => '\r',
+            Some(b't') => '\t',
             _ => return Err(ValidationError::new("invalid string escape")),
         });
+        remaining = &remaining[1..];
     }
+    output.push_str(remaining);
     Ok(output)
 }
 
@@ -216,12 +224,42 @@ fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
     era * 146_097 + year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year - 719_468
 }
 
-fn days_in_month(year: i32, month: u32) -> Option<u32> {
+pub(crate) fn days_in_month(year: i32, month: u32) -> Option<u32> {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => Some(31),
         4 | 6 | 9 | 11 => Some(30),
         2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => Some(29),
         2 => Some(28),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Timestamp, append_quoted, unquote};
+
+    #[test]
+    fn quoted_spans_preserve_adjacent_escapes_and_unicode_boundaries() {
+        for (plain, encoded) in [
+            ("é🙂漢字", "\"é🙂漢字\""),
+            ("\\\"\n\r\t", "\"\\\\\\\"\\n\\r\\t\""),
+            ("🙂\\tail", "\"🙂\\\\tail\""),
+            ("head\\", "\"head\\\\\""),
+            ("\\\\", "\"\\\\\\\\\""),
+        ] {
+            let mut output = String::from("prefix");
+            append_quoted(&mut output, plain);
+            assert_eq!(output, format!("prefix{encoded}"));
+            assert_eq!(unquote(encoded).unwrap(), plain);
+        }
+        for encoded in ["\"trailing\\\"", "\"\\x\"", "\"\\🙂\"", "not quoted"] {
+            assert!(unquote(encoded).is_err(), "{encoded}");
+        }
+    }
+
+    #[test]
+    fn next_is_strictly_later() {
+        let timestamp = Timestamp::from_unix_seconds(42);
+        assert_eq!(timestamp.next().unix_seconds(), 43);
     }
 }

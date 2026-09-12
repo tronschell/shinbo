@@ -55,7 +55,7 @@ test("a turn that ends in an answer is unchanged", () => {
   assert.equal(latestRate(threadOf(answer)), 50);
 });
 
-test("the context breakdown calls a notice a notice, not Emma", async () => {
+test("the context breakdown calls a notice a notice, not Shinbo", async () => {
   const items = await segmentItems("messages", threadOf(answer, notice).messages, "t1");
-  assert.deepEqual(items.map((item) => item.name), ["1. You", "2. Emma", "3. Notice"]);
+  assert.deepEqual(items.map((item) => item.name), ["1. You", "2. Shinbo", "3. Notice"]);
 });

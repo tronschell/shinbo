@@ -603,12 +603,12 @@ struct IdentityData {
 
 static std::wstring normalized_windows_path(const std::wstring &value) {
     if (!absolute_windows_path(value)) return {};
-    const std::wstring extended = emma_windows_path::extended_length(value);
+    const std::wstring extended = shinbo_windows_path::extended_length(value);
     if (extended.empty()) return {};
     std::array<wchar_t, 32768> full_path{};
     DWORD length = GetFullPathNameW(extended.c_str(), static_cast<DWORD>(full_path.size()), full_path.data(), nullptr);
     if (!length || length >= full_path.size()) return {};
-    std::wstring normalized = emma_windows_path::without_extended_length(std::wstring(full_path.data(), length));
+    std::wstring normalized = shinbo_windows_path::without_extended_length(std::wstring(full_path.data(), length));
     for (wchar_t &character : normalized) if (character == L'/') character = L'\\';
     while (normalized.size() > 3 && normalized.back() == L'\\') normalized.pop_back();
     int lower_length = LCMapStringEx(LOCALE_NAME_INVARIANT, LCMAP_LOWERCASE, normalized.data(), static_cast<int>(normalized.size()), nullptr, 0, nullptr, nullptr, 0);
@@ -656,7 +656,7 @@ static std::optional<IdentityData> process_identity(DWORD pid) {
     constexpr ULONGLONG unix_epoch = 116444736000000000ULL;
     if (ticks.QuadPart <= unix_epoch) return std::nullopt;
     double launched_at = static_cast<double>(ticks.QuadPart - unix_epoch) / 10000.0;
-    std::wstring path = emma_windows_path::without_extended_length(std::wstring(path_buffer.data(), path_length));
+    std::wstring path = shinbo_windows_path::without_extended_length(std::wstring(path_buffer.data(), path_length));
     if (!absolute_windows_path(path)) return std::nullopt;
     std::wstring normalized_path = normalized_windows_path(path);
     std::wstring stem = executable_stem(path);
@@ -686,8 +686,8 @@ static ParentMap process_parents() {
     return result;
 }
 
-static const wchar_t *const emma_binary_names[] = {
-    L"emma", L"emma-host", L"emma-cli", L"emma-pty", L"emma-computer", L"emma-option-tap", L"emma-transcribe",
+static const wchar_t *const shinbo_binary_names[] = {
+    L"shinbo", L"shinbo-host", L"shinbo-cli", L"shinbo-pty", L"shinbo-computer", L"shinbo-option-tap", L"shinbo-transcribe",
 };
 
 static std::wstring containing_directory(const std::wstring &path) {
@@ -700,29 +700,29 @@ static bool inside_directory(const std::wstring &normalized_path, const std::wst
         && normalized_path.compare(0, directory.size(), directory) == 0 && normalized_path[directory.size()] == L'\\';
 }
 
-static bool emma_binary_name(const std::wstring &path) {
+static bool shinbo_binary_name(const std::wstring &path) {
     const std::wstring stem = executable_stem(path);
-    for (const wchar_t *name : emma_binary_names) if (_wcsicmp(stem.c_str(), name) == 0) return true;
+    for (const wchar_t *name : shinbo_binary_names) if (_wcsicmp(stem.c_str(), name) == 0) return true;
     return false;
 }
 
-struct EmmaFiles {
+struct ShinboFiles {
     DWORD blocked_pid = 0;
     std::wstring helper_directory;
     std::wstring app_directory;
 };
 
-static EmmaFiles emma_files(DWORD blocked_pid) {
-    EmmaFiles result;
+static ShinboFiles shinbo_files(DWORD blocked_pid) {
+    ShinboFiles result;
     result.blocked_pid = blocked_pid;
     if (auto helper = process_identity(GetCurrentProcessId())) result.helper_directory = containing_directory(helper->wide_path);
     if (auto app = process_identity(blocked_pid)) result.app_directory = containing_directory(app->wide_path);
     return result;
 }
 
-static bool emma_owned(const EmmaFiles &emma, DWORD pid, const std::wstring &normalized_path) {
-    return pid == GetCurrentProcessId() || pid == emma.blocked_pid || emma_binary_name(normalized_path)
-        || inside_directory(normalized_path, emma.helper_directory) || inside_directory(normalized_path, emma.app_directory);
+static bool shinbo_owned(const ShinboFiles &shinbo, DWORD pid, const std::wstring &normalized_path) {
+    return pid == GetCurrentProcessId() || pid == shinbo.blocked_pid || shinbo_binary_name(normalized_path)
+        || inside_directory(normalized_path, shinbo.helper_directory) || inside_directory(normalized_path, shinbo.app_directory);
 }
 
 struct WindowList {
@@ -986,7 +986,7 @@ static bool parse_identity(const Json &value, DWORD blocked_pid, IdentityData *i
         || !finite_integer(pid, 1, INT_MAX, &identity->pid) || !finite_positive(launched)) return false;
     identity->wide_path = normalized_windows_path(identity->wide_path);
     if (identity->wide_path.empty() || identity_id(identity->wide_path) != id->text
-        || emma_owned(emma_files(blocked_pid), identity->pid, identity->wide_path)) return false;
+        || shinbo_owned(shinbo_files(blocked_pid), identity->pid, identity->wide_path)) return false;
     identity->id = id->text;
     identity->name = name->text;
     identity->path = path->text;
@@ -1348,7 +1348,7 @@ class AppSession {
 public:
     AppSession(const IdentityData &identity, DWORD blocked_pid, IUIAutomation *automation)
         : identity_(identity), automation_(automation) {
-        if (!automation_ || emma_owned(emma_files(blocked_pid), identity_.pid, identity_.wide_path)) return;
+        if (!automation_ || shinbo_owned(shinbo_files(blocked_pid), identity_.pid, identity_.wide_path)) return;
         WindowList windows = windows_for_process(identity_.pid);
         if (windows.windows.empty()) return;
         if (FAILED(automation_->get_ControlViewWalker(walker_.put())) || !walker_) return;
@@ -1478,7 +1478,7 @@ private:
         }
         if (!valid_application()) return failure("The approved app has closed or changed. Open it and request approval again.");
         if (InterlockedCompareExchange(&cancelled, 0, 0) != 0) return failure("App control was stopped.");
-        if (elements_.size() <= 1) return failure("The app exposes no accessible controls. Open its window first. Emma will not activate it or use global input.");
+        if (elements_.size() <= 1) return failure("The app exposes no accessible controls. Open its window first. Shinbo will not activate it or use global input.");
         snapshot_ = make_snapshot();
         snapshot_at_ = GetTickCount64();
         if (!within_deadline() || elements_.size() >= max_elements || truncated_) text.append("State is truncated by the time, size, or element limit.\n");
@@ -1664,7 +1664,7 @@ private:
         UINT virtual_key = 0;
         if (!valid_key(name, &virtual_key)) return failure("The key is not supported. Use one named nonmodifier key; no global shortcut fallback was used.");
         BOOL focused = FALSE;
-        if (FAILED(element->get_CurrentHasKeyboardFocus(&focused)) || !focused) return failure("Key input requires the app's already-focused control. Emma will not activate or focus the app.");
+        if (FAILED(element->get_CurrentHasKeyboardFocus(&focused)) || !focused) return failure("Key input requires the app's already-focused control. Shinbo will not activate or focus the app.");
         UIA_HWND native_handle = 0;
         HWND target = SUCCEEDED(element->get_CurrentNativeWindowHandle(&native_handle)) && native_handle
             ? reinterpret_cast<HWND>(native_handle) : window_for_element(element);
@@ -1786,24 +1786,24 @@ static bool self_test() {
     if (!utf8_to_wide("hello \xf0\x9f\x98\x80", &wide) || wide.size() != 8 || utf8_to_wide("\x80", &wide)) return false;
     if (!absolute_windows_path(L"C:\\Windows\\notepad.exe") || !absolute_windows_path(L"\\\\server\\share\\app.exe")
         || absolute_windows_path(L"relative.exe")) return false;
-    const std::wstring spaced_path = normalized_windows_path(L"C:\\Program Files\\Emma Suite\\Éxé.exe");
-    const std::wstring equivalent_path = normalized_windows_path(L"c:/program files/Emma Suite/ÉXÉ.EXE");
-    const std::wstring other_path = normalized_windows_path(L"C:\\Program Files\\Emma Suite\\Other.exe");
+    const std::wstring spaced_path = normalized_windows_path(L"C:\\Program Files\\Shinbo Suite\\Éxé.exe");
+    const std::wstring equivalent_path = normalized_windows_path(L"c:/program files/Shinbo Suite/ÉXÉ.EXE");
+    const std::wstring other_path = normalized_windows_path(L"C:\\Program Files\\Shinbo Suite\\Other.exe");
     const std::string spaced_id = identity_id(spaced_path);
     if (spaced_path.empty() || spaced_path != equivalent_path || spaced_id != identity_id(equivalent_path)
         || spaced_id == identity_id(other_path) || !valid_id(spaced_id)
         || !std::all_of(spaced_id.begin(), spaced_id.end(), [](unsigned char byte) { return byte < 128; })) return false;
-    EmmaFiles emma;
-    emma.blocked_pid = 42;
-    emma.helper_directory = normalized_windows_path(L"C:\\Program Files\\Emma\\resources\\dist-native");
-    emma.app_directory = normalized_windows_path(L"C:\\Program Files\\Emma");
-    if (!emma_owned(emma, 7, normalized_windows_path(L"C:\\Program Files\\Emma\\Emma.exe"))
-        || !emma_owned(emma, 7, normalized_windows_path(L"C:\\Program Files\\Emma\\resources\\dist-native\\emma-computer.exe"))
-        || !emma_owned(emma, 42, normalized_windows_path(L"C:\\Windows\\System32\\notepad.exe"))
-        || !emma_owned(emma, 7, normalized_windows_path(L"C:\\Users\\a\\AppData\\Local\\emma-cli.exe"))
-        || emma_owned(emma, 7, normalized_windows_path(L"C:\\Windows\\System32\\notepad.exe"))
-        || emma_owned(emma, 7, normalized_windows_path(L"C:\\Program Files\\Emmanuel\\Emmanuel.exe"))
-        || emma_owned(emma, 7, normalized_windows_path(L"C:\\Program Files\\Google\\Chrome\\chrome.exe"))) return false;
+    ShinboFiles shinbo;
+    shinbo.blocked_pid = 42;
+    shinbo.helper_directory = normalized_windows_path(L"C:\\Program Files\\Shinbo\\resources\\dist-native");
+    shinbo.app_directory = normalized_windows_path(L"C:\\Program Files\\Shinbo");
+    if (!shinbo_owned(shinbo, 7, normalized_windows_path(L"C:\\Program Files\\Shinbo\\Shinbo.exe"))
+        || !shinbo_owned(shinbo, 7, normalized_windows_path(L"C:\\Program Files\\Shinbo\\resources\\dist-native\\shinbo-computer.exe"))
+        || !shinbo_owned(shinbo, 42, normalized_windows_path(L"C:\\Windows\\System32\\notepad.exe"))
+        || !shinbo_owned(shinbo, 7, normalized_windows_path(L"C:\\Users\\a\\AppData\\Local\\shinbo-cli.exe"))
+        || shinbo_owned(shinbo, 7, normalized_windows_path(L"C:\\Windows\\System32\\notepad.exe"))
+        || shinbo_owned(shinbo, 7, normalized_windows_path(L"C:\\Program Files\\Shinbonuel\\Shinbonuel.exe"))
+        || shinbo_owned(shinbo, 7, normalized_windows_path(L"C:\\Program Files\\Google\\Chrome\\chrome.exe"))) return false;
     if (containing_directory(L"C:\\a\\b.exe") != L"C:\\a" || !containing_directory(L"b.exe").empty()) return false;
     if (!resolvable_app_name(L"Notepad") || resolvable_app_name(L"C:\\Windows\\notepad.exe")
         || resolvable_app_name(L"") || resolvable_app_name(std::wstring(129, L'a'))
@@ -1838,8 +1838,8 @@ int wmain(int argc, wchar_t **argv) {
             finish();
             return 1;
         }
-        if (emma_binary_name(target->target) || same_app_name(target->name, L"Emma")) {
-            write_result(failure("Emma cannot start itself."));
+        if (shinbo_binary_name(target->target) || same_app_name(target->name, L"Shinbo")) {
+            write_result(failure("Shinbo cannot start itself."));
             finish();
             return 1;
         }
@@ -1884,7 +1884,7 @@ int wmain(int argc, wchar_t **argv) {
         }
     }
     if (list) {
-        const EmmaFiles emma = emma_files(blocked_pid);
+        const ShinboFiles shinbo = shinbo_files(blocked_pid);
         Json result = Json::object_value();
         result.set("ok", Json::boolean_value(true));
         Json apps = Json::array_value();
@@ -1893,7 +1893,7 @@ int wmain(int argc, wchar_t **argv) {
             DWORD pid = window.second;
             if (identities.count(pid)) continue;
             auto identity = process_identity(pid);
-            if (!identity || emma_owned(emma, pid, identity->wide_path)) continue;
+            if (!identity || shinbo_owned(shinbo, pid, identity->wide_path)) continue;
             identities.emplace(pid, std::move(*identity));
             if (identities.size() >= 128) break;
         }

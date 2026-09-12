@@ -4,21 +4,21 @@ Audited September 5, 2026. This is an investigation of the current working tree,
 
 ## Follow-up: Claude Code work and current GitHub state
 
-The first audit missed work in Claude Code's separate worktrees. [PR #57](https://github.com/tronschell/emma/pull/57), **feat(search): download zvec-grep on demand and recommend an embedding model**, merged into `dev` on September 5 at 20:33 UTC as `d9ae86fb7628b937e47dc5a2bf91bcb06115a724`. GitHub's current `dev` was verified at `0e18733a78c765be3030112a91e128e41d8bbc0e`; the primary checkout used for the original audit remains at `45445ef`. The measured 570 MiB installer below is therefore an older artifact, not the current merged implementation.
+The first audit missed work in Claude Code's separate worktrees. [PR #57](https://github.com/tronschell/shinbo/pull/57), **feat(search): download zvec-grep on demand and recommend an embedding model**, merged into `dev` on September 5 at 20:33 UTC as `d9ae86fb7628b937e47dc5a2bf91bcb06115a724`. GitHub's current `dev` was verified at `0e18733a78c765be3030112a91e128e41d8bbc0e`; the primary checkout used for the original audit remains at `45445ef`. The measured 570 MiB installer below is therefore an older artifact, not the current merged implementation.
 
-Read the main Claude Code session `9831fa12-aae4-42d4-a4b6-b5c636202834`, including the **On-demand zvec-grep with embedding UI** task report, and checked the implementation against current remote-dev source. Both packagers now omit zvec-grep. Settings / harness offers an explicit download, progress, Cancel, Retry, and installed state. Installation goes to `<userData>/vendor/zvec-grep/<version>/`, with checksum verification, staged extraction and reuse across ordinary app updates. Hosted embeddings still require this local indexing runtime. It is not downloaded merely by installing Emma.
+Read the main Claude Code session `9831fa12-aae4-42d4-a4b6-b5c636202834`, including the **On-demand zvec-grep with embedding UI** task report, and checked the implementation against current remote-dev source. Both packagers now omit zvec-grep. Settings / harness offers an explicit download, progress, Cancel, Retry, and installed state. Installation goes to `<userData>/vendor/zvec-grep/<version>/`, with checksum verification, staged extraction and reuse across ordinary app updates. Hosted embeddings still require this local indexing runtime. It is not downloaded merely by installing Shinbo.
 
-The standalone Windows installer at `C:/wz/squirrel/Emma-0.5.0-win32-x64-Setup.exe` was independently measured at 149,875,200 bytes, or **142.93 MiB**, matching the PR's reported reduction from 597,997,568 bytes / 570.30 MiB: **74.9% smaller**. This measurement does not establish which build the user currently has running.
+The standalone Windows installer at `C:/wz/squirrel/Shinbo-0.5.0-win32-x64-Setup.exe` was independently measured at 149,875,200 bytes, or **142.93 MiB**, matching the PR's reported reduction from 597,997,568 bytes / 570.30 MiB: **74.9% smaller**. This measurement does not establish which build the user currently has running.
 
-The [tools workflow](https://github.com/tronschell/emma/actions/runs/33990447702) completed successfully. The [published zvec-grep 0.2.1 release](https://github.com/tronschell/emma/releases/tag/zvec-grep-v0.2.1) contains both tarballs and SHA-256 sidecars: Windows x64 **458,789,873 bytes / 437.54 MiB**, macOS arm64 **104,351,538 bytes / 99.52 MiB**. The PR's statement that the real release did not yet exist is now outdated. Claude's report documents a real Windows dev-app download, restart reuse, and semantic query against a loopback server; its later session starts a published-asset test. That final live download and macOS in-app flow were not independently exercised in this audit.
+The [tools workflow](https://github.com/tronschell/shinbo/actions/runs/33990447702) completed successfully. The [published zvec-grep 0.2.1 release](https://github.com/tronschell/shinbo/releases/tag/zvec-grep-v0.2.1) contains both tarballs and SHA-256 sidecars: Windows x64 **458,789,873 bytes / 437.54 MiB**, macOS arm64 **104,351,538 bytes / 99.52 MiB**. The PR's statement that the real release did not yet exist is now outdated. Claude's report documents a real Windows dev-app download, restart reuse, and semantic query against a loopback server; its later session starts a published-asset test. That final live download and macOS in-app flow were not independently exercised in this audit.
 
-Recent related PRs **#49–#58 are all merged**, including [#54](https://github.com/tronschell/emma/pull/54), which adds installed-app smoke checks for both packages, and [#58](https://github.com/tronschell/emma/pull/58), which adds application launching for computer use. PR #57's six applicable checks passed; its two packaging jobs were skipped on the dev-targeting PR. The open PR inventory is [#46](https://github.com/tronschell/emma/pull/46), **fix(ci): restore Windows builds and Zig checks**; [#26](https://github.com/tronschell/emma/pull/26), **chore(dev): release 0.3.2**; and [#25](https://github.com/tronschell/emma/pull/25), **Main**. #46's latest recorded Windows Zig and gate checks failed. No PR was modified or closed.
+Recent related PRs **#49–#58 are all merged**, including [#54](https://github.com/tronschell/shinbo/pull/54), which adds installed-app smoke checks for both packages, and [#58](https://github.com/tronschell/shinbo/pull/58), which adds application launching for computer use. PR #57's six applicable checks passed; its two packaging jobs were skipped on the dev-targeting PR. The open PR inventory is [#46](https://github.com/tronschell/shinbo/pull/46), **fix(ci): restore Windows builds and Zig checks**; [#26](https://github.com/tronschell/shinbo/pull/26), **chore(dev): release 0.3.2**; and [#25](https://github.com/tronschell/shinbo/pull/25), **Main**. #46's latest recorded Windows Zig and gate checks failed. No PR was modified or closed.
 
 ### Remaining search follow-ups
 
 The bundle-removal work is implemented. Further backend pruning now reduces the optional download and post-install disk use, not the base app size. The Windows tarball still includes the GPU variants and mismatched ARM64 dependency described below. Downloading a component does not by itself guarantee lower memory once that component is enabled and running.
 
-Source review of [the merged installer](https://github.com/tronschell/emma/blob/0e18733a78c765be3030112a91e128e41d8bbc0e/desktop/main/zvec-grep.ts) found follow-ups worth validating:
+Source review of [the merged installer](https://github.com/tronschell/shinbo/blob/0e18733a78c765be3030112a91e128e41d8bbc0e/desktop/main/zvec-grep.ts) found follow-ups worth validating:
 
 - **Preserve old versions until replacement succeeds, and clean asynchronously.** The constructor calls `sweep()` immediately; it recursively deletes every entry other than the current version with synchronous filesystem calls. On a future version bump, this removes the previous install before the user downloads its replacement, contrary to the PR's stated post-success cleanup policy. Deleting a large tree on the Electron main thread can also delay startup. Retain the previous version until successful replacement and move cleanup off the main thread.
 - **Handle destination-stream failures.** `download()` creates a WriteStream without an error listener and waits only for `drain`/`end` callbacks. Disk-full or access errors can escape the intended Failed/Retry state as unhandled stream errors. Use an error-aware stream pipeline and verify disk-full, denied-write, and cancellation paths.
@@ -33,13 +33,13 @@ Sizes are logical file sizes, excluding filesystem allocation overhead. MiB mean
 
 | Existing Windows artifact | Size |
 | --- | ---: |
-| `desktop/release/Emma-win32-x64` | 1,429.99 MiB / 1.396 GiB |
+| `desktop/release/Shinbo-win32-x64` | 1,429.99 MiB / 1.396 GiB |
 | Semantic-search resources, `resources/zvec-grep` | 1,055.25 MiB, 73.8% of package |
-| `Emma.exe` | 215.09 MiB |
+| `Shinbo.exe` | 215.09 MiB |
 | Chromium locales | 46.65 MiB |
-| Agent harness, `emma-cli.exe` | 12.33 MiB |
+| Agent harness, `shinbo-cli.exe` | 12.33 MiB |
 | Application archive, `app.asar` | 6.86 MiB |
-| Rust host, `emma-host.exe` | 0.95 MiB |
+| Rust host, `shinbo-host.exe` | 0.95 MiB |
 | Windows installer | 570.27 MiB |
 
 Existing renderer output totals approximately 5.27 MiB. Its largest initial JavaScript file is 1,103,955 bytes; the main stylesheet is 420,297 bytes. These are existing build outputs, not a fresh build of the working tree.
@@ -80,7 +80,7 @@ Validation: clean packaged installation, default local embedding model, every re
 
 High CPU, process-launch, and transient-memory opportunity on both platforms.
 
-[useThreadGit](../desktop/src/thread-git.tsx:5) requests Git status for every distinct project represented in the thread list at mount, focus, every minute, and every generic `emma:changed` event. Its loading guard prevents overlapping calls within that hook, but there is no hidden-window gate. The [IPC handler](../desktop/main/main.ts:5100) calls [gitSnapshot](../desktop/main/git.ts:94), which collects full tracked diffs, up to 20 untracked-file diffs in parallel, branches, Git directories, remotes, and PR metadata. The sidebar badge only consumes branch/PR information.
+[useThreadGit](../desktop/src/thread-git.tsx:5) requests Git status for every distinct project represented in the thread list at mount, focus, every minute, and every generic `shinbo:changed` event. Its loading guard prevents overlapping calls within that hook, but there is no hidden-window gate. The [IPC handler](../desktop/main/main.ts:5100) calls [gitSnapshot](../desktop/main/git.ts:94), which collects full tracked diffs, up to 20 untracked-file diffs in parallel, branches, Git directories, remotes, and PR metadata. The sidebar badge only consumes branch/PR information.
 
 Add a narrow summary operation for badges. Load diffs only when the Git pane or a tool needs them. Cache/coalesce by repository in main, refresh only affected repositories after writes, and pause UI-only polling while hidden. The existing PR cache can remain. This avoids unnecessary child processes and constructing large diff strings just to truncate them later.
 
@@ -164,6 +164,6 @@ On notched Macs, [openHotspot](../desktop/main/main.ts:902) polls the cursor eve
 
 The semantic-search component is already merged; do not duplicate it. Validate its real published-asset installation and address the installer follow-ups above. Continue performance work with the narrow Git summary, cheaper machine sampling, and explicit Windows locale trim, checking each against the updated dev baseline before editing. Then add summary indexing, harness/browser retirement, and auxiliary renderer splitting. Optional search-backend pruning is a separate improvement to the download.
 
-For each change, compare the same packaged build/profile/workload on Windows x64 and Apple silicon. Use at least five minutes each of visible idle, minimized idle, and post-work idle, including multiple 60-second refresh cycles. Also exercise streaming, large dirty repositories, long histories, many tabs, search enabled/disabled, and sleep/wake. Record process-tree CPU deltas, resident/private memory, renderer/child-process counts, main-thread stalls, time to first usable window, and compressed/uncompressed package sizes. Include search daemons and probe subprocesses even if their executable names differ from Emma.
+For each change, compare the same packaged build/profile/workload on Windows x64 and Apple silicon. Use at least five minutes each of visible idle, minimized idle, and post-work idle, including multiple 60-second refresh cycles. Also exercise streaming, large dirty repositories, long histories, many tabs, search enabled/disabled, and sleep/wake. Record process-tree CPU deltas, resident/private memory, renderer/child-process counts, main-thread stalls, time to first usable window, and compressed/uncompressed package sizes. Include search daemons and probe subprocesses even if their executable names differ from Shinbo.
 
 No implementation, rebuild, full repository check suite, controlled UI benchmark, signing test, or macOS runtime validation was performed as part of this audit.

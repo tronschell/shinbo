@@ -1,9 +1,12 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { FileMark } from "./git";
 import { GlobeIcon } from "./icons";
 import { parseBlocks, type Item, type Row, type Span } from "./markdown-parse";
 import { openPreview } from "./preview";
 import { CodeBlock } from "./run-block";
+import { highlightSegments } from "../shared/slash";
+
+export const SkillNames = createContext<string[]>([]);
 
 function PathSpan({ path, text }: { path: string; text: string }) {
   return <code className="md-path" role="button" tabIndex={0} title={`Open ${path}`}
@@ -13,16 +16,40 @@ function PathSpan({ path, text }: { path: string; text: string }) {
 }
 
 function Picture({ path, alt }: { path: string; alt: string }) {
-  const [source, setSource] = useState("");
+  const [preview, setPreview] = useState<{ path: string; image: string }>();
+  const target = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     let live = true;
-    void window.emma.previewPath(path)
-      .then((found) => { if (live) setSource(found?.image ?? ""); })
-      .catch(() => { if (live) setSource(""); });
-    return () => { live = false; };
+    const read = () => void window.shinbo.previewPath(path)
+      .then((found) => { if (live) setPreview({ path, image: found?.image ?? "" }); })
+      .catch(() => { if (live) setPreview({ path, image: "" }); });
+    if (typeof IntersectionObserver === "undefined") {
+      read();
+      return () => { live = false; };
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const observer = new IntersectionObserver(([entry]) => {
+      clearTimeout(timer);
+      if (!live || !entry?.isIntersecting) return;
+      timer = setTimeout(() => {
+        observer.disconnect();
+        read();
+      }, 100);
+    }, { rootMargin: "400px" });
+    if (target.current) observer.observe(target.current);
+    return () => { live = false; clearTimeout(timer); observer.disconnect(); };
   }, [path]);
-  if (!source) return <PathSpan path={path} text={alt} />;
-  return <img className="md-image" src={source} alt={alt} title={path} onClick={() => openPreview(path, alt || undefined)} />;
+  const source = preview?.path === path ? preview.image : "";
+  return <span ref={target}>{source
+    ? <img className="md-image" src={source} alt={alt} title={path} onClick={() => openPreview(path, alt || undefined)} />
+    : <PathSpan path={path} text={alt} />}</span>;
+}
+
+function TextSpan({ text }: { text: string }) {
+  const skills = useContext(SkillNames);
+  return <>{highlightSegments(text, skills).map((segment, index) => segment.hue === undefined || !segment.text.startsWith("/")
+    ? <span key={index}>{segment.text}</span>
+    : <a key={index} href={segment.text} title={`Open ${segment.text.slice(1)} skill`} onClick={(event) => { event.preventDefault(); openPreview(segment.text, segment.text.slice(1)); }}>{segment.text}</a>)}</>;
 }
 
 function Spans({ spans }: { spans: Span[] }) {
@@ -34,7 +61,7 @@ function Spans({ spans }: { spans: Span[] }) {
     if (span.bold) return <strong key={index}>{span.text}</strong>;
     if (span.strike) return <del key={index}>{span.text}</del>;
     if (span.italic) return <em key={index}>{span.text}</em>;
-    return <span key={index}>{span.text}</span>;
+    return <TextSpan key={index} text={span.text} />;
   })}</>;
 }
 

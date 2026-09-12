@@ -14,7 +14,7 @@ Read `AGENTS.md` before your first change; this page is the mechanics.
 | [`rust-toolchain.toml`](../rust-toolchain.toml) | Rust 1.97.1, minimal, `clippy` + `rustfmt` |
 | [`package.json`](../package.json) · [`justfile`](../justfile) | Shims onto `desktop`'s scripts. `just` has `check`, `test`, `dev`, `run`, `package` |
 | [`crates/core/src/`](../crates/core/src) | `thread.rs`, `live.rs`, `scheduled.rs`, `record.rs` (timestamps, validation, quoting), `lib.rs` (re-exports + integration tests) |
-| [`crates/host/src/`](../crates/host/src) | `main.rs` — the `emma-host` NDJSON server; `runtime.rs` — resolves the data root and starts the live runtime |
+| [`crates/host/src/`](../crates/host/src) | `main.rs` — the `shinbo-host` NDJSON server; `runtime.rs` — resolves the data root and starts the live runtime |
 | [`desktop/main/`](../desktop/main) | Electron lifecycle, windows, IPC, and every runtime touching disk, a process, the network, the screen or a model |
 | [`desktop/src/`](../desktop/src) | Sandboxed React 19 renderer. No Node, no Electron imports |
 | [`desktop/src/styles/`](../desktop/src/styles) | Stylesheets; `tokens.css` holds the design tokens |
@@ -22,11 +22,11 @@ Read `AGENTS.md` before your first change; this page is the mechanics.
 | [`desktop/test/`](../desktop/test) | `node --test` suites and the fake ACP agent |
 | [`desktop/native/`](../desktop/native) | macOS Objective-C/C helpers and Windows native equivalents: `quick_ask.m`/`quick_ask_win.cpp`, `computer.m`/`computer_win.cpp`, `transcribe.m`/`transcribe_win.cpp`, `pty.c`/`pty_win.c`, plus `Info.extra.plist` |
 | [`desktop/scripts/`](../desktop/scripts) | Development, packaging and release checks, vendoring, catalog generation, and the CDP drivers `drive.mjs`, `shot.mjs`, `dismiss.mjs` |
-| [`desktop/skills/`](../desktop/skills) | Six bundled skills: `artifact`, `building-emma`, `installing-capabilities`, `meta-harness`, `scheduled-tasks`, `threads` |
+| [`desktop/skills/`](../desktop/skills) | Six bundled skills: `artifact`, `building-shinbo`, `installing-capabilities`, `meta-harness`, `scheduled-tasks`, `threads` |
 | `desktop/vendor/` | Gitignored. `npm run vendor:ripgrep` puts `rg` here; `npm run vendor:zvec-grep` puts `zvec-grep/` beside it for packing, not for shipping |
-| [`harness/`](../harness) | `emma-cli`. `src/acp/` (the ACP server), `src/builtins/` (registry; `builtins/emma/` holds Emma's tool *schemas*), `src/core/` (the engine), `src/gateway/` (model transport), `src/tools/`, `src/ui/` |
+| [`harness/`](../harness) | `shinbo-cli`. `src/acp/` (the ACP server), `src/builtins/` (registry; `builtins/shinbo/` holds Shinbo's tool *schemas*), `src/core/` (the engine), `src/gateway/` (model transport), `src/tools/`, `src/ui/` |
 
-`harness/` is Emma's fork of [vercel-labs/fx](https://github.com/vercel-labs/fx),
+`harness/` is Shinbo's fork of [vercel-labs/fx](https://github.com/vercel-labs/fx),
 Apache-2.0, © Vercel, Inc. and fx contributors. Read
 [`FORK.md`](../harness/FORK.md) before touching it, and keep it honest —
 that is a rule, and Apache-2.0 §4 keeps `LICENSE` and
@@ -82,8 +82,8 @@ All in [`desktop/package.json`](../desktop/package.json).
 | `build:main` | `tsc -p tsconfig.main.json` → `dist-main/`. `rootDir: "."`, `module: Node16`, so it emits CommonJS and pulls `shared/` and the `.ts` half of `src/` in transitively |
 | `build:renderer` | `vite build` → `dist-renderer/` |
 | `build` | `build:main` then `build:renderer` |
-| `build:host` | `cargo build --locked -p emma-host`, then `build:harness` |
-| `build:harness` | `(cd ../harness && zig build)` → `harness/zig-out/bin/emma-cli` (`.exe` on Windows). **Nothing else builds the harness** |
+| `build:host` | `cargo build --locked -p shinbo-host`, then `build:harness` |
+| `build:harness` | `(cd ../harness && zig build)` → `harness/zig-out/bin/shinbo-cli` (`.exe` on Windows). **Nothing else builds the harness** |
 | `build:native` | Builds the four platform-specific helpers and runs their self-tests where supported: macOS uses `clang` and the `.m`/`.c` sources; Windows uses the SDK toolchain and the `_win` sources |
 | `vendor:ripgrep` | Downloads [ripgrep](https://github.com/BurntSushi/ripgrep) 15.2.0 and its license files into `desktop/vendor/`, checked against a pinned SHA-256, stamped in `vendor/rg.version`. A no-op once all files are present and stamped; warns when no pinned platform/architecture archive exists |
 | `vendor:zvec-grep` | `npm install`s `@zvec/zvec-grep` into `desktop/vendor/zvec-grep/` at the version named by `shared/zvec-grep.ts`, prunes every foreign `onnxruntime-node` binary, and stamps `vendor/zvec-grep/zvec-grep.version`. Nothing ships it — it is the input to `pack:zvec-grep` |
@@ -100,11 +100,11 @@ All in [`desktop/package.json`](../desktop/package.json).
 [`scripts/dev.mjs`](../desktop/scripts/dev.mjs) is strictly sequential; each step
 must exit zero:
 
-1. `build:host` — `cargo build -p emma-host`, then `zig build` for `emma-cli`.
+1. `build:host` — `cargo build -p shinbo-host`, then `zig build` for `shinbo-cli`.
 2. `build:native` — the four platform-native helpers.
 3. `build:main` — `tsc -p tsconfig.main.json`.
 4. `npm exec vite -- --host 127.0.0.1`, left running.
-5. After 800 ms, `npm exec electron .` with `EMMA_DEV_SERVER_URL=http://127.0.0.1:5173`.
+5. After 800 ms, `npm exec electron .` with `SHINBO_DEV_SERVER_URL=http://127.0.0.1:5173`.
 
 Quitting Electron `SIGTERM`s Vite and exits with Electron's code.
 
@@ -117,16 +117,16 @@ through to `rg` on `PATH`, then to `grep`. Two dev instances fight over the user
 data directory — give the second one `--user-data-dir`.
 
 `drive.mjs`, `shot.mjs` and `dismiss.mjs` drive a running instance over CDP
-(`EMMA_CDP_PORT`, default 9222 for `drive.mjs`, 9223 for the other two);
-`drive.mjs` evaluates an expression against the real `window.emma` bridge, so it
+(`SHINBO_CDP_PORT`, default 9222 for `drive.mjs`, 9223 for the other two);
+`drive.mjs` evaluates an expression against the real `window.shinbo` bridge, so it
 exercises the same IPC path a click does.
 
 ```sh
-node desktop/scripts/drive.mjs 'return await window.emma.request("snapshot", {})'
+node desktop/scripts/drive.mjs 'return await window.shinbo.request("snapshot", {})'
 ```
 
 Main-process `console.*` goes to the terminal that ran `npm run dev`; there is no
-log file. `emma-cli`'s stderr is prefixed `emma-cli: `. `emma-host` needs no
+log file. `shinbo-cli`'s stderr is prefixed `shinbo-cli: `. `shinbo-host` needs no
 configuration to run by hand — start it in a terminal and type JSON at it.
 
 ## Packaging
@@ -145,8 +145,8 @@ as the fallback when only the CLT is selected.
 Only `package.json`, `dist-main/main`, `dist-main/shared`, and `dist-renderer`
 are allowed into `app.asar`. The copied package version is stamped from the
 root `package.json` without changing the source manifest. Extra resources are
-`emma-host`, `emma-cli`, `rg`, `emma-option-tap`, `emma-computer`,
-`emma-transcribe`, `emma-pty`, `skills/`, and `notices/`. zvec-grep is **not**
+`shinbo-host`, `shinbo-cli`, `rg`, `shinbo-option-tap`, `shinbo-computer`,
+`shinbo-transcribe`, `shinbo-pty`, `skills/`, and `notices/`. zvec-grep is **not**
 among them: it is downloaded on demand into `<userData>/vendor/zvec-grep/<version>/`
 the first time semantic search asks for it, and its licences travel inside that
 tarball. The notices include
@@ -166,7 +166,7 @@ npm run dmg:mac
 [`dmg-mac.mjs`](../desktop/scripts/dmg-mac.mjs) wraps a packaged app in the
 disk image users download, beside an alias to `/Applications` so the install is
 a drag. It takes the app and image paths as optional arguments, defaulting to
-the packaged app and `Emma-vX.Y.Z-darwin-arm64.dmg` in `desktop/release/`. It
+the packaged app and `Shinbo-vX.Y.Z-darwin-arm64.dmg` in `desktop/release/`. It
 mounts what it built and verifies the version, bundle identifier, the alias,
 and the bundled host, harness and ripgrep before reporting the path.
 
@@ -179,7 +179,7 @@ whatever else is published beside it.
 To avoid replacing a running bundle, pass a separate output directory:
 
 ```sh
-npm --prefix desktop run package:mac -- /tmp/emma-release-check
+npm --prefix desktop run package:mac -- /tmp/shinbo-release-check
 ```
 
 On a native Windows x64 host, use the Squirrel packaging path:
@@ -248,7 +248,7 @@ README. Subtrees and bundled third-party assets retain the terms above.
 
 - [architecture.md](architecture.md) — process boundaries and the trust model
 - [concepts.md](concepts.md) — the vocabulary
-- [harness.md](harness.md) — `emma-cli` and the ACP session
+- [harness.md](harness.md) — `shinbo-cli` and the ACP session
 - [data.md](data.md) — every file and environment variable
 - [design-system.md](design-system.md) — the renderer's visual contract
 - [troubleshooting.md](troubleshooting.md) — when it breaks

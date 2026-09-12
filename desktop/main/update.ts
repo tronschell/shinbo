@@ -19,7 +19,7 @@ function rememberReady(version: string) {
   try {
     writeFileSync(readyFile(), JSON.stringify({ version }));
   } catch (error) {
-    console.error("Emma: could not record the downloaded update", error);
+    console.error("Shinbo: could not record the downloaded update", error);
   }
 }
 
@@ -35,7 +35,7 @@ function forgetReady() {
   try {
     rmSync(readyFile(), { force: true });
   } catch (error) {
-    console.error("Emma: could not clear the recorded update", error);
+    console.error("Shinbo: could not clear the recorded update", error);
   }
 }
 
@@ -45,7 +45,7 @@ export function readyUpdate() {
 
 export function installUpdate() {
   if (!ready) {
-    console.warn("Emma: no update is downloaded");
+    console.warn("Shinbo: no update is downloaded");
     return;
   }
   if (!installable) {
@@ -75,29 +75,29 @@ export function checkForUpdates() {
 }
 
 function reportUpToDate() {
-  void dialog.showMessageBox({ type: "info", message: "Emma is up to date.", detail: `You are running version ${app.getVersion()}.`, buttons: ["OK"] });
+  void dialog.showMessageBox({ type: "info", message: "Shinbo is up to date.", detail: `You are running version ${app.getVersion()}.`, buttons: ["OK"] });
 }
 
 function reportFailure(error: unknown) {
-  void dialog.showMessageBox({ type: "warning", message: "Emma could not check for updates.", detail: error instanceof Error ? error.message : String(error), buttons: ["OK"] });
+  void dialog.showMessageBox({ type: "warning", message: "Shinbo could not check for updates.", detail: error instanceof Error ? error.message : String(error), buttons: ["OK"] });
 }
 
 export function startUpdates(announce: (version: string) => void) {
   announceReady = announce;
   if (!app.isPackaged) {
-    const fake = newerVersion(app.getVersion(), process.env.EMMA_UPDATE_FAKE);
+    const fake = newerVersion(app.getVersion(), process.env.SHINBO_UPDATE_FAKE);
     if (!fake) return;
     setTimeout(() => { ready = fake; announce(fake); }, FAKE_ANNOUNCE_MS).unref();
     return;
   }
   if (process.platform !== "darwin" && process.platform !== "win32") return;
-  const origin = process.env.EMMA_UPDATE_URL ? updateOrigin(process.env.EMMA_UPDATE_URL) : DEFAULT_UPDATE_ORIGIN;
+  const origin = process.env.SHINBO_UPDATE_URL ? updateOrigin(process.env.SHINBO_UPDATE_URL) : DEFAULT_UPDATE_ORIGIN;
   if (!origin) {
-    console.error("Emma: EMMA_UPDATE_URL is not an https origin; update checks are off");
+    console.error("Shinbo: SHINBO_UPDATE_URL is not an https origin; update checks are off");
     return;
   }
   autoUpdater.on("error", (error) => {
-    console.error("Emma: update check failed", error);
+    console.error("Shinbo: update check failed", error);
     installWhenReady = false;
     if (!asked) return;
     asked = false;
@@ -124,7 +124,7 @@ export function startUpdates(announce: (version: string) => void) {
   try {
     autoUpdater.setFeedURL({ url: updateFeedUrl(origin, process.platform, process.arch, app.getVersion()) });
   } catch (error) {
-    console.error("Emma: update feed unavailable", error);
+    console.error("Shinbo: update feed unavailable", error);
     return;
   }
   const restored = recallReady();
@@ -140,7 +140,7 @@ export function startUpdates(announce: (version: string) => void) {
     try {
       autoUpdater.checkForUpdates();
     } catch (error) {
-      console.error("Emma: update check failed", error);
+      console.error("Shinbo: update check failed", error);
     }
   };
   recheck = check;

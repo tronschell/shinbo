@@ -60,7 +60,7 @@ const glyphs = {
 
 const textWidth = (text, scale, tracking) => text.length * 5 * scale + (text.length - 1) * (scale + tracking);
 
-const bowRects = [...readFileSync(path.join(desktop, "assets/emma.icon/Assets/bow.svg"), "utf8")
+const bowRects = [...readFileSync(path.join(desktop, "assets/shinbo.icon/Assets/bow.svg"), "utf8")
   .matchAll(/<rect x="(\d+)" y="(\d+)"[^>]*?(?:opacity="([\d.]+)")?\s*\/>/g)]
   .map(([, x, y, opacity]) => ({ x: Number(x), y: Number(y), faint: opacity !== undefined }));
 const bowUnit = 40;
@@ -119,7 +119,7 @@ const steps = 4;
 
 const background = surface();
 drawWash(background);
-drawText(background, "WELCOME TO EMMA", 24, 2, 3, eyebrowInk);
+drawText(background, "WELCOME TO SHINBO", 24, 2, 3, eyebrowInk);
 drawBow(background, Math.round((width - bowColumns * 5) / 2), 54, 5);
 drawText(background, "INSTALLING...", 124, 4, 1, headlineInk);
 drawPlinth(background, trackLeft, trackTop, trackWidth, trackHeight);
@@ -209,7 +209,7 @@ for (const indices of indexed) {
 }
 gif.push(Buffer.from([0x3b]));
 
-const output = path.join(desktop, "assets/installer/emma-setup.gif");
+const output = path.join(desktop, "assets/installer/shinbo-setup.gif");
 mkdirSync(path.dirname(output), { recursive: true });
 writeFileSync(output, Buffer.concat(gif));
 console.log(`Wrote ${output}: ${width}x${height}, ${frames.length} frames, ${palette.length} colours`);

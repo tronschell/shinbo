@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import ts from "typescript";
 import { buildAttachedContext } from "../src/context";
-import { canSteer, queuedTurns, runOf, sendTurn, steerQueued, steerRunning, stopTurn, takeDraft } from "../src/runs";
+import { canSteer, queuedTurns, runOf, sendTurn, steerQueued, steerRunning, stopTurn } from "../src/runs";
 
 const source = ts.createSourceFile("App.tsx", readFileSync(path.join(__dirname, "../../src/App.tsx"), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const view = source.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "ThreadView");
@@ -60,7 +60,7 @@ test("composer consumes context at submit and keeps FIFO across new composer ins
   const pending = new Promise<Awaited<ReturnType<typeof buildAttachedContext>>>((resolve) => { finish = resolve; });
   const captured: unknown[] = [];
   const sent: Record<string, string>[] = [];
-  Object.assign(globalThis, { window: { emma: { request: async (_method: string, params: Record<string, string>) => { sent.push(params); } } } });
+  Object.assign(globalThis, { window: { shinbo: { request: async (_method: string, params: Record<string, string>) => { sent.push(params); } } } });
   const first = composer("fifo", async (_folders, _ids, picks) => { captured.push(picks); return pending; });
   first.send();
   assert.equal(first.state.message, "");
@@ -93,7 +93,7 @@ test("composer consumes context at submit and keeps FIFO across new composer ins
 
 test("an attachment read failure does not block the following prompt", async () => {
   const sent: Record<string, string>[] = [];
-  Object.assign(globalThis, { window: { emma: {
+  Object.assign(globalThis, { window: { shinbo: {
     readAttachment: async () => { throw new Error("attachment missing"); },
     request: async (_method: string, params: Record<string, string>) => { sent.push(params); },
   } } });
@@ -111,7 +111,7 @@ test("preparation failure preserves the next draft and lets later sends drain", 
   let fail!: (reason: Error) => void;
   const pending = new Promise<Awaited<ReturnType<typeof buildAttachedContext>>>((_resolve, reject) => { fail = reject; });
   const sent: string[] = [];
-  Object.assign(globalThis, { window: { emma: { request: async (_method: string, params: { content: string }) => { sent.push(params.content); } } } });
+  Object.assign(globalThis, { window: { shinbo: { request: async (_method: string, params: { content: string }) => { sent.push(params.content); } } } });
   const current = composer("prepare-failure", () => pending);
   current.send();
   const next = composer("prepare-failure");
@@ -121,7 +121,7 @@ test("preparation failure preserves the next draft and lets later sends drain", 
   fail(new Error("preparation failed"));
   await settle();
   assert.deepEqual(sent, ["second"]);
-  assert.equal(takeDraft("prepare-failure"), "first");
+  assert.equal(runOf("prepare-failure").held[0].content, "first");
   assert.equal(next.state.message, "next draft");
   assert.deepEqual(next.state.picks, [attachment("next")]);
   assert.equal(next.state.skill?.id, "next-skill");
@@ -132,7 +132,7 @@ test("stopping during preparation never sends the canceled prompt", async () => 
   let finish!: (value: Awaited<ReturnType<typeof buildAttachedContext>>) => void;
   const pending = new Promise<Awaited<ReturnType<typeof buildAttachedContext>>>((resolve) => { finish = resolve; });
   const sent: string[] = [];
-  Object.assign(globalThis, { window: { emma: {
+  Object.assign(globalThis, { window: { shinbo: {
     stopAgent() {}, request: async (_method: string, params: { content: string }) => { sent.push(params.content); },
   } } });
   composer("stop-preparing", () => pending).send();
@@ -141,7 +141,7 @@ test("stopping during preparation never sends the canceled prompt", async () => 
   finish({ text: "old attachment", uses: [], images: [] });
   await settle();
   assert.deepEqual(sent, ["replacement"]);
-  assert.equal(takeDraft("stop-preparing"), "first");
+  assert.equal(runOf("stop-preparing").held[0].content, "first");
 });
 
 
@@ -154,8 +154,9 @@ test("queued context cannot be steered before preparation but plain text cuts in
   const reads: string[] = [];
   const steered: { threadId: string; text: string }[] = [];
   let refuse = false;
-  Object.assign(globalThis, { window: { emma: {
-    request: async (_method: string, params: Record<string, string>) => {
+  Object.assign(globalThis, { window: { shinbo: {
+    request: async (method: string, params: Record<string, string>) => {
+      if (method === "thread") throw new Error("No saved thread");
       sent.push(params);
       if (params.content === "active") await new Promise<void>((resolve) => { release = resolve; });
     },
@@ -213,7 +214,7 @@ test("cmd+enter with an empty composer steers the queue oldest first", async () 
   const steered: { threadId: string; text: string }[] = [];
   let release!: () => void;
   const holding = new Promise<void>((resolve) => { release = resolve; });
-  Object.assign(globalThis, { window: { emma: {
+  Object.assign(globalThis, { window: { shinbo: {
     request: async () => { await holding; },
     steerAgent: async (value: { threadId: string; text: string }) => { steered.push(value); },
     stopAgent: () => undefined,
@@ -257,8 +258,8 @@ test("cmd+enter with an empty composer steers the queue oldest first", async () 
 });
 
 test("a plain message on a thread with a connected folder is still steerable", async () => {
-  Object.assign(globalThis, { window: { emma: { request: async () => new Promise(() => undefined) } } });
-  const current = composer("folder-steer", buildAttachedContext, ["emma-folder"]);
+  Object.assign(globalThis, { window: { shinbo: { request: async () => new Promise(() => undefined) } } });
+  const current = composer("folder-steer", buildAttachedContext, ["shinbo-folder"]);
   Object.assign(current.state, { message: "active", picks: [], skill: null });
   current.send();
   Object.assign(current.state, { message: "cut in while a folder is attached", picks: [], skill: null });

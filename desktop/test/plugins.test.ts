@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import fsPromises, { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { existsSync, readFileSync } from "node:fs";
@@ -37,7 +37,7 @@ test("a marketplace source is a GitHub repo, a Git URL, or a folder — and noth
   assert.throws(() => parseMarketplaceSource("openai/plugins", "", "../../etc"), /not a path inside the plugin/);
 });
 
-test("a marketplace listing keeps what Emma can install and says why it skipped the rest", () => {
+test("a marketplace listing keeps what Shinbo can install and says why it skipped the rest", () => {
   const listing = parseMarketplace({
     name: "Acme Plugins",
     interface: { displayName: "Acme" },
@@ -95,7 +95,7 @@ test("a manifest names hooks as one path, a list of paths, an inline object, or 
   assert.throws(() => hooksOf(["./hooks/ok.json", "~/hooks.json"]), /not a path inside the plugin/);
 });
 
-test("a hooks file keeps the command handlers Emma understands and says which events she can reach", () => {
+test("a hooks file keeps the command handlers Shinbo understands and says which events she can reach", () => {
   assert.deepEqual(parseHooksFile({ hooks: {
     SessionStart: [{ hooks: [{ type: "command", command: "a" }] }],
     PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "b", timeout: -4 }] }],
@@ -174,7 +174,7 @@ test("a manifest's interface block is parsed whole, and a URL or colour that fai
   assert.deepEqual(parsePluginInterface(undefined).screenshots, []);
 });
 
-test("an .app.json carries ChatGPT-hosted app ids, not servers Emma can run", () => {
+test("an .app.json carries ChatGPT-hosted app ids, not servers Shinbo can run", () => {
   assert.deepEqual(parseHostedApps({ apps: { support: { id: "plugin_asdk_app_6a4c0062", category: "productivity" }, other: { id: "plugin_asdk_app_ff01" } } }), [
     { name: "support", id: "plugin_asdk_app_6a4c0062", category: "Productivity" },
     { name: "other", id: "plugin_asdk_app_ff01", category: "" },
@@ -240,8 +240,8 @@ async function seedMarketplace(root: string) {
   }));
 }
 
-test("the marketplace Emma ships with is added once, and stays gone once it is removed", async () => {
-  const home = await realpath(await mkdtemp(path.join(tmpdir(), "emma-plugins-")));
+test("the marketplace Shinbo ships with is added once, and stays gone once it is removed", async () => {
+  const home = await realpath(await mkdtemp(path.join(tmpdir(), "shinbo-plugins-")));
   try {
     const userData = path.join(home, "user-data");
     const shared = path.join(home, "acme");
@@ -259,8 +259,8 @@ test("the marketplace Emma ships with is added once, and stays gone once it is r
   }
 });
 
-test("adding a local marketplace, installing from it, and removing it moves the plugin's skills and servers in and out of Emma's capabilities", async () => {
-  const home = await realpath(await mkdtemp(path.join(tmpdir(), "emma-plugins-")));
+test("adding a local marketplace, installing from it, and removing it moves the plugin's skills and servers in and out of Shinbo's capabilities", async () => {
+  const home = await realpath(await mkdtemp(path.join(tmpdir(), "shinbo-plugins-")));
   try {
     const userData = path.join(home, "user-data");
     const shared = path.join(home, "acme");
@@ -319,7 +319,7 @@ test("adding a local marketplace, installing from it, and removing it moves the 
 });
 
 test("a skill installed by the harness appears immediately and survives imported-skill mirroring", async () => {
-  const home = await realpath(await mkdtemp(path.join(tmpdir(), "emma-harness-skill-")));
+  const home = await realpath(await mkdtemp(path.join(tmpdir(), "shinbo-harness-skill-")));
   try {
     const userData = path.join(home, "user-data");
     const harnessHome = path.join(userData, "harness");
@@ -353,7 +353,7 @@ async function seedHookPlugin(root: string, hooks: unknown) {
 }
 
 test("an npm package that unpacks larger than its ceiling is stopped before it fills the disk", async () => {
-  const home = await realpath(await mkdtemp(path.join(tmpdir(), "emma-unpack-")));
+  const home = await realpath(await mkdtemp(path.join(tmpdir(), "shinbo-unpack-")));
   try {
     await mkdir(path.join(home, "package"), { recursive: true });
     await writeFile(path.join(home, "package", "index.js"), "x".repeat(64 * 1024));
@@ -393,7 +393,7 @@ const hookScript = isWindows ? {
 };
 
 test("a plugin's hooks stay off until they are reviewed, run once trusted, and lose that trust the moment the definition changes", async () => {
-  const home = await realpath(await mkdtemp(path.join(tmpdir(), "emma-hooks-")));
+  const home = await realpath(await mkdtemp(path.join(tmpdir(), "shinbo-hooks-")));
   try {
     const userData = path.join(home, "user-data");
     const shared = path.join(home, "hooked");
@@ -452,7 +452,7 @@ test("a plugin's hooks stay off until they are reviewed, run once trusted, and l
 });
 
 test("a plugin root that reads like a shell command is expanded as a value, never as a second command", async () => {
-  const home = await realpath(await mkdtemp(path.join(tmpdir(), "emma-hook-escape-")));
+  const home = await realpath(await mkdtemp(path.join(tmpdir(), "shinbo-hook-escape-")));
   try {
     const userData = path.join(home, "user-data");
     const pwned = path.join(home, "pwned");
@@ -475,8 +475,8 @@ test("a plugin root that reads like a shell command is expanded as a value, neve
   }
 });
 
-test("a plugin Emma writes lands in her own marketplace, installed, with usable SKILL.md frontmatter", async () => {
-  const userData = await realpath(await mkdtemp(path.join(tmpdir(), "emma-authored-")));
+test("a plugin Shinbo writes lands in her own marketplace, installed, with usable SKILL.md frontmatter", async () => {
+  const userData = await realpath(await mkdtemp(path.join(tmpdir(), "shinbo-authored-")));
   try {
     const { catalog, plugin } = await writePlugin(userData, {
       name: "Standup Notes",
@@ -488,10 +488,10 @@ test("a plugin Emma writes lands in her own marketplace, installed, with usable 
     assert.equal(plugin.name, "standup-notes");
     assert.equal(await readFile(path.join(plugin.root, "skills", "weekly-standup", "SKILL.md"), "utf8"),
       '---\nname: weekly-standup\ndescription: "Summarise the week."\n---\n\nRead the log, group by day.');
-    assert.deepEqual(catalog.marketplaces.map((entry) => entry.displayName), ["Written by Emma"]);
-    assert.deepEqual(catalog.installed.map((entry) => [entry.id, entry.category]), [["emma/standup-notes", "Productivity"]]);
+    assert.deepEqual(catalog.marketplaces.map((entry) => entry.displayName), ["Written by Shinbo"]);
+    assert.deepEqual(catalog.installed.map((entry) => [entry.id, entry.category]), [["shinbo/standup-notes", "Productivity"]]);
     assert.deepEqual(await installedCapabilitySources(userData), [{
-      id: "plugin:emma/standup-notes",
+      id: "plugin:shinbo/standup-notes",
       skillRoots: [path.join(plugin.root, "skills")],
       mcpFiles: [],
     }]);
@@ -506,3 +506,38 @@ test("a plugin Emma writes lands in her own marketplace, installed, with usable 
     await rm(userData, { recursive: true, force: true });
   }
 });
+
+for (const failure of ["write", "rename"]) {
+  test(`a failed plugin replacement ${failure} preserves the installed original`, async (t) => {
+    const userData = await realpath(await mkdtemp(path.join(tmpdir(), "shinbo-plugin-replace-")));
+    try {
+      const request = { name: "saved-work", description: "Saved workflow", skills: [{ name: "workflow", instructions: "original valuable instructions" }] };
+      const first = await writePlugin(userData, request);
+      const file = path.join(first.plugin.root, "skills", "workflow", "SKILL.md");
+      const original = await readFile(file, "utf8");
+      const write = fsPromises.writeFile;
+      const rename = fsPromises.rename;
+      if (failure === "write") {
+        t.mock.method(fsPromises, "writeFile", async (...args: Parameters<typeof write>) => {
+          if (String(args[0]).endsWith("SKILL.md")) throw Object.assign(new Error("No space left on device"), { code: "ENOSPC" });
+          return write(...args);
+        });
+      } else {
+        t.mock.method(fsPromises, "rename", async (...args: Parameters<typeof rename>) => {
+          if (String(args[0]).endsWith(".tmp") && args[1] === first.plugin.root) throw new Error("Replacement rename failed");
+          return rename(...args);
+        });
+      }
+      const replacement = { ...request, skills: [{ name: "workflow", instructions: "replacement instructions" }] };
+      await assert.rejects(writePlugin(userData, replacement), /No space|rename failed/);
+      assert.equal(await readFile(file, "utf8"), original);
+      assert.equal((await readCatalog(userData)).installed[0].id, "shinbo/saved-work");
+      t.mock.restoreAll();
+      await writePlugin(userData, replacement);
+      assert.match(await readFile(file, "utf8"), /replacement instructions/);
+      assert.deepEqual(await readdir(path.dirname(first.plugin.root)), ["saved-work"]);
+    } finally {
+      await rm(userData, { recursive: true, force: true });
+    }
+  });
+}

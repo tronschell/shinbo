@@ -9,9 +9,9 @@ import { reasonText } from "./errors";
 export function useCliRuns(): CliRun[] {
   const [runs, setRuns] = useState<CliRun[]>([]);
   useEffect(() => {
-    const reload = () => void window.emma.listCliRuns().then(setRuns).catch(() => undefined);
+    const reload = () => void window.shinbo.listCliRuns().then(setRuns).catch(() => undefined);
     reload();
-    return window.emma.onCliRuns(reload);
+    return window.shinbo.onCliRuns(reload);
   }, []);
   return runs;
 }
@@ -21,13 +21,13 @@ function useCliOutput(id: string | undefined, rich = false): string {
   useEffect(() => {
     if (!id) return;
     let live = true;
-    const read = () => void window.emma.readCliRun(id).then((found) => {
+    const read = () => void window.shinbo.readCliRun(id).then((found) => {
       if (!live) return;
       const text = (rich ? (found?.result || (found?.run.status === "running" ? "" : found?.output)) : found?.output) ?? "";
       setSeen({ id, text: rich && found?.resultTruncated ? `${text}\n\n_Output display shortened. Save large deliverables to a file before handing them off._` : text });
     }).catch(() => undefined);
     read();
-    const off = window.emma.onCliRuns(read);
+    const off = window.shinbo.onCliRuns(read);
     return () => { live = false; off(); };
   }, [id, rich]);
   return seen.id === id ? seen.text : "";
@@ -52,27 +52,45 @@ function useTurnClock(run: CliRun | undefined): number {
 export function useTailScroll<T extends HTMLElement>(deps: unknown[], resetKey?: unknown) {
   const node = useRef<T>(null);
   const pinned = useRef(true);
+  const observation = useRef<{ element: T; onScroll: () => void; stop: () => void } | null>(null);
   const [end, setEnd] = useState({ key: resetKey, at: true });
   const atEnd = end.key === resetKey ? end.at : true;
-  const onScroll = () => {
+  const onScroll = useCallback(() => {
     const element = node.current;
     if (!element) return;
     pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24;
-    setEnd({ key: resetKey, at: pinned.current });
-  };
+    const at = pinned.current;
+    setEnd((current) => current.key === resetKey && current.at === at ? current : { key: resetKey, at });
+  }, [resetKey]);
   useEffect(() => { pinned.current = true; }, [resetKey]);
   useEffect(() => {
     const element = node.current;
-    if (!element) return;
-    if (pinned.current) element.scrollTop = element.scrollHeight;
-    const settling = new ResizeObserver(() => {
-      if (pinned.current) element.scrollTop = element.scrollHeight;
-      onScroll();
-    });
-    for (const child of element.children) settling.observe(child);
-    return () => settling.disconnect();
+    if (element && pinned.current) element.scrollTop = element.scrollHeight;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
+  useEffect(() => {
+    const element = node.current;
+    if (observation.current?.element === element && observation.current.onScroll === onScroll) return;
+    observation.current?.stop();
+    observation.current = null;
+    if (!element) return;
+    const settle = () => {
+      if (pinned.current) element.scrollTop = element.scrollHeight;
+      onScroll();
+    };
+    const settling = new ResizeObserver(settle);
+    for (const child of element.children) settling.observe(child);
+    const children = new MutationObserver((changes) => {
+      for (const change of changes) {
+        for (const child of change.removedNodes) if (child instanceof Element) settling.unobserve(child);
+        for (const child of change.addedNodes) if (child instanceof Element) settling.observe(child);
+      }
+      settle();
+    });
+    children.observe(element, { childList: true });
+    observation.current = { element, onScroll, stop: () => { settling.disconnect(); children.disconnect(); } };
+  });
+  useEffect(() => () => { observation.current?.stop(); observation.current = null; }, []);
   const toEnd = () => {
     const element = node.current;
     if (element) element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
@@ -100,7 +118,7 @@ export function CliStream({ id, rich }: { id: string; rich: boolean }) {
 
 function useCliModels(cli: string) {
   const [known, setKnown] = useState<CliModels & { busy: boolean }>();
-  const load = useCallback((refresh: boolean) => window.emma.cliModels({ cli, refresh })
+  const load = useCallback((refresh: boolean) => window.shinbo.cliModels({ cli, refresh })
     .then((found) => setKnown({ ...found, busy: false }))
     .catch(() => setKnown({ cli, models: [], at: 0, busy: false })), [cli]);
   useEffect(() => { void load(false); }, [load]);
@@ -148,7 +166,7 @@ export function CliModelPicker({ run }: { run: CliRun }) {
   const save = () => {
     setSaving(true);
     setError("");
-    void window.emma.setCliRunModel({ id: run.id, ...options })
+    void window.shinbo.setCliRunModel({ id: run.id, ...options })
       .then(close).catch((reason: unknown) => setError(reasonText(reason))).finally(() => setSaving(false));
   };
   return <span className="pip-model" ref={box} onKeyDown={(event) => { if (event.key === "Escape" && open) { event.stopPropagation(); close(); } }}>
@@ -181,19 +199,19 @@ export function CliComposer({ run, onOpenRun }: { run: CliRun; onOpenRun?: (id: 
     setMessage("");
     setClips([]);
     setError("");
-    void window.emma.sendCliRun({ id: run.id, prompt: [text, ...held.map((clip) => clip.path)].filter(Boolean).join("\n") })
+    void window.shinbo.sendCliRun({ id: run.id, prompt: [text, ...held.map((clip) => clip.path)].filter(Boolean).join("\n") })
       .catch((reason: unknown) => {
         setMessage((current) => current || text);
         setClips(held);
         setError(reasonText(reason));
       });
   };
-  const attach = () => void window.emma.attachFiles().then(hold).catch((reason: unknown) => setError(reasonText(reason)));
+  const attach = () => void window.shinbo.attachFiles().then(hold).catch((reason: unknown) => setError(reasonText(reason)));
   const drop = (event: ReactDragEvent<HTMLFormElement>) => {
     event.preventDefault();
     for (const file of event.dataTransfer.files) {
       void file.arrayBuffer()
-        .then((data) => window.emma.attachData({ name: file.name, data }))
+        .then((data) => window.shinbo.attachData({ name: file.name, data }))
         .then((held) => hold([held]))
         .catch((reason: unknown) => setError(reasonText(reason)));
     }
@@ -233,7 +251,7 @@ function CliHandoff({ run, onOpenRun }: { run: CliRun; onOpenRun?: (id: string) 
   useEffect(() => {
     if (!open) return;
     dialog.current?.showModal();
-    void window.emma.installedClis().then(setInstalled).catch((reason: unknown) => setError(reasonText(reason)));
+    void window.shinbo.installedClis().then(setInstalled).catch((reason: unknown) => setError(reasonText(reason)));
   }, [open]);
   const eligible = runs.filter((other) => other.threadId === run.threadId && other.id !== run.id && other.status !== "running");
   const destination = target.startsWith("cli:") ? installed?.find((cli) => cli.id === target.slice(4)) : eligible.find((other) => other.id === target.slice(4));
@@ -245,7 +263,7 @@ function CliHandoff({ run, onOpenRun }: { run: CliRun; onOpenRun?: (id: string) 
     setBusy(true);
     setError("");
     const [kind, id] = target.split(":");
-    void window.emma.handoffCliRun({ sourceId: run.id, prompt: prompt.trim(), ...options, ...(kind === "run" ? { id } : { cli: id }) })
+    void window.shinbo.handoffCliRun({ sourceId: run.id, prompt: prompt.trim(), ...options, ...(kind === "run" ? { id } : { cli: id }) })
       .then((next) => { setSent(next); dialog.current?.close(); setPrompt(""); })
       .catch((reason: unknown) => setError(reasonText(reason)))
       .finally(() => setBusy(false));
@@ -300,7 +318,7 @@ export function CliPanel({ run, busy, onFloat, onOpenRun }: { run: CliRun; busy:
       <div className="thread-actions">
         <CliStatus run={run} />
         {onFloat && <button type="button" className="agent-button" title="Float this run as a window" aria-label={`Float ${cliLabel(run)} as a window`} onClick={onFloat}><ExpandIcon /></button>}
-        {run.status === "running" && <button type="button" className="agent-button" onClick={() => void window.emma.stopCliRun(run.id).catch((reason: unknown) => setError(reasonText(reason)))}>Stop</button>}
+        {run.status === "running" && <button type="button" className="agent-button" onClick={() => void window.shinbo.stopCliRun(run.id).catch((reason: unknown) => setError(reasonText(reason)))}>Stop</button>}
       </div>
     </header>
     <div className="cli-brief">

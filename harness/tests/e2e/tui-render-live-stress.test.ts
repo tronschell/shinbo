@@ -52,7 +52,7 @@ async function launch(run: number): Promise<{ session: TmuxSession; tracePath: s
     width: 84,
     height: 30,
     env: {
-      EMMA_PROVIDER_API_KEY: process.env.EMMA_PROVIDER_API_KEY,
+      SHINBO_PROVIDER_API_KEY: process.env.SHINBO_PROVIDER_API_KEY,
       FX_TRACE_LOG: tracePath,
       FX_TRACE_SCOPES: TRACE_SCOPES,
     },

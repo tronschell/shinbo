@@ -14,6 +14,8 @@ pub const FileOperation = struct {
     kind: OperationKind,
     path: []u8,
     previous_content: ?[]u8,
+    previous_directory: bool = false,
+    source_restored: bool = false,
     new_path: ?[]u8 = null,
     timestamp_ms: i64,
 };
@@ -21,6 +23,7 @@ pub const FileOperation = struct {
 pub const UndoResult = union(enum) {
     restored: []const u8,
     deleted: []const u8,
+    failed: anyerror,
     empty,
 };
 
@@ -49,71 +52,62 @@ pub const ChangeTracker = struct {
 
     pub fn undoLast(self: *ChangeTracker, alloc: Allocator) UndoResult {
         if (self.stack.items.len == 0) return .empty;
-
-        const op = self.stack.pop().?;
-        defer if (op.new_path) |new_path| alloc.free(new_path);
-
-        switch (op.kind) {
-            .delete => {
-                if (op.previous_content) |content| {
-                    var file = std.Io.Dir.createFileAbsolute(io_mod.getIo(), op.path, .{ .truncate = true }) catch {
-                        alloc.free(content);
-                        alloc.free(op.path);
-                        return .empty;
-                    };
-                    defer file.close(io_mod.getIo());
-                    file.writeStreamingAll(io_mod.getIo(), content) catch {};
-                    alloc.free(content);
-                    return .{ .restored = op.path };
+        const op = &self.stack.items[self.stack.items.len - 1];
+        const deleted = switch (op.kind) {
+            .delete => blk: {
+                if (op.previous_directory) {
+                    std.Io.Dir.createDirAbsolute(io_mod.getIo(), op.path, .default_dir) catch |err| return .{ .failed = err };
+                    break :blk false;
                 }
-                alloc.free(op.path);
-                return .empty;
+                const content = op.previous_content orelse {
+                    freeOperation(alloc, self.stack.pop().?);
+                    return .empty;
+                };
+                io_mod.writeFileAtomic(alloc, op.path, content) catch |err| return .{ .failed = err };
+                break :blk false;
             },
-            .rename => {
+            .rename => blk: {
                 if (op.new_path) |new_path| {
-                    std.Io.Dir.renameAbsolute(new_path, op.path, io_mod.getIo()) catch {
-                        if (op.previous_content) |content| alloc.free(content);
-                        alloc.free(op.path);
-                        return .empty;
-                    };
-                    // previous_content holds the overwritten destination preimage.
                     if (op.previous_content) |content| {
-                        var file = std.Io.Dir.createFileAbsolute(io_mod.getIo(), new_path, .{ .truncate = true }) catch {
-                            alloc.free(content);
-                            return .{ .restored = op.path };
-                        };
-                        defer file.close(io_mod.getIo());
-                        file.writeStreamingAll(io_mod.getIo(), content) catch {};
-                        alloc.free(content);
+                        io_mod.copyFileAtomic(alloc, new_path, op.path) catch |err| return .{ .failed = err };
+                        io_mod.writeFileAtomic(alloc, new_path, content) catch |err| return .{ .failed = err };
+                    } else {
+                        if (!op.source_restored) {
+                            std.Io.Dir.renameAbsolute(new_path, op.path, io_mod.getIo()) catch |err| return .{ .failed = err };
+                            op.source_restored = true;
+                        }
+                        if (op.previous_directory) {
+                            std.Io.Dir.createDirAbsolute(io_mod.getIo(), new_path, .default_dir) catch |err| return .{ .failed = err };
+                        }
                     }
-                    return .{ .restored = op.path };
                 }
-                if (op.previous_content) |content| alloc.free(content);
-                return .{ .restored = op.path };
+                break :blk false;
             },
-            .write, .edit => {
+            .write, .edit => blk: {
                 if (op.previous_content) |content| {
-                    var file = std.Io.Dir.createFileAbsolute(io_mod.getIo(), op.path, .{ .truncate = true }) catch {
-                        alloc.free(content);
-                        alloc.free(op.path);
-                        return .empty;
-                    };
-                    defer file.close(io_mod.getIo());
-                    file.writeStreamingAll(io_mod.getIo(), content) catch {};
-                    alloc.free(content);
-                    return .{ .restored = op.path };
+                    io_mod.writeFileAtomic(alloc, op.path, content) catch |err| return .{ .failed = err };
+                    break :blk false;
                 }
-
-                std.Io.Dir.deleteFileAbsolute(io_mod.getIo(), op.path) catch {};
-                return .{ .deleted = op.path };
+                std.Io.Dir.deleteFileAbsolute(io_mod.getIo(), op.path) catch |err| switch (err) {
+                    error.FileNotFound => {},
+                    else => return .{ .failed = err },
+                };
+                break :blk true;
             },
-        }
+        };
+        const completed = self.stack.pop().?;
+        if (completed.previous_content) |content| alloc.free(content);
+        if (completed.new_path) |new_path| alloc.free(new_path);
+        return if (deleted) .{ .deleted = completed.path } else .{ .restored = completed.path };
     }
 
-    pub fn captureFileState(alloc: Allocator, absolute_path: []const u8) ?[]u8 {
-        var file = std.Io.Dir.openFileAbsolute(io_mod.getIo(), absolute_path, .{}) catch return null;
+    pub fn captureFileState(alloc: Allocator, absolute_path: []const u8) !?[]u8 {
+        var file = std.Io.Dir.openFileAbsolute(io_mod.getIo(), absolute_path, .{}) catch |err| switch (err) {
+            error.FileNotFound => return null,
+            else => return err,
+        };
         defer file.close(io_mod.getIo());
-        return io_mod.readFileToEnd(alloc, &file, 10 * 1024 * 1024) catch null;
+        return try io_mod.readFileToEnd(alloc, &file, 10 * 1024 * 1024);
     }
 
     fn freeOperation(alloc: Allocator, op: FileOperation) void {
@@ -419,7 +413,7 @@ test "undoLast restores destination preimage after overwrite rename" {
     try std.testing.expectEqualStrings("dest-preimage", dest);
 }
 
-test "undoLast consumes rename operations when renaming back fails" {
+test "undoLast retains rename operations when restoring the source fails" {
     const alloc = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -438,9 +432,19 @@ test "undoLast consumes rename operations when renaming back fails" {
         .timestamp_ms = 1,
     });
 
-    try std.testing.expect(tracker.undoLast(alloc) == .empty);
+    try std.testing.expect(tracker.undoLast(alloc) == .failed);
+    try std.testing.expectEqual(@as(usize, 1), tracker.stack.items.len);
+    try writeAbsolute(new_path, "renamed source");
+    const result = tracker.undoLast(alloc);
+    try std.testing.expect(result == .restored);
+    alloc.free(result.restored);
     try std.testing.expectEqual(@as(usize, 0), tracker.stack.items.len);
-    try std.testing.expect(tracker.undoLast(alloc) == .empty);
+    const old_content = try readAbsolute(alloc, old_path);
+    defer alloc.free(old_content);
+    try std.testing.expectEqualStrings("renamed source", old_content);
+    const restored_destination = try readAbsolute(alloc, new_path);
+    defer alloc.free(restored_destination);
+    try std.testing.expectEqualStrings("unused", restored_destination);
 }
 
 test "undoLast returns restored for rename operations without new_path" {
@@ -465,7 +469,7 @@ test "undoLast returns restored for rename operations without new_path" {
     }
 }
 
-test "undoLast pops before filesystem restore failures and does not create parents" {
+test "undoLast retains its backup after restore failure and succeeds on retry" {
     const alloc = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -481,10 +485,17 @@ test "undoLast pops before filesystem restore failures and does not create paren
         .timestamp_ms = 1,
     });
 
-    try std.testing.expect(tracker.undoLast(alloc) == .empty);
-    try std.testing.expectEqual(@as(usize, 0), tracker.stack.items.len);
+    try std.testing.expect(tracker.undoLast(alloc) == .failed);
+    try std.testing.expectEqual(@as(usize, 1), tracker.stack.items.len);
     try expectMissing(path);
-    try std.testing.expect(tracker.undoLast(alloc) == .empty);
+    try tmp.dir.createDir(io_mod.getIo(), "missing-parent", .default_dir);
+    const result = tracker.undoLast(alloc);
+    try std.testing.expect(result == .restored);
+    alloc.free(result.restored);
+    try std.testing.expectEqual(@as(usize, 0), tracker.stack.items.len);
+    const restored = try readAbsolute(alloc, path);
+    defer alloc.free(restored);
+    try std.testing.expectEqualStrings("content", restored);
 }
 
 test "captureFileState captures existing files and returns null for missing files" {
@@ -497,16 +508,16 @@ test "captureFileState captures existing files and returns null for missing file
 
     try writeAbsolute(path, "snapshot");
 
-    const captured = ChangeTracker.captureFileState(alloc, path) orelse return error.ExpectedCapture;
+    const captured = try ChangeTracker.captureFileState(alloc, path) orelse return error.ExpectedCapture;
     defer alloc.free(captured);
     try std.testing.expectEqualStrings("snapshot", captured);
 
     const missing_path = try tmpPath(alloc, tmp.dir, "missing.txt");
     defer alloc.free(missing_path);
-    try std.testing.expect(ChangeTracker.captureFileState(alloc, missing_path) == null);
+    try std.testing.expect(try ChangeTracker.captureFileState(alloc, missing_path) == null);
 }
 
-test "captureFileState returns null for files at the size limit" {
+test "captureFileState reports failed capture at the size limit" {
     const alloc = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -518,10 +529,10 @@ test "captureFileState returns null for files at the size limit" {
     defer file.close(io_mod.getIo());
     try file.setLength(io_mod.getIo(), 10 * 1024 * 1024);
 
-    try std.testing.expect(ChangeTracker.captureFileState(alloc, path) == null);
+    try std.testing.expectError(error.StreamTooLong, ChangeTracker.captureFileState(alloc, path));
 }
 
-test "captureFileState returns null for files over the size limit" {
+test "captureFileState reports failed capture over the size limit" {
     const alloc = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -533,5 +544,5 @@ test "captureFileState returns null for files over the size limit" {
     defer file.close(io_mod.getIo());
     try file.setLength(io_mod.getIo(), 10 * 1024 * 1024 + 1);
 
-    try std.testing.expect(ChangeTracker.captureFileState(alloc, path) == null);
+    try std.testing.expectError(error.StreamTooLong, ChangeTracker.captureFileState(alloc, path));
 }

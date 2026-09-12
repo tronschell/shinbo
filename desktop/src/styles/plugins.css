@@ -152,7 +152,7 @@
 .skill-row strong { overflow: hidden; color: var(--text); font: var(--fs-xs)/1.4 var(--font-mono); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .skill-row span { color: var(--text-3); font: var(--fs-2xs)/1.4 var(--font-mono); }
 .skill-row b { color: var(--text-2); font: var(--fs-xs)/1.4 var(--font-mono); font-weight: 400; text-align: right; }
-.skill-row:has(input:not(:checked)) strong, .skill-row:has(input:not(:checked)) b { color: var(--text-3); }
+.skill-row > input:not(:checked) ~ :where(div) strong, .skill-row > input:not(:checked) ~ b { color: var(--text-3); }
 .skill-spark { display: flex; align-items: flex-end; gap: 1px; height: 22px; }
 .skill-spark > span { display: flex; flex: 1; align-items: flex-end; height: 100%; }
 .skill-spark i { width: 100%; background: color-mix(in srgb, var(--accent) 60%, transparent); }

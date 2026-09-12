@@ -807,7 +807,7 @@ const AskContext = struct {
                 "event=ask_session_store_unavailable error={s}",
                 .{@errorName(err)},
             );
-            try self.writeStderr("emma-cli ask: warning: session persistence unavailable; error=");
+            try self.writeStderr("shinbo-cli ask: warning: session persistence unavailable; error=");
             try self.writeStderr(@errorName(err));
             try self.writeStderr("; continuing without saving\n");
             return;
@@ -1139,7 +1139,7 @@ fn checkHeadlessCancellation(deps: RunDeps) !void {
 }
 
 fn writeAskUsage(deps: RunDeps, usage: []const u8) !void {
-    try deps.write_stderr(deps.stderr_ctx, "usage: emma-cli ");
+    try deps.write_stderr(deps.stderr_ctx, "usage: shinbo-cli ");
     try deps.write_stderr(deps.stderr_ctx, usage);
     try deps.write_stderr(deps.stderr_ctx, "\n");
 }
@@ -1165,7 +1165,7 @@ fn runWithDeps(alloc: Allocator, args: []const [:0]const u8, cfg: Config, deps: 
                 try deps.write_stdout(deps.stdout_ctx, json);
                 return 1;
             }
-            try deps.write_stderr(deps.stderr_ctx, "emma-cli ask: missing prompt\n");
+            try deps.write_stderr(deps.stderr_ctx, "shinbo-cli ask: missing prompt\n");
             try writeAskUsage(deps, cfg.command_usage);
             return 1;
         },
@@ -1176,7 +1176,7 @@ fn runWithDeps(alloc: Allocator, args: []const [:0]const u8, cfg: Config, deps: 
                 try deps.write_stdout(deps.stdout_ctx, json);
                 return 1;
             }
-            try deps.write_stderr(deps.stderr_ctx, "emma-cli ask: --no-save cannot be used with --resume or --resume-id\n");
+            try deps.write_stderr(deps.stderr_ctx, "shinbo-cli ask: --no-save cannot be used with --resume or --resume-id\n");
             try writeAskUsage(deps, cfg.command_usage);
             return 1;
         },
@@ -1187,7 +1187,7 @@ fn runWithDeps(alloc: Allocator, args: []const [:0]const u8, cfg: Config, deps: 
                 try deps.write_stdout(deps.stdout_ctx, json);
                 return 1;
             }
-            try deps.write_stderr(deps.stderr_ctx, "emma-cli ask: prompt exceeds the local input safety limit\n");
+            try deps.write_stderr(deps.stderr_ctx, "shinbo-cli ask: prompt exceeds the local input safety limit\n");
             return 1;
         },
         error.PromptInputReadFailed => {
@@ -1197,7 +1197,7 @@ fn runWithDeps(alloc: Allocator, args: []const [:0]const u8, cfg: Config, deps: 
                 try deps.write_stdout(deps.stdout_ctx, json);
                 return 1;
             }
-            try deps.write_stderr(deps.stderr_ctx, "emma-cli ask: failed to read prompt from stdin\n");
+            try deps.write_stderr(deps.stderr_ctx, "shinbo-cli ask: failed to read prompt from stdin\n");
             return 1;
         },
         error.InvalidAskArgs => {
@@ -1217,7 +1217,7 @@ fn runWithDeps(alloc: Allocator, args: []const [:0]const u8, cfg: Config, deps: 
                 try deps.write_stdout(deps.stdout_ctx, json);
                 return 1;
             }
-            try deps.write_stderr(deps.stderr_ctx, "emma-cli ask: prompt must be valid UTF-8 and contain no NUL bytes\n");
+            try deps.write_stderr(deps.stderr_ctx, "shinbo-cli ask: prompt must be valid UTF-8 and contain no NUL bytes\n");
             return 1;
         },
         else => return err,
@@ -1260,7 +1260,7 @@ fn runWithDeps(alloc: Allocator, args: []const [:0]const u8, cfg: Config, deps: 
         if (err == error.OneOffSessionNotResumable and !options.json_output) {
             try deps.write_stderr(
                 deps.stderr_ctx,
-                "emma-cli ask: one-off child sessions cannot accept additional prompts; create a persistent child to continue the conversation\n",
+                "shinbo-cli ask: one-off child sessions cannot accept additional prompts; create a persistent child to continue the conversation\n",
             );
             return 1;
         }
@@ -1323,7 +1323,7 @@ fn preflightAskImages(
             } else {
                 var message: std.Io.Writer.Allocating = .init(alloc);
                 defer message.deinit();
-                try message.writer.print("emma-cli ask: failed to attach image \"{s}\": {s}\n", .{ image_path, reason });
+                try message.writer.print("shinbo-cli ask: failed to attach image \"{s}\": {s}\n", .{ image_path, reason });
                 try deps.write_stderr(deps.stderr_ctx, message.written());
             }
             return false;
@@ -1369,7 +1369,7 @@ fn missingCredentialResult(
 ) !PromptRunResult {
     _ = provider;
     const message = credentials.missing_credential_message;
-    try options.deps.write_stderr(options.deps.stderr_ctx, "emma-cli ask: ");
+    try options.deps.write_stderr(options.deps.stderr_ctx, "shinbo-cli ask: ");
     try options.deps.write_stderr(options.deps.stderr_ctx, message);
     try options.deps.write_stderr(options.deps.stderr_ctx, "\n");
     return .{
@@ -1404,7 +1404,7 @@ fn runPromptInternal(alloc: Allocator, prompt: []const u8, permission_override: 
         var notice_writer: std.Io.Writer.Allocating = .init(alloc);
         defer notice_writer.deinit();
         try notice_writer.writer.print(
-            "emma-cli ask: config {s}: {s}",
+            "shinbo-cli ask: config {s}: {s}",
             .{ @tagName(diagnostic.layer), @tagName(diagnostic.cause) },
         );
         try config_runtime.writeDiagnosticMetadata(&notice_writer.writer, diagnostic);
@@ -1590,7 +1590,7 @@ fn runPromptInternal(alloc: Allocator, prompt: []const u8, permission_override: 
             @intCast(@max(io_mod.milliTimestamp(), 0)),
         )) |failure| {
             defer alloc.free(failure);
-            try ctx.writeStderr("emma-cli ask: ");
+            try ctx.writeStderr("shinbo-cli ask: ");
             try ctx.writeStderr(failure);
             try ctx.writeStderr("\n");
             return error.McpRequiredServerUnavailable;
@@ -2175,20 +2175,20 @@ fn finishCliPermissionOutcome(
     switch (outcome.requirement orelse .approval_required) {
         .configured_rule => try writeBlockedActionGuidance(
             ctx,
-            "emma-cli ask: permission required by configured rule",
+            "shinbo-cli ask: permission required by configured rule",
             label,
             "noninteractive_permission_prompt_unavailable",
-            "emma-cli ask: rerun in the interactive shell to approve this action, or add a narrow matching permission rule before retrying\n",
+            "shinbo-cli ask: rerun in the interactive shell to approve this action, or add a narrow matching permission rule before retrying\n",
         ),
         .approval_required, .sandbox_widening => try writeBlockedActionGuidance(
             ctx,
-            "emma-cli ask: permission required for tool execution in noninteractive mode",
+            "shinbo-cli ask: permission required for tool execution in noninteractive mode",
             label,
             "noninteractive_permission_prompt_unavailable",
             if (permission_mode == .auto)
-                "emma-cli ask: human approval is required for this action; use the interactive shell to approve it, or add a narrow matching permission rule\n"
+                "shinbo-cli ask: human approval is required for this action; use the interactive shell to approve it, or add a narrow matching permission rule\n"
             else
-                "emma-cli ask: rerun with --auto to review this exact action automatically, or use the interactive shell to approve it\n",
+                "shinbo-cli ask: rerun with --auto to review this exact action automatically, or use the interactive shell to approve it\n",
         ),
     }
     try recordToolCallRejected(
@@ -2231,9 +2231,9 @@ fn writeBlockedActionGuidance(
     hint: []const u8,
 ) !void {
     try ctx.writeLine(headline);
-    try ctx.writeStderr("emma-cli ask: blocked action: ");
+    try ctx.writeStderr("shinbo-cli ask: blocked action: ");
     try ctx.writeStderr(label);
-    try ctx.writeStderr("\nemma-cli ask: reason=");
+    try ctx.writeStderr("\nshinbo-cli ask: reason=");
     try ctx.writeStderr(reason);
     try ctx.writeStderr("\n");
     try ctx.writeStderr(hint);
@@ -2281,7 +2281,7 @@ fn emitAskNotificationBell(raw: *anyopaque) void {
     ctx.writeStderr("\x07") catch |err| {
         debug_trace.logf(
             "notifications",
-            "emma-cli ask terminal bell write failed err={s}",
+            "shinbo-cli ask terminal bell write failed err={s}",
             .{@errorName(err)},
         );
     };
@@ -2926,7 +2926,7 @@ fn pushHttpError(raw_ctx: *anyopaque, status: std.http.Status, detail: []const u
     else
         try gateway_error_format.formatHttpErrorMessage(ctx.alloc, status, detail);
     defer ctx.alloc.free(message);
-    try ctx.writeStderr("emma-cli ask: ");
+    try ctx.writeStderr("shinbo-cli ask: ");
     try ctx.writeStderr(message);
     try ctx.writeStderr("\n");
     if (ctx.output_mode.capturesJson()) {
@@ -3359,7 +3359,7 @@ fn emitHeadlessYoloWarning(alloc: Allocator, options: RunOptions) !void {
             var message: std.Io.Writer.Allocating = .init(alloc);
             defer message.deinit();
             try message.writer.print(
-                "emma-cli ask: failed to save YOLO acknowledgment: {s}\n",
+                "shinbo-cli ask: failed to save YOLO acknowledgment: {s}\n",
                 .{@errorName(failure.err)},
             );
             try options.deps.write_stderr(options.deps.stderr_ctx, message.written());
@@ -3798,7 +3798,7 @@ fn testPresentKeyStartup(alloc: Allocator, default_model: []const u8, default_ag
     state.workspace_root = try alloc.dupe(u8, "/tmp/fx-test");
     state.credential = .{
         .token = try alloc.dupe(u8, "key"),
-        .source = .emma_provider_api_key,
+        .source = .shinbo_provider_api_key,
     };
     state.selected_model = try alloc.dupe(u8, default_model);
     state.context_enabled = true;
@@ -4523,7 +4523,7 @@ test "Ask MCP adapters revalidate scoped authority before catalog access" {
     try std.testing.expectEqual(@as(usize, 1), provider.calls);
 }
 
-test "emma-cli ask deps validate malformed registered calls" {
+test "shinbo-cli ask deps validate malformed registered calls" {
     const alloc = std.testing.allocator;
     var stdout_capture = TestCapture{};
     defer stdout_capture.deinit(alloc);
@@ -4545,7 +4545,7 @@ test "emma-cli ask deps validate malformed registered calls" {
     try std.testing.expectEqualStrings("web_fetch field \"url\" must be a string", result.failure);
 }
 
-test "emma-cli ask finalization fails every failed turn" {
+test "shinbo-cli ask finalization fails every failed turn" {
     const cases = [_]struct {
         outcome: types.TurnPresentationOutcome,
         disposition: ?types.ProviderCompletionDisposition,
@@ -4685,7 +4685,7 @@ test "headless yolo warning precedes startup configuration diagnostics" {
         u8,
         stderr_capture.bytes.items,
         permissions.yolo_warning_text ++ "\n" ++
-            "emma-cli ask: config user: malformed_settings\n",
+            "shinbo-cli ask: config user: malformed_settings\n",
     ));
 }
 
@@ -5044,7 +5044,7 @@ test "stdin read failure has distinct text and JSON output contracts" {
     );
     try std.testing.expectEqualStrings("", stdout_capture.bytes.items);
     try std.testing.expectEqualStrings(
-        "emma-cli ask: failed to read prompt from stdin\n",
+        "shinbo-cli ask: failed to read prompt from stdin\n",
         stderr_capture.bytes.items,
     );
 
@@ -5103,7 +5103,7 @@ test "cli ask admits default-safe web_search without a rule" {
     try std.testing.expectEqual(ToolPermissionDecision.once, (try requestToolPermissionOutcome(&ctx, arena, call, .auto, &.{}, &.{})).decision);
 }
 
-test "emma-cli ask default user commands require configured authority or review" {
+test "shinbo-cli ask default user commands require configured authority or review" {
     const alloc = std.testing.allocator;
     var arena_state = std.heap.ArenaAllocator.init(alloc);
     defer arena_state.deinit();
@@ -5149,7 +5149,7 @@ test "emma-cli ask default user commands require configured authority or review"
     try std.testing.expectEqual(types.ToolPermissionDenialReason.auto_denied, automatic.denial_reason.?);
 }
 
-test "emma-cli ask automatic review observes worker cancellation" {
+test "shinbo-cli ask automatic review observes worker cancellation" {
     const Provider = struct {
         fn review(
             _: ?*anyopaque,
@@ -5646,7 +5646,7 @@ test "disabled headless ask scope leaves the interactive SIGINT handler untouche
     try std.testing.expectEqual(@as(usize, 1), test_previous_sigint_count.load(.seq_cst));
 }
 
-test "emma-cli ask auto mode applies automatic allow and ask without a prompt" {
+test "shinbo-cli ask auto mode applies automatic allow and ask without a prompt" {
     const FakeClassifier = struct {
         calls: usize = 0,
         decision: permission_auto_classifier.Decision = .allow,
@@ -5756,7 +5756,7 @@ test "emma-cli ask auto mode applies automatic allow and ask without a prompt" {
     try std.testing.expectEqualStrings("", stderr_capture.bytes.items);
 }
 
-test "emma-cli ask terminal permission prompt approves and denies run_command" {
+test "shinbo-cli ask terminal permission prompt approves and denies run_command" {
     const alloc = std.testing.allocator;
     var arena_state = std.heap.ArenaAllocator.init(alloc);
     defer arena_state.deinit();
@@ -5805,7 +5805,7 @@ test "emma-cli ask terminal permission prompt approves and denies run_command" {
     try std.testing.expectEqualStrings("", stdout_capture.bytes.items);
 }
 
-test "emma-cli ask permission attention fires once after a prompt is published" {
+test "shinbo-cli ask permission attention fires once after a prompt is published" {
     const alloc = std.testing.allocator;
     var arena_state = std.heap.ArenaAllocator.init(alloc);
     defer arena_state.deinit();
@@ -5848,7 +5848,7 @@ test "emma-cli ask permission attention fires once after a prompt is published" 
     try std.testing.expectEqual(@as(usize, 1), capture.calls);
 }
 
-test "emma-cli ask bell writes only to TTY stderr" {
+test "shinbo-cli ask bell writes only to TTY stderr" {
     const alloc = std.testing.allocator;
     var stdout_capture: TestCapture = .{};
     defer stdout_capture.deinit(alloc);
@@ -5870,7 +5870,7 @@ test "emma-cli ask bell writes only to TTY stderr" {
     try std.testing.expectEqualStrings("", stdout_capture.bytes.items);
 }
 
-test "emma-cli ask registers notification handlers only when configured" {
+test "shinbo-cli ask registers notification handlers only when configured" {
     var stdout_capture: TestCapture = .{};
     defer stdout_capture.deinit(std.testing.allocator);
     var stderr_capture: TestCapture = .{};
@@ -5899,7 +5899,7 @@ test "emma-cli ask registers notification handlers only when configured" {
     try std.testing.expect(enabled.lifecycle_view.hasAttentionRequired());
 }
 
-test "emma-cli ask captured and quiet permission paths bypass terminal prompt" {
+test "shinbo-cli ask captured and quiet permission paths bypass terminal prompt" {
     const alloc = std.testing.allocator;
     var arena_state = std.heap.ArenaAllocator.init(alloc);
     defer arena_state.deinit();
@@ -5938,7 +5938,7 @@ test "emma-cli ask captured and quiet permission paths bypass terminal prompt" {
     try std.testing.expect(std.mem.find(u8, stderr_capture.bytes.items, "noninteractive_permission_prompt_unavailable") != null);
 }
 
-test "emma-cli ask permission prompt policy requires explicit captured-mode opt in and TTY stdin" {
+test "shinbo-cli ask permission prompt policy requires explicit captured-mode opt in and TTY stdin" {
     const Case = struct {
         output_mode: OutputMode,
         prompt_permissions: bool,
@@ -5969,7 +5969,7 @@ test "emma-cli ask permission prompt policy requires explicit captured-mode opt 
     }
 }
 
-test "emma-cli ask captured permission prompt opt in uses the existing prompter" {
+test "shinbo-cli ask captured permission prompt opt in uses the existing prompter" {
     const alloc = std.testing.allocator;
     var arena_state = std.heap.ArenaAllocator.init(alloc);
     defer arena_state.deinit();
@@ -6017,7 +6017,7 @@ test "emma-cli ask captured permission prompt opt in uses the existing prompter"
     try std.testing.expectEqual(@as(usize, 2), prompt.calls);
 }
 
-test "emma-cli ask terminal permission prompt propagates prompt hook errors" {
+test "shinbo-cli ask terminal permission prompt propagates prompt hook errors" {
     const FailingPrompt = struct {
         fn prompt(
             _: ?*anyopaque,
@@ -6052,7 +6052,7 @@ test "emma-cli ask terminal permission prompt propagates prompt hook errors" {
     try std.testing.expect(std.mem.find(u8, stderr_capture.bytes.items, "noninteractive_permission_prompt_unavailable") == null);
 }
 
-test "emma-cli ask prepared file mutation callback preserves terminal permission prompt" {
+test "shinbo-cli ask prepared file mutation callback preserves terminal permission prompt" {
     const alloc = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -6122,7 +6122,7 @@ test "emma-cli ask prepared file mutation callback preserves terminal permission
     try std.testing.expectEqualStrings("", stdout_capture.bytes.items);
 }
 
-test "emma-cli ask headless sandbox widening keeps exhausted recovery model-visible" {
+test "shinbo-cli ask headless sandbox widening keeps exhausted recovery model-visible" {
     const alloc = std.testing.allocator;
     var arena_state = std.heap.ArenaAllocator.init(alloc);
     defer arena_state.deinit();
@@ -6175,7 +6175,7 @@ test "emma-cli ask headless sandbox widening keeps exhausted recovery model-visi
     try std.testing.expectEqualStrings("", stderr_capture.bytes.items);
 }
 
-test "emma-cli ask auto mode uses automatic allow for external prepared file mutation" {
+test "shinbo-cli ask auto mode uses automatic allow for external prepared file mutation" {
     const FakeClassifier = struct {
         calls: usize = 0,
         root_text: []const u8 = "",
@@ -6252,7 +6252,7 @@ test "emma-cli ask auto mode uses automatic allow for external prepared file mut
     try std.testing.expectEqualStrings(target_path, authorization.input.path());
 }
 
-test "emma-cli ask preserves CLI headless blocker diagnostics" {
+test "shinbo-cli ask preserves CLI headless blocker diagnostics" {
     const alloc = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -6300,10 +6300,10 @@ test "emma-cli ask preserves CLI headless blocker diagnostics" {
     ));
     const expected_configured_stderr = try std.fmt.allocPrint(
         arena,
-        "emma-cli ask: permission required by configured rule\n" ++
-            "emma-cli ask: blocked action: {s}\n" ++
-            "emma-cli ask: reason=noninteractive_permission_prompt_unavailable\n" ++
-            "emma-cli ask: rerun in the interactive shell to approve this action, or add a narrow matching permission rule before retrying\n",
+        "shinbo-cli ask: permission required by configured rule\n" ++
+            "shinbo-cli ask: blocked action: {s}\n" ++
+            "shinbo-cli ask: reason=noninteractive_permission_prompt_unavailable\n" ++
+            "shinbo-cli ask: rerun in the interactive shell to approve this action, or add a narrow matching permission rule before retrying\n",
         .{configured_label},
     );
     try std.testing.expectEqualStrings("", stdout_capture.bytes.items);
@@ -6357,10 +6357,10 @@ test "emma-cli ask preserves CLI headless blocker diagnostics" {
     ));
     const expected_approval_stderr = try std.fmt.allocPrint(
         arena,
-        "emma-cli ask: permission required for tool execution in noninteractive mode\n" ++
-            "emma-cli ask: blocked action: {s}\n" ++
-            "emma-cli ask: reason=noninteractive_permission_prompt_unavailable\n" ++
-            "emma-cli ask: rerun with --auto to review this exact action automatically, or use the interactive shell to approve it\n",
+        "shinbo-cli ask: permission required for tool execution in noninteractive mode\n" ++
+            "shinbo-cli ask: blocked action: {s}\n" ++
+            "shinbo-cli ask: reason=noninteractive_permission_prompt_unavailable\n" ++
+            "shinbo-cli ask: rerun with --auto to review this exact action automatically, or use the interactive shell to approve it\n",
         .{approval_label},
     );
     try std.testing.expectEqualStrings("", stdout_capture.bytes.items);
@@ -6403,7 +6403,7 @@ test "emma-cli ask preserves CLI headless blocker diagnostics" {
     try std.testing.expectEqualStrings("", stderr_capture.bytes.items);
 }
 
-test "emma-cli ask ordinary multi-target admission preserves deny precedence without diagnostics" {
+test "shinbo-cli ask ordinary multi-target admission preserves deny precedence without diagnostics" {
     const alloc = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -6837,7 +6837,7 @@ test "saved ask rejects a canonical one-off child during resume initialization" 
     try expectAskSessionStoresUnavailable(&ctx);
 }
 
-test "emma-cli ask renders one-off resume denial in text and JSON modes" {
+test "shinbo-cli ask renders one-off resume denial in text and JSON modes" {
     const alloc = std.testing.allocator;
     const cases = [_]struct {
         args: []const [:0]const u8,
@@ -6883,7 +6883,7 @@ test "emma-cli ask renders one-off resume denial in text and JSON modes" {
         } else {
             try std.testing.expectEqualStrings("", stdout_capture.bytes.items);
             try std.testing.expectEqualStrings(
-                "emma-cli ask: one-off child sessions cannot accept additional prompts; create a persistent child to continue the conversation\n",
+                "shinbo-cli ask: one-off child sessions cannot accept additional prompts; create a persistent child to continue the conversation\n",
                 stderr_capture.bytes.items,
             );
         }
@@ -7113,7 +7113,7 @@ test "saved ask classifies unsafe store failure by request mode" {
     try fresh_ctx.initializeSessionStores();
 
     try std.testing.expectEqualStrings(
-        "emma-cli ask: warning: session persistence unavailable; error=SessionPathUnsafe; continuing without saving\n",
+        "shinbo-cli ask: warning: session persistence unavailable; error=SessionPathUnsafe; continuing without saving\n",
         stderr_capture.bytes.items,
     );
     try expectAskSessionStoresUnavailable(&fresh_ctx);
@@ -7889,7 +7889,7 @@ test "cli json records built in web_search completion" {
     try std.testing.expectEqual(@as(i64, 42), web_search.get("duration_ms").?.integer);
 }
 
-test "emma-cli ask JSON captures HTTP 413 prompt-too-long blocker" {
+test "shinbo-cli ask JSON captures HTTP 413 prompt-too-long blocker" {
     const alloc = std.testing.allocator;
     var stdout_capture: TestCapture = .{};
     defer stdout_capture.deinit(alloc);
@@ -7904,7 +7904,7 @@ test "emma-cli ask JSON captures HTTP 413 prompt-too-long blocker" {
     );
 
     try std.testing.expectEqual(@as(u8, 1), exit_code);
-    try std.testing.expect(std.mem.find(u8, stderr_capture.bytes.items, "emma-cli ask: HTTP 413: provider payload rejected") != null);
+    try std.testing.expect(std.mem.find(u8, stderr_capture.bytes.items, "shinbo-cli ask: HTTP 413: provider payload rejected") != null);
 
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, stdout_capture.bytes.items, .{});
     defer parsed.deinit();
@@ -7915,7 +7915,7 @@ test "emma-cli ask JSON captures HTTP 413 prompt-too-long blocker" {
     try std.testing.expectEqual(@as(i64, 1), parsed.value.object.get("exit_code").?.integer);
 }
 
-test "emma-cli ask formats restricted-provider HTTP errors without raw JSON" {
+test "shinbo-cli ask formats restricted-provider HTTP errors without raw JSON" {
     const alloc = std.testing.allocator;
     var stdout_capture: TestCapture = .{};
     defer stdout_capture.deinit(alloc);
@@ -7930,7 +7930,7 @@ test "emma-cli ask formats restricted-provider HTTP errors without raw JSON" {
     );
 
     try std.testing.expectEqual(@as(u8, 1), exit_code);
-    try std.testing.expect(std.mem.find(u8, stderr_capture.bytes.items, "emma-cli ask: API access denied · HTTP 403 · Provider: wafer") != null);
+    try std.testing.expect(std.mem.find(u8, stderr_capture.bytes.items, "shinbo-cli ask: API access denied · HTTP 403 · Provider: wafer") != null);
     try std.testing.expect(std.mem.find(u8, stderr_capture.bytes.items, "{\"error\"") == null);
 
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, stdout_capture.bytes.items, .{});
@@ -7941,7 +7941,7 @@ test "emma-cli ask formats restricted-provider HTTP errors without raw JSON" {
     try std.testing.expectEqual(@as(i64, 1), parsed.value.object.get("exit_code").?.integer);
 }
 
-test "emma-cli ask text and JSON share the selected auth failure facts" {
+test "shinbo-cli ask text and JSON share the selected auth failure facts" {
     const alloc = std.testing.allocator;
     var stdout_capture: TestCapture = .{};
     defer stdout_capture.deinit(alloc);
@@ -7957,18 +7957,18 @@ test "emma-cli ask text and JSON share the selected auth failure facts" {
 
     try std.testing.expectEqual(@as(u8, 1), exit_code);
     try std.testing.expectEqualStrings(
-        "emma-cli ask: EMMA_PROVIDER_API_KEY authentication failed · HTTP 401\n",
+        "shinbo-cli ask: SHINBO_PROVIDER_API_KEY authentication failed · HTTP 401\n",
         stderr_capture.bytes.items,
     );
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, stdout_capture.bytes.items, .{});
     defer parsed.deinit();
     try std.testing.expectEqual(@as(i64, 1), parsed.value.object.get("exit_code").?.integer);
     try std.testing.expectEqualStrings(
-        "EMMA_PROVIDER_API_KEY authentication failed · HTTP 401\n",
+        "SHINBO_PROVIDER_API_KEY authentication failed · HTTP 401\n",
         parsed.value.object.get("output").?.string,
     );
     const auth_failure = parsed.value.object.get("auth_failure").?.object;
-    try std.testing.expectEqualStrings("EMMA_PROVIDER_API_KEY", auth_failure.get("source").?.string);
+    try std.testing.expectEqualStrings("SHINBO_PROVIDER_API_KEY", auth_failure.get("source").?.string);
     try std.testing.expectEqualStrings("http_unauthorized", auth_failure.get("reason").?.string);
     try std.testing.expectEqual(@as(i64, 401), auth_failure.get("http_status").?.integer);
     try std.testing.expect(std.mem.find(u8, stdout_capture.bytes.items, "secret-key") == null);
@@ -8218,7 +8218,7 @@ test "indeterminate saved auth cleanup keeps the primary result and session id" 
     try std.testing.expectEqual(@as(usize, 1), probe.calls);
     try std.testing.expect(probe.borrowers_detached);
     try std.testing.expectEqualStrings(
-        "emma-cli ask: EMMA_PROVIDER_API_KEY authentication failed · HTTP 401\n",
+        "shinbo-cli ask: SHINBO_PROVIDER_API_KEY authentication failed · HTTP 401\n",
         stderr_capture.bytes.items,
     );
     var parsed = try std.json.parseFromSlice(
@@ -8231,7 +8231,7 @@ test "indeterminate saved auth cleanup keeps the primary result and session id" 
     try std.testing.expect(parsed.value.object.get("error") == null);
     try std.testing.expectEqual(@as(i64, 1), parsed.value.object.get("exit_code").?.integer);
     try std.testing.expectEqualStrings(
-        "EMMA_PROVIDER_API_KEY authentication failed · HTTP 401\n",
+        "SHINBO_PROVIDER_API_KEY authentication failed · HTTP 401\n",
         parsed.value.object.get("output").?.string,
     );
     const session_id = parsed.value.object.get("session_id").?.string;
@@ -8244,7 +8244,7 @@ test "indeterminate saved auth cleanup keeps the primary result and session id" 
     try std.testing.expectEqual(@as(usize, 0), loaded.history.len);
 }
 
-test "emma-cli ask JSON records permission-denied tool calls as error status" {
+test "shinbo-cli ask JSON records permission-denied tool calls as error status" {
     const alloc = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -8279,7 +8279,7 @@ test "emma-cli ask JSON records permission-denied tool calls as error status" {
     );
 }
 
-test "emma-cli ask JSON permission-denied capture is best effort under allocation failure" {
+test "shinbo-cli ask JSON permission-denied capture is best effort under allocation failure" {
     var failing = std.testing.FailingAllocator.init(
         std.testing.allocator,
         .{ .fail_index = 0 },
@@ -8306,7 +8306,7 @@ test "emma-cli ask JSON permission-denied capture is best effort under allocatio
     try std.testing.expectEqual(@as(usize, 0), ctx.tool_call_records.items.len);
 }
 
-test "emma-cli ask defers cancelled sandbox retry capture to the common projection" {
+test "shinbo-cli ask defers cancelled sandbox retry capture to the common projection" {
     const alloc = std.testing.allocator;
     var stdout_capture: TestCapture = .{};
     defer stdout_capture.deinit(alloc);
@@ -8375,7 +8375,7 @@ test "emma-cli ask defers cancelled sandbox retry capture to the common projecti
     try std.testing.expectEqual(@as(usize, 2), ctx.tool_call_records.items.len);
 }
 
-test "emma-cli ask JSON captures parallel tool results without corrupting records" {
+test "shinbo-cli ask JSON captures parallel tool results without corrupting records" {
     const alloc = std.heap.c_allocator;
     const thread_count = 16;
     const calls_per_thread = 256;
@@ -8511,7 +8511,7 @@ fn checkAskJsonCaptureAllocationFailures(alloc: Allocator) !void {
     );
 }
 
-test "emma-cli ask JSON capture cleans up every allocation failure" {
+test "shinbo-cli ask JSON capture cleans up every allocation failure" {
     try std.testing.checkAllAllocationFailures(
         std.testing.allocator,
         checkAskJsonCaptureAllocationFailures,
@@ -8519,7 +8519,7 @@ test "emma-cli ask JSON capture cleans up every allocation failure" {
     );
 }
 
-test "emma-cli ask JSON records ask_user_question text for matching assertions" {
+test "shinbo-cli ask JSON records ask_user_question text for matching assertions" {
     const alloc = std.testing.allocator;
     const records = try alloc.alloc(ToolCallRecord, 1);
     records[0] = .{
@@ -8543,7 +8543,7 @@ test "emma-cli ask JSON records ask_user_question text for matching assertions" 
     try std.testing.expectEqualStrings("What is your GitHub handle?", tool_call.get("question").?.string);
 }
 
-test "emma-cli ask JSON clips ask_user_question text at a UTF-8 boundary" {
+test "shinbo-cli ask JSON clips ask_user_question text at a UTF-8 boundary" {
     const alloc = std.testing.allocator;
     var question_bytes: [257]u8 = undefined;
     @memset(question_bytes[0..255], 'a');
@@ -8598,7 +8598,7 @@ test "json run with missing API key prints diagnostic then final object" {
     const exit_code = try runWithDeps(alloc, &.{ "--json", "hello" }, testConfig(), testPromptRunDeps(&stdout_capture, &stderr_capture, testMissingKeyStartup));
 
     try std.testing.expectEqual(@as(u8, 1), exit_code);
-    try std.testing.expectEqualStrings("emma-cli ask: " ++ credentials.missing_credential_message ++ "\n", stderr_capture.bytes.items);
+    try std.testing.expectEqualStrings("shinbo-cli ask: " ++ credentials.missing_credential_message ++ "\n", stderr_capture.bytes.items);
     try std.testing.expectEqualStrings(
         "{\"output\":\"\",\"exit_code\":1,\"model\":\"\",\"session_id\":\"\",\"steps\":0,\"tool_calls\":[],\"error\":\"MissingCredentials\"}\n",
         stdout_capture.bytes.items,
@@ -8694,7 +8694,7 @@ test "missing API key returns before project context gathering" {
     try std.testing.expectEqual(@as(usize, 0), test_gather_project_context_calls);
 }
 
-test "emma-cli ask emits one discovery warning when catalog truncation and a skill read report it" {
+test "shinbo-cli ask emits one discovery warning when catalog truncation and a skill read report it" {
     const alloc = std.testing.allocator;
     var stdout_capture: TestCapture = .{};
     defer stdout_capture.deinit(alloc);
@@ -8719,7 +8719,7 @@ test "emma-cli ask emits one discovery warning when catalog truncation and a ski
     try std.testing.expect(std.mem.find(u8, stderr_capture.bytes.items, "[context] skill catalog omitted 1 entries") != null);
 }
 
-test "emma-cli ask carries resolved auto mode and initial registry context into the queued prompt" {
+test "shinbo-cli ask carries resolved auto mode and initial registry context into the queued prompt" {
     const alloc = std.testing.allocator;
     var stdout_capture: TestCapture = .{};
     defer stdout_capture.deinit(alloc);
@@ -8741,7 +8741,7 @@ test "emma-cli ask carries resolved auto mode and initial registry context into 
     );
 }
 
-test "default emma-cli ask passes canonical image paths as initial context targets" {
+test "default shinbo-cli ask passes canonical image paths as initial context targets" {
     const alloc = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -8779,7 +8779,7 @@ test "default emma-cli ask passes canonical image paths as initial context targe
     try std.testing.expect(TestContextRegistryFixture.targets_match);
 }
 
-test "default emma-cli ask omits disabled registry context without gathering" {
+test "default shinbo-cli ask omits disabled registry context without gathering" {
     const alloc = std.testing.allocator;
     var stdout_capture: TestCapture = .{};
     defer stdout_capture.deinit(alloc);
@@ -8797,7 +8797,7 @@ test "default emma-cli ask omits disabled registry context without gathering" {
     try std.testing.expectEqual(@as(usize, 0), TestContextRegistryFixture.gather_calls);
 }
 
-test "default emma-cli ask preserves project context gathering error mappings" {
+test "default shinbo-cli ask preserves project context gathering error mappings" {
     const alloc = std.testing.allocator;
     var stdout_capture: TestCapture = .{};
     defer stdout_capture.deinit(alloc);
@@ -8867,7 +8867,7 @@ test "quiet suppresses streaming while quiet json captures final output" {
     try std.testing.expectEqualStrings("", stderr_capture.bytes.items);
 }
 
-test "emma-cli ask JSON recovery keeps stdout structured and reports progress on stderr" {
+test "shinbo-cli ask JSON recovery keeps stdout structured and reports progress on stderr" {
     const alloc = std.testing.allocator;
     var stdout_capture: TestCapture = .{};
     defer stdout_capture.deinit(alloc);
@@ -8891,7 +8891,7 @@ test "emma-cli ask JSON recovery keeps stdout structured and reports progress on
     );
 }
 
-test "emma-cli ask JSON preserves partial output on prompt failure" {
+test "shinbo-cli ask JSON preserves partial output on prompt failure" {
     const alloc = std.testing.allocator;
     var stdout_capture: TestCapture = .{};
     defer stdout_capture.deinit(alloc);
@@ -8923,7 +8923,7 @@ test "emma-cli ask JSON preserves partial output on prompt failure" {
     try std.testing.expectEqualStrings("", stderr_capture.bytes.items);
 }
 
-test "emma-cli ask raw output still propagates prompt failure" {
+test "shinbo-cli ask raw output still propagates prompt failure" {
     const alloc = std.testing.allocator;
     var stdout_capture: TestCapture = .{};
     defer stdout_capture.deinit(alloc);

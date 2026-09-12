@@ -186,7 +186,7 @@
   background-clip: text; color: transparent;
   animation: step-wave 1.6s linear infinite;
 }
-.step.failed, .step.failed .step-title { color: var(--orange); }
+.step.failed, .step.failed .step-title { color: var(--pink); }
 .step.cancelled .step-title { color: var(--text-3); }
 .step-note { flex: none; color: var(--text-3); }
 @keyframes step-wave { from { background-position: 100% 0; } to { background-position: 0 0; } }
@@ -208,7 +208,7 @@
 .context-cut { display: flex; align-items: center; gap: var(--s-2); width: 100%; max-width: var(--conversation-column); margin: var(--s-4) auto; color: var(--text-3); font-family: var(--font-mono); font-size: var(--fs-2xs); letter-spacing: var(--ls-caps); text-transform: uppercase; }
 .context-cut::before, .context-cut::after { flex: 1; height: 1px; background: var(--border); content: ""; }
 .context-notice > span > b { color: var(--violet); font-weight: inherit; }
-.context-notice.stalled > span > b, .context-notice.stalled > button { color: var(--orange); }
+.context-notice.stalled > span > b, .context-notice.stalled > button { color: var(--pink); }
 .context-notice > span { min-width: 0; }
 .context-notice > button { flex: none; padding: 0; color: var(--violet); background: none; font: inherit; letter-spacing: inherit; text-transform: inherit; text-decoration: underline; text-underline-offset: 2px; opacity: .7; transition: opacity var(--t); }
 .context-notice > button:hover { opacity: 1; }
@@ -409,7 +409,7 @@ button.add-row:hover:not(:disabled) { background: var(--surface-3); }
 
 .model-menu { right: 0; left: auto; display: flex; width: 100%; max-height: min(60vh, 420px); padding: 0; overflow: hidden; }
 
-.model-rail { display: flex; flex: 0 0 auto; flex-direction: column; align-items: center; gap: var(--s-1); width: 34px; padding: var(--s-2) 0; overflow-y: auto; border-right: 1px solid var(--border); }
+.model-rail { display: flex; flex: 0 0 auto; flex-direction: column; align-items: center; gap: var(--s-1); width: 34px; padding: var(--s-2) 0; overflow-x: hidden; overflow-y: auto; border-right: 1px solid var(--border); }
 .model-rail hr { width: 16px; margin: var(--s-1) 0; border: 0; border-top: 1px solid var(--border); }
 .model-rail .model-mark-sort { display: grid; flex: 0 0 auto; }
 .model-mark-sort[data-dragging], .model-row-sort[data-dragging] { position: relative; z-index: 2; opacity: .55; }

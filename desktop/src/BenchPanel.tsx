@@ -25,7 +25,7 @@ const tick = (value: number) => value > 0 ? `+${value}` : String(value);
 const lean = (value: number) => value < 0 ? "win" : value > 0 ? "loss" : "tie";
 const call = (verdict: string) => verdict === "improved" ? "win" : verdict === "regressed" ? "loss" : "tie";
 
-const HUES = ["var(--teal)", "var(--lime)", "var(--violet)", "var(--blue)", "var(--rose)", "var(--yellow)", "var(--orange)"];
+const HUES = ["var(--teal)", "var(--lime)", "var(--violet)", "var(--blue)", "var(--rose)", "var(--yellow)", "var(--pink)"];
 const BOARD_METRICS = Object.keys(boardMetricNames) as BoardMetric[];
 const CELL_METRICS = Object.keys(cellMetricNames) as CellMetric[];
 
@@ -156,7 +156,7 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     .slice(0, BENCH_THREADS), [snapshot.threads]);
 
-  useEffect(() => { void window.emma.listFolders().then(setFolders).catch(() => setFolders([])); }, []);
+  useEffect(() => { void window.shinbo.listFolders().then(setFolders).catch(() => setFolders([])); }, []);
 
   const live = store.runs.find((row) => row.state === "running");
   const pending = trial ? attemptsOf(store.runs, [trial.id]).at(-1) : undefined;
@@ -208,7 +208,7 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
     setError("");
     setJudgeNote("");
     const cases = store.cases;
-    const grants = await window.emma.listFolders().catch(() => []);
+    const grants = await window.shinbo.listFolders().catch(() => []);
     setFolders(grants);
     const refusal = benchBlocker(cases, mode, grants);
     if (refusal || readBench().runs.some((row) => row.state === "running")) { starting.current = false; setError(refusal || "A bench is already running."); return; }
@@ -234,7 +234,7 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
   const harvest = async () => {
     setError("");
     const summary = harvestable.find((row) => row.id === pick);
-    const thread = summary ? await window.emma.request<{ id: string; title: string; messages: { role: string; content: string }[] }>("thread", { threadId: pick }).catch(() => undefined) : undefined;
+    const thread = summary ? await window.shinbo.request<{ id: string; title: string; messages: { role: string; content: string }[] }>("thread", { threadId: pick }).catch(() => undefined) : undefined;
     const prompt = thread?.messages.find((message) => message.role === "user")?.content.trim() ?? "";
     const folderId = thread ? threadFolders(thread.id)[0] ?? "" : "";
     if (!thread || !prompt) { setError("That thread has no prompt."); return; }
@@ -266,7 +266,7 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
 
   const exportCsv = async () => {
     setError("");
-    await window.emma.exportThreadStats({
+    await window.shinbo.exportThreadStats({
       folder: stamp(),
       files: sheets().map((sheet) => ({ name: `${sheet.name.toLowerCase()}.csv`, text: toCsv(sheet.rows.map((row) => row.map(formulaSafe))) })),
     }).catch((reason: unknown) => { setError(reasonText(reason)); });
@@ -274,7 +274,7 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
 
   const exportXlsx = async () => {
     setError("");
-    await window.emma.exportBench({ name: stamp(), sheets: sheets() }).catch((reason: unknown) => { setError(reasonText(reason)); });
+    await window.shinbo.exportBench({ name: stamp(), sheets: sheets() }).catch((reason: unknown) => { setError(reasonText(reason)); });
   };
 
   const drop = (id: string) => {
@@ -523,7 +523,7 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
 
     {points.length > 1 && <section className="evidence-table">
       <header>
-        <div><span>Baseline · arm A only</span><h3>Emma over time</h3></div>
+        <div><span>Baseline · arm A only</span><h3>Shinbo over time</h3></div>
         <small>{benchMetricNames[curve]} · {points[0].n} shared {plural(points[0].n, "case")} · {mode} · {model}</small>
       </header>
       <div className="rate-curve">

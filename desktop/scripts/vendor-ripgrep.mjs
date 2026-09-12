@@ -31,7 +31,7 @@ if (files.every((name) => existsSync(path.join(vendor, name))) && existsSync(sta
 }
 
 if (!archive) {
-  console.warn(`No pinned ripgrep for ${process.platform}/${process.arch}; Emma will use the rg or grep already on this machine.`);
+  console.warn(`No pinned ripgrep for ${process.platform}/${process.arch}; Shinbo will use the rg or grep already on this machine.`);
   process.exit(0);
 }
 

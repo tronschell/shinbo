@@ -36,9 +36,9 @@ test("clearing drops the segments the cleared turns had attached", () => {
 
 test("a corrupt store reads as never cleared rather than throwing", () => {
   store.clear();
-  store.set("emma.threadCleared.v1", "{ not json");
+  store.set("shinbo.threadCleared.v1", "{ not json");
   assert.equal(clearedAt("t1"), 0);
-  store.set("emma.threadCleared.v1", JSON.stringify({ t1: -3, t2: "six", t3: 1.5, t4: 4 }));
+  store.set("shinbo.threadCleared.v1", JSON.stringify({ t1: -3, t2: "six", t3: 1.5, t4: 4 }));
   assert.equal(clearedAt("t1"), 0);
   assert.equal(clearedAt("t2"), 0);
   assert.equal(clearedAt("t3"), 0);
@@ -53,7 +53,7 @@ test("Quick Ask opens on the configured default and only remembers a mode once o
 
   setOverlayMode("full");
   assert.equal(overlayMode("acceptEdits"), "full");
-  store.set("emma.overlayMode.v2", "nonsense");
+  store.set("shinbo.overlayMode.v2", "nonsense");
   assert.equal(overlayMode("acceptEdits"), "acceptEdits");
 
   const island = readFileSync(path.join(__dirname, "../../src/App.tsx"), "utf8");
@@ -63,22 +63,22 @@ test("Quick Ask opens on the configured default and only remembers a mode once o
 
 test("the mode a buggy build wrote into the old key is dropped, and a real pick is carried over", () => {
   store.clear();
-  store.set("emma.overlayMode.v1", "auto");
+  store.set("shinbo.overlayMode.v1", "auto");
   assert.equal(overlayMode("acceptEdits"), "acceptEdits");
-  assert.equal(store.has("emma.overlayMode.v1"), false);
-  assert.equal(store.has("emma.overlayMode.v2"), false);
+  assert.equal(store.has("shinbo.overlayMode.v1"), false);
+  assert.equal(store.has("shinbo.overlayMode.v2"), false);
   assert.equal(overlayMode(), DEFAULT_PERMISSION_MODE);
 
   store.clear();
-  store.set("emma.overlayMode.v1", "full");
+  store.set("shinbo.overlayMode.v1", "full");
   assert.equal(overlayMode("acceptEdits"), "full");
-  assert.equal(store.get("emma.overlayMode.v2"), "full");
-  assert.equal(store.has("emma.overlayMode.v1"), false);
+  assert.equal(store.get("shinbo.overlayMode.v2"), "full");
+  assert.equal(store.has("shinbo.overlayMode.v1"), false);
 
   store.clear();
   setOverlayMode("auto");
-  store.set("emma.overlayMode.v1", "ask");
+  store.set("shinbo.overlayMode.v1", "ask");
   assert.equal(overlayMode("acceptEdits"), "auto");
-  assert.equal(store.get("emma.overlayMode.v2"), "auto");
+  assert.equal(store.get("shinbo.overlayMode.v2"), "auto");
 });
 

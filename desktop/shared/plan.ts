@@ -1,22 +1,22 @@
-/* The plan Emma writes down before it delegates: steps, each one a subagent's
-   brief, each
-   wired to the steps it waits on. Steps whose dependencies are all met are one
-   wave and run at once — which is the whole reason to write the plan down rather
-   than do the work inside one turn.
 
-   Markdown is the store, not an export of one. The file under <userData>/plans is
-   what the tool rewrites, what the user can open in any editor, and what this
-   parses back — so nothing here ever throws on a hand-mangled file. One grammar,
-   three callers: the `plan` tool writes it, main runs a wave off it, and the plan
-   widget in the thread inspector draws it. */
 
-/** Steps in one plan. Past this it is a project, and wants a plan per part of it. */
+
+
+
+
+
+
+
+
+
+
+
 export const MAX_PLAN_STEPS = 24;
-/** Tasks under one step. Long lists are what the widget paginates. */
+
 export const MAX_STEP_TASKS = 100;
-/** One plan file, in bytes. Generous — it is prose plus checkboxes, not a corpus. */
+
 export const MAX_PLAN_BYTES = 128 * 1024;
-/** Plans in the folder, so a loop that writes one a turn cannot fill the widget. */
+
 export const MAX_PLANS = 64;
 export const MAX_PLAN_TITLE_CHARS = 200;
 
@@ -26,16 +26,16 @@ export type PlanStatus = (typeof PLAN_STATUSES)[number];
 export type PlanTask = { text: string; done: boolean };
 
 export type PlanStep = {
-  /** Lowercase, dashed, unique in the plan: what `needs` points at and what `update` names. */
+
   id: string;
   title: string;
   status: PlanStatus;
-  /** Step ids that must be done before this one may start. Empty is the first wave. */
+
   needs: string[];
-  /** Everything the subagent is told. It cannot see the conversation that planned it. */
+
   brief: string;
   tasks: PlanTask[];
-  /** One line the subagent left behind, written back when its wave finishes. */
+
   result?: string;
 };
 
@@ -50,23 +50,23 @@ export type PlanRevision = {
 };
 
 export type Plan = {
-  /** The file's own name, minted by the store from the title. */
+
   id: string;
   title: string;
-  /** What the whole plan is for, in a sentence or two. */
+
   goal: string;
   steps: PlanStep[];
   updatedAt: string;
-  /** The thread that wrote it, so its inspector is where the plan is watched. */
+
   threadId?: string;
   revisions?: PlanRevision[];
 };
 
 const ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const HEADING = /^##\s+(\S+)\s*[·—-]\s*(.+)$/;
-/* No leading `\s*`: unanchored, it matches nothing the rest of the pattern would not have
-   matched anyway, and is pure backtracking fuel — a heading with 100 000 spaces before its last
-   word took 16 seconds here, twice per heading. `clean()` trims what `.replace` now leaves. */
+
+
+
 const STATUS = /`(\w+)`\s*$/;
 const NEEDS = /^needs:\s*(.*)$/i;
 const THREAD = /^thread:\s*(\S+)$/i;
@@ -74,7 +74,7 @@ const TASK = /^-\s*\[([ xX])]\s*(.*)$/;
 const RESULT = /^\*\*result:\*\*\s*(.*)$/i;
 const REVISIONS = /^##\s+revisions\s*$/i;
 const REVISION = /^-\s*(\S+)\s+·\s+(\d+)\s+steps?\b(.*)$/i;
-/** What "waits on nothing" is written as, so an empty `needs:` line round-trips. */
+
 const NOTHING = ["—", "-", "none", "nothing", ""];
 
 const clean = (value: string, max: number) => value.replace(/\s+/g, " ").trim().slice(0, max);
@@ -88,13 +88,13 @@ export function isPlanStatus(value: unknown): value is PlanStatus {
   return typeof value === "string" && (PLAN_STATUSES as readonly string[]).includes(value);
 }
 
-/* ---------- Markdown, both ways ---------- */
 
-/**
- * The file as it is stored. Every field is re-checked on the way in: this file is
- * on the user's disk and they are invited to edit it, so anything unreadable is a
- * step that keeps its text and loses its structure, never an exception.
- */
+
+
+
+
+
+
 export function parsePlan(id: string, markdown: string, updatedAt = ""): Plan {
   const lines = markdown.split("\n");
   let title = "";
@@ -154,8 +154,8 @@ export function parsePlan(id: string, markdown: string, updatedAt = ""): Plan {
     brief.push(line);
   }
   if (!inRevisions) flush();
-  // A `needs` pointing at a step that is not in the file is not a dependency, and
-  // leaving it in would park that step in a wave that can never come.
+
+
   const known = new Set(steps.map((step) => step.id));
   for (const step of steps) step.needs = [...new Set(step.needs.filter((need) => known.has(need) && need !== step.id))];
   return { id, title: title || id, goal: goal.join("\n").trim(), steps: steps.slice(0, MAX_PLAN_STEPS), updatedAt, ...(threadId ? { threadId } : {}), ...(revisions.length ? { revisions } : {}) };
@@ -201,7 +201,7 @@ export function planRevision(previous: Plan, next: Plan, at = new Date().toISOSt
   };
 }
 
-/** The plan as it is written back. `parsePlan(renderPlan(plan))` is the plan again. */
+
 export function renderPlan(plan: Plan): string {
   const out = [`# ${plan.title}`, ""];
   if (plan.threadId) out.push(`thread: ${plan.threadId}`, "");
@@ -220,21 +220,21 @@ export function renderPlan(plan: Plan): string {
   return `${out.join("\n").trimEnd()}\n`;
 }
 
-/* ---------- The graph, and the wave it is up to ---------- */
+
 
 export type PlanEdge = { from: string; to: string };
 
 export const planEdges = (steps: PlanStep[]): PlanEdge[] =>
   steps.flatMap((step) => step.needs.map((need) => ({ from: need, to: step.id })));
 
-/**
- * Rows of step ids, top to bottom: a step sits one row below the last thing it
- * waits on, so a row is exactly one wave and everything in it runs at once.
- *
- * Repeated relaxation rather than a topological sort, because a hand-edited file
- * can name a cycle: whatever is still unplaced when the passes run out lands in a
- * row of its own instead of vanishing, and `planProblems` is what says why.
- */
+
+
+
+
+
+
+
+
 export function planRows(steps: PlanStep[]): string[][] {
   const level = new Map<string, number>();
   for (let pass = 0; pass < steps.length; pass += 1) {
@@ -254,9 +254,9 @@ export function planRows(steps: PlanStep[]): string[][] {
   return rows.map((row) => row ?? []);
 }
 
-export const PLAN_ROW = 30; // px between drawn rows
-export const PLAN_PAD = 15; // px above the first row and below the last
-const LANE = 6; // nodes on one line before a wide wave folds onto a second
+export const PLAN_ROW = 30;
+export const PLAN_PAD = 15;
+const LANE = 6;
 
 export type PlanSpot = { x: number; y: number; wave: number };
 
@@ -294,7 +294,7 @@ export function planLayout(waves: string[][], steps: PlanStep[] = [], row = PLAN
   return { spots, height: spots.size ? y - row + PLAN_PAD : 0 };
 }
 
-/** Written for whoever is fixing them: the model reads them back as a tool result. */
+
 export function planProblems(plan: Plan): string[] {
   const problems: string[] = [];
   if (!plan.steps.length) problems.push("This plan has no steps.");
@@ -304,8 +304,8 @@ export function planProblems(plan: Plan): string[] {
     if (!step.brief.trim() && !step.tasks.length) problems.push(`Step "${step.id}" says nothing for its subagent to do.`);
     if (step.needs.some((need) => !placed.has(need)) || step.needs.includes(step.id)) problems.push(`Step "${step.id}" waits on itself.`);
   }
-  // A cycle is the one shape a wave can never reach, so it is named rather than
-  // left as steps that quietly never run.
+
+
   const cycle = plan.steps.filter((step) => step.needs.some((need) => waitsOn(plan.steps, need, step.id)));
   if (cycle.length) problems.push(`These steps wait on each other and can never start: ${cycle.map((step) => step.id).join(", ")}.`);
   if (plan.steps.length && rows.every((row) => row.length < 2)) problems.push("Nothing here runs at once — every step waits on the one before it. A subagent starts from its brief and one line per step it waited on, never from your context, so a chain of them is worth less than doing the work in this turn or handing the whole job to one subagent.");
@@ -319,7 +319,7 @@ function waitsOn(steps: PlanStep[], from: string, target: string, seen = new Set
   return (steps.find((step) => step.id === from)?.needs ?? []).some((need) => waitsOn(steps, need, target, seen));
 }
 
-/** The next wave: every step nothing is still holding up. Empty means finished or stuck. */
+
 export const readySteps = (plan: Plan): PlanStep[] =>
   plan.steps.filter((step) => step.status === "todo" && step.needs.every((need) => plan.steps.find((item) => item.id === need)?.status === "done"));
 
@@ -339,22 +339,22 @@ export const planState = (plan: Plan): PlanStatus =>
       : plan.steps.length > 0 && plan.steps.every((step) => step.status === "done") ? "done"
         : "todo";
 
-/**
- * A rewritten plan, keeping what the old one had already lived through: a step
- * that kept its id keeps its status and result, and a task that kept its text
- * keeps its tick.
- *
- * Without this, restructuring a plan halfway — which is the whole point of letting
- * the agent rewrite the graph — would silently untick every box and re-run every
- * finished step.
- */
+
+
+
+
+
+
+
+
+
 export function mergePlan(previous: Plan | undefined, next: Plan, at = new Date().toISOString()): Plan {
   if (!previous) return next;
   return {
     ...next,
     revisions: [...(previous.revisions ?? []), planRevision(previous, next, at)].slice(-MAX_PLAN_REVISIONS),
-    // The thread that wrote it keeps it: a subagent rewriting its own plan would
-    // otherwise move it into a sub thread the user is not looking at.
+
+
     threadId: previous.threadId ?? next.threadId,
     steps: next.steps.map((step) => {
       const before = previous.steps.find((item) => item.id === step.id);
@@ -370,12 +370,12 @@ export function mergePlan(previous: Plan | undefined, next: Plan, at = new Date(
   };
 }
 
-/* ---------- What the tool is given ---------- */
 
-/**
- * The steps a `plan write` call carries, as JSON. Errors read like `parseWorkflow`'s
- * and for the same reason: they go back as a tool result and are the model's next read.
- */
+
+
+
+
+
 export function parsePlanSteps(json: string): { steps: PlanStep[]; errors: string[] } {
   let value: unknown;
   try { value = JSON.parse(json); } catch { return { steps: [], errors: ["steps is not valid JSON. Send a JSON array of steps, as a string."] }; }
@@ -420,16 +420,16 @@ export function parsePlanSteps(json: string): { steps: PlanStep[]; errors: strin
   return { steps, errors };
 }
 
-/**
- * What one step's subagent is told. It gets the plan around it so its part lands in
- * the right place, and nothing else: it has its own transcript and cannot see the
- * conversation that planned it.
- */
+
+
+
+
+
 export function stepBrief(plan: Plan, step: PlanStep): string {
   const done = plan.steps.filter((item) => item.status === "done" && item.result);
   const failed = plan.steps.filter((item) => item.status === "failed" && item.result);
   return [
-    `You are one step of Emma's plan "${plan.title}". Other subagents are working on the other steps of this same wave right now.`,
+    `You are one step of Shinbo's plan "${plan.title}". Other subagents are working on the other steps of this same wave right now.`,
     plan.goal.trim() ? `\nThe plan as a whole:\n${plan.goal.trim()}` : "",
     `\nYour step is ${step.id} — ${step.title}.\n`,
     step.brief.trim(),

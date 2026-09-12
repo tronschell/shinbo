@@ -150,7 +150,7 @@ test("overlay waits for readiness, stays target-relative and cannot reshow after
     extract(/function reportRunProgress\(progress\) \{[\s\S]*?(?=\nconst BRIDGE_EVENTS)/),
     extract(/function pinWindow\(window\) \{[\s\S]*?(?=\nconst floating)/),
     extract(/function openRunBanner\(threadId, task\) \{[\s\S]*?(?=\nfunction startAnnotation\()/),
-    extract(/electron_1\.ipcMain\.on\("emma:computer-run-ready",[\s\S]*?(?=\n\s*electron_1\.ipcMain\.handle)/),
+    extract(/electron_1\.ipcMain\.on\("shinbo:computer-run-ready",[\s\S]*?(?=\n\s*electron_1\.ipcMain\.handle)/),
   ].join("\n");
   const api = runInNewContext(`${functions}\n({ openRunBanner, closeRunBanner, reportRunProgress, reportBrowserCursor })`, context) as {
     openRunBanner: (threadId: string, task: string) => void;
@@ -274,7 +274,7 @@ test("sandboxed preload loads with only Electron and registers progress before r
   let listener: ((_event: unknown, value: unknown) => void) | undefined;
   const calls: string[] = [];
   const electron = {
-    contextBridge: { exposeInMainWorld: (name: string, value: Bridge) => { assert.equal(name, "emma"); bridge = value; } },
+    contextBridge: { exposeInMainWorld: (name: string, value: Bridge) => { assert.equal(name, "shinbo"); bridge = value; } },
     ipcRenderer: {
       on: (channel: string, callback: typeof listener) => { calls.push(`on:${channel}`); listener = callback; },
       send: (channel: string) => calls.push(`send:${channel}`),
@@ -288,10 +288,10 @@ test("sandboxed preload loads with only Electron and registers progress before r
   assert.ok(bridge);
   const received: unknown[] = [];
   const unsubscribe = bridge.onComputerRunProgress((value) => received.push(value));
-  assert.deepEqual(calls, ["on:emma:computer-run-progress", "send:emma:computer-run-ready"]);
+  assert.deepEqual(calls, ["on:shinbo:computer-run-progress", "send:shinbo:computer-run-ready"]);
   assert.ok(listener);
   listener({}, progress);
   assert.deepEqual(received, [progress]);
   unsubscribe();
-  assert.equal(calls.at(-1), "remove:emma:computer-run-progress");
+  assert.equal(calls.at(-1), "remove:shinbo:computer-run-progress");
 });

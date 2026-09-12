@@ -30,7 +30,7 @@ export function HarnessStatus() {
       if (!live || document.hidden) return;
       if (loading) { queued = true; return; }
       loading = true;
-      void window.emma.harnessReport().then((found) => {
+      void window.shinbo.harnessReport().then((found) => {
         if (live && !document.hidden) setReport(open ? found : { processes: found.processes, lines: EMPTY.lines });
       }).catch(() => undefined).finally(() => {
         loading = false;
@@ -48,7 +48,7 @@ export function HarnessStatus() {
     };
     sync();
     document.addEventListener("visibilitychange", sync);
-    const off = window.emma.onHarnessLog((line) => {
+    const off = window.shinbo.onHarnessLog((line) => {
       if (document.hidden) return;
       if (line.flow === "err") return load();
       if (!open) return;
@@ -78,7 +78,7 @@ export function HarnessStatus() {
   const restart = () => {
     setBusy(true);
     setError("");
-    window.emma.restartHarness().then(setReport).catch((reason: unknown) => setError(reasonText(reason))).finally(() => setBusy(false));
+    window.shinbo.restartHarness().then(setReport).catch((reason: unknown) => setError(reasonText(reason))).finally(() => setBusy(false));
   };
 
   return <>
@@ -87,7 +87,7 @@ export function HarnessStatus() {
     </button>
     {open && <dialog ref={dialog} className="modal-backdrop" aria-labelledby="harness-title" onClose={() => setOpen(false)} onCancel={(event) => { event.preventDefault(); dismiss(); }} onMouseDown={(event) => { if (event.target === event.currentTarget) dismiss(); }}>
       <section className="agent-dialog harness-dialog" data-health={health}>
-        <header><div><span>emma-cli · ACP</span><h2 id="harness-title">{HEALTH_LABEL[health]}</h2></div><button type="button" onClick={dismiss} aria-label="Close agent status">×</button></header>
+        <header><div><span>shinbo-cli · ACP</span><h2 id="harness-title">{HEALTH_LABEL[health]}</h2></div><button type="button" onClick={dismiss} aria-label="Close agent status">×</button></header>
         <dl>
           {report.processes.map((state) => <div key={state.cwd}>
             <dt title={state.cwd}>{folder(state.cwd)}</dt>
@@ -106,7 +106,7 @@ export function HarnessStatus() {
             <summary><b>{clock(line.at)}</b><i />{line.label}<small>{line.body.length.toLocaleString()} chars</small></summary>
             <pre>{line.body}</pre>
           </details>)}
-          {!lines.length && <p className="project-empty">Nothing on the wire yet. Streamed answer chunks are left out; everything else Emma sends or reads lands here.</p>}
+          {!lines.length && <p className="project-empty">Nothing on the wire yet. Streamed answer chunks are left out; everything else Shinbo sends or reads lands here.</p>}
         </div>
         {error && <p className="dialog-error" role="alert">{error}</p>}
         <div className="harness-actions">

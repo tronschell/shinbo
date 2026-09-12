@@ -7,12 +7,13 @@ import { applyNoteTags, createNoteFolder, keepNote, listNoteFolders, listNotes, 
 import { readTagReply, tagNote } from "../main/vault-tags";
 import { catalogSeed } from "../main/catalog-seed";
 import { type ChatMessage, type chatCompletion } from "../main/verifier";
-import { noteFolder, noteSlug, tagName, validTag, type KeptNote, type VaultChoice } from "../shared/vault";
+import { keepRequest } from "../main/ipc";
+import { MAX_NOTE_BYTES, noteFolder, noteSlug, parseFrontmatter, tagName, validTag, type KeptNote, type VaultChoice } from "../shared/vault";
 import { defaultTagger, defaultTaggerSystem } from "../shared/settings";
 import { NO_SYMLINKS, symlinksAllowed } from "./symlinks";
 
 function workspace(folder = "knowledge-base"): VaultChoice {
-  const root = mkdtempSync(path.join(tmpdir(), "emma-vault-"));
+  const root = mkdtempSync(path.join(tmpdir(), "shinbo-vault-"));
   mkdirSync(path.join(root, folder), { recursive: true });
   return { root, folder, kind: "folder", name: path.basename(root) };
 }
@@ -22,7 +23,7 @@ const body = (note: KeptNote) => readFileSync(note.path, "utf8");
 const PIXEL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 test("the chosen vault survives a restart, and a relative root is refused", () => {
-  const userData = mkdtempSync(path.join(tmpdir(), "emma-userdata-"));
+  const userData = mkdtempSync(path.join(tmpdir(), "shinbo-userdata-"));
   const vault = workspace();
   assert.equal(readVault(userData), null);
   assert.deepEqual(saveVault(userData, vault), vault);
@@ -52,6 +53,19 @@ test("a screenshot lands as an attachment the note embeds", async () => {
   await assert.rejects(keepNote(vault, { kind: "screenshot", title: "Bad", image: "data:text/html;base64,PGI+" }), /not an image/);
 });
 
+test("reusing a filed screenshot title preserves its original attachment", async () => {
+  const vault = workspace();
+  const first = await keepNote(vault, { kind: "screenshot", title: "Repeated screenshot", image: PIXEL });
+  const bytes = readFileSync(first.image!);
+  createNoteFolder(vault, "Archive");
+  const filed = moveNote(vault, first.relative, "Archive");
+  const second = await keepNote(vault, { kind: "screenshot", title: "Repeated screenshot", image: "data:image/png;base64,c2Vjb25k" });
+  assert.notEqual(second.image, first.image);
+  assert.deepEqual(readFileSync(first.image!), bytes);
+  assert.equal((await listNotes(vault)).find((note) => note.relative === filed)?.image, first.image);
+  assert.equal(readFileSync(second.image!, "utf8"), "second");
+});
+
 test("a highlight is quoted and names where it came from", async () => {
   const vault = workspace();
   const note = await keepNote(vault, { kind: "selection", title: "Rate limits", text: "one line\nanother line", sourceApplication: "Preview" });
@@ -65,7 +79,7 @@ test("a page keeps its url in the frontmatter", async () => {
   assert.equal(note.title, "example.com/docs/rate-limits");
   assert.equal(note.sourceUrl, "https://example.com/docs/rate-limits");
   assert.match(body(note), /source: "https:\/\/example\.com\/docs\/rate-limits"/);
-  assert.deepEqual(listNotes(vault).map((item) => item.relative), [note.relative]);
+  assert.deepEqual((await listNotes(vault)).map((item) => item.relative), [note.relative]);
 });
 
 test("nothing a caller asks for can be written outside the knowledge folder", async () => {
@@ -87,7 +101,7 @@ test("filling in the title and tags leaves the body byte-identical", async () =>
   applyNoteTags(note.path, "A much better title", ["rate-limits", "SHOUTING", "api", "api", "ok/nested", "  ", "x".repeat(80)]);
   const after = readFileSync(note.path);
   assert.deepEqual(after.subarray(after.indexOf(Buffer.from("\n---\n")) + 5), kept);
-  const [filed] = listNotes(vault);
+  const [filed] = await listNotes(vault);
   assert.equal(filed.title, "A much better title");
   assert.deepEqual(filed.tags, ["rate-limits", "api", "ok/nested"]);
   assert.equal(filed.kind, "note");
@@ -96,13 +110,13 @@ test("filling in the title and tags leaves the body byte-identical", async () =>
 
 test("the user's own notes in that folder are skipped, never thrown on", async () => {
   const vault = workspace();
-  const kept = await keepNote(vault, { kind: "note", title: "Mine", text: "kept by Emma" });
+  const kept = await keepNote(vault, { kind: "note", title: "Mine", text: "kept by Shinbo" });
   const folder = noteFolder(vault);
   mkdirSync(folder, { recursive: true });
   writeFileSync(path.join(folder, "their-diary.md"), "No frontmatter at all, just prose.\n");
   writeFileSync(path.join(folder, "half-written.md"), "---\ntitle: unterminated\nkind: note\n");
   writeFileSync(path.join(folder, "other-tool.md"), "---\ntags:\n  - theirs\n---\n\nbody\n");
-  const notes = listNotes(vault);
+  const notes = await listNotes(vault);
   assert.deepEqual(notes.map((item) => item.relative), [kept.relative]);
 });
 
@@ -111,19 +125,19 @@ test("a vault that has moved is said out loud, never recreated underneath the us
   await keepNote(vault, { kind: "note", title: "Kept", text: "body" });
   const moved = { ...vault, root: `${vault.root}-moved` };
   renameSync(vault.root, moved.root);
-  assert.throws(() => listNotes(vault), /is not at .* any more/);
+  await assert.rejects(listNotes(vault), /is not at .* any more/);
   await assert.rejects(keepNote(vault, { kind: "note", title: "Later", text: "body" }), /is not at .* any more/);
   assert.equal(existsSync(vault.root), false);
   assert.equal(vaultWritable(vault), false);
   assert.throws(() => noteInVault(vault, "kept.md"), /is not at .* any more/);
-  assert.deepEqual(listNotes(moved).map((item) => item.title), ["Kept"]);
+  assert.deepEqual((await listNotes(moved)).map((item) => item.title), ["Kept"]);
 });
 
 test("a knowledge folder deleted under a vault that is still there is said out loud, never recreated", async () => {
   const vault = workspace();
   const note = await keepNote(vault, { kind: "note", title: "Kept", text: "body" });
   rmSync(noteFolder(vault), { recursive: true });
-  assert.throws(() => listNotes(vault), /is not at .* any more/);
+  await assert.rejects(listNotes(vault), /is not at .* any more/);
   assert.throws(() => listNoteFolders(vault), /is not at .* any more/);
   assert.throws(() => noteInVault(vault, note.relative), /is not at .* any more/);
   await assert.rejects(keepNote(vault, { kind: "note", title: "Later", text: "body" }), /is not at .* any more/);
@@ -145,13 +159,13 @@ test("a symlink planted in the vault leads nowhere, however innocent its name re
   if (!symlinksAllowed()) return context.skip(NO_SYMLINKS);
   const vault = workspace();
   const note = await keepNote(vault, { kind: "note", title: "Kept", text: "body" });
-  const elsewhere = mkdtempSync(path.join(tmpdir(), "emma-elsewhere-"));
+  const elsewhere = mkdtempSync(path.join(tmpdir(), "shinbo-elsewhere-"));
   const secret = path.join(elsewhere, "id_rsa");
   writeFileSync(secret, "PRIVATE KEY");
   symlinkSync(secret, path.join(noteFolder(vault), "key.md"));
   symlinkSync(elsewhere, path.join(noteFolder(vault), "Design"));
   assert.throws(() => noteInVault(vault, "key.md"), /not in your vault/);
-  assert.deepEqual(listNotes(vault).map((item) => item.relative), [note.relative]);
+  assert.deepEqual((await listNotes(vault)).map((item) => item.relative), [note.relative]);
   assert.deepEqual(listNoteFolders(vault).map((item) => item.name), []);
   assert.throws(() => moveNote(vault, note.relative, "Design"), Error);
   assert.deepEqual(readdirSync(elsewhere), ["id_rsa"]);
@@ -164,7 +178,7 @@ test("a tag the model writes in another script reaches the note on disk", async 
   const tagged = readTagReply('{"title": "定价会议", "tags": ["定价", "会议 纪要", "Планёрка", "планёрка", "#プライシング"]}');
   assert.deepEqual(tagged, { title: "定价会议", tags: ["定价", "会议-纪要", "планёрка", "プライシング"] });
   applyNoteTags(note.path, tagged!.title, tagged!.tags);
-  assert.deepEqual(listNotes(vault)[0].tags, tagged!.tags);
+  assert.deepEqual((await listNotes(vault))[0].tags, tagged!.tags);
   assert.match(body(note), /tags: \["定价", "会议-纪要", "планёрка", "プライシング"\]/);
 });
 
@@ -202,7 +216,7 @@ test("newest first, and a note whose frontmatter lies about its date falls back 
   const newer = await keepNote(vault, { kind: "note", title: "Newer", text: "b" });
   applyNoteTags(older.path, "Older", []);
   writeFileSync(newer.path, readFileSync(newer.path, "utf8").replace(/saved: ".*"/, 'saved: "not a date"'));
-  const notes = listNotes(vault);
+  const notes = await listNotes(vault);
   assert.equal(notes.length, 2);
   assert.ok(notes[0].savedAt >= notes[1].savedAt);
 });
@@ -213,7 +227,7 @@ test("a card reads its own excerpt and picture out of the note, and refuses a pi
   const quote = await keepNote(vault, { kind: "selection", title: "Masonry", text: "Columns get you\nmost of the way" });
   const folder = noteFolder(vault);
   writeFileSync(path.join(folder, "escaped.md"), '---\ntitle: "Escaped"\nkind: "note"\nsaved: "2026-01-01T00:00:00.000Z"\n---\n\n![[../../etc/passwd.png]]\n![](https://example.com/remote.png)\n\nbody text\n');
-  const notes = listNotes(vault);
+  const notes = await listNotes(vault);
   const found = (relative: string) => notes.find((note) => note.relative === relative)!;
   assert.equal(found(shot.relative).excerpt, "The focus ring is gone");
   assert.equal(found(shot.relative).image, path.join(folder, "attachments", shot.relative.replace(/\.md$/, ".png")));
@@ -228,13 +242,13 @@ test("a folder is a directory, and a save filed into it keeps its picture and co
   const made = createNoteFolder(vault, "  Design  ");
   assert.equal(made.name, "Design");
   assert.deepEqual(listNoteFolders(vault).map((folder) => folder.name), ["Design"]);
-  assert.equal(moveNote(vault, shot.relative, "Design"), path.join("Design", shot.relative));
-  const notes = listNotes(vault);
+  assert.equal(moveNote(vault, shot.relative, "Design"), `Design/${shot.relative}`);
+  const notes = await listNotes(vault);
   assert.equal(notes.length, 1);
   assert.equal(notes[0].folder, "Design");
   assert.equal(notes[0].image, path.join(noteFolder(vault), "attachments", shot.relative.replace(/\.md$/, ".png")));
   assert.equal(moveNote(vault, notes[0].relative, ""), shot.relative);
-  assert.equal(listNotes(vault)[0].folder, undefined);
+  assert.equal((await listNotes(vault))[0].folder, undefined);
 });
 
 test("renaming a folder carries its saves and refuses a name that escapes or collides", async () => {
@@ -245,7 +259,7 @@ test("renaming a folder carries its saves and refuses a name that escapes or col
   moveNote(vault, note.relative, "Design");
   assert.equal(renameNoteFolder(vault, "Design", "  Sketches  ").name, "Sketches");
   assert.deepEqual(listNoteFolders(vault).map((folder) => folder.name), ["Sketches", "Taken"]);
-  assert.equal(listNotes(vault)[0].folder, "Sketches");
+  assert.equal((await listNotes(vault))[0].folder, "Sketches");
   for (const name of ["../escape", "nested/deep", "attachments", "", "  ", "Taken"]) {
     assert.throws(() => renameNoteFolder(vault, "Sketches", name), Error, `accepted ${JSON.stringify(name)}`);
   }
@@ -296,4 +310,24 @@ test("the tagger asks for a title and tags, with room for a model that thinks fi
 test("the note body cannot become an instruction to the tagger", () => {
   assert.equal(readTagReply('<think>{"title":"ignored"}</think> nothing after'), null);
   assert.deepEqual(readTagReply('{"title": "Kept", "tags": ["a b", "", 4, "ok"]}'), { title: "Kept", tags: ["a-b", "ok"] });
+});
+
+test("a note's frontmatter reads back as fields the preview can show", () => {
+  assert.deepEqual(parseFrontmatter('---\ntitle: "Zig 0.16"\nkind: "page"\ntags: ["zig", "build"]\n---\nBody'), { title: "Zig 0.16", kind: "page", tags: ["zig", "build"] });
+  assert.equal(parseFrontmatter("Body only"), null);
+});
+
+test("a highlight whose quoting exceeds the note limit is rejected instead of silently truncated", async () => {
+  const vault = workspace();
+  try {
+    const text = `${"x\n".repeat(MAX_NOTE_BYTES / 2 - 10)}FINAL USER WORDS`;
+    const request = keepRequest({ kind: "selection", title: "Large highlight", text });
+    await assert.rejects(keepNote(vault, request), /formatted note exceeds/);
+    assert.deepEqual(readdirSync(noteFolder(vault)), []);
+    const shorter = text.slice(-1024);
+    const note = await keepNote(vault, { ...request, text: shorter });
+    const stored = body(note);
+    assert.ok(stored.endsWith(`${shorter.split("\n").map((line) => `> ${line}`).join("\n")}\n`));
+    assert.match(stored, /FINAL USER WORDS/);
+  } finally { rmSync(vault.root, { recursive: true, force: true }); }
 });

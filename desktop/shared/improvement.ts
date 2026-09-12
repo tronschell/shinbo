@@ -156,7 +156,7 @@ export const keptNothing = (): AppliedImprovements["kept"] =>
 export function lessonBlock(additions: readonly string[]): string {
   const lines = additions.map((item) => item.trim()).filter(Boolean).slice(0, MAX_KEPT);
   if (!lines.length) return "";
-  return ["What Emma has learned from its own past runs, and applies unless the user says otherwise:", ...lines.map((line) => `- ${line}`)].join("\n");
+  return ["What Shinbo has learned from its own past runs, and applies unless the user says otherwise:", ...lines.map((line) => `- ${line}`)].join("\n");
 }
 
 export function heldBack(items: readonly Improvement[]): string[] {
@@ -256,8 +256,15 @@ export function readTurns(trace: { timestamp: string; text: string }, thread: { 
     return at?.kind === "agent" ? at.id : agents[0].id;
   };
   const owners = new Map(spans.map((span) => [span.id, owner(span)]));
+  const groups = new Map<string, TraceSpan[]>();
+  for (const span of spans) {
+    const id = owners.get(span.id)!;
+    const group = groups.get(id);
+    if (group) group.push(span);
+    else groups.set(id, [span]);
+  }
   return agents.map((agent, index) => {
-    const own = spans.filter((span) => owners.get(span.id) === agent.id);
+    const own = groups.get(agent.id) ?? [];
     const fields = index === 0 ? header : agent.context ?? {};
     return readTurn({
       timestamp: trace.timestamp,
@@ -458,7 +465,7 @@ export function draftProposal(item: Spend): Draft | null;
 export function draftProposal(item: Friction | Spend): Draft | null {
   if (item.kind === "discovery") {
     return {
-      title: `Emma spends ${round(item.steps)} steps a turn looking for its own tools`,
+      title: `Shinbo spends ${round(item.steps)} steps a turn looking for its own tools`,
       lever: "advertise",
       metric: "requests",
       look: 1,

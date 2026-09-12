@@ -15,7 +15,7 @@ test("permission listeners wire once and keep asks across subscriber gaps", asyn
   const asks: ((ask: PermissionAsk) => void)[] = [];
   const resolved: ((value: { id: string; allowed: boolean }) => void)[] = [];
   const ask = (id: string) => ({ id, threadId: "thread", tool: "computer", summary: id, detail: id });
-  const window = { emma: {
+  const window = { shinbo: {
     onPermissionAsk: (listener: (ask: PermissionAsk) => void) => { asks.push(listener); return () => {}; },
     onPermissionResolved: (listener: (value: { id: string; allowed: boolean }) => void) => { resolved.push(listener); return () => {}; },
     listAsks: () => Promise.resolve([ask("first"), ask("restored")]),

@@ -8,7 +8,7 @@ import { Markdown } from "./markdown";
 const MermaidArtifact = lazy(() => import("./mermaid-artifact"));
 
 const GONE = "That artifact is no longer in the folder.";
-const REVEAL_LABEL = typeof window !== "undefined" && window.emma?.platform === "win32" ? "Reveal in File Explorer" : "Reveal in Finder";
+const REVEAL_LABEL = typeof window !== "undefined" && window.shinbo?.platform === "win32" ? "Reveal in File Explorer" : "Reveal in Finder";
 const GRID_PREVIEW_MARGIN = "400px";
 
 const svgPage = (svg: string) => `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;height:100%}body{display:grid;place-items:center}svg{max-width:100%;max-height:100%}</style>${svg}`;
@@ -18,7 +18,7 @@ function useArtifact(id: string) {
   useEffect(() => {
     if (!id) return;
     let active = true;
-    void window.emma.readArtifact(id)
+    void window.shinbo.readArtifact(id)
       .then((artifact) => { if (active) setState({ id, artifact }); })
       .catch(() => { if (active) setState({ id, artifact: false }); });
     return () => { active = false; };
@@ -44,11 +44,11 @@ export function ArtifactFrame({ meta, className = "artifact-frame", loading }: {
   const frame = useRef<HTMLIFrameElement>(null);
   useEffect(() => {
     const answer = (event: MessageEvent) => {
-      const asked = event.data as { emma?: unknown; n?: unknown; sql?: unknown; params?: unknown };
+      const asked = event.data as { shinbo?: unknown; n?: unknown; sql?: unknown; params?: unknown };
       const page = frame.current?.contentWindow;
-      if (!page || event.source !== page || asked?.emma !== "sql" || typeof asked.n !== "number") return;
+      if (!page || event.source !== page || asked?.shinbo !== "sql" || typeof asked.n !== "number") return;
       const reply = (value: object) => page.postMessage({ n: asked.n, ...value }, "*");
-      void window.emma.artifactSql(meta.id, String(asked.sql ?? ""), Array.isArray(asked.params) ? asked.params : [])
+      void window.shinbo.artifactSql(meta.id, String(asked.sql ?? ""), Array.isArray(asked.params) ? asked.params : [])
         .then((rows) => reply({ rows }))
         .catch((error: unknown) => reply({ error: reasonText(error) }));
     };
@@ -92,17 +92,17 @@ export function ArtifactsView({ busy, select, openArtifact }: { busy: boolean; s
 
   useEffect(() => {
     let active = true;
-    const load = () => void window.emma.listArtifacts()
+    const load = () => void window.shinbo.listArtifacts()
       .then((found) => { if (active) setList(found); })
-      .catch(() => { if (active) setError("Emma could not read the artifacts folder."); });
+      .catch(() => { if (active) setError("Shinbo could not read the artifacts folder."); });
     load();
-    const stop = window.emma.onArtifactsChanged(load);
+    const stop = window.shinbo.onArtifactsChanged(load);
     return () => { active = false; stop(); };
   }, []);
 
   const remove = async (id: string) => {
     try {
-      await window.emma.deleteArtifact(id);
+      await window.shinbo.deleteArtifact(id);
       setList((current) => current.filter((item) => item.id !== id));
       setDoomed(null);
       if (openId === id) openArtifactId("");
@@ -139,7 +139,7 @@ export function ArtifactsView({ busy, select, openArtifact }: { busy: boolean; s
 function GridCard({ meta, busy, open, edit, onEditError, remove }: { meta: ArtifactMeta; busy: boolean; open: () => void; edit: (artifact: Artifact) => void; onEditError: () => void; remove: () => void }) {
   const [target, nearViewport] = useNearViewport();
   const editCurrent = () => {
-    void window.emma.readArtifact(meta.id).then(edit).catch(onEditError);
+    void window.shinbo.readArtifact(meta.id).then(edit).catch(onEditError);
   };
   return <article ref={target} className="artifact-card">
     <button type="button" className="artifact-card-open" onClick={open} aria-label={`Open ${meta.title}`}>
@@ -148,7 +148,7 @@ function GridCard({ meta, busy, open, edit, onEditError, remove }: { meta: Artif
     </button>
     <div className="artifact-actions artifact-icons">
       <button type="button" title="Edit in a thread" aria-label="Edit in a thread" disabled={busy} onClick={editCurrent}><PencilIcon /></button>
-      <button type="button" title={REVEAL_LABEL} aria-label={REVEAL_LABEL} disabled={busy} onClick={() => void window.emma.revealArtifact(meta.id)}><FolderIcon /></button>
+      <button type="button" title={REVEAL_LABEL} aria-label={REVEAL_LABEL} disabled={busy} onClick={() => void window.shinbo.revealArtifact(meta.id)}><FolderIcon /></button>
       <button type="button" className="artifact-danger" title="Delete" aria-label="Delete" disabled={busy} onClick={remove}><TrashIcon /></button>
     </div>
   </article>;
@@ -196,7 +196,7 @@ function ArtifactPanel({ id, className, busy, close, edit, remove }: { id: strin
         onClick={() => void navigator.clipboard.writeText(artifact.content).then(() => setCopied(true)).catch(() => undefined)}>{copied ? <CheckIcon /> : <CopyIcon />}</button>}
       <button type="button" className="artifact-icon" onClick={close} aria-label="Close artifact" title="Close">×</button>
     </header>
-    {artifact && <button type="button" className="artifact-location" title={REVEAL_LABEL} onClick={() => void window.emma.revealArtifact(artifact.id)}>{artifact.path}</button>}
+    {artifact && <button type="button" className="artifact-location" title={REVEAL_LABEL} onClick={() => void window.shinbo.revealArtifact(artifact.id)}>{artifact.path}</button>}
     {artifact === false && <p className="dialog-error">{GONE}</p>}
     {artifact && <div className="artifact-body"><ArtifactRender artifact={artifact} source={source} /></div>}
     {artifact && <div className="artifact-actions">
@@ -212,7 +212,7 @@ export function ArtifactPane({ id, busy, close, edit }: { id: string; busy: bool
   const remove = async () => {
     if (!doomed) return;
     try {
-      await window.emma.deleteArtifact(doomed.id);
+      await window.shinbo.deleteArtifact(doomed.id);
       setDoomed(null);
       close();
     } catch { setError("That artifact could not be deleted."); }
@@ -247,7 +247,7 @@ function ConfirmDialog({ meta, busy, close, confirm }: { meta: ArtifactMeta; bus
         <div><span>{ARTIFACT_LABELS[meta.kind]}</span><h2 id="artifact-delete-title">Delete this artifact?</h2></div>
         <button type="button" onClick={close} aria-label="Keep artifact">×</button>
       </header>
-      <p><b>{meta.title}</b> and its folder are removed from disk. Emma cannot bring it back.</p>
+      <p><b>{meta.title}</b> and its folder are removed from disk. Shinbo cannot bring it back.</p>
       <div className="artifact-actions">
         <button type="button" className="artifact-danger" disabled={busy} onClick={confirm}>Delete for good</button>
         <button type="button" disabled={busy} onClick={close}>Keep it</button>

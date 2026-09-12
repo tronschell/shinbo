@@ -1,11 +1,11 @@
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import type { LiveAgent, ThreadStep } from "../shared/agents";
 import { compactionNotice, decodeSpans, traceHeader, type TraceSpan } from "../shared/trace";
 import { visualDrawn } from "../shared/visualize";
 import { charLabel } from "../shared/usage";
 import { splitThinking } from "../shared/thinking";
-import type { Message } from "./types";
-import { recordBreakdown, recordCompaction, recordExperiment } from "./context";
+import type { Message, Thread } from "./types";
+import { cachedBlocks, rememberBlocks, recordBreakdown, recordCompaction, recordExperiment } from "./context";
 import { reasonText } from "./errors";
 
 export type QueuedTurn = {
@@ -17,6 +17,7 @@ export type QueuedTurn = {
   cancelled?: boolean;
   delivered?: () => void;
   notice?: string;
+  failure?: string;
 };
 
 export type Block =
@@ -106,16 +107,19 @@ export type Run = {
   queue: QueuedTurn[];
   held: QueuedTurn[];
   stopped: boolean;
-  draft: string;
-  failure: string;
   activeAt: number;
   routed: string;
   recovery: string;
 };
 
-const IDLE: Run = { sending: false, foreign: false, pending: null, blocks: [], landed: [], queue: [], held: [], stopped: false, draft: "", failure: "", activeAt: 0, routed: "", recovery: "" };
+const IDLE: Run = { sending: false, foreign: false, pending: null, blocks: [], landed: [], queue: [], held: [], stopped: false, activeAt: 0, routed: "", recovery: "" };
 const runs = new Map<string, Run>();
-const listeners = new Set<() => void>();
+const listeners = new Map<string, Set<() => void>>();
+const changed = new Set<string>();
+const completed = new Set<string>();
+const settlementFrom = new Map<string, number | undefined>();
+let persistenceRevision = 0;
+let notification: ReturnType<typeof setTimeout> | undefined;
 let wired = false;
 
 let refresh: () => unknown = () => undefined;
@@ -124,7 +128,13 @@ const read = (threadId: string) => runs.get(threadId) ?? IDLE;
 function write(threadId: string, change: Partial<Run> | ((run: Run) => Partial<Run>)) {
   const current = read(threadId);
   runs.set(threadId, { ...current, ...(typeof change === "function" ? change(current) : change) });
-  for (const listener of listeners) listener();
+  changed.add(threadId);
+  notification ??= setTimeout(() => {
+    notification = undefined;
+    const pending = [...changed];
+    changed.clear();
+    for (const id of pending) for (const listener of listeners.get(id) ?? []) listener();
+  }, 16);
 }
 
 export function appendText(blocks: Block[], kind: "text" | "thinking", delta: string): Block[] {
@@ -142,9 +152,17 @@ export function mergeStep(blocks: Block[], step: ThreadStep): Block[] {
   return next;
 }
 
-function adoptForeign(threadId: string) {
+function adoptForeign(threadId: string, snapshot?: ReturnType<typeof recoverySnapshot>) {
+  const previous = read(threadId);
   write(threadId, { sending: true, foreign: true, blocks: [], pending: null, stopped: false, activeAt: Date.now(), recovery: "" });
-  void rehydrate(threadId, began(threadId));
+  const token = began(threadId);
+  if (!previous.landed.length) {
+    settlementFrom.set(threadId, undefined);
+    void window.shinbo.request<Thread>("thread", { threadId }).then((thread) => {
+      if (generations.get(threadId) === token && read(threadId).sending && read(threadId).foreign) settlementFrom.set(threadId, thread.messages.length);
+    }).catch(() => undefined);
+  } else if (!settlementFrom.has(threadId)) settlementFrom.set(threadId, previous.pending?.after);
+  void rehydrate(threadId, token, snapshot);
 }
 
 const generations = new Map<string, number>();
@@ -157,10 +175,20 @@ function began(threadId: string): number {
 }
 
 export function joinPartial(restored: string, held: string): string {
-  for (let size = Math.min(restored.length, held.length); size > 0; size -= 1) {
-    if (restored.endsWith(held.slice(0, size))) return restored + held.slice(size);
+  if (!restored || !held) return restored + held;
+  const size = Math.min(restored.length, held.length);
+  const prefix = new Uint32Array(size);
+  for (let at = 1, matched = 0; at < size; at += 1) {
+    while (matched && held[at] !== held[matched]) matched = prefix[matched - 1];
+    if (held[at] === held[matched]) matched += 1;
+    prefix[at] = matched;
   }
-  return restored + held;
+  let matched = 0;
+  for (let at = restored.length - size; at < restored.length; at += 1) {
+    while (matched && restored[at] !== held[matched]) matched = prefix[matched - 1];
+    if (restored[at] === held[matched]) matched += 1;
+  }
+  return restored + held.slice(matched);
 }
 
 const marked = (span: TraceSpan) => span.id.startsWith("call:") || span.id.startsWith("steer:") || span.id.startsWith("compact:");
@@ -244,8 +272,12 @@ export function tracedBlocks(threadId: string, messages: Message[], traces: read
   return turns;
 }
 
-function rehydrate(threadId: string, token: number) {
-  void Promise.all([window.emma.listSpans(), window.emma.livePartial()])
+function recoverySnapshot() {
+  return Promise.all([window.shinbo.listSpans(), window.shinbo.livePartial()]);
+}
+
+function rehydrate(threadId: string, token: number, snapshot = recoverySnapshot()) {
+  void snapshot
     .then(([spans, partial]) => {
       const restored = restoreBlocks(threadId, spans[threadId] ?? [], partial[threadId]);
       if (!restored.length || generations.get(threadId) !== token) return;
@@ -267,10 +299,11 @@ function rehydrate(threadId: string, token: number) {
 }
 
 function reconcile(live: LiveAgent[]) {
+  let snapshot: ReturnType<typeof recoverySnapshot> | undefined;
   for (const agent of live) {
     if (agent.status === "stopped" && runs.has(agent.threadId) && !read(agent.threadId).stopped) write(agent.threadId, { stopped: true });
     if (agent.status !== "running" && agent.status !== "waiting") continue;
-    if (!read(agent.threadId).sending) adoptForeign(agent.threadId);
+    if (!read(agent.threadId).sending) adoptForeign(agent.threadId, snapshot ??= recoverySnapshot());
     if (!read(agent.threadId).pending && typeof agent.prompt === "string" && agent.prompt.trim()) {
       write(agent.threadId, { pending: { content: agent.prompt, after: 0, params: {} } });
     }
@@ -283,18 +316,25 @@ function reconcile(live: LiveAgent[]) {
     write(threadId, (current) => ({ sending: false, foreign: false, landed: current.blocks.length ? [...current.landed, current.blocks] : current.landed }));
 
     if (read(threadId).queue.length) void drain(threadId, refresh);
+    completed.add(threadId);
   }
 }
 
 export function wire() {
   if (wired) return;
   wired = true;
-  window.emma.onAgents(reconcile);
-  void window.emma.listAgents().then(reconcile).catch(() => undefined);
-  window.emma.onActivity(({ threadId }) => {
+  window.shinbo.onAgents(reconcile);
+  window.shinbo.onChanged(() => {
+    persistenceRevision += 1;
+    const finished = [...completed];
+    completed.clear();
+    for (const threadId of finished) void settleStoredRun(threadId);
+  });
+  void window.shinbo.listAgents().then(reconcile).catch(() => undefined);
+  window.shinbo.onActivity(({ threadId }) => {
     write(threadId, { activeAt: Date.now() });
   });
-  window.emma.onDelta(({ threadId, delta, thinking, recovery }) => {
+  window.shinbo.onDelta(({ threadId, delta, thinking, recovery }) => {
     if (!read(threadId).sending) adoptForeign(threadId);
 
     if (recovery) {
@@ -312,16 +352,16 @@ export function wire() {
     }
     write(threadId, (run) => ({ blocks: appendText(run.blocks, thinking ? "thinking" : "text", delta), activeAt: Date.now(), recovery: "" }));
   });
-  window.emma.onStep((step) => {
+  window.shinbo.onStep((step) => {
     if (!read(step.threadId).sending) adoptForeign(step.threadId);
     write(step.threadId, (run) => ({ blocks: mergeStep(run.blocks, step), activeAt: Date.now() }));
   });
-  window.emma.onCompacted(({ threadId, removedTurns, modelWritten, fresh, handoff, historyChars }) => {
+  window.shinbo.onCompacted(({ threadId, removedTurns, modelWritten, fresh, handoff, historyChars }) => {
     if (!read(threadId).sending) adoptForeign(threadId);
     if (historyChars !== undefined) recordCompaction(threadId, historyChars);
     write(threadId, (run) => ({ blocks: [...run.blocks, { kind: "notice" as const, text: compactionNotice(removedTurns, modelWritten, fresh), plain: true, compact: true, ...(handoff ? { handoff } : {}) }], activeAt: Date.now() }));
   });
-  window.emma.onContextExperiment((fired) => {
+  window.shinbo.onContextExperiment((fired) => {
     const { threadId, prunedResults, reinjected, savedTokens, addedTokens, checkpoint } = fired;
     if (!read(threadId).sending) adoptForeign(threadId);
 
@@ -332,18 +372,23 @@ export function wire() {
     ];
     write(threadId, (run) => ({ blocks: [...run.blocks, ...notices], activeAt: Date.now() }));
   });
-  window.emma.onRoutedModel(({ threadId, model, fellBack }) => {
+  window.shinbo.onRoutedModel(({ threadId, model, fellBack, skipped }) => {
     if (!read(threadId).sending) adoptForeign(threadId);
     write(threadId, (run) => run.routed === model ? { routed: model, activeAt: Date.now() } : {
       routed: model,
       activeAt: Date.now(),
-      blocks: fellBack ? [...run.blocks, { kind: "notice" as const, text: `Fell back to ${model} — the model above it stopped answering`, plain: true }] : run.blocks,
+      blocks: fellBack ? [...run.blocks, { kind: "notice" as const, text: fallbackNotice(model, skipped), plain: true }] : run.blocks,
     });
   });
-  window.emma.onContextBreakdown(({ threadId, ...parts }) => {
+  window.shinbo.onContextBreakdown(({ threadId, ...parts }) => {
     recordBreakdown(threadId, parts);
     write(threadId, { activeAt: Date.now() });
   });
+}
+
+export function fallbackNotice(model: string, skipped: readonly string[]): string {
+  const failed = skipped.length ? skipped.join(" and ") : "the model above it";
+  return `Fell back to ${model} — ${failed} ${skipped.length > 1 ? "were" : "was"} rate-limited, down, over context, or refused the request; OpenRouter reports the switch but not which`;
 }
 
 export function experimentNotice(prunedResults: number, reinjected: boolean, savedTokens = 0, addedTokens = 0): string {
@@ -353,7 +398,7 @@ export function experimentNotice(prunedResults: number, reinjected: boolean, sav
 }
 
 export type RunFailure = { threadId: string; text: string };
-export const RUN_ERROR_EVENT = "emma:run-error";
+export const RUN_ERROR_EVENT = "shinbo:run-error";
 
 export const runOf = (threadId: string): Run => read(threadId);
 
@@ -362,26 +407,69 @@ export const turnToRetry = (threadId: string): QueuedTurn | null => {
   return run.sending ? run.pending : null;
 };
 
-export function settleRun(threadId: string, messages: Message[], cached: Record<string, Block[]>): void {
+export function settleRun(threadId: string, messages: Message[], cached: Record<string, Block[]>, from?: number): void {
   const run = read(threadId);
   const settled = run.landed.at(-1);
   if (run.sending || run.foreign || run.queue.length || !settled?.length || run.blocks !== settled) return;
-  const paired = pairBlocks(messages, run.landed, {}, run.pending?.after ?? 0);
+  const paired = pairBlocks(messages, run.landed, {}, from ?? run.pending?.after ?? 0);
   if (paired.filter(Boolean).length < run.landed.length) return;
   for (const [at, blocks] of paired.entries()) {
     if (!blocks) continue;
     const message = messages[at];
     if (!blocks.length || !wrote(message.content, blocks) || !Array.isArray(cached[message.timestamp]) || !cached[message.timestamp].length) return;
   }
+  settlementFrom.delete(threadId);
+  completed.delete(threadId);
   write(threadId, { blocks: [], landed: [], pending: null });
 }
 
+const settling = new Set<string>();
+
+async function settleStoredRun(threadId: string) {
+  const run = read(threadId);
+  if (listeners.has(threadId) || settling.has(threadId) || run.sending || run.foreign || run.queue.length || !run.landed.length) return;
+  const from = settlementFrom.has(threadId) ? settlementFrom.get(threadId) : run.pending?.after;
+  if (from === undefined) return;
+  settling.add(threadId);
+  completed.delete(threadId);
+  const token = generations.get(threadId);
+  const revision = persistenceRevision;
+  let waiting = false;
+  try {
+    const thread = await window.shinbo.request<Thread>("thread", { threadId });
+    if (listeners.has(threadId) || generations.get(threadId) !== token || read(threadId).landed !== run.landed) return;
+    const paired = pairBlocks(thread.messages, run.landed, {}, from);
+    if (paired.filter(Boolean).length < run.landed.length || paired.some((blocks, index) => blocks && !wrote(thread.messages[index].content, blocks))) {
+      waiting = true;
+      completed.add(threadId);
+      return;
+    }
+    rememberBlocks(threadId, Object.fromEntries(thread.messages.flatMap((item, index) =>
+      paired[index] ? [[item.timestamp, paired[index]!]] : [])));
+    settleRun(threadId, thread.messages, cachedBlocks(threadId), from);
+  } catch { return; }
+  finally {
+    settling.delete(threadId);
+    if (read(threadId).landed !== run.landed || (waiting && persistenceRevision !== revision)) void settleStoredRun(threadId);
+  }
+}
+
+export function subscribeRun(threadId: string, listener: () => void) {
+  wire();
+  let watching = listeners.get(threadId);
+  if (!watching) listeners.set(threadId, watching = new Set());
+  watching.add(listener);
+  return () => {
+    watching.delete(listener);
+    if (!watching.size) {
+      listeners.delete(threadId);
+      void settleStoredRun(threadId);
+    }
+  };
+}
+
 export function useRun(threadId: string) {
-  return useSyncExternalStore((listener) => {
-    wire();
-    listeners.add(listener);
-    return () => { listeners.delete(listener); };
-  }, () => read(threadId));
+  return useSyncExternalStore(useCallback((listener) => subscribeRun(threadId, listener), [threadId]), () => read(threadId));
 }
 
 export function sendTurn(threadId: string, turn: QueuedTurn, reload: () => unknown) {
@@ -405,7 +493,7 @@ export function dropQueued(threadId: string, index: number) {
 export function steerRunning(threadId: string, content: string) {
   const block: Block = { kind: "notice", text: content, plain: true, steer: true };
   write(threadId, (run) => ({ blocks: [...run.blocks, block] }));
-  return window.emma.steerAgent({ threadId, text: content }).catch((reason: unknown) => {
+  return window.shinbo.steerAgent({ threadId, text: content }).catch((reason: unknown) => {
     write(threadId, (run) => ({ blocks: run.blocks.filter((item) => item !== block) }));
     throw reason;
   });
@@ -434,7 +522,7 @@ export function interruptQueued(threadId: string, index: number) {
   const [picked] = queue.splice(at, 1);
   queue.splice(inFlight(run), 0, picked);
   write(threadId, { queue });
-  window.emma.stopAgent(threadId);
+  window.shinbo.stopAgent(threadId);
 }
 
 export function stopTurn(threadId: string, turn?: QueuedTurn, reload: () => unknown = refresh) {
@@ -444,7 +532,7 @@ export function stopTurn(threadId: string, turn?: QueuedTurn, reload: () => unkn
     queue: [...run.queue.slice(0, inFlight(run)), ...(turn ? [turn] : [])],
     held: [...run.held, ...run.queue.slice(inFlight(run))],
   });
-  window.emma.stopAgent(threadId);
+  window.shinbo.stopAgent(threadId);
   if (turn && !run.sending) void drain(threadId, reload);
 }
 
@@ -452,6 +540,7 @@ export function releaseHeld(threadId: string, index: number, reload: () => unkno
   const turn = read(threadId).held[index];
   if (!turn) return;
   write(threadId, (run) => ({ held: run.held.filter((_, at) => at !== index) }));
+  delete turn.failure;
   sendTurn(threadId, turn, reload);
 }
 
@@ -459,44 +548,53 @@ export function dropHeld(threadId: string, index: number) {
   write(threadId, (run) => ({ held: run.held.filter((_, at) => at !== index) }));
 }
 
-export function takeDraft(threadId: string) {
-  const { draft } = read(threadId);
-  if (draft) write(threadId, { draft: "", failure: "" });
-  return draft;
-}
+const draining = new Set<string>();
 
 async function drain(threadId: string, reload: () => unknown) {
-  for (;;) {
-    const next = read(threadId).queue[0];
-    if (!next) return;
-    began(threadId);
-    write(threadId, {
-      sending: true, foreign: false, pending: next, stopped: false, activeAt: Date.now(), recovery: "",
-      blocks: next.notice ? [{ kind: "notice", text: next.notice, plain: true }] : [],
-    });
-    let failed = false;
-    try {
-      if (next.prepare) {
-        Object.assign(next, await next.prepare());
-        delete next.prepare;
+  if (draining.has(threadId)) return;
+  draining.add(threadId);
+  try {
+    for (;;) {
+      if (read(threadId).sending) return;
+      const next = read(threadId).queue[0];
+      if (!next) return;
+      began(threadId);
+      if (!read(threadId).landed.length) settlementFrom.delete(threadId);
+      write(threadId, {
+        sending: true, foreign: false, pending: next, stopped: false, activeAt: Date.now(), recovery: "",
+        blocks: next.notice ? [{ kind: "notice", text: next.notice, plain: true }] : [],
+      });
+      let failed = false;
+      try {
+        if (next.prepare) {
+          Object.assign(next, await next.prepare());
+          delete next.prepare;
+        }
+        if (next.cancelled) {
+          delete next.cancelled;
+          write(threadId, (run) => ({ pending: null, held: [next, ...run.held], stopped: true }));
+        }
+        else {
+          await window.shinbo.request("sendMessage", { threadId, content: next.content, ...next.params });
+          next.delivered?.();
+        }
+      } catch (reason) {
+        failed = true;
+        const text = reasonText(reason);
+        next.failure = text;
+        write(threadId, (run) => ({ pending: null, blocks: [], held: [...run.held, next] }));
+        dispatchEvent(new CustomEvent<RunFailure>(RUN_ERROR_EVENT, { detail: { threadId, text } }));
       }
-      if (next.cancelled) write(threadId, { pending: null, draft: next.content, failure: "", stopped: true });
-      else {
-        await window.emma.request("sendMessage", { threadId, content: next.content, ...next.params });
-        next.delivered?.();
-      }
-    } catch (reason) {
-      failed = true;
-      const text = reasonText(reason);
-      write(threadId, { pending: null, blocks: [], draft: next.content, failure: text });
-      dispatchEvent(new CustomEvent<RunFailure>(RUN_ERROR_EVENT, { detail: { threadId, text } }));
-    }
 
-    write(threadId, (run) => ({
-      sending: false,
-      queue: run.queue.slice(1),
-      landed: failed || !run.blocks.length ? run.landed : [...run.landed, run.blocks],
-    }));
-    await reload();
-  }
+      write(threadId, (run) => ({
+        sending: false,
+        queue: run.queue.slice(1),
+        landed: failed || !run.blocks.length ? run.landed : [...run.landed, run.blocks],
+      }));
+      void settleStoredRun(threadId);
+      try { await reload(); } catch (reason) {
+        dispatchEvent(new CustomEvent<RunFailure>(RUN_ERROR_EVENT, { detail: { threadId, text: reasonText(reason) } }));
+      }
+    }
+  } finally { draining.delete(threadId); }
 }

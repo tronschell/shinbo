@@ -83,7 +83,7 @@ export function hookHash(hook: PluginHook) {
 }
 
 export function authoredMarketplaceRoot(userData: string) {
-  return path.join(marketplaceRoot(userData), "emma");
+  return path.join(marketplaceRoot(userData), "shinbo");
 }
 
 type StoredSource = { id: string; origin: string; ref: string; sparse: string[]; local: boolean; path: string };
@@ -114,7 +114,7 @@ async function writeJson(file: string, value: unknown) {
 const MISSING_TOOL: Record<string, string> = {
   git: "Git is not installed — install Git and try again.",
   npm: "npm is not installed — install Node.js and try again, or ask the marketplace for a Git source.",
-  tar: "tar is missing, so Emma cannot unpack an npm package.",
+  tar: "tar is missing, so Shinbo cannot unpack an npm package.",
 };
 
 function execute(command: string, cwd: string, args: string[], timeout: number, env: NodeJS.ProcessEnv): Promise<string> {
@@ -150,7 +150,7 @@ function execute(command: string, cwd: string, args: string[], timeout: number, 
     child.once("error", (error) => {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         const name = path.basename(command).replace(/\.(?:cmd|exe)$/i, "");
-        finish(new Error(MISSING_TOOL[name] ?? `Emma cannot find "${name}".`));
+        finish(new Error(MISSING_TOOL[name] ?? `Shinbo cannot find "${name}".`));
       } else {
         finish(error);
       }
@@ -263,7 +263,7 @@ export async function unpack(tarball: string, destination: string, cap = MAX_NPM
     stream.on("error", (error) => fail(`the npm package could not be unpacked — ${error.message}`));
     stream.on("data", (chunk: Buffer) => {
       unpacked += chunk.length;
-      if (unpacked > cap) fail(`the npm package unpacks to more than ${Math.max(1, cap >> 20)} MB, so Emma stopped before filling the disk.`);
+      if (unpacked > cap) fail(`the npm package unpacks to more than ${Math.max(1, cap >> 20)} MB, so Shinbo stopped before filling the disk.`);
     });
     stream.pipe(stdin);
     child.once("close", (code) => {
@@ -317,7 +317,7 @@ async function readMarketplaceFile(root: string) {
     const file = await inside(root, ...candidate.split(/[\\/]/));
     if (file) return parseMarketplace(await readJson(file));
   }
-  throw new Error(`No marketplace.json here — Emma looked for ${MARKETPLACE_FILES.join(", ")}.`);
+  throw new Error(`No marketplace.json here — Shinbo looked for ${MARKETPLACE_FILES.join(", ")}.`);
 }
 
 async function readSources(userData: string): Promise<StoredSource[]> {
@@ -422,9 +422,9 @@ async function forgetTrust(userData: string, keeping: StoredPlugin[]) {
   await writeJson(hookTrustFile(userData), { version: 1, trusted });
 }
 
-/** Exported for the phone's audit list, which wants the installed plugins and their hooks and
-    nothing else: readCatalog also reads every marketplace listing off disk and base64s up to 4 MB
-    of card icons, none of which fits in a frame or is any use to a screen that cannot browse. */
+
+
+
 export async function installedHooks(userData: string): Promise<InstalledPlugin[]> {
   const installed = await readInstalled(userData);
   if (!installed.length) return [];
@@ -521,7 +521,7 @@ export async function pluginDetail(userData: string, marketplaceId: unknown, plu
 export async function addMarketplace(userData: string, request: { source: unknown; ref?: unknown; sparse?: unknown }): Promise<PluginCatalog> {
   const source = parseMarketplaceSource(request.source, request.ref, request.sparse);
   const sources = await readSources(userData);
-  if (sources.length >= MAX_MARKETPLACES) throw new Error(`Emma already tracks ${MAX_MARKETPLACES} marketplaces — remove one first.`);
+  if (sources.length >= MAX_MARKETPLACES) throw new Error(`Shinbo already tracks ${MAX_MARKETPLACES} marketplaces — remove one first.`);
   const root = marketplaceRoot(userData);
   await mkdir(root, { recursive: true, mode: 0o700 });
   let checkout = "";
@@ -566,7 +566,7 @@ export async function removeMarketplace(userData: string, id: unknown): Promise<
   const slug = pluginSlug(id);
   const sources = await readSources(userData);
   const source = sources.find((entry) => entry.id === slug);
-  if (!source) throw new Error(`Emma is not tracking a marketplace named "${slug}".`);
+  if (!source) throw new Error(`Shinbo is not tracking a marketplace named "${slug}".`);
   const installed = (await readInstalled(userData)).filter((plugin) => plugin.marketplace !== slug);
   await writeJson(installedFile(userData), { version: 1, installed });
   await forgetTrust(userData, installed);
@@ -578,7 +578,7 @@ export async function removeMarketplace(userData: string, id: unknown): Promise<
 export async function refreshMarketplace(userData: string, id: unknown): Promise<PluginCatalog> {
   const slug = pluginSlug(id);
   const source = (await readSources(userData)).find((entry) => entry.id === slug);
-  if (!source) throw new Error(`Emma is not tracking a marketplace named "${slug}".`);
+  if (!source) throw new Error(`Shinbo is not tracking a marketplace named "${slug}".`);
   if (source.local) return readCatalog(userData);
   await git(source.path, ["fetch", "--depth", "1", "origin", source.ref || "HEAD"]);
   await git(source.path, ["reset", "--hard", "FETCH_HEAD"]);
@@ -586,7 +586,7 @@ export async function refreshMarketplace(userData: string, id: unknown): Promise
 }
 
 async function resolvePluginRoot(userData: string, marketplace: Marketplace, plugin: MarketplacePlugin) {
-  if (plugin.source.kind === "unsupported") throw new Error(`Emma cannot install "${plugin.name}": ${plugin.source.reason}.`);
+  if (plugin.source.kind === "unsupported") throw new Error(`Shinbo cannot install "${plugin.name}": ${plugin.source.reason}.`);
   if (plugin.source.kind === "local") {
     const root = await inside(marketplace.root, ...plugin.source.path.split(/[\\/]/));
     if (!root) throw new Error(`"${plugin.name}" points at ${plugin.source.path}, which is not in this marketplace.`);
@@ -596,7 +596,7 @@ async function resolvePluginRoot(userData: string, marketplace: Marketplace, plu
   if (plugin.source.kind === "npm") {
     await fetchNpmPackage(plugin.source, checkout);
     const root = await inside(checkout, "package");
-    if (!root) throw new Error(`${plugin.source.package} unpacked without a package/ directory, so Emma cannot read it as a plugin.`);
+    if (!root) throw new Error(`${plugin.source.package} unpacked without a package/ directory, so Shinbo cannot read it as a plugin.`);
     return root;
   }
   await rm(checkout, { recursive: true, force: true });
@@ -614,7 +614,7 @@ async function readPluginAt(root: string) {
   const mcp = manifest.mcpServers ? await inside(root, ...manifest.mcpServers.split(/[\\/]/)) : "";
   const apps = await readHostedApps(root, manifest.apps);
   const hooks = await readHooksAt(root, manifest);
-  if (!skills && !mcp && !apps.length && !hooks.length) throw new Error(`"${manifest.name}" carries no skills and no MCP servers Emma can use.`);
+  if (!skills && !mcp && !apps.length && !hooks.length) throw new Error(`"${manifest.name}" carries no skills and no MCP servers Shinbo can use.`);
   return { manifest, skills, mcp, apps };
 }
 
@@ -623,11 +623,11 @@ export async function installPlugin(userData: string, marketplaceId: unknown, pl
   const pluginSlugName = pluginSlug(pluginName);
   const catalog = await readCatalog(userData);
   const marketplace = catalog.marketplaces.find((entry) => entry.id === marketplaceSlug);
-  if (!marketplace) throw new Error(`Emma is not tracking a marketplace named "${marketplaceSlug}".`);
+  if (!marketplace) throw new Error(`Shinbo is not tracking a marketplace named "${marketplaceSlug}".`);
   const plugin = marketplace.plugins.find((entry) => entry.name === pluginSlugName);
   if (!plugin) throw new Error(`"${marketplaceSlug}" does not list a plugin named "${pluginSlugName}".`);
   if (plugin.installation === "NOT_AVAILABLE") throw new Error(`"${plugin.displayName}" is marked unavailable by its marketplace.`);
-  if (catalog.installed.length >= MAX_INSTALLED) throw new Error(`Emma already has ${MAX_INSTALLED} plugins installed — remove one first.`);
+  if (catalog.installed.length >= MAX_INSTALLED) throw new Error(`Shinbo already has ${MAX_INSTALLED} plugins installed — remove one first.`);
   const root = await resolvePluginRoot(userData, marketplace, plugin);
   const { manifest, skills, mcp, apps } = await readPluginAt(root);
   const id = `${marketplaceSlug}/${pluginSlugName}`;
@@ -661,10 +661,10 @@ export async function uninstallPlugin(userData: string, id: unknown): Promise<Pl
   return readCatalog(userData);
 }
 
-/** The write on its own, for the phone, which already holds the plugin it just put in front of a
-    person and has no use for the catalogue readCatalog would read back — every marketplace listing
-    off disk and up to 4 MB of base64 card icons, none of which fits in a frame. Passing null
-    withdraws trust. */
+
+
+
+
 export async function setHookTrust(userData: string, id: unknown, hashes: string[] | null): Promise<void> {
   if (typeof id !== "string" || id.length > 256) throw new Error("Plugin id is invalid");
   const trusted = await readTrust(userData);
@@ -784,20 +784,33 @@ export async function writePlugin(userData: string, request: unknown): Promise<{
   const category = typeof raw.category === "string" ? raw.category : "";
   const home = authoredMarketplaceRoot(userData);
   const root = path.join(home, "plugins", name);
-  await rm(root, { recursive: true, force: true });
-  await mkdir(path.join(root, ".codex-plugin"), { recursive: true, mode: 0o700 });
-  await writeJson(path.join(root, PLUGIN_MANIFEST), {
-    name,
-    version: "0.1.0",
-    description,
-    skills: "./skills/",
-    interface: { displayName: name, shortDescription: description, developerName: "Emma", category: category || "Productivity" },
-  });
-  for (const skill of skills) {
-    await mkdir(path.join(root, "skills", skill.name), { recursive: true, mode: 0o700 });
-    const frontmatter = `---\nname: ${skill.name}\ndescription: "${(skill.description || description).replace(/"/g, "'")}"\n---\n\n`;
-    await writeFile(path.join(root, "skills", skill.name, "SKILL.md"), skill.instructions.startsWith("---\n") ? skill.instructions : frontmatter + skill.instructions, { encoding: "utf8", mode: 0o600 });
+  const staging = `${root}.${randomUUID()}.tmp`;
+  const backup = `${root}.${randomUUID()}.bak`;
+  let replaced = false;
+  try {
+    await mkdir(path.join(staging, ".codex-plugin"), { recursive: true, mode: 0o700 });
+    await writeJson(path.join(staging, PLUGIN_MANIFEST), {
+      name,
+      version: "0.1.0",
+      description,
+      skills: "./skills/",
+      interface: { displayName: name, shortDescription: description, developerName: "Shinbo", category: category || "Productivity" },
+    });
+    for (const skill of skills) {
+      await mkdir(path.join(staging, "skills", skill.name), { recursive: true, mode: 0o700 });
+      const frontmatter = `---\nname: ${skill.name}\ndescription: "${(skill.description || description).replace(/"/g, "'")}"\n---\n\n`;
+      await writeFile(path.join(staging, "skills", skill.name, "SKILL.md"), skill.instructions.startsWith("---\n") ? skill.instructions : frontmatter + skill.instructions, { encoding: "utf8", mode: 0o600 });
+    }
+    if (await exists(root)) { await rename(root, backup); replaced = true; }
+    try { await rename(staging, root); }
+    catch (error) {
+      if (replaced) await rename(backup, root);
+      throw error;
+    }
+  } finally {
+    await rm(staging, { recursive: true, force: true });
   }
+  if (replaced) await rm(backup, { recursive: true, force: true });
   const listing = path.join(home, ".agents", "plugins", "marketplace.json");
   let entries: unknown[] = [];
   try {
@@ -805,13 +818,13 @@ export async function writePlugin(userData: string, request: unknown): Promise<{
     if (Array.isArray(current.plugins)) entries = current.plugins.filter((entry) => (entry as { name?: unknown })?.name !== name);
   } catch { entries = []; }
   await writeJson(listing, {
-    name: "emma",
-    interface: { displayName: "Written by Emma" },
+    name: "shinbo",
+    interface: { displayName: "Written by Shinbo" },
     plugins: [...entries, { name, description, source: { source: "local", path: `./plugins/${name}` }, policy: { installation: "AVAILABLE" }, category: category || "Productivity" }],
   });
   const sources = await readSources(userData);
-  if (!sources.some((entry) => entry.id === "emma")) {
-    await writeJson(sourcesFile(userData), { version: 1, sources: [...sources, { id: "emma", origin: home, ref: "", sparse: [], local: true, path: home }] });
+  if (!sources.some((entry) => entry.id === "shinbo")) {
+    await writeJson(sourcesFile(userData), { version: 1, sources: [...sources, { id: "shinbo", origin: home, ref: "", sparse: [], local: true, path: home }] });
   }
-  return { catalog: await installPlugin(userData, "emma", name), plugin: { name, description, category, skills, root } };
+  return { catalog: await installPlugin(userData, "shinbo", name), plugin: { name, description, category, skills, root } };
 }

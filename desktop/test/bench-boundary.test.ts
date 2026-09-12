@@ -20,7 +20,7 @@ const started: { turn: TurnRequest; owner?: string }[] = [];
 const runtime = () => {
   started.length = 0;
   const deps: LoopDeps = {
-    request: async (method) => method === "snapshot" ? library : {},
+    request: async (method) => method === "threadSummaries" ? { threads: library.threads.map((thread) => ({ ...thread, messages: thread.messages.length })) } : {},
     ask: () => undefined,
     answered: () => undefined,
     verify: async () => ({ model: "", prompt: "", reply: "", attempts: 0 }),
@@ -69,7 +69,7 @@ test("a bench replay may still drive the threads it started itself, however deep
   assert.equal(started[0].turn.threadId, "grandchild");
 });
 
-test("a messaged thread is told which thread owns it, or it runs in a scratch dir Emma never deletes", async () => {
+test("a messaged thread is told which thread owns it, or it runs in a scratch dir Shinbo never deletes", async () => {
   await message(true, "grandchild");
   assert.equal(started[0].owner, "case", "no owner means no folder: the turn measures an empty directory");
 });
@@ -107,7 +107,7 @@ const workspace = tmpdir();
 const harness = () => new Harness({
   binaryPath: process.execPath,
   args: [fakeAgent],
-  home: path.join(tmpdir(), `emma-bench-boundary-${process.pid}`),
+  home: path.join(tmpdir(), `shinbo-bench-boundary-${process.pid}`),
   cwd: workspace,
   mcpServers: async () => [],
   onDelta: () => {},

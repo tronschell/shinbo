@@ -358,7 +358,7 @@ test "processQueuedPrompt stops an identical failing tool call before another pr
 
     try runFakePrompt(&gateway, &hooks, fixture.config(), fixture.job());
 
-    const notice = "Emma stopped this run: the model repeated the same failing tool call three times. Adjust the request or tell it what to do differently.";
+    const notice = "Shinbo stopped this run: the model repeated the same failing tool call three times. Adjust the request or tell it what to do differently.";
     try std.testing.expectEqual(@as(usize, 3), gateway.request_bodies.items.len);
     try std.testing.expect(textContains(&hooks, notice));
     try std.testing.expectEqual(@as(usize, 3), hooks.executed_names.items.len);

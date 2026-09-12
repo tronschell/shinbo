@@ -15,7 +15,7 @@ export type TerminalPanelProps = {
   onPop: (id: string) => void;
   onSelect: (value: TerminalSelection) => void;
   onHide: () => void;
-  onOpenInEmma: (url: string) => void;
+  onOpenInShinbo: (url: string) => void;
 };
 
 export function useTerminals(threadId: string): TerminalTab[] {
@@ -23,19 +23,19 @@ export function useTerminals(threadId: string): TerminalTab[] {
   useEffect(() => {
     if (!threadId) return;
     let alive = true;
-    const read = () => void window.emma.listTerminals(threadId)
+    const read = () => void window.shinbo.listTerminals(threadId)
       .then((found) => { if (alive) setTabs(found); })
       .catch(() => undefined);
     read();
-    const stop = window.emma.onTerminals(read);
+    const stop = window.shinbo.onTerminals(read);
     return () => { alive = false; stop(); };
   }, [threadId]);
   return tabs.filter((tab) => tab.threadId === threadId);
 }
 
 export async function closeTerminals(threadId: string) {
-  const tabs = await window.emma.listTerminals(threadId).catch(() => []);
-  await Promise.all(tabs.map((tab) => window.emma.closeTerminal(tab.id).catch(() => undefined)));
+  const tabs = await window.shinbo.listTerminals(threadId).catch(() => []);
+  await Promise.all(tabs.map((tab) => window.shinbo.closeTerminal(tab.id).catch(() => undefined)));
 }
 
 function TerminalGlyph() {

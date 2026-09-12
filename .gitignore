@@ -1,7 +1,7 @@
 /target
 /zig-cache
 /zig-out
-/.emma-data
+/.shinbo-data
 .DS_Store
 /desktop/node_modules
 /desktop/main.js

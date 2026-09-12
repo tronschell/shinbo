@@ -6,7 +6,7 @@ import { defaultSteps } from "../src/next-steps";
 import type { VerifierSettings } from "../shared/settings";
 
 const dirty: WorkState = {
-  project: "emma",
+  project: "shinbo",
   branch: "dev",
   ahead: 2,
   behind: 1,
@@ -78,7 +78,7 @@ test("the prompt quotes the state and names the files", () => {
 });
 
 test("a clean tree still describes itself", () => {
-  assert.ok(stepsPrompt({ ...emptyWorkState, project: "emma" }).includes("(the working tree is clean)"));
+  assert.ok(stepsPrompt({ ...emptyWorkState, project: "shinbo" }).includes("(the working tree is clean)"));
 });
 
 test("no model and no key means no call", async () => {
@@ -86,7 +86,7 @@ test("no model and no key means no call", async () => {
   const ask = async () => { called = true; return ""; };
   assert.deepEqual(await suggestNextSteps(dirty, { ...free, model: "" }, ask), []);
   assert.equal(called, false);
-  assert.deepEqual(await suggestNextSteps(dirty, { ...free, credentialEnv: "EMMA_KEY_THAT_IS_NOT_SET" }, ask), []);
+  assert.deepEqual(await suggestNextSteps(dirty, { ...free, credentialEnv: "SHINBO_KEY_THAT_IS_NOT_SET" }, ask), []);
   assert.equal(called, false);
 });
 
@@ -126,7 +126,7 @@ test("one changed file reads as one file", () => {
 
 test("the ipc boundary clamps whatever the renderer sends", () => {
   const state = validateWorkState({
-    project: "  emma\n",
+    project: "  shinbo\n",
     branch: "dev",
     ahead: -4,
     behind: 1.5,
@@ -134,7 +134,7 @@ test("the ipc boundary clamps whatever the renderer sends", () => {
     largest: { path: "a.ts", added: 3, removed: "many" },
     threads: ["one", 7, "two"],
   });
-  assert.equal(state.project, "emma");
+  assert.equal(state.project, "shinbo");
   assert.equal(state.ahead, 0);
   assert.equal(state.behind, 0);
   assert.equal(state.files.length, 39);

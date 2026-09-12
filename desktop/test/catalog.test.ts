@@ -4,13 +4,13 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { modelRates, CatalogCache, fetchOpenRouterCatalog, probeProvider, readKeyBalance, type CatalogModel } from "../main/catalog";
-import { balanceLine, outOfCredit, routerChain, thinkingStops, validateRouterModels, validateRouters, validateSettings, defaultSettings, FREE_ROUTER_ID, FREE_ROUTER_MODELS, MAX_ROUTERS, MAX_ROUTER_MODELS } from "../shared/settings";
+import { balanceLine, outOfCredit, routerChain, skippedLinks, thinkingStops, validateRouterModels, validateRouters, validateSettings, defaultSettings, FREE_ROUTER_ID, FREE_ROUTER_MODELS, MAX_ROUTERS, MAX_ROUTER_MODELS } from "../shared/settings";
 
 const model = (id: string, free = true): CatalogModel =>
   ({ id, name: id, contextLength: 1024, inputModalities: [], free });
 
 test("the catalog caches to disk, reports what changed, and survives a dead fetch", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "emma-catalog-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "shinbo-catalog-"));
   try {
     const seeded = new CatalogCache(dir);
     const offline = await seeded.refresh(() => Promise.reject(new Error("no network")));
@@ -51,7 +51,7 @@ test("the catalog caches to disk, reports what changed, and survives a dead fetc
 });
 
 test("a fetched catalog is reused for a day, and one fetch serves every caller", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "emma-catalog-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "shinbo-catalog-"));
   try {
     const cache = new CatalogCache(dir);
     let fetches = 0;
@@ -81,6 +81,15 @@ test("the free router sends the whole chain, in order, minus what the catalog ha
   assert.equal(routerChain(["someone/else"]), FREE_ROUTER_MODELS.join(","));
 });
 
+test("the links OpenRouter skipped are the ones sent ahead of the model that answered", () => {
+  const chain = "a/one:free,b/two:free,c/three:free,d/four:free";
+  assert.deepEqual(skippedLinks(chain, "a/one"), []);
+  assert.deepEqual(skippedLinks(chain, "b/two:free"), ["a/one:free"]);
+  assert.deepEqual(skippedLinks(chain, "C/Three"), ["a/one:free", "b/two:free"]);
+  assert.deepEqual(skippedLinks(chain, "d/four:free"), []);
+  assert.deepEqual(skippedLinks("", "a/one"), []);
+});
+
 test("a user's own router chain is what gets sent, and a broken one is refused", () => {
   const mine = ["z-ai/glm-5.2:free", "vendor/other:free"];
   assert.equal(routerChain([], mine), mine.join(","));
@@ -105,11 +114,11 @@ test("routers are named, capped, and grown out of the chain a settings file save
   assert.throws(() => validateRouters([{ id: "a", name: "One", models: ["vendor/m"] }, { id: "a", name: "Two", models: ["vendor/m"] }]));
   assert.throws(() => validateRouters(new Array(MAX_ROUTERS + 1).fill(0).map((_, at) => ({ id: `r${at}`, name: `Router ${at}`, models: ["vendor/m"] }))));
   const legacy = validateSettings({ ...defaultSettings, routers: undefined, freeRouterModels: ["z-ai/glm-5.2:free"] } as unknown);
-  assert.deepEqual(legacy.routers, [{ id: FREE_ROUTER_ID, name: "Emma Free Router", models: ["z-ai/glm-5.2:free"] }]);
+  assert.deepEqual(legacy.routers, [{ id: FREE_ROUTER_ID, name: "Shinbo Free Router", models: ["z-ai/glm-5.2:free"] }]);
   assert.equal(validateSettings({ ...defaultSettings, selectedModel: "free-router" }).selectedModel, "router:free");
 });
 
-test("the OpenRouter listing is parsed, priced, and filtered to models Emma can actually use", async () => {
+test("the OpenRouter listing is parsed, priced, and filtered to models Shinbo can actually use", async () => {
   const row = (over: Record<string, unknown> = {}) => ({
     id: "vendor/model",
     name: "Vendor Model",
@@ -166,7 +175,7 @@ test("the OpenRouter listing is parsed, priced, and filtered to models Emma can 
 
   restore = served([row({ supported_parameters: ["temperature"] })]);
   try {
-    await assert.rejects(fetchOpenRouterCatalog(), /no models Emma can use/);
+    await assert.rejects(fetchOpenRouterCatalog(), /no models Shinbo can use/);
   } finally { restore(); }
 });
 
@@ -200,7 +209,7 @@ test("a provider probe reports its models and whether the picked one calls tools
 });
 
 test("an OpenRouter key answer reads as credit left, a free key, or neither", () => {
-  const paid = readKeyBalance({ data: { label: "emma", usage: 1.5, limit: 10, limit_remaining: 8.5, is_free_tier: false } });
+  const paid = readKeyBalance({ data: { label: "shinbo", usage: 1.5, limit: 10, limit_remaining: 8.5, is_free_tier: false } });
   assert.equal(paid.remaining, 8.5);
   assert.equal(paid.freeTier, false);
   assert.equal(balanceLine(paid), "$8.50 of credit left.");
@@ -223,7 +232,7 @@ test("an OpenRouter key answer reads as credit left, a free key, or neither", ()
 })
 
 test("council pricing reads cached rates and treats unavailable prices as zero", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "emma-rates-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "shinbo-rates-"));
   const file = path.join(dir, "catalog.json");
   try {
     assert.deepEqual(modelRates(file, "priced"), { input: 0, output: 0 });

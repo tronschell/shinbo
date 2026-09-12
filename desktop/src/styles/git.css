@@ -69,7 +69,7 @@
 .git-row[data-state="deleted"] { --state: var(--danger); }
 .git-row[data-state="modified"] { --state: var(--blue); }
 .git-row[data-state="renamed"] { --state: var(--violet); }
-.git-row[data-state="conflict"] { --state: var(--orange); }
+.git-row[data-state="conflict"] { --state: var(--pink); }
 .git-state { display: grid; place-items: center; width: 14px; height: 14px; color: var(--state); border: 1px solid color-mix(in srgb, var(--state) 45%, transparent); font: var(--fs-2xs)/1 var(--font-mono); font-style: normal; text-transform: uppercase; }
 .git-attach { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; color: var(--text-3); background: transparent; border: 1px solid transparent; font: var(--fs-2xs)/1 var(--font-mono); transition: color var(--t), border-color var(--t), opacity var(--t); }
 .git-attach:hover { color: var(--text); border-color: var(--border-strong); }
@@ -121,7 +121,7 @@
 .git-lanes .git-lane-0 { --lane: var(--blue); }
 .git-lanes .git-lane-1 { --lane: var(--lime); }
 .git-lanes .git-lane-2 { --lane: var(--violet); }
-.git-lanes .git-lane-3 { --lane: var(--orange); }
+.git-lanes .git-lane-3 { --lane: var(--pink); }
 .git-lanes .git-lane-4 { --lane: var(--teal); }
 .git-lanes .git-lane-5 { --lane: var(--rose); }
 .git-commit-body { display: flex; align-items: center; gap: var(--s-2); min-width: 0; height: 22px; overflow: hidden; }

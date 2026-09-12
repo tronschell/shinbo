@@ -15,7 +15,7 @@ Requirements:
 - Node.js 20 or later
 - Chrome or Edge 137 or later for browser WebAssembly
 - JSPI when using the WebAssembly backend
-- An `EMMA_PROVIDER_API_KEY` credential or a host-provided authenticated `fetch`
+- An `SHINBO_PROVIDER_API_KEY` credential or a host-provided authenticated `fetch`
 
 The package includes:
 
@@ -51,7 +51,7 @@ import { createFxAgent } from "libfx";
 
 const agent = await createFxAgent({
   env: {
-    EMMA_PROVIDER_API_KEY: process.env.EMMA_PROVIDER_API_KEY,
+    SHINBO_PROVIDER_API_KEY: process.env.SHINBO_PROVIDER_API_KEY,
   },
   onEvent(event) {
     console.log(event.type);
@@ -148,7 +148,7 @@ if (!supportsJspi()) {
 
 const agent = await createFxAgent({
   env: {
-    EMMA_PROVIDER_API_KEY: "<short-lived credential>",
+    SHINBO_PROVIDER_API_KEY: "<short-lived credential>",
   },
 });
 
@@ -204,7 +204,7 @@ fit.fit();
 const runtime = await createFxTerminal({
   terminal: xtermAdapter(terminal),
   env: {
-    EMMA_PROVIDER_API_KEY: "<short-lived credential>",
+    SHINBO_PROVIDER_API_KEY: "<short-lived credential>",
   },
 });
 

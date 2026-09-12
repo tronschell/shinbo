@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>fx terminal WebAssembly demo</title>
   <script>
-    // The production packager replaces these defaults with content-addressed values.
+
     const fxWasmAsset = "./fx-term.wasm";
     const fxWasmIntegrity = "";
     const fxWasmUrl = fxWasmAsset === "./fx-term.wasm" &&
@@ -124,7 +124,7 @@
       const runtime = await createFxTerminal({
         wasm: globalThis.__fxWasmModule,
         terminal: xtermAdapter(terminal),
-        env: { EMMA_PROVIDER_API_KEY: localStorage.getItem("FX_API_KEY") || "" },
+        env: { SHINBO_PROVIDER_API_KEY: localStorage.getItem("FX_API_KEY") || "" },
         configStore,
         promptHistoryStore,
       });

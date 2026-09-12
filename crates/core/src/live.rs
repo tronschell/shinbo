@@ -12,8 +12,8 @@ use std::{
 
 use crate::{
     GenerationTelemetry, GoalStatus, MAX_TRIGGER_DEPTH, ScheduledJob, ScheduledJobId,
-    ScheduledJobStore, Thread, ThreadId, ThreadKind, ThreadMessage, ThreadRole, ThreadStore,
-    ThreadTrace, Timestamp, elide_middle, validate_text,
+    ScheduledJobStore, Thread, ThreadId, ThreadKind, ThreadListing, ThreadMessage, ThreadRole,
+    ThreadStore, ThreadSummary, ThreadTrace, Timestamp, elide_middle, validate_text,
 };
 use serde::Serialize;
 
@@ -21,12 +21,22 @@ const MAX_AGENT_TITLE_BYTES: usize = 256;
 const MAX_AGENT_MESSAGE_BYTES: usize = 64 * 1024;
 pub const ARCHIVE_RETENTION_SECONDS: i64 = 30 * 24 * 60 * 60;
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct LiveSnapshot {
-    pub threads: Vec<Arc<Thread>>,
+pub struct LiveSnapshot<T = Arc<Thread>> {
+    pub threads: Vec<T>,
     pub scheduled_jobs: Vec<ScheduledJob>,
     pub warnings: Vec<String>,
+}
+
+impl<T> Default for LiveSnapshot<T> {
+    fn default() -> Self {
+        Self {
+            threads: Vec::new(),
+            scheduled_jobs: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -51,9 +61,10 @@ type Reply<T> = Sender<Result<T, LiveError>>;
 enum Command {
     Snapshot(Reply<LiveSnapshot>),
     UncachedSnapshot(Reply<LiveSnapshot>),
+    ThreadSummaries(Reply<LiveSnapshot<Arc<ThreadSummary>>>),
     Thread {
         thread_id: ThreadId,
-        reply: Reply<Thread>,
+        reply: Reply<Arc<Thread>>,
     },
     CreateThread {
         title: Option<String>,
@@ -69,6 +80,7 @@ enum Command {
     RenameThread {
         thread_id: ThreadId,
         title: String,
+        expected_title: Option<String>,
         reply: Reply<Thread>,
     },
     RecordTurn {
@@ -84,6 +96,8 @@ enum Command {
         cache_write_tokens: Option<u64>,
         cost_micro_usd: Option<u64>,
         model: String,
+        goal_tokens: Option<u64>,
+        goal_turn: Option<bool>,
         reply: Reply<Thread>,
     },
     SetGoal {
@@ -161,30 +175,42 @@ impl LiveClient {
         let (reply, result) = mpsc::channel();
         self.commands
             .send(Command::Snapshot(reply))
-            .map_err(|_| LiveError::new("Emma runtime stopped before loading the library"))?;
+            .map_err(|_| LiveError::new("Shinbo runtime stopped before loading the library"))?;
         result
             .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while loading the library"))?
+            .map_err(|_| LiveError::new("Shinbo runtime stopped while loading the library"))?
     }
 
     pub fn snapshot_uncached(&self) -> Result<LiveSnapshot, LiveError> {
         let (reply, result) = mpsc::channel();
         self.commands
             .send(Command::UncachedSnapshot(reply))
-            .map_err(|_| LiveError::new("Emma runtime stopped before loading the library"))?;
+            .map_err(|_| LiveError::new("Shinbo runtime stopped before loading the library"))?;
         result
             .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while loading the library"))?
+            .map_err(|_| LiveError::new("Shinbo runtime stopped while loading the library"))?
     }
 
-    pub fn thread(&self, thread_id: ThreadId) -> Result<Thread, LiveError> {
+    pub fn thread_summaries(&self) -> Result<LiveSnapshot<Arc<ThreadSummary>>, LiveError> {
+        let (reply, result) = mpsc::channel();
+        self.commands
+            .send(Command::ThreadSummaries(reply))
+            .map_err(|_| {
+                LiveError::new("Shinbo runtime stopped before loading thread summaries")
+            })?;
+        result
+            .recv()
+            .map_err(|_| LiveError::new("Shinbo runtime stopped while loading thread summaries"))?
+    }
+
+    pub fn thread(&self, thread_id: ThreadId) -> Result<Arc<Thread>, LiveError> {
         let (reply, result) = mpsc::channel();
         self.commands
             .send(Command::Thread { thread_id, reply })
-            .map_err(|_| LiveError::new("Emma runtime stopped before loading the thread"))?;
+            .map_err(|_| LiveError::new("Shinbo runtime stopped before loading the thread"))?;
         result
             .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while loading the thread"))?
+            .map_err(|_| LiveError::new("Shinbo runtime stopped while loading the thread"))?
     }
 
     pub fn create_thread(
@@ -201,10 +227,10 @@ impl LiveClient {
                 kind,
                 reply,
             })
-            .map_err(|_| LiveError::new("Emma runtime stopped before creating the thread"))?;
+            .map_err(|_| LiveError::new("Shinbo runtime stopped before creating the thread"))?;
         result
             .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while creating the thread"))?
+            .map_err(|_| LiveError::new("Shinbo runtime stopped while creating the thread"))?
     }
 
     pub fn set_thread_archived(
@@ -219,24 +245,34 @@ impl LiveClient {
                 archived,
                 reply,
             })
-            .map_err(|_| LiveError::new("Emma runtime stopped before archiving the thread"))?;
+            .map_err(|_| LiveError::new("Shinbo runtime stopped before archiving the thread"))?;
         result
             .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while archiving the thread"))?
+            .map_err(|_| LiveError::new("Shinbo runtime stopped while archiving the thread"))?
     }
 
     pub fn rename_thread(&self, thread_id: ThreadId, title: String) -> Result<Thread, LiveError> {
+        self.rename_thread_if_current(thread_id, title, None)
+    }
+
+    pub fn rename_thread_if_current(
+        &self,
+        thread_id: ThreadId,
+        title: String,
+        expected_title: Option<String>,
+    ) -> Result<Thread, LiveError> {
         let (reply, result) = mpsc::channel();
         self.commands
             .send(Command::RenameThread {
                 thread_id,
                 title,
+                expected_title,
                 reply,
             })
-            .map_err(|_| LiveError::new("Emma runtime stopped before renaming the thread"))?;
+            .map_err(|_| LiveError::new("Shinbo runtime stopped before renaming the thread"))?;
         result
             .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while renaming the thread"))?
+            .map_err(|_| LiveError::new("Shinbo runtime stopped while renaming the thread"))?
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -254,6 +290,8 @@ impl LiveClient {
         cache_write_tokens: Option<u64>,
         cost_micro_usd: Option<u64>,
         model: String,
+        goal_tokens: Option<u64>,
+        goal_turn: Option<bool>,
     ) -> Result<Thread, LiveError> {
         let (reply, result) = mpsc::channel();
         self.commands
@@ -270,12 +308,14 @@ impl LiveClient {
                 cache_write_tokens,
                 cost_micro_usd,
                 model,
+                goal_tokens,
+                goal_turn,
                 reply,
             })
-            .map_err(|_| LiveError::new("Emma runtime stopped before recording the turn"))?;
+            .map_err(|_| LiveError::new("Shinbo runtime stopped before recording the turn"))?;
         result
             .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while recording the turn"))?
+            .map_err(|_| LiveError::new("Shinbo runtime stopped while recording the turn"))?
     }
 
     pub fn set_goal(
@@ -292,10 +332,10 @@ impl LiveClient {
                 token_budget,
                 reply,
             })
-            .map_err(|_| LiveError::new("Emma runtime stopped before setting the goal"))?;
+            .map_err(|_| LiveError::new("Shinbo runtime stopped before setting the goal"))?;
         result
             .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while setting the goal"))?
+            .map_err(|_| LiveError::new("Shinbo runtime stopped while setting the goal"))?
     }
 
     pub fn update_goal(
@@ -316,20 +356,20 @@ impl LiveClient {
                 extra_tokens,
                 reply,
             })
-            .map_err(|_| LiveError::new("Emma runtime stopped before updating the goal"))?;
+            .map_err(|_| LiveError::new("Shinbo runtime stopped before updating the goal"))?;
         result
             .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while updating the goal"))?
+            .map_err(|_| LiveError::new("Shinbo runtime stopped while updating the goal"))?
     }
 
     pub fn clear_goal(&self, thread_id: ThreadId) -> Result<Thread, LiveError> {
         let (reply, result) = mpsc::channel();
         self.commands
             .send(Command::ClearGoal { thread_id, reply })
-            .map_err(|_| LiveError::new("Emma runtime stopped before clearing the goal"))?;
+            .map_err(|_| LiveError::new("Shinbo runtime stopped before clearing the goal"))?;
         result
             .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while clearing the goal"))?
+            .map_err(|_| LiveError::new("Shinbo runtime stopped while clearing the goal"))?
     }
 
     pub fn record_trace(&self, thread_id: ThreadId, trace: String) -> Result<(), LiveError> {
@@ -340,20 +380,20 @@ impl LiveClient {
                 trace,
                 reply,
             })
-            .map_err(|_| LiveError::new("Emma runtime stopped before recording the trace"))?;
+            .map_err(|_| LiveError::new("Shinbo runtime stopped before recording the trace"))?;
         result
             .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while recording the trace"))?
+            .map_err(|_| LiveError::new("Shinbo runtime stopped while recording the trace"))?
     }
 
     pub fn read_trace(&self, thread_id: ThreadId) -> Result<Vec<ThreadTrace>, LiveError> {
         let (reply, result) = mpsc::channel();
         self.commands
             .send(Command::ReadTrace { thread_id, reply })
-            .map_err(|_| LiveError::new("Emma runtime stopped before reading the trace"))?;
+            .map_err(|_| LiveError::new("Shinbo runtime stopped before reading the trace"))?;
         result
             .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while reading the trace"))?
+            .map_err(|_| LiveError::new("Shinbo runtime stopped while reading the trace"))?
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -381,10 +421,12 @@ impl LiveClient {
                 model,
                 reply,
             })
-            .map_err(|_| LiveError::new("Emma runtime stopped before saving the scheduled job"))?;
+            .map_err(|_| {
+                LiveError::new("Shinbo runtime stopped before saving the scheduled job")
+            })?;
         result
             .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while saving the scheduled job"))?
+            .map_err(|_| LiveError::new("Shinbo runtime stopped while saving the scheduled job"))?
     }
 
     pub fn delete_scheduled_job(&self, job_id: ScheduledJobId) -> Result<(), LiveError> {
@@ -392,11 +434,11 @@ impl LiveClient {
         self.commands
             .send(Command::DeleteScheduledJob { job_id, reply })
             .map_err(|_| {
-                LiveError::new("Emma runtime stopped before deleting the scheduled job")
+                LiveError::new("Shinbo runtime stopped before deleting the scheduled job")
             })?;
-        result
-            .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while deleting the scheduled job"))?
+        result.recv().map_err(|_| {
+            LiveError::new("Shinbo runtime stopped while deleting the scheduled job")
+        })?
     }
 
     pub fn run_scheduled_job(
@@ -411,10 +453,12 @@ impl LiveClient {
                 variables,
                 reply,
             })
-            .map_err(|_| LiveError::new("Emma runtime stopped before running the scheduled job"))?;
+            .map_err(|_| {
+                LiveError::new("Shinbo runtime stopped before running the scheduled job")
+            })?;
         result
             .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while running the scheduled job"))?
+            .map_err(|_| LiveError::new("Shinbo runtime stopped while running the scheduled job"))?
     }
 
     pub fn finish_scheduled_job(
@@ -432,11 +476,11 @@ impl LiveClient {
                 reply,
             })
             .map_err(|_| {
-                LiveError::new("Emma runtime stopped before finishing the scheduled job")
+                LiveError::new("Shinbo runtime stopped before finishing the scheduled job")
             })?;
-        result
-            .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while finishing the scheduled job"))?
+        result.recv().map_err(|_| {
+            LiveError::new("Shinbo runtime stopped while finishing the scheduled job")
+        })?
     }
 
     pub fn fire_scheduled_event(
@@ -451,10 +495,10 @@ impl LiveClient {
                 variables,
                 reply,
             })
-            .map_err(|_| LiveError::new("Emma runtime stopped before raising the event"))?;
+            .map_err(|_| LiveError::new("Shinbo runtime stopped before raising the event"))?;
         result
             .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while raising the event"))?
+            .map_err(|_| LiveError::new("Shinbo runtime stopped while raising the event"))?
     }
 
     pub fn set_scheduled_job_enabled(
@@ -470,11 +514,11 @@ impl LiveClient {
                 reply,
             })
             .map_err(|_| {
-                LiveError::new("Emma runtime stopped before updating the scheduled job")
+                LiveError::new("Shinbo runtime stopped before updating the scheduled job")
             })?;
-        result
-            .recv()
-            .map_err(|_| LiveError::new("Emma runtime stopped while updating the scheduled job"))?
+        result.recv().map_err(|_| {
+            LiveError::new("Shinbo runtime stopped while updating the scheduled job")
+        })?
     }
 }
 
@@ -501,7 +545,7 @@ pub fn start_live_runtime(
 ) -> Result<LiveClient, LiveError> {
     let (commands, receiver) = mpsc::channel();
     thread::Builder::new()
-        .name("emma-live-runtime".into())
+        .name("shinbo-live-runtime".into())
         .spawn(move || {
             let mut runtime = Runtime::new(thread_root, scheduled_root, jobs);
             let tick = Duration::from_secs(30);
@@ -518,7 +562,7 @@ pub fn start_live_runtime(
                 }
             }
         })
-        .map_err(|error| LiveError::new(format!("could not start Emma runtime: {error}")))?;
+        .map_err(|error| LiveError::new(format!("could not start Shinbo runtime: {error}")))?;
     Ok(LiveClient { commands })
 }
 
@@ -526,6 +570,7 @@ struct Runtime {
     threads: ThreadStore,
     scheduled: ScheduledJobStore,
     jobs: JobSink,
+    scheduled_warnings: Vec<String>,
 }
 
 impl Runtime {
@@ -534,6 +579,7 @@ impl Runtime {
             threads: ThreadStore::new(thread_root),
             scheduled: ScheduledJobStore::new(scheduled_root),
             jobs,
+            scheduled_warnings: Vec::new(),
         }
     }
 
@@ -544,6 +590,9 @@ impl Runtime {
             }
             Command::UncachedSnapshot(reply) => {
                 let _ = reply.send(self.snapshot_uncached());
+            }
+            Command::ThreadSummaries(reply) => {
+                let _ = reply.send(self.thread_summaries());
             }
             Command::Thread { thread_id, reply } => {
                 let _ = reply.send(self.thread(thread_id));
@@ -566,9 +615,10 @@ impl Runtime {
             Command::RenameThread {
                 thread_id,
                 title,
+                expected_title,
                 reply,
             } => {
-                let _ = reply.send(self.rename_thread(thread_id, title));
+                let _ = reply.send(self.rename_thread(thread_id, title, expected_title));
             }
             Command::RecordTurn {
                 thread_id,
@@ -583,6 +633,8 @@ impl Runtime {
                 cache_write_tokens,
                 cost_micro_usd,
                 model,
+                goal_tokens,
+                goal_turn,
                 reply,
             } => {
                 let _ = reply.send(self.record_turn(
@@ -598,6 +650,8 @@ impl Runtime {
                     cache_write_tokens,
                     cost_micro_usd,
                     model,
+                    goal_tokens,
+                    goal_turn,
                 ));
             }
             Command::SetGoal {
@@ -690,15 +744,28 @@ impl Runtime {
     }
 
     fn run_due_jobs(&mut self) {
-        let Ok(listing) = self.scheduled.list() else {
-            return;
+        self.scheduled_warnings.clear();
+        let listing = match self.scheduled.list() {
+            Ok(listing) => listing,
+            Err(error) => {
+                self.scheduled_warnings
+                    .push(format!("Could not load scheduled jobs: {error}"));
+                return;
+            }
         };
         let now = Timestamp::now();
         for mut job in listing.jobs {
-            if job.claim_run(now) != Ok(true) || self.scheduled.save(&job).is_err() {
-                continue;
+            let result = match job.claim_run(now) {
+                Ok(false) => continue,
+                Ok(true) => self.hand_out_run(&mut job, String::new(), 0),
+                Err(error) => Err(LiveError::new(error.to_string())),
+            };
+            if let Err(error) = result {
+                self.scheduled_warnings.push(format!(
+                    "Scheduled job {} could not start and will retry: {error}",
+                    job.id
+                ));
             }
-            let _ = self.hand_out_run(&mut job, String::new(), 0);
         }
     }
 
@@ -715,9 +782,12 @@ impl Runtime {
             .save(&thread)
             .map_err(|error| LiveError::new(format!("could not save the run's thread: {error}")))?;
         job.last_thread_id = Some(thread.id.to_string());
-        self.scheduled
-            .save(job)
-            .map_err(|error| LiveError::new(format!("could not save scheduled job: {error}")))?;
+        if let Err(error) = self.scheduled.save(job) {
+            let _ = self.threads.delete(&thread.id);
+            return Err(LiveError::new(format!(
+                "could not save scheduled job: {error}"
+            )));
+        }
         (self.jobs)(DueJob {
             job_id: job.id.as_str().to_string(),
             thread_id: thread.id.to_string(),
@@ -761,6 +831,24 @@ impl Runtime {
         Ok(fired)
     }
 
+    fn thread_summaries(&self) -> Result<LiveSnapshot<Arc<ThreadSummary>>, LiveError> {
+        let mut listing = self
+            .threads
+            .list_summaries()
+            .map_err(|error| LiveError::new(format!("could not load threads: {error}")))?;
+        let expired = Timestamp::now().unix_seconds() - ARCHIVE_RETENTION_SECONDS;
+        listing.threads.retain(|thread| {
+            let keep = thread
+                .archived_at
+                .is_none_or(|at| at.unix_seconds() > expired);
+            if !keep {
+                let _ = self.threads.delete(&thread.id);
+            }
+            keep
+        });
+        self.snapshot_records(listing)
+    }
+
     fn snapshot(&self) -> Result<LiveSnapshot, LiveError> {
         self.snapshot_with_thread_cache(true)
     }
@@ -786,6 +874,13 @@ impl Runtime {
             }
             keep
         });
+        self.snapshot_records(thread_listing)
+    }
+
+    fn snapshot_records<T>(
+        &self,
+        thread_listing: ThreadListing<T>,
+    ) -> Result<LiveSnapshot<T>, LiveError> {
         let job_listing = self
             .scheduled
             .list()
@@ -808,6 +903,7 @@ impl Runtime {
                 reason
             )
         }));
+        warnings.extend(self.scheduled_warnings.iter().cloned());
         Ok(LiveSnapshot {
             threads: thread_listing.threads,
             scheduled_jobs: job_listing.jobs,
@@ -815,9 +911,9 @@ impl Runtime {
         })
     }
 
-    fn thread(&self, thread_id: ThreadId) -> Result<Thread, LiveError> {
+    fn thread(&self, thread_id: ThreadId) -> Result<Arc<Thread>, LiveError> {
         self.threads
-            .load(&thread_id)
+            .read(&thread_id)
             .map_err(|error| LiveError::new(format!("could not load thread {thread_id}: {error}")))
     }
 
@@ -984,7 +1080,12 @@ impl Runtime {
         Ok(thread)
     }
 
-    fn rename_thread(&self, thread_id: ThreadId, title: String) -> Result<Thread, LiveError> {
+    fn rename_thread(
+        &self,
+        thread_id: ThreadId,
+        title: String,
+        expected_title: Option<String>,
+    ) -> Result<Thread, LiveError> {
         let title: String = title.split_whitespace().collect::<Vec<_>>().join(" ");
         let title: String = title.chars().take(120).collect();
         validate_text("thread title", &title, true)
@@ -992,6 +1093,9 @@ impl Runtime {
         let mut thread = self.threads.load(&thread_id).map_err(|error| {
             LiveError::new(format!("could not load thread {thread_id}: {error}"))
         })?;
+        if expected_title.is_some_and(|expected| thread.title != expected) {
+            return Ok(thread);
+        }
         thread.title = title;
         self.threads
             .save(&thread)
@@ -1014,10 +1118,12 @@ impl Runtime {
         cache_write_tokens: Option<u64>,
         cost_micro_usd: Option<u64>,
         model: String,
+        goal_tokens: Option<u64>,
+        goal_turn: Option<bool>,
     ) -> Result<Thread, LiveError> {
-        let prompt = elide_middle(&prompt, MAX_AGENT_MESSAGE_BYTES);
-        let response = elide_middle(&response, MAX_AGENT_MESSAGE_BYTES);
-        let notice = elide_middle(&notice, MAX_AGENT_MESSAGE_BYTES);
+        let prompt = transcript_text(&prompt);
+        let response = transcript_text(&response);
+        let notice = transcript_text(&notice);
         validate_agent_text("prompt", &prompt, true, MAX_AGENT_MESSAGE_BYTES)?;
         validate_agent_text(
             "response",
@@ -1029,7 +1135,7 @@ impl Runtime {
         let mut thread = self.threads.load(&thread_id).map_err(|error| {
             LiveError::new(format!("could not load thread {thread_id}: {error}"))
         })?;
-        let asked = Timestamp::now().max(thread.updated_at);
+        let asked = Timestamp::now().max(thread.updated_at.next());
         thread
             .push(
                 ThreadMessage::new(ThreadRole::User, prompt, asked)
@@ -1074,11 +1180,15 @@ impl Runtime {
                     LiveError::new(format!("could not append the turn notice: {error}"))
                 })?;
         }
-        thread.note_goal_turn(
-            output_tokens.saturating_add(input_tokens),
-            duration_milliseconds,
-            Timestamp::now(),
-        );
+        if goal_turn.unwrap_or(true) {
+            thread.note_goal_turn(
+                goal_tokens
+                    .unwrap_or_default()
+                    .max(output_tokens.saturating_add(input_tokens)),
+                duration_milliseconds,
+                Timestamp::now(),
+            );
+        }
         self.threads
             .save(&thread)
             .map_err(|error| LiveError::new(format!("could not save the turn: {error}")))?;
@@ -1159,24 +1269,36 @@ impl Runtime {
 
     fn read_trace(&mut self, thread_id: ThreadId) -> Result<Vec<ThreadTrace>, LiveError> {
         self.threads
-            .load(&thread_id)
-            .map(|thread| newest_within(thread.traces, MAX_TRACE_REPLY_BYTES))
+            .read(&thread_id)
+            .map(|thread| newest_within(&thread.traces, MAX_TRACE_REPLY_BYTES))
             .map_err(|error| LiveError::new(format!("could not load thread {thread_id}: {error}")))
     }
 }
 
 pub const MAX_TRACE_REPLY_BYTES: usize = 8 * 1024 * 1024;
 
-fn newest_within(traces: Vec<ThreadTrace>, budget: usize) -> Vec<ThreadTrace> {
+fn transcript_text(text: &str) -> String {
+    let mut normalized = String::with_capacity(text.len());
+    for character in text.chars() {
+        if character.is_control() && !matches!(character, '\n' | '\r' | '\t') {
+            normalized.extend(character.escape_default());
+        } else {
+            normalized.push(character);
+        }
+    }
+    elide_middle(&normalized, MAX_AGENT_MESSAGE_BYTES)
+}
+
+fn newest_within(traces: &[ThreadTrace], budget: usize) -> Vec<ThreadTrace> {
     let mut room = budget;
     let mut kept: Vec<ThreadTrace> = Vec::new();
-    for trace in traces.into_iter().rev() {
+    for trace in traces.iter().rev() {
         let cost = trace.text.len().saturating_add(64);
         if cost > room && !kept.is_empty() {
             break;
         }
         room = room.saturating_sub(cost);
-        kept.push(trace);
+        kept.push(trace.clone());
     }
     kept.reverse();
     kept
@@ -1207,12 +1329,12 @@ mod tests {
             ThreadTrace::new(Timestamp::from_unix_seconds(seconds), &"x".repeat(size)).unwrap()
         };
         let traces = vec![big(1, 4_000), big(2, 4_000), big(3, 4_000)];
-        let kept = newest_within(traces, 8_500);
+        let kept = newest_within(&traces, 8_500);
         assert_eq!(kept.len(), 2);
         assert_eq!(kept[0].timestamp, Timestamp::from_unix_seconds(2));
         assert_eq!(kept[1].timestamp, Timestamp::from_unix_seconds(3));
 
-        let one = newest_within(vec![big(4, 4_000)], 16);
+        let one = newest_within(&[big(4, 4_000)], 16);
         assert_eq!(one.len(), 1);
     }
     use super::*;
@@ -1238,7 +1360,7 @@ mod tests {
     fn temp_child() -> PathBuf {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         std::env::temp_dir().join(format!(
-            "emma-live-{}-{}",
+            "shinbo-live-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ))
@@ -1275,6 +1397,8 @@ mod tests {
                 None,
                 None,
                 "fake".into(),
+                None,
+                None,
             )
             .unwrap();
 
@@ -1300,6 +1424,10 @@ mod tests {
         let second = runtime.create_thread(None, None, ThreadKind::Main).unwrap();
         let loaded = runtime.thread(first.id.clone()).unwrap();
         assert_eq!(loaded.id, first.id);
+        assert!(Arc::ptr_eq(
+            &loaded,
+            &runtime.thread(first.id.clone()).unwrap()
+        ));
         assert_ne!(loaded.id, second.id);
         let missing = ThreadId::parse("missing-thread-id").unwrap();
         assert!(runtime.thread(missing).is_err());
@@ -1307,7 +1435,26 @@ mod tests {
     }
 
     #[test]
-    fn compact_snapshot_does_not_populate_the_thread_cache() {
+    fn summaries_preserve_snapshot_metadata_and_archive_retention() {
+        let root = temp_child();
+        let runtime = Runtime::new(root.join("threads"), root.join("scheduled"), no_jobs());
+        let active = runtime.create_thread(None, None, ThreadKind::Main).unwrap();
+        let mut expired = runtime
+            .create_thread(Some("Expired".into()), None, ThreadKind::Main)
+            .unwrap();
+        expired.archived_at = Some(Timestamp::from_unix_seconds(1));
+        runtime.threads.save(&expired).unwrap();
+        let summaries = runtime.thread_summaries().unwrap();
+        assert_eq!(summaries.threads.len(), 1);
+        assert_eq!(summaries.threads[0].id, active.id);
+        assert!(summaries.scheduled_jobs.is_empty());
+        assert!(summaries.warnings.is_empty());
+        assert!(runtime.thread(expired.id).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn compact_snapshot_keeps_only_the_last_explicitly_read_thread() {
         let root = temp_child();
         let runtime = Runtime::new(root.join("threads"), root.join("scheduled"), no_jobs());
         let first = runtime.create_thread(None, None, ThreadKind::Main).unwrap();
@@ -1321,7 +1468,16 @@ mod tests {
         assert_eq!(runtime.threads.cached_len(), 1);
         let compact = runtime.snapshot_uncached().unwrap();
         assert_eq!(compact.threads.len(), 2);
-        assert_eq!(runtime.threads.cached_len(), 0);
+        assert_eq!(runtime.threads.cached_len(), 1);
+        let selected = compact
+            .threads
+            .iter()
+            .find(|thread| thread.id == first.id)
+            .unwrap();
+        assert!(Arc::ptr_eq(
+            selected,
+            &runtime.thread(first.id.clone()).unwrap()
+        ));
         assert_eq!(runtime.thread(first.id.clone()).unwrap().id, first.id);
         assert_eq!(runtime.threads.cached_len(), 1);
         runtime.thread(second.id.clone()).unwrap();
@@ -1342,7 +1498,7 @@ mod tests {
         let runtime = Runtime::new(root.join("threads"), root.join("scheduled"), no_jobs());
         let thread = runtime.create_thread(None, None, ThreadKind::Main).unwrap();
         let named = runtime
-            .rename_thread(thread.id.clone(), "  Trip\n  plans  ".into())
+            .rename_thread(thread.id.clone(), "  Trip\n  plans  ".into(), None)
             .unwrap();
         assert_eq!(named.title, "Trip plans");
         assert_eq!(
@@ -1351,7 +1507,7 @@ mod tests {
         );
         assert!(
             runtime
-                .rename_thread(thread.id.clone(), "   ".into())
+                .rename_thread(thread.id.clone(), "   ".into(), None)
                 .is_err()
         );
         assert_eq!(
@@ -1415,6 +1571,8 @@ mod tests {
                 Some(1_000),
                 Some(12_345),
                 "claude-opus-4".into(),
+                None,
+                None,
             )
             .unwrap();
 
@@ -1472,7 +1630,9 @@ mod tests {
                     None,
                     None,
                     None,
-                    String::new()
+                    String::new(),
+                    None,
+                    None,
                 )
                 .is_err()
         );
@@ -1490,6 +1650,8 @@ mod tests {
                 None,
                 None,
                 "gpt-5.6-luna".into(),
+                None,
+                None,
             )
             .unwrap();
         let saved = runtime.threads.load(&thread.id).unwrap();
@@ -1518,6 +1680,8 @@ mod tests {
                 None,
                 None,
                 String::new(),
+                None,
+                None,
             )
             .unwrap();
         let saved = runtime.threads.load(&thread.id).unwrap();
@@ -1595,7 +1759,7 @@ mod tests {
             (
                 "0 10 28 2 0",
                 "2026-08-28T00:00:00Z",
-                "2027-02-28T10:00:00Z",
+                "2027-02-07T10:00:00Z",
             ),
             (
                 "0 10 29 2 *",
@@ -1681,6 +1845,75 @@ mod tests {
         assert!(jobs[0].last_run_at.is_some());
         assert_eq!(threads[0].scheduled_job_id.as_ref(), Some(&jobs[0].id));
         drop(handed);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn audit_regression_due_dispatch_keeps_failed_booking() {
+        let root = temp_child();
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("threads"), "temporary unavailable storage").unwrap();
+        let (sink, due) = collect_jobs();
+        let mut runtime = Runtime::new(root.join("threads"), root.join("scheduled"), sink);
+        let job = ScheduledJob::new(
+            "Do not skip my task".into(),
+            "0 9 * * *".into(),
+            "Run once when storage recovers".into(),
+            String::new(),
+            vec![],
+            "ask".into(),
+            Timestamp::from_unix_seconds(0),
+        )
+        .unwrap();
+        runtime.scheduled.save(&job).unwrap();
+        runtime.run_due_jobs();
+        assert_eq!(runtime.scheduled.load(&job.id).unwrap(), job);
+        assert!(due.lock().unwrap().is_empty());
+        fs::remove_file(root.join("threads")).unwrap();
+        assert_eq!(runtime.snapshot().unwrap().warnings.len(), 1);
+        runtime.run_due_jobs();
+        runtime.run_due_jobs();
+        assert_eq!(due.lock().unwrap().len(), 1);
+        assert_eq!(runtime.threads.list().unwrap().threads.len(), 1);
+        assert!(
+            runtime
+                .scheduled
+                .load(&job.id)
+                .unwrap()
+                .last_run_at
+                .is_some()
+        );
+        assert!(runtime.snapshot().unwrap().warnings.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_scheduled_commit_cleans_up_the_unstarted_thread() {
+        let root = temp_child();
+        let (sink, due) = collect_jobs();
+        let mut runtime = Runtime::new(root.join("threads"), root.join("scheduled"), sink);
+        let job = ScheduledJob::new(
+            "Retry the booking".into(),
+            "0 9 * * *".into(),
+            "Run once after saving recovers".into(),
+            String::new(),
+            vec![],
+            "ask".into(),
+            Timestamp::from_unix_seconds(0),
+        )
+        .unwrap();
+        runtime.scheduled.save(&job).unwrap();
+        let obstruction = root.join("scheduled").join(format!(".{}.tmp", job.id));
+        fs::create_dir(&obstruction).unwrap();
+        runtime.run_due_jobs();
+        assert_eq!(runtime.scheduled.load(&job.id).unwrap(), job);
+        assert!(runtime.threads.list().unwrap().threads.is_empty());
+        assert!(due.lock().unwrap().is_empty());
+        fs::remove_dir(obstruction).unwrap();
+        runtime.run_due_jobs();
+        runtime.run_due_jobs();
+        assert_eq!(due.lock().unwrap().len(), 1);
+        assert_eq!(runtime.threads.list().unwrap().threads.len(), 1);
         fs::remove_dir_all(root).unwrap();
     }
 

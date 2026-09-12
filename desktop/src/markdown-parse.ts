@@ -1,14 +1,4 @@
-/* Markdown as a model actually emits it — headings, fences, pipe tables, lists —
-   turned into data. Nothing here knows about React or the DOM.
 
-   The split from markdown.tsx is not taste: `npm test` compiles
-   tsconfig.main.json, which does not take JSX, so anything a node --test file
-   imports has to be a plain .ts module. Parsing lives here, element mapping
-   lives there.
-
-   ponytail: src/document.ts carries a smaller parser of the same shape for
-   knowledge pages (no tables, no fence language, no soft breaks). Collapse the
-   two onto this one when document.ts next needs a feature. */
 
 export interface Span {
   text: string;
@@ -34,29 +24,18 @@ export type Block =
   | { kind: "table"; head: Row; rows: Row[] }
   | { kind: "rule" };
 
-/* Code first, so a `**` inside backticks stays literal. Emphasis is flat: a
-   span carries one mark, never a mark inside a mark. */
-/* Bare URLs autolink last, so a `[text](url)` above still wins the address.
-   The tail excludes closing punctuation: a link at the end of a sentence
-   must not swallow the period.
-   Every open-ended class is bounded. `[^\]]*` scanned to the end of the message
-   from every `[` that never closes, so a model quoting a log of brackets cost
-   O(n²) — 100 000 of them froze the JS thread for 3.6 seconds, with no spinner
-   and nothing to cancel. No real link text or address comes near these limits.
-   The bound alone is what makes it linear; the classes deliberately still admit
-   a newline, because paragraphs are joined with one before this runs and link
-   text wrapped across two source lines is ordinary markdown. Excluding `\n`
-   measured no faster (119ms against 133ms at 100 000) and dropped that link. */
+
+
 const INLINE = /`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__|~~([^~]+)~~|\*([^*]+)\*|_([^_]+)_|(!?)\[([^\]]{0,512})\]\(([^)\s]{1,2048})\)|(https?:\/\/[^\s<>()[\]]{0,2048}[^\s<>()[\].,;:!?'"])/g;
 const FENCE = /^\s{0,3}(?:```|~~~)\s*([\w+#.-]*)/;
-const HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
+const HEADING = /^\s{0,3}(#{1,6})\s+/;
 const RULE = /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/;
 const BULLET = /^(\s*)(?:[-*+]|(\d+)[.)])\s+(.*)$/;
 const TASK = /^\[([ xX])\]\s+(.*)$/;
 const QUOTE = /^\s{0,3}>\s?(.*)$/;
 const DELIMITER = /^\s*\|?(?:\s*:?-+:?\s*\|)+\s*(?::?-+:?\s*)?$/;
 
-/** Model text is not trusted to carry a scheme: only real web links become links. */
+
 function safeHref(value: string): string | undefined {
   try {
     const url = new URL(value);
@@ -64,12 +43,7 @@ function safeHref(value: string): string | undefined {
   } catch { return undefined; }
 }
 
-/**
- * A code span or link target that reads like a file on disk rather than prose.
- * Absolute, `~`-rooted and `./`-rooted paths count; so does any slashed path
- * whose last segment carries an extension. A `:line[:column]` suffix is dropped
- * — the span still shows it, only the reveal drops it.
- */
+
 export function filePath(value: string): string | undefined {
   const candidate = value.trim().replace(/:\d+(?::\d+)?$/, "");
   if (!candidate || /\s/.test(candidate) || candidate.includes("://")) return undefined;
@@ -104,7 +78,7 @@ export function inlineSpans(text: string): Span[] {
   return spans.length ? spans : [{ text }];
 }
 
-/** One table row's cells, with the pipes that fence the row dropped. */
+
 function cells(line: string): Span[][] {
   return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => inlineSpans(cell.trim()));
 }
@@ -114,8 +88,7 @@ export function parseBlocks(markdown: string): Block[] {
   const blocks: Block[] = [];
   let paragraph: string[] = [];
   let quote: string[] = [];
-  /* Wrapped lines keep their breaks — a model writes one sentence per line and
-     joining them would reflow shell output and addresses into a run-on. */
+
   const flush = () => {
     if (paragraph.length) {
       const body = paragraph.join("\n");
@@ -144,11 +117,20 @@ export function parseBlocks(markdown: string): Block[] {
     if (RULE.test(line)) { flush(); blocks.push({ kind: "rule" }); continue; }
 
     const heading = HEADING.exec(line);
-    if (heading) { flush(); blocks.push({ kind: "heading", level: heading[1].length, spans: inlineSpans(heading[2]) }); continue; }
+    if (heading) {
+      const body = line.slice(heading[0].length).trimEnd();
+      let end = body.length;
+      while (end > 0 && body[end - 1] === "#") end -= 1;
+      const text = body.slice(0, end).trimEnd();
+      if (!/[\u2028\u2029]/.test(text)) {
+        flush();
+        blocks.push({ kind: "heading", level: heading[1].length, spans: inlineSpans(text) });
+        continue;
+      }
+    }
 
-    // A header row is only a table when the row under it is the dashed one.
     const next = lines[index + 1] ?? "";
-    if (line.includes("|") && next.includes("|") && DELIMITER.test(next)) {
+    if (line.includes("|") && next.includes("|") && DELIMITER.test(next.trim())) {
       flush();
       const head = cells(line);
       const rows: Row[] = [];

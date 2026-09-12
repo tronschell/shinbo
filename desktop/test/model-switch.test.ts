@@ -32,9 +32,9 @@ test("switching again before sending leaves only the model that answers", () => 
 
 test("a corrupt store reads as no switches rather than throwing", () => {
   store.clear();
-  store.set("emma.threadModelSwitches.v1", "{ not json");
+  store.set("shinbo.threadModelSwitches.v1", "{ not json");
   assert.deepEqual(modelSwitches("t1"), []);
-  store.set("emma.threadModelSwitches.v1", JSON.stringify({
+  store.set("shinbo.threadModelSwitches.v1", JSON.stringify({
     t1: "nope",
     t2: [{ at: -1, label: "a" }, { at: 1.5, label: "b" }, { at: 3, label: 7 }, { at: 3, label: "ok", brand: "x" }],
   }));

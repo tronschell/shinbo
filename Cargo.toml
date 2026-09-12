@@ -16,4 +16,4 @@ codegen-units = 1
 strip = "symbols"
 
 [workspace.dependencies]
-emma-core = { path = "crates/core" }
+shinbo-core = { path = "crates/core" }

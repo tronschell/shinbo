@@ -53,9 +53,9 @@ test("only whitelisted browsers are asked for their front tab", () => {
   assert.equal(browserScript('Safari" to do shell script "rm -rf /'), null);
 });
 
-test("asked from Emma's own window, the page is the browser behind it", () => {
-  assert.equal(firstBrowser(["Emma", " Safari", "Google Chrome"]), "Safari");
-  assert.equal(firstBrowser(["Emma", "Terminal"]), undefined);
+test("asked from Shinbo's own window, the page is the browser behind it", () => {
+  assert.equal(firstBrowser(["Shinbo", " Safari", "Google Chrome"]), "Safari");
+  assert.equal(firstBrowser(["Shinbo", "Terminal"]), undefined);
   assert.equal(firstBrowser([]), undefined);
 });
 
@@ -112,7 +112,7 @@ test("a redirect is followed, and every hop is held to the public-address guard"
   assert.deepEqual(requested, ["https://example.com/start", "https://example.com/moved", "https://www.example.com/final"]);
 
   requested.length = 0;
-  await assert.rejects(fetchReadablePage("https://example.com/inward"), /redirects somewhere Emma will not follow/);
+  await assert.rejects(fetchReadablePage("https://example.com/inward"), /redirects somewhere Shinbo will not follow/);
   assert.deepEqual(requested, ["https://example.com/inward"]);
 
   await assert.rejects(fetchReadablePage("https://example.com/looping"), /redirects too many times/);

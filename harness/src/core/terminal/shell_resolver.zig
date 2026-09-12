@@ -873,7 +873,7 @@ test "Windows bootstrap follows the resolved PowerShell shell" {
     if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
     const bootstrap = try buildBootstrap(
         std.testing.allocator,
-        "C:\\fx\\emma-cli.exe",
+        "C:\\fx\\shinbo-cli.exe",
         "C:\\fx\\control",
         "nonce",
         "C:\\fx\\command",
@@ -885,7 +885,7 @@ test "Windows bootstrap follows the resolved PowerShell shell" {
     try std.testing.expect(std.mem.startsWith(
         u8,
         bootstrap["$ErrorActionPreference = 'Stop'\r\n".len..],
-        "& 'C:\\fx\\emma-cli.exe'",
+        "& 'C:\\fx\\shinbo-cli.exe'",
     ));
 
     const source = try buildSourceCommand(std.testing.allocator, "C:\\fx\\boot'strap");

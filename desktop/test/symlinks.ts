@@ -8,7 +8,7 @@ export const NO_SYMLINKS = "Windows denies symlinks without Developer Mode or an
 
 export function symlinksAllowed(): boolean {
   if (allowed !== undefined) return allowed;
-  const probe = mkdtempSync(path.join(tmpdir(), "emma-symlink-probe-"));
+  const probe = mkdtempSync(path.join(tmpdir(), "shinbo-symlink-probe-"));
   try {
     symlinkSync(path.join(probe, "target"), path.join(probe, "link"));
     allowed = true;

@@ -1,37 +1,37 @@
 # The command line
 
-Two unrelated things in Emma answer to "CLI":
+Two unrelated things in Shinbo answer to "CLI":
 
 - the **`cli` and `cli_runs` tools**, which drive *someone else's* coding CLI in a connected folder — most of this page;
-- **`emma-cli`**, the agent Emma itself runs, which also works from a terminal.
+- **`shinbo-cli`**, the agent Shinbo itself runs, which also works from a terminal.
 
-## `emma-cli` from a terminal
+## `shinbo-cli` from a terminal
 
-The same binary that runs every Emma turn. A packaged macOS app has it at
-`Emma.app/Contents/Resources/emma-cli`; a Windows package keeps `emma-cli.exe`
+The same binary that runs every Shinbo turn. A packaged macOS app has it at
+`Shinbo.app/Contents/Resources/shinbo-cli`; a Windows package keeps `shinbo-cli.exe`
 under its `resources/` directory. A checkout builds it to
-`harness/zig-out/bin/emma-cli` on macOS or `harness/zig-out/bin/emma-cli.exe`
+`harness/zig-out/bin/shinbo-cli` on macOS or `harness/zig-out/bin/shinbo-cli.exe`
 on Windows with `npm --prefix desktop run build:harness`.
 
 ```bash
-emma-cli ask "write a fizzbuzz in python"   # one shot
-emma-cli                                    # a REPL in the current directory
-emma-cli sessions
-emma-cli session resume last
+shinbo-cli ask "write a fizzbuzz in python"   # one shot
+shinbo-cli                                    # a REPL in the current directory
+shinbo-cli sessions
+shinbo-cli session resume last
 ```
 
 The current directory is its workspace, and it gates a tool call on the tty
-rather than through Emma's permission channel. Only the REPL needs a console:
+rather than through Shinbo's permission channel. Only the REPL needs a console:
 `--help`, `--version`, `ask`, `sessions`, and `acp` run the same over pipes or
-redirected output, which is how Emma drives `acp` over stdio. It is Emma's fork
+redirected output, which is how Shinbo drives `acp` over stdio. It is Shinbo's fork
 of [vercel-labs/fx](https://github.com/vercel-labs/fx) (Apache-2.0; provenance
 in [FORK.md](../harness/FORK.md)) — its own surface is
-[harness/README.md](../harness/README.md), and how Emma drives it is
+[harness/README.md](../harness/README.md), and how Shinbo drives it is
 [harness.md](harness.md).
 
 ## `cli` and `cli_runs`
 
-Emma does not reimplement Claude Code or Codex. It runs the one you already
+Shinbo does not reimplement Claude Code or Codex. It runs the one you already
 have, in the thread's folder, shows the terminal live, and feeds it the next
 prompt. These harnesses are other people's work:
 
@@ -47,9 +47,9 @@ prompt. These harnesses are other people's work:
 
 The catalog is [shared/cli.ts](../desktop/shared/cli.ts). Each harness supplies
 its native arguments and thinking options. Every row accepts an optional model
-as `--model <id>`. Emma owns Claude and Pi session identifiers; other adapters
+as `--model <id>`. Shinbo owns Claude and Pi session identifiers; other adapters
 currently resume the newest conversation in the folder, even where the vendor
-also supports explicit session ids. Emma prevents resuming an obsolete run.
+also supports explicit session ids. Shinbo prevents resuming an obsolete run.
 
 Claude, Codex, Pi, and OpenCode flags were checked against installed CLIs.
 Antigravity, Gemini, and Cursor are documented adapters, not locally installed
@@ -84,7 +84,7 @@ record field by field.
 | `action` | `run` or `send`. Defaults to `run` |
 | `cli` | `claude`, `codex`, `pi`, `opencode`, `gemini`, `cursor`, `antigravity`. Required for `run` |
 | `id` | The run to continue. Required for `send` |
-| `prompt` | The whole instruction — the CLI sees the folder, never Emma's conversation. Capped at `MAX_CLI_PROMPT_CHARS`, 32 KiB |
+| `prompt` | The whole instruction — the CLI sees the folder, never Shinbo's conversation. Capped at `MAX_CLI_PROMPT_CHARS`, 32 KiB |
 | `model` | Exact model id or native alias; omitted preserves an existing run, empty resets to the harness default |
 | `effort` | Native reasoning level or OpenCode variant; omitted preserves an existing run, empty resets to the harness default |
 | `unattended` | Passes that CLI's skip-approvals flag. Off by default |
@@ -125,7 +125,7 @@ floated run over the conversation, never inside it, because a run outlives the
 turn that started it. Its logo, label, folder, live state (`working · 47s`, `finished`,
 `stopped · code 2`, `failed`), an `unattended` badge, a `⋯` menu, a fold button,
 the output, and a composer
-that gives it the next turn. The composer is Emma's own — same classes, same
+that gives it the next turn. The composer is Shinbo's own — same classes, same
 shape — and takes attachments through `＋` or a drop onto the window, sending
 their paths with the prompt.
 
@@ -168,7 +168,7 @@ thinking uses a native select, or a variant field for OpenCode. Apply saves the
 pair for the next turn. Invalid options surface an error without closing the
 controls. The current turn is never changed while it is running.
 
-Emma does not keep a list of models. `discoverCliModels` in
+Shinbo does not keep a list of models. `discoverCliModels` in
 [main/cli-models.ts](../desktop/main/cli-models.ts) asks each CLI what it has:
 
 | id | Where the models come from |
@@ -188,7 +188,7 @@ validated before they are offered, because a loose `claude-*` match pulls in
 strings that are not models.
 
 **The terminal** — the Terminal button starts that harness's own interactive CLI
-in Emma's pty ([main/terminal.ts](../desktop/main/terminal.ts) takes a `cli` id
+in Shinbo's pty ([main/terminal.ts](../desktop/main/terminal.ts) takes a `cli` id
 and runs the platform shell: `$SHELL -ilc <bin>` on macOS, or `%COMSPEC% /d /s /c
 <bin>` on Windows, so the CLI gets a real TTY). Any terminal tab pops back out
 into a PIP with `⇱`, and docks again from the PIP.
@@ -203,8 +203,8 @@ Both scrollers pin to the bottom unless you have scrolled more than 24 px up
 
 ## See also
 
-- [harness.md](harness.md) — `emma-cli`, the agent behind every turn
-- [tools.md](tools.md) — every tool Emma advertises
+- [harness.md](harness.md) — `shinbo-cli`, the agent behind every turn
+- [tools.md](tools.md) — every tool Shinbo advertises
 - [permissions.md](permissions.md) — the four modes and the tool gate
 - [terminal.md](terminal.md) — the shell panel and the `terminal` tool
 - [troubleshooting.md](troubleshooting.md) — when a CLI run will not start
@@ -219,7 +219,7 @@ harness, or continue another run in this thread. Add the next instruction and
 send. New runs retain default CLI approvals; existing runs retain their original
 approval mode, shown in the destination picker.
 
-For a sequence requested in chat, Emma uses the optional `fromRuns` array on
+For a sequence requested in chat, Shinbo uses the optional `fromRuns` array on
 `cli`, with up to eight successful run ids from the same thread. This works for
 both `action: "run"` and `action: "send"`, so results can be chained, combined,
 or sent back for another review. Each source contributes its latest turn's
@@ -231,12 +231,12 @@ Handoffs reject sources that are running, failed, stopped, empty, unavailable,
 or from another thread. The combined prompt must fit 32 Ki characters and 96 KiB
 of UTF-8; output that exceeded the 256 Ki-character capture cap is also rejected.
 For larger deliverables, have the source save a file and give the next harness
-its path. Emma never silently truncates a handoff. Files stay in their original
+its path. Shinbo never silently truncates a handoff. Files stay in their original
 folders and are not automatically copied to a different workspace.
 
 The shared runner permits one active harness per folder. Resuming an older run
-of a harness that only continues the newest folder session is refused when Emma
-knows a newer run exists. Sessions started outside Emma remain outside this
+of a harness that only continues the newest folder session is refused when Shinbo
+knows a newer run exists. Sessions started outside Shinbo remain outside this
 tracking. A nonzero exit or signal now marks the run failed, with diagnostics in
 the terminal log, and prevents chaining it as a successful result.
 
@@ -260,14 +260,14 @@ without starting a model turn. Model-specific Codex effort metadata is read
 from its local catalog, including newer levels the installed model advertises.
 When that metadata exists, an unsupported combination is rejected rather than
 downgraded. Other CLIs validate model access and model-specific levels themselves;
-Emma validates the option syntax and harness-level support before spawning.
+Shinbo validates the option syntax and harness-level support before spawning.
 
 The square model controls in a run edit the next turn's model and thinking
 level. You can select a discovered model or enter an exact id/custom alias.
 Apply saves both together and reports errors. Active turns cannot be changed.
 The handoff dialog offers the same controls before the first destination turn,
 and existing destinations retain their own options. Omission preserves values;
-an empty value removes Emma's override and lets native settings decide again.
+an empty value removes Shinbo's override and lets native settings decide again.
 These choices do not enable unattended permissions.
 
 | Harness | Model | Thinking control |
@@ -277,15 +277,15 @@ These choices do not enable unattended permissions.
 | Pi | `--model`, including provider/id | `--thinking`: off, minimal, low, medium, high, xhigh, max |
 | OpenCode | `--model provider/id` | `--variant`: native or configured variant name |
 | Antigravity CLI | `agy --model` | `--effort`: low, medium, high |
-| Gemini CLI | `--model` | Managed by native model configuration; no separate per-run effort flag exposed in Emma |
-| Cursor CLI | `--model` | Managed by native model selection; no separate per-run effort flag exposed in Emma |
+| Gemini CLI | `--model` | Managed by native model configuration; no separate per-run effort flag exposed in Shinbo |
+| Cursor CLI | `--model` | Managed by native model selection; no separate per-run effort flag exposed in Shinbo |
 
 For example, plan with an exact Claude model, then build with a discovered Codex
 Luna id and `effort:"max"`, passing the successful plan through `fromRuns`.
-Emma's agent resolves requested names against the catalog; it must not substitute
+Shinbo's agent resolves requested names against the catalog; it must not substitute
 another model for an unavailable named version. Requested settings appear in
 run metadata and actual arguments in the terminal log. Vendor-side normalization
-and actual reasoning consumption are not independently measured by Emma.
+and actual reasoning consumption are not independently measured by Shinbo.
 
 References checked September 4, 2026:
 [Claude Code flags](https://code.claude.com/docs/en/cli-reference),
@@ -297,7 +297,7 @@ References checked September 4, 2026:
 [Gemini configuration](https://geminicli.com/docs/reference/configuration/),
 [Cursor parameters](https://docs.cursor.com/en/cli/reference/parameters).
 
-Claude's environment effort setting takes precedence over its CLI flag, so Emma
+Claude's environment effort setting takes precedence over its CLI flag, so Shinbo
 sets it in that child process when an effort is explicitly requested. It does
 not edit the user's settings. The Codex web reference lags the installed catalog
-on max/ultra; Emma preserves those native identifiers instead of renaming them.
+on max/ultra; Shinbo preserves those native identifiers instead of renaming them.

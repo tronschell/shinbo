@@ -59,13 +59,13 @@ export async function discoverImports(home: string): Promise<ImportDiscovery[]> 
   }));
 }
 
-/** How many sources one selection may name. importSources() offers eight, so anything longer is a
-    caller that has stopped picking from the table. */
+
+
 export const MAX_IMPORT_SOURCES = 8;
 
-/** The ids imports.json already names. discoverImports says what this Mac has; this says what Emma
-    is reading, and a switchboard needs both — saveImportManifest replaces the manifest, so a caller
-    that cannot see the current set would deregister every source it did not think to send. */
+
+
+
 export async function registeredImportIds(userData: string): Promise<string[]> {
   try {
     const parsed: unknown = JSON.parse(await readFile(path.join(userData, "imports.json"), "utf8"));

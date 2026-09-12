@@ -32,7 +32,7 @@ test("archive timeline groups local days across DST, orders threads, shows expir
   const thread = (id: string, archivedAt: string): Thread => ({ id, title: id, archivedAt, createdAt: archivedAt, updatedAt: now, messages: [], messageCount: 12 });
   const threads = [thread("yesterday", "2026-03-08T05:30:00Z"), thread("earlier", "2026-03-09T04:10:00Z"), thread("newest", "2026-03-09T04:20:00Z"), thread("expiring", new Date(Date.parse(now) - 29.5 * 86_400_000).toISOString())];
   const restored: string[] = [];
-  const props = { threads, busy: false, restore: (id: string) => restored.push(id), projectName: () => "Emma" };
+  const props = { threads, busy: false, restore: (id: string) => restored.push(id), projectName: () => "Shinbo" };
   const tree = elements(render(props));
   assert.deepEqual(tree.filter(item => item.type === "h3").map(item => item.children[0]), ["Today", "Yesterday", "Feb 7, 2026"]);
   assert.deepEqual(tree.filter(item => item.type === "h4").map(item => item.children[0]), ["newest", "earlier", "yesterday", "expiring"]);

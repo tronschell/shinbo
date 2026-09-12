@@ -42,10 +42,12 @@ function stop(child: ChildProcess) {
   child.kill("SIGKILL");
 }
 
-export async function runWorkflowScript(file: string, input: string, roots: string[]): Promise<string> {
+export async function runWorkflowScript(file: string, input: string, roots: string[], signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
   const script = await workflowScriptPath(file, roots);
+  signal?.throwIfAborted();
   const launch = executable(script);
-  return await new Promise((resolve) => {
+  return await new Promise((resolve, reject) => {
     const child = spawnCommand(launch.command, launch.args, {
       cwd: path.dirname(script),
       env: launch.env,
@@ -64,22 +66,29 @@ export async function runWorkflowScript(file: string, input: string, roots: stri
     };
     const timer = setTimeout(() => { timedOut = true; stop(child); }, SCRIPT_TIMEOUT_MS);
     timer.unref();
+    const abort = () => stop(child);
     const finish = (status: string) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
       const output = stdout.trim();
       const error = stderr.trim();
-      resolve([output, error ? `[stderr]\n${error}` : "", status].filter(Boolean).join("\n\n") || "(no output)");
+      const result = [output, error ? `[stderr]\n${error}` : "", status].filter(Boolean).join("\n\n") || "(no output)";
+      if (status) reject(new Error(result));
+      else resolve(result);
     };
+    signal?.addEventListener("abort", abort, { once: true });
     child.stdout?.on("data", (data: Buffer) => collect("stdout", data));
     child.stderr?.on("data", (data: Buffer) => collect("stderr", data));
     child.stdin?.on("error", () => undefined);
     child.stdin?.end(input.slice(0, MAX_VARIABLE_CHARS));
     child.once("error", (error) => finish(`[script could not start: ${error.message}]`));
-    child.once("close", (code, signal) => finish(timedOut
+    child.once("close", (code, killedBy) => finish(signal?.aborted
+      ? "You stopped this workflow script."
+      : timedOut
       ? `[script killed after ${SCRIPT_TIMEOUT_MS / 1000}s]`
-      : signal ? `[script killed by ${signal}]`
+      : killedBy ? `[script killed by ${killedBy}]`
       : code === 0 ? ""
       : `[script exit ${code ?? "unknown"}]`));
   });

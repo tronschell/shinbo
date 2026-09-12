@@ -1,6 +1,6 @@
 # Components
 
-A component is a widget Emma writes into her own interface. It is a real module
+A component is a widget Shinbo writes into her own interface. It is a real module
 in the running React tree — the app's stylesheet, the app's bridge, no build step
 and no frame — and it reloads in place every time she rewrites it.
 
@@ -18,13 +18,13 @@ DOM and bridge; treat them as code you are choosing to run.
 export default (api) => Component
 ```
 
-`api` is `{ h, Fragment, useState, useEffect, useMemo, useRef, useCallback, emma, fetch, variables }`.
+`api` is `{ h, Fragment, useState, useEffect, useMemo, useRef, useCallback, shinbo, fetch, variables }`.
 `h` is `React.createElement` — no JSX, nothing to import. The component is handed
 one prop, `expanded`.
 
 | | |
 | --- | --- |
-| `emma` | The same bridge the app uses: `emma.request("snapshot", {})` for threads and jobs, `emma.threadTraces(id)`, `emma.machineSample()`, and the rest. Everything the app knows, a component knows |
+| `shinbo` | The same bridge the app uses: `shinbo.request("snapshot", {})` for threads and jobs, `shinbo.threadTraces(id)`, `shinbo.machineSample()`, and the rest. Everything the app knows, a component knows |
 | `fetch(url, init)` | One request through main. `init` is `{ method, headers, body }`; the answer is `{ status, ok, body }`. Fixed public HTTPS only, DNS-checked and pinned; redirects rejected. Responses must be uncompressed UTF-8 text within 1 MiB, with a 20-second timeout |
 | `variables` | The environment variable names this component declared, as names. Never the values |
 
@@ -37,7 +37,7 @@ is created:
 component {"action":"create","title":"Linear issues","code":"…","expand":true,"variables":["LINEAR_API_KEY"]}
 ```
 
-The user fills them in **Settings → Built by Emma**, where each component lists
+The user fills them in **Settings → Built by Shinbo**, where each component lists
 what it asked for. Values go through `CredentialStore` — encrypted by
 `safeStorage` and mirrored into main's environment. The credential-list API
 returns masked summaries, not full values.
@@ -50,7 +50,7 @@ in the current app session; changing the template, component or credential value
 asks again. Keyless requests do not need this credential confirmation.
 
 Declining is remembered for that exact request in the current session too. To
-reconsider an unchanged request, restart Emma. Approval records are bounded, so
+reconsider an unchanged request, restart Shinbo. Approval records are bounded, so
 older requests may ask again during a long session.
 
 Widgets share the renderer and full bridge, so a component ID is not an isolated
@@ -81,17 +81,17 @@ clip-path fade under it stop at `prefers-reduced-motion`.
 
 ## A worked example
 
-Both halves of the contract in one widget: app data through `emma`, outside data
+Both halves of the contract in one widget: app data through `shinbo`, outside data
 through `fetch` with a declared variable, and two readings of the same list.
 
 ```js
-export default ({ h, useState, useEffect, emma, fetch }) => ({ expanded }) => {
+export default ({ h, useState, useEffect, shinbo, fetch }) => ({ expanded }) => {
   const [issues, setIssues] = useState([]);
   const [threads, setThreads] = useState(0);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    void emma.request("snapshot", {}).then((snap) => setThreads(snap.threads.length)).catch(() => setThreads(0));
+    void shinbo.request("snapshot", {}).then((snap) => setThreads(snap.threads.length)).catch(() => setThreads(0));
     void fetch("https://api.linear.app/graphql", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "{{LINEAR_API_KEY}}" },

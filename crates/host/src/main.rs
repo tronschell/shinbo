@@ -3,11 +3,14 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use emma_core::{DueJob, GoalStatus, LiveClient, ScheduledJobId, Thread, ThreadId, ThreadKind};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use shinbo_core::{
+    DueJob, GoalStatus, LiveClient, MAX_TRACE_BYTES, ScheduledJobId, ThreadId, ThreadKind,
+};
 
-const MAX_REQUEST_BYTES: usize = 128 * 1024;
+const MAX_STANDARD_REQUEST_BYTES: usize = 128 * 1024;
+const MAX_REQUEST_BYTES: usize = MAX_TRACE_BYTES * 6 + MAX_STANDARD_REQUEST_BYTES;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -50,6 +53,8 @@ struct RecordTurnParams {
     cache_write_tokens: Option<String>,
     cost_micro_usd: Option<String>,
     model: Option<String>,
+    goal_tokens: Option<String>,
+    goal_turn: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -135,6 +140,7 @@ struct SetThreadArchivedParams {
 struct RenameThreadParams {
     thread_id: String,
     title: String,
+    expected_title: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -144,145 +150,9 @@ struct SetScheduledJobEnabledParams {
     enabled: String,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ThreadSummary {
-    id: ThreadId,
-    title: String,
-    parent_thread_id: Option<ThreadId>,
-    kind: ThreadKind,
-    scheduled_job_id: Option<ScheduledJobId>,
-    created_at: emma_core::Timestamp,
-    updated_at: emma_core::Timestamp,
-    archived_at: Option<emma_core::Timestamp>,
-    goal: Option<emma_core::Goal>,
-    messages: usize,
-    message_dates: Vec<emma_core::Timestamp>,
-    user_message_count: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    display_title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    label_prompt: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    subagent_brief: Option<String>,
-}
-
-fn sent_thread_body(content: &str) -> &str {
-    let Some(rest) = content.strip_prefix("[thread ") else {
-        return content;
-    };
-    let Some(marker_end) = rest.find(" messaged]\n") else {
-        return content;
-    };
-    let sender = &rest[..marker_end];
-    if !(1..=96).contains(&sender.len())
-        || !sender
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-    {
-        return content;
-    }
-    &rest[marker_end + " messaged]\n".len()..]
-}
-
-fn normalized_prompt(content: &str) -> String {
-    sent_thread_body(content)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-const SEARCHABLE_TITLE_UNITS: usize = 200;
-
-fn display_title(content: &str) -> String {
-    if content.encode_utf16().count() <= 48 {
-        return content.to_owned();
-    }
-    let mut title = String::new();
-    let mut units = 0;
-    for character in content.chars() {
-        let width = character.len_utf16();
-        if units + width > 47 {
-            break;
-        }
-        title.push(character);
-        units += width;
-    }
-    title.push('…');
-    title
-}
-
-fn utf16_prefix(content: &str, limit: usize) -> String {
-    let mut prefix = String::new();
-    let mut units = 0;
-    for character in content.chars() {
-        if units >= limit {
-            break;
-        }
-        prefix.push(character);
-        units += character.len_utf16();
-    }
-    prefix
-}
-
-impl From<&Thread> for ThreadSummary {
-    fn from(thread: &Thread) -> Self {
-        let first_user_message = thread
-            .messages
-            .iter()
-            .find(|message| message.role == emma_core::ThreadRole::User)
-            .map(|message| normalized_prompt(&message.content));
-        let default_title = thread.title.trim().is_empty() || thread.title.trim() == "New thread";
-        let display_title = if default_title {
-            first_user_message
-                .as_deref()
-                .map(display_title)
-                .filter(|content| !content.is_empty())
-        } else {
-            None
-        };
-        let label_prompt = if default_title {
-            first_user_message
-                .as_deref()
-                .filter(|content| content.encode_utf16().count() > 48)
-                .map(|content| utf16_prefix(content, SEARCHABLE_TITLE_UNITS))
-        } else {
-            None
-        };
-        Self {
-            id: thread.id.clone(),
-            title: thread.title.clone(),
-            parent_thread_id: thread.parent_thread_id.clone(),
-            kind: thread.kind,
-            scheduled_job_id: thread.scheduled_job_id.clone(),
-            created_at: thread.created_at,
-            updated_at: thread.updated_at,
-            archived_at: thread.archived_at,
-            goal: thread.goal.clone(),
-            messages: thread.messages.len(),
-            message_dates: thread
-                .messages
-                .iter()
-                .map(|message| message.timestamp)
-                .collect(),
-            user_message_count: thread
-                .messages
-                .iter()
-                .filter(|message| message.role == emma_core::ThreadRole::User)
-                .count(),
-            display_title,
-            label_prompt,
-            subagent_brief: (thread.kind == ThreadKind::Subagent)
-                .then_some(first_user_message)
-                .flatten()
-                .filter(|content| !content.is_empty()),
-        }
-    }
-}
-
 fn main() {
     if let Err(error) = run() {
-        eprintln!("Emma host: {error}");
+        eprintln!("Shinbo host: {error}");
         std::process::exit(1);
     }
 }
@@ -309,17 +179,23 @@ fn serve(
     writer: &Mutex<impl Write>,
     live: &LiveClient,
 ) -> Result<(), String> {
-    let mut line = Vec::with_capacity(MAX_REQUEST_BYTES);
+    let mut line = Vec::with_capacity(MAX_STANDARD_REQUEST_BYTES);
     while let Some(request) = read_request(&mut reader, &mut line)
         .map_err(|error| format!("could not read request: {error}"))?
     {
         let response = match request.and_then(|request| dispatch(live, &request)) {
-            Ok((id, result)) => json!({ "id": id, "ok": true, "result": result }),
+            Ok((id, result)) => successful_response(id, result),
             Err((id, error)) => json!({ "id": id, "ok": false, "error": error }),
         };
         write_response(writer, &response)?;
     }
     Ok(())
+}
+
+fn successful_response(id: String, result: Value) -> Value {
+    let mut response = json!({ "id": id, "ok": true });
+    response["result"] = result;
+    response
 }
 
 const RESPONSE_CHUNK_BYTES: usize = 64 * 1024;
@@ -338,7 +214,7 @@ fn write_response(writer: &Mutex<impl Write>, response: &Value) -> Result<(), St
     let write_line = |line: &str| -> Result<(), String> {
         let mut writer = writer
             .lock()
-            .map_err(|_| "Emma host output lock was poisoned".to_string())?;
+            .map_err(|_| "Shinbo host output lock was poisoned".to_string())?;
         writer
             .write_all(line.as_bytes())
             .and_then(|()| writer.write_all(b"\n"))
@@ -453,6 +329,9 @@ fn parse_request(line: &str) -> Result<Request, (String, String)> {
     if !valid_request_id(&request.id) {
         return Err((String::new(), "request ID is invalid".into()));
     }
+    if request.method != "recordTrace" && line.len() > MAX_STANDARD_REQUEST_BYTES {
+        return Err((request.id, "request is too large".into()));
+    }
     Ok(request)
 }
 
@@ -521,18 +400,15 @@ fn dispatch(live: &LiveClient, request: &Request) -> Result<(String, Value), (St
     let result = (|| -> Result<Value, String> {
         match request.method.as_str() {
             "snapshot" => encode(call(live.snapshot_uncached())?),
-            "threadSummaries" => {
-                let snapshot = call(live.snapshot_uncached())?;
-                let threads = snapshot
-                    .threads
-                    .iter()
-                    .map(|thread| ThreadSummary::from(thread.as_ref()))
-                    .collect::<Vec<_>>();
-                encode(json!({
-                    "threads": threads,
-                    "scheduledJobs": snapshot.scheduled_jobs,
-                    "warnings": snapshot.warnings,
-                }))
+            "threadSummaries" => encode(call(live.thread_summaries())?),
+            "checkTurnCapacity" => {
+                let params: ThreadParams = params(request)?;
+                call(live.thread(
+                    ThreadId::parse(params.thread_id).map_err(|error| error.to_string())?,
+                ))?
+                .check_turn_capacity()
+                .map_err(|error| error.to_string())?;
+                encode(())
             }
             "thread" => {
                 let params: ThreadParams = params(request)?;
@@ -573,9 +449,10 @@ fn dispatch(live: &LiveClient, request: &Request) -> Result<(String, Value), (St
             }
             "renameThread" => {
                 let params: RenameThreadParams = params(request)?;
-                encode(call(live.rename_thread(
+                encode(call(live.rename_thread_if_current(
                     ThreadId::parse(params.thread_id).map_err(|error| error.to_string())?,
                     params.title,
+                    params.expected_title,
                 ))?)
             }
             "recordTurn" => {
@@ -607,6 +484,13 @@ fn dispatch(live: &LiveClient, request: &Request) -> Result<(String, Value), (St
                     cache_write_tokens,
                     cost_micro_usd,
                     params.model.unwrap_or_default(),
+                    optional_u64(params.goal_tokens, "goal tokens")?,
+                    match params.goal_turn.as_deref() {
+                        None => None,
+                        Some("true") => Some(true),
+                        Some("false") => Some(false),
+                        _ => return Err("goal turn must be true or false".into()),
+                    },
                 ))?)
             }
             "setGoal" => {
@@ -733,7 +617,7 @@ fn encode(value: impl serde::Serialize) -> Result<Value, String> {
     serde_json::to_value(value).map_err(|error| format!("could not encode result: {error}"))
 }
 
-fn call<T>(result: Result<T, emma_core::LiveError>) -> Result<T, String> {
+fn call<T>(result: Result<T, shinbo_core::LiveError>) -> Result<T, String> {
     result.map_err(|error| error.to_string())
 }
 
@@ -743,6 +627,40 @@ mod runtime;
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    fn response_envelope_moves_the_existing_payload() {
+        let result = json!({ "content": "large response".repeat(1000) });
+        let pointer = result["content"].as_str().unwrap().as_ptr();
+        let response = successful_response("reply".into(), result);
+        assert_eq!(
+            response["result"]["content"].as_str().unwrap().as_ptr(),
+            pointer
+        );
+        assert_eq!(response["id"], "reply");
+        assert_eq!(response["ok"], true);
+    }
+
+    #[test]
+    #[ignore]
+    fn benchmark_large_response_envelope() {
+        let mut result = json!({ "content": "x".repeat(60_000_000) });
+        let mut samples = Vec::new();
+        for _ in 0..5 {
+            let start = std::time::Instant::now();
+            for _ in 0..10 {
+                let mut response = successful_response("reply".into(), result);
+                std::hint::black_box(&response);
+                result = response["result"].take();
+            }
+            samples.push(start.elapsed().as_micros());
+        }
+        samples.sort_unstable();
+        println!(
+            "60 MB response envelope: 10 operations median {} us",
+            samples[2]
+        );
+    }
 
     #[test]
     fn protocol_rejects_unknown_fields_and_oversized_ids() {
@@ -791,61 +709,6 @@ mod tests {
     }
 
     #[test]
-    fn thread_summary_keeps_renderer_label_rules() {
-        fn summary(prompt: &str) -> ThreadSummary {
-            let now = emma_core::Timestamp::now();
-            let mut thread = Thread::new("New thread", now).unwrap();
-            thread
-                .push(
-                    emma_core::ThreadMessage::new(emma_core::ThreadRole::User, prompt, now)
-                        .unwrap(),
-                )
-                .unwrap();
-            ThreadSummary::from(&thread)
-        }
-
-        let forty_eight = "a".repeat(48);
-        assert_eq!(
-            summary(&forty_eight).display_title.as_deref(),
-            Some(forty_eight.as_str())
-        );
-        let forty_nine = "a".repeat(49);
-        let expected = format!("{}…", "a".repeat(47));
-        assert_eq!(
-            summary(&forty_nine).display_title.as_deref(),
-            Some(expected.as_str())
-        );
-        let emoji = "🙂".repeat(24);
-        assert_eq!(
-            summary(&emoji).display_title.as_deref(),
-            Some(emoji.as_str())
-        );
-        let split = format!("{emoji}x");
-        assert!(summary(&split).label_prompt.is_some());
-        let buried = "Draft a one page memo for the pricing committee on semiconductor supply";
-        let summarised = summary(buried);
-        assert!(!summarised.display_title.unwrap().contains("semiconductor"));
-        assert_eq!(summarised.label_prompt.as_deref(), Some(buried));
-        let long = "word ".repeat(80);
-        assert_eq!(
-            summary(&long).label_prompt.unwrap().encode_utf16().count(),
-            SEARCHABLE_TITLE_UNITS
-        );
-        assert_eq!(
-            summary("[thread short! messaged]\nhello")
-                .display_title
-                .as_deref(),
-            Some("[thread short! messaged] hello")
-        );
-        assert_eq!(
-            summary("[thread short-id messaged]\nhello")
-                .display_title
-                .as_deref(),
-            Some("hello")
-        );
-    }
-
-    #[test]
     fn oversized_request_is_bounded_and_does_not_consume_the_next_request() {
         let mut input = br#"{"id":"too-big","method":"snapshot","padding":""#.to_vec();
         input.resize(MAX_REQUEST_BYTES + 32, b'x');
@@ -871,7 +734,7 @@ mod tests {
         assert_eq!(request.id, "next");
         assert!(read_request(&mut reader, &mut line).unwrap().is_none());
 
-        let mut exact = br#"{"id":"exact","method":"snapshot","params":{"padding":""#.to_vec();
+        let mut exact = br#"{"id":"exact","method":"recordTrace","params":{"padding":""#.to_vec();
         exact.resize(MAX_REQUEST_BYTES - 3, b'x');
         exact.extend_from_slice(br#""}}"#);
         assert_eq!(exact.len(), MAX_REQUEST_BYTES);

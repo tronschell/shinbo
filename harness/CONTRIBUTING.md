@@ -24,7 +24,7 @@ Requirements:
 
 * interactive terminal for manual shell testing
 
-* `EMMA_PROVIDER_API_KEY` set to a credential for an OpenAI-compatible Chat Completions endpoint, for model-backed flows
+* `SHINBO_PROVIDER_API_KEY` set to a credential for an OpenAI-compatible Chat Completions endpoint, for model-backed flows
 
 Common commands:
 
@@ -329,8 +329,8 @@ Check in the golden file and wire a regression test that re-runs `fx replay` in 
 
 ## Releases
 
-`emma-cli` has no release pipeline of its own. It is built from source and
-shipped inside the Emma desktop app, so there is no CDN, tag, or upgrade channel
+`shinbo-cli` has no release pipeline of its own. It is built from source and
+shipped inside the Shinbo desktop app, so there is no CDN, tag, or upgrade channel
 to publish to. Upstream's release workflows were removed with the rest of the
 Vercel-hosted surface.
 

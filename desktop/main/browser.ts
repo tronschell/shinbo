@@ -91,7 +91,7 @@ export class Browsers {
 
   async open(threadId: string, url: string): Promise<BrowserStatus> {
     const target = externalUrl(url);
-    if (!target) throw new Error(`Emma's browser opens http and https addresses only, and ${url.slice(0, 120)} is neither.`);
+    if (!target) throw new Error(`Shinbo's browser opens http and https addresses only, and ${url.slice(0, 120)} is neither.`);
     const session = this.session(threadId);
     const tab = this.active(session) ?? this.spawnTab(session);
     await tab.view.webContents.loadURL(target.href).catch(() => undefined);
@@ -101,10 +101,10 @@ export class Browsers {
 
   async newTab(threadId: string, url?: string): Promise<BrowserStatus> {
     const session = this.session(threadId);
-    if (session.tabs.length >= MAX_TABS) throw new Error(`Emma's browser holds ${MAX_TABS} tabs at once. Close one first.`);
+    if (session.tabs.length >= MAX_TABS) throw new Error(`Shinbo's browser holds ${MAX_TABS} tabs at once. Close one first.`);
     const tab = this.spawnTab(session);
     const target = url ? externalUrl(url) : null;
-    if (url && !target) throw new Error(`Emma's browser opens http and https addresses only, and ${url.slice(0, 120)} is neither.`);
+    if (url && !target) throw new Error(`Shinbo's browser opens http and https addresses only, and ${url.slice(0, 120)} is neither.`);
     await tab.view.webContents.loadURL(target ? target.href : HOME).catch(() => undefined);
     this.onChange();
     return this.status(threadId);
@@ -133,7 +133,7 @@ export class Browsers {
   }
 
   async navigate(threadId: string, action: Navigation): Promise<BrowserStatus> {
-    if (!NAVIGATIONS.includes(action)) throw new Error(`Emma's browser has no "${String(action).slice(0, 32)}" navigation.`);
+    if (!NAVIGATIONS.includes(action)) throw new Error(`Shinbo's browser has no "${String(action).slice(0, 32)}" navigation.`);
     const session = this.session(threadId);
     if (action === "close") {
       for (const tab of session.tabs) this.destroyTab(session, tab);
@@ -200,8 +200,8 @@ export class Browsers {
     for (const session of this.sessions.values()) {
       for (const tab of session.tabs) this.destroyTab(session, tab);
       session.tabs = [];
+      this.forget(session);
     }
-    this.sessions.clear();
   }
 
   private session(threadId: string): Session {
@@ -299,9 +299,9 @@ export class Browsers {
 
   private async pin(session: Session, tab: Tab) {
     const port = await this.cdpPort();
-    if (port === null) throw new Error("Emma could not open a debugging port for its browser, so the agent cannot drive it.");
+    if (port === null) throw new Error("Shinbo could not open a debugging port for its browser, so the agent cannot drive it.");
     session.connected ??= this.exec(session, ["connect", String(port)])
-      .then((ran) => attached(ran, `connect to Emma's browser on port ${port}`))
+      .then((ran) => attached(ran, `connect to Shinbo's browser on port ${port}`))
       .catch((error: unknown) => {
         session.connected = undefined;
         throw error;
@@ -309,7 +309,7 @@ export class Browsers {
     await session.connected;
     const targetId = (tab.targetId ??= await targetOf(tab));
     if (session.pinned === targetId) return;
-    attached(await this.exec(session, ["tab", targetId, "--pin-tab"]), "pin itself to the tab in Emma's browser pane");
+    attached(await this.exec(session, ["tab", targetId, "--pin-tab"]), "pin itself to the tab in Shinbo's browser pane");
     session.pinned = targetId;
   }
 
@@ -327,7 +327,7 @@ export class Browsers {
 
   private async exec(session: Session, argv: readonly string[]): Promise<Ran> {
     const binary = await this.binary();
-    if (!binary) throw new Error(`agent-browser is not installed, so the agent cannot drive Emma's browser. The pane still works. Install it by running: ${INSTALL_COMMAND}`);
+    if (!binary) throw new Error(`agent-browser is not installed, so the agent cannot drive Shinbo's browser. The pane still works. Install it by running: ${INSTALL_COMMAND}`);
     return capture(binary, ["--session", session.name, ...argv], this.loginPath ?? process.env.PATH ?? "");
   }
 
@@ -365,7 +365,7 @@ async function targetOf(tab: Tab): Promise<string> {
   try {
     const info = await contents.debugger.sendCommand("Target.getTargetInfo") as { targetInfo?: { targetId?: unknown } };
     const id = info.targetInfo?.targetId;
-    if (typeof id !== "string" || !/^[0-9A-F]{8,}$/i.test(id)) throw new Error("Emma could not identify its browser view to the agent.");
+    if (typeof id !== "string" || !/^[0-9A-F]{8,}$/i.test(id)) throw new Error("Shinbo could not identify its browser view to the agent.");
     return id;
   } finally {
     if (contents.debugger.isAttached()) contents.debugger.detach();
@@ -383,7 +383,7 @@ function whole(bounds: BrowserBounds, zoom: number): BrowserBounds {
 }
 
 function sessionName(threadId: string): string {
-  return `emma-${threadId.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, MAX_SESSION_CHARS)}`;
+  return `shinbo-${threadId.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, MAX_SESSION_CHARS)}`;
 }
 
 function bounded(value: string): string {

@@ -19,7 +19,7 @@ test("the markdown file is the plan, and reading it back gives the plan again", 
   ]);
   const markdown = renderPlan(before);
   assert.deepEqual(parsePlan("ship-it", markdown), before);
-  // And again, so a rewrite of an already-rendered file is stable.
+
   assert.equal(renderPlan(parsePlan("ship-it", markdown)), markdown);
 });
 
@@ -31,8 +31,8 @@ test("the plan remembers which thread's inspector it belongs in", () => {
   assert.equal(parsed.threadId, "thread-7");
   assert.equal(parsed.goal, "Get the thing out.", "the thread line is not swallowed into the goal");
   assert.equal(parsePlan("ship-it", "# Ship it\n\nJust a goal.\n").threadId, undefined);
-  // A subagent rewriting its own plan must not move it into a sub thread nobody
-  // is looking at, so the thread that wrote it keeps it.
+
+
   assert.equal(mergePlan(owned, { ...owned, threadId: "sub-thread" }).threadId, "thread-7");
 });
 
@@ -44,8 +44,8 @@ test("a hand-mangled file loses structure, never everything", () => {
   assert.equal(parsed.steps[0].status, "todo", "an unreadable status falls back rather than throwing");
   assert.deepEqual(parsed.steps[0].needs, [], "a step cannot wait on itself or on something absent");
   assert.deepEqual(parsed.steps[0].tasks, [{ text: "did it", done: true }]);
-  // A heading that is not `## <id> · <title>` is not a step — it stays as the prose
-  // it looks like rather than becoming a subagent nobody wrote a brief for.
+
+
   assert.equal(parsed.steps[0].brief, "free prose\n\n## STEP TWO");
 });
 
@@ -53,7 +53,7 @@ test("a row of the graph is one wave, and the wave is what runs at once", () => 
   const steps = [step("a"), step("b"), step("c", ["a", "b"]), step("d", ["a"])];
   assert.deepEqual(planRows(steps), [["a", "b"], ["c", "d"]]);
   assert.deepEqual(readySteps(plan(steps)).map((item) => item.id), ["a", "b"]);
-  // c waits on both, so finishing only a does not release it.
+
   const half = [step("a", [], { status: "done" }), step("b"), step("c", ["a", "b"]), step("d", ["a"])];
   assert.deepEqual(readySteps(plan(half)).map((item) => item.id), ["b", "d"]);
 });
@@ -66,8 +66,8 @@ test("the drawn graph puts a wave on a row, and folds one too wide to fit", () =
   assert.equal(spots.get("d")!.wave, 1);
   assert.equal(height, PLAN_PAD * 2 + PLAN_ROW);
 
-  // Eight abreast would leave 8px between nodes in this column, so a wide wave
-  // takes two lines — still one wave, still one row apart from the next.
+
+
   const wide = planLayout([Array.from({ length: 8 }, (_, i) => `s${i}`), ["last"]]);
   assert.equal(wide.spots.get("s5")!.y + PLAN_ROW, wide.spots.get("s6")!.y);
   assert.equal(wide.spots.get("s6")!.wave, 0, "the fold is a line, not a new wave");
@@ -122,7 +122,7 @@ test("rewriting a plan mid-run keeps what it has already lived through", () => {
   assert.deepEqual(merged.steps[0].tasks.map((task) => task.done), [true, false], "ticks survive by text, new tasks start unticked");
   assert.equal(merged.steps[1].status, "failed");
   assert.equal(merged.steps[2].status, "todo");
-  // A status the rewrite states outright still wins over the old one.
+
   assert.equal(mergePlan(before, plan([step("step-2", [], { status: "done" })])).steps[0].status, "done");
 });
 
@@ -198,7 +198,7 @@ test("the tool refuses a call it could only half-do", () => {
 });
 
 test("a whole wave ticking the same file at once loses nothing", async () => {
-  const root = path.join(tmpdir(), `emma-plans-${randomUUID()}`);
+  const root = path.join(tmpdir(), `shinbo-plans-${randomUUID()}`);
   try {
     const plan = await savePlan(root, {
       title: "Ship the planner", goal: "Get it out.",
@@ -211,8 +211,8 @@ test("a whole wave ticking the same file at once loses nothing", async () => {
     const twin = await savePlan(root, { title: "Ship the planner", goal: "", steps: [step("s")] });
     assert.notEqual(twin.id, plan.id, "a second plan of the same name gets its own file");
 
-    // What a wave actually does: several subagents editing one file with awaits in
-    // between. Without the queue in plans.ts these are lost updates.
+
+
     const tick = (id: string, at: number) => editPlan(root, plan.id, (current) => ({
       ...current,
       steps: current.steps.map((item) => item.id === id ? { ...item, tasks: item.tasks.map((task, index) => index === at ? { ...task, done: true } : task) } : item),
@@ -245,8 +245,8 @@ test("a rewrite records what it changed, and the file is where that is kept", ()
   assert.deepEqual(after.revisions, [{ at: "2026-08-24T09:00:00Z", steps: 3, added: ["verify"], removed: ["drop"], rewritten: ["survey"] }]);
   assert.deepEqual(parsePlan("ship-it", renderPlan(after)).revisions, after.revisions);
   assert.equal(renderPlan(parsePlan("ship-it", renderPlan(after))), renderPlan(after));
-  // A plan that was never rewritten carries no revisions at all, so the round
-  // trip of an untouched plan is still the plan.
+
+
   assert.equal(parsePlan("ship-it", renderPlan(before)).revisions, undefined);
 });
 

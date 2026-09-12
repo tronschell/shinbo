@@ -13,10 +13,10 @@ import type { Block } from "./runs";
 import { plural } from "./plural";
 import { reasonText } from "./errors";
 
-const FOLDERS_KEY = "emma.threadFolders.v1";
-const MODES_KEY = "emma.threadModes.v1";
-const USES_KEY = "emma.threadContextUses.v2";
-const BREAKDOWN_KEY = "emma.threadContextBreakdown.v1";
+const FOLDERS_KEY = "shinbo.threadFolders.v1";
+const MODES_KEY = "shinbo.threadModes.v1";
+const USES_KEY = "shinbo.threadContextUses.v2";
+const BREAKDOWN_KEY = "shinbo.threadContextBreakdown.v1";
 
 export function threadFolderMap(): Record<string, string[]> {
   try {
@@ -31,7 +31,7 @@ export function threadFolders(threadId: string): string[] {
 
 export function setThreadFolders(threadId: string, ids: string[]): void {
   localStorage.setItem(FOLDERS_KEY, JSON.stringify({ ...threadFolderMap(), [threadId]: ids.slice(0, 1) }));
-  dispatchEvent(new Event("emma-thread-folders-changed"));
+  dispatchEvent(new Event("shinbo-thread-folders-changed"));
 }
 
 function storeEvicting(prefix: string, threadId: string, text: string): void {
@@ -41,7 +41,7 @@ function storeEvicting(prefix: string, threadId: string, text: string): void {
   write();
 }
 
-const BLOCKS_KEY = "emma.threadBlocks.v1.";
+const BLOCKS_KEY = "shinbo.threadBlocks.v1.";
 const KEPT_TURNS = 40;
 const KEPT_TEXT = 8 * 1024;
 const KEPT_BYTES = 512 * 1024;
@@ -81,7 +81,7 @@ export function rememberBlocks(threadId: string, turns: Record<string, Block[]>)
 
 const PICK_KINDS = new Set(["file", "note", "artifact", "attachment", "terminal", "diff", "visual", "component"]);
 
-const ATTACHED_KEY = "emma.threadAttachments.v1.";
+const ATTACHED_KEY = "shinbo.threadAttachments.v1.";
 const KEPT_ATTACHED_TURNS = 60;
 const KEPT_ATTACHED_BYTES = 1024 * 1024;
 
@@ -137,11 +137,14 @@ export function turnAttachments(threadId: string, messages: Message[]): Record<n
   return byIndex;
 }
 
-const DRAFT_KEY = "emma.threadDraft.v1.";
+const DRAFT_KEY = "shinbo.threadDraft.v1.";
+const unsavedDrafts = new Map<string, ComposerDraft>();
 
 export type ComposerDraft = { text: string; picks: ContextPick[] };
 
 export function threadDraft(threadId: string): ComposerDraft {
+  const unsaved = unsavedDrafts.get(threadId);
+  if (unsaved) return unsaved;
   try {
     const stored = JSON.parse(localStorage.getItem(DRAFT_KEY + threadId) ?? "{}") as Partial<ComposerDraft>;
     const picks = Array.isArray(stored.picks) ? stored.picks.filter((pick) => !!pick && PICK_KINDS.has((pick as ContextPick).kind)) : [];
@@ -149,10 +152,17 @@ export function threadDraft(threadId: string): ComposerDraft {
   } catch { return { text: "", picks: [] }; }
 }
 
-export function setThreadDraft(threadId: string, draft: ComposerDraft): void {
-  if (!threadId) return;
-  if (!draft.text && !draft.picks.length) { localStorage.removeItem(DRAFT_KEY + threadId); return; }
-  storeEvicting(DRAFT_KEY, threadId, JSON.stringify(draft));
+export function setThreadDraft(threadId: string, draft: ComposerDraft): boolean {
+  if (!threadId) return true;
+  try {
+    if (!draft.text && !draft.picks.length) localStorage.removeItem(DRAFT_KEY + threadId);
+    else localStorage.setItem(DRAFT_KEY + threadId, JSON.stringify(draft));
+    unsavedDrafts.delete(threadId);
+    return true;
+  } catch {
+    unsavedDrafts.set(threadId, draft);
+    return false;
+  }
 }
 
 function allModes(): Record<string, string> {
@@ -171,7 +181,7 @@ export function setThreadMode(threadId: string, mode: PermissionMode): void {
   localStorage.setItem(MODES_KEY, JSON.stringify({ ...allModes(), [threadId]: mode }));
 }
 
-const REVIEWS_KEY = "emma.threadReview.v1";
+const REVIEWS_KEY = "shinbo.threadReview.v1";
 
 function allReviews(): Record<string, boolean> {
   try {
@@ -188,8 +198,8 @@ export function setThreadReview(threadId: string, review: boolean): void {
   localStorage.setItem(REVIEWS_KEY, JSON.stringify({ ...allReviews(), [threadId]: review }));
 }
 
-const OVERLAY_MODE_KEY = "emma.overlayMode.v2";
-const POISONED_OVERLAY_MODE_KEY = "emma.overlayMode.v1";
+const OVERLAY_MODE_KEY = "shinbo.overlayMode.v2";
+const POISONED_OVERLAY_MODE_KEY = "shinbo.overlayMode.v1";
 
 function carriedOverlayMode(): string | null {
   const legacy = localStorage.getItem(POISONED_OVERLAY_MODE_KEY);
@@ -208,15 +218,25 @@ export function setOverlayMode(mode: PermissionMode): void {
   localStorage.setItem(OVERLAY_MODE_KEY, mode);
 }
 
-function allUses(): Record<string, ContextUse[]> {
-  try {
-    const stored = JSON.parse(localStorage.getItem(USES_KEY) ?? "{}") as Record<string, unknown>;
-    return Object.fromEntries(Object.entries(stored).filter(([, value]) => Array.isArray(value))) as Record<string, ContextUse[]>;
-  } catch { return {}; }
+function storedMap<T>(key: string, parse: (text: string) => Record<string, T>): () => Record<string, T> {
+  let cached: { text: string; value: Record<string, T> } | undefined;
+  return () => {
+    try {
+      const text = localStorage.getItem(key) ?? "{}";
+      if (cached?.text !== text) cached = { text, value: parse(text) };
+      return cached.value;
+    } catch { return {}; }
+  };
 }
 
+const allUses = storedMap(USES_KEY, (text) => {
+  const stored = JSON.parse(text) as Record<string, unknown>;
+  return Object.fromEntries(Object.entries(stored).filter(([, value]) => Array.isArray(value))) as Record<string, ContextUse[]>;
+});
+const NO_USES: ContextUse[] = [];
+
 export function threadUses(threadId: string): ContextUse[] {
-  return allUses()[threadId] ?? [];
+  return allUses()[threadId] ?? NO_USES;
 }
 
 export function recordUses(threadId: string, uses: Omit<ContextUse, "turns">[]): void {
@@ -224,7 +244,7 @@ export function recordUses(threadId: string, uses: Omit<ContextUse, "turns">[]):
   localStorage.setItem(USES_KEY, JSON.stringify({ ...allUses(), [threadId]: mergeUses(threadUses(threadId), uses) }));
 }
 
-const CLEARED_KEY = "emma.threadCleared.v1";
+const CLEARED_KEY = "shinbo.threadCleared.v1";
 
 function allCleared(): Record<string, number> {
   try {
@@ -242,7 +262,7 @@ export function markCleared(threadId: string, at: number): void {
   localStorage.setItem(USES_KEY, JSON.stringify({ ...allUses(), [threadId]: [] }));
 }
 
-const EXPERIMENTS_KEY = "emma.threadExperiments.v1";
+const EXPERIMENTS_KEY = "shinbo.threadExperiments.v1";
 
 export interface ExperimentTally {
   savedTokens: number;
@@ -255,17 +275,15 @@ export const NO_EXPERIMENTS: ExperimentTally = { savedTokens: 0, addedTokens: 0,
 
 const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0);
 
-function allExperiments(): Record<string, ExperimentTally> {
-  try {
-    const stored = JSON.parse(localStorage.getItem(EXPERIMENTS_KEY) ?? "{}") as Record<string, Partial<ExperimentTally>>;
-    return Object.fromEntries(Object.entries(stored).map(([threadId, tally]) => [threadId, {
-      savedTokens: number(tally?.savedTokens),
-      addedTokens: number(tally?.addedTokens),
-      prunedResults: number(tally?.prunedResults),
-      reinjections: number(tally?.reinjections),
-    }]));
-  } catch { return {}; }
-}
+const allExperiments = storedMap(EXPERIMENTS_KEY, (text) => {
+  const stored = JSON.parse(text) as Record<string, Partial<ExperimentTally>>;
+  return Object.fromEntries(Object.entries(stored).map(([threadId, tally]) => [threadId, {
+    savedTokens: number(tally?.savedTokens),
+    addedTokens: number(tally?.addedTokens),
+    prunedResults: number(tally?.prunedResults),
+    reinjections: number(tally?.reinjections),
+  }]));
+});
 
 export function threadExperiments(threadId: string): ExperimentTally {
   return allExperiments()[threadId] ?? NO_EXPERIMENTS;
@@ -306,19 +324,17 @@ const PREFIX_ROWS:{ kind: ContextUse["kind"]; label: string; of: keyof Omit<Cont
   { kind: "memory", label: "Memory files", of: "memoryBytes", source: "memory" },
 ];
 
-function allBreakdowns(): Record<string, ContextBreakdown> {
-  try {
-    const stored = JSON.parse(localStorage.getItem(BREAKDOWN_KEY) ?? "{}") as Record<string, Partial<ContextBreakdown> | undefined>;
-    return Object.fromEntries(Object.entries(stored).map(([threadId, parts]) => [threadId, {
-      systemPromptBytes: number(parts?.systemPromptBytes),
-      systemToolsBytes: number(parts?.systemToolsBytes),
-      mcpToolsBytes: number(parts?.mcpToolsBytes),
-      skillsBytes: number(parts?.skillsBytes),
-      memoryBytes: number(parts?.memoryBytes),
-      ...(parts?.compacted && number(parts.compacted.at) > 0 ? { compacted: { at: number(parts.compacted.at), historyChars: number(parts.compacted.historyChars) } } : {}),
-    }]));
-  } catch { return {}; }
-}
+const allBreakdowns = storedMap(BREAKDOWN_KEY, (text) => {
+  const stored = JSON.parse(text) as Record<string, Partial<ContextBreakdown> | undefined>;
+  return Object.fromEntries(Object.entries(stored).map(([threadId, parts]) => [threadId, {
+    systemPromptBytes: number(parts?.systemPromptBytes),
+    systemToolsBytes: number(parts?.systemToolsBytes),
+    mcpToolsBytes: number(parts?.mcpToolsBytes),
+    skillsBytes: number(parts?.skillsBytes),
+    memoryBytes: number(parts?.memoryBytes),
+    ...(parts?.compacted && number(parts.compacted.at) > 0 ? { compacted: { at: number(parts.compacted.at), historyChars: number(parts.compacted.historyChars) } } : {}),
+  }]));
+});
 
 export function threadBreakdown(threadId: string): ContextBreakdown {
   return allBreakdowns()[threadId] ?? NO_BREAKDOWN;
@@ -365,8 +381,8 @@ export const SEGMENT_NOTES: Record<SegmentSource, string> = {
   turn: "The turn in flight, span by span: each model request and tool call, sized by what it left in the window.",
   attachment: "One attached item. This row is the whole of it.",
   residual: "What the provider billed for this turn minus everything measured above — tool results, retries and whatever the harness added mid-turn. Not itemised.",
-  prompt: "The harness instructions and Emma's tool guidance, sent as one blob rather than a list.",
-  tools: "Emma's tools, as switched on in Settings → Tools. The harness adds its own file and terminal tools to this row without naming them.",
+  prompt: "The harness instructions and Shinbo's tool guidance, sent as one blob rather than a list.",
+  tools: "Shinbo's tools, as switched on in Settings → Tools. The harness adds its own file and terminal tools to this row without naming them.",
   mcp: "MCP servers whose tool catalogue rides every request.",
   skills: "Skills mirrored to the harness. A skill is loaded in full only when it fires; the row is what its description costs every turn.",
   memory: "Memory files read into every request.",
@@ -384,31 +400,31 @@ function toolItems(): SegmentItem[] {
 export async function segmentItems(source: SegmentSource, messages: Message[], threadId: string): Promise<SegmentItem[]> {
   if (source === "messages") {
     return messages.slice(-MAX_SEGMENT_ITEMS).map((message, index) => ({
-      name: `${index + 1}. ${message.role === "user" ? "You" : message.role === "system" ? "Notice" : "Emma"}`,
+      name: `${index + 1}. ${message.role === "user" ? "You" : message.role === "system" ? "Notice" : "Shinbo"}`,
       detail: message.content.replace(/\s+/g, " ").slice(0, PREVIEW_CHARS).trim(),
       chars: message.content.length,
     }));
   }
   if (source === "turn") {
-    const spans = (await window.emma.listSpans())[threadId] ?? [];
+    const spans = (await window.shinbo.listSpans())[threadId] ?? [];
     return spans
       .filter((span) => span.kind !== "agent")
       .map((span) => ({ name: span.name, detail: span.kind, chars: span.tokens === undefined ? undefined : Math.round(span.tokens * CHARS_PER_TOKEN) }));
   }
   if (source === "skills") {
-    const skills = await window.emma.searchImportedSkills({ query: "", limit: 64 });
+    const skills = await window.shinbo.searchImportedSkills({ query: "", limit: 64 });
     return skills.map((skill) => ({ name: skill.name, detail: `from ${skill.source}` }));
   }
   if (source === "mcp") {
-    const servers = await window.emma.listImportedMcpServers();
+    const servers = await window.shinbo.listImportedMcpServers();
     return servers.map((server) => ({ name: server.name, detail: `${server.command}${server.argCount ? ` · ${server.argCount} ${plural(server.argCount, "argument")}` : ""}` }));
   }
   if (source === "tools") {
-    const written = await window.emma.listToolTargets().then((targets) => targets.written).catch(() => []);
+    const written = await window.shinbo.listToolTargets().then((targets) => targets.written).catch(() => []);
     return [...toolItems(), ...written.map((tool) => ({ name: tool.name, detail: tool.source }))];
   }
   if (source === "memory") {
-    const notes = await window.emma.listMemories();
+    const notes = await window.shinbo.listMemories();
     return notes.map((note) => ({ name: note.path, chars: note.bytes }));
   }
   return [];
@@ -486,7 +502,7 @@ export function buildLedger(thread: Thread | undefined, uses: ContextUse[], cont
   };
 }
 
-const TAGS_KEY = "emma.threadTags.v1";
+const TAGS_KEY = "shinbo.threadTags.v1";
 
 export interface ThreadTag { tag: string; auto: boolean }
 
@@ -507,10 +523,10 @@ export function setThreadTag(threadId: string, tag: string, auto = false): void 
   if (clean) tags[threadId] = { tag: clean, auto };
   else delete tags[threadId];
   localStorage.setItem(TAGS_KEY, JSON.stringify(tags));
-  dispatchEvent(new Event("emma-thread-tags-changed"));
+  dispatchEvent(new Event("shinbo-thread-tags-changed"));
 }
 
-const PINS_KEY = "emma.threadPins.v1";
+const PINS_KEY = "shinbo.threadPins.v1";
 
 function storedThreadIds(key: string): string[] {
   try {
@@ -526,10 +542,10 @@ export function pinnedThreads(): string[] {
 export function setThreadPinned(threadId: string, pinned: boolean): void {
   const kept = pinnedThreads().filter((id) => id !== threadId);
   localStorage.setItem(PINS_KEY, JSON.stringify(pinned ? [threadId, ...kept] : kept));
-  dispatchEvent(new Event("emma-thread-pins-changed"));
+  dispatchEvent(new Event("shinbo-thread-pins-changed"));
 }
 
-const UNREAD_KEY = "emma.threadUnread.v1";
+const UNREAD_KEY = "shinbo.threadUnread.v1";
 
 export function unreadThreads(): string[] {
   return storedThreadIds(UNREAD_KEY);
@@ -538,10 +554,10 @@ export function unreadThreads(): string[] {
 export function setThreadUnread(threadId: string, unread: boolean): void {
   const kept = unreadThreads().filter((id) => id !== threadId);
   localStorage.setItem(UNREAD_KEY, JSON.stringify(unread ? [threadId, ...kept] : kept));
-  dispatchEvent(new Event("emma-thread-unread-changed"));
+  dispatchEvent(new Event("shinbo-thread-unread-changed"));
 }
 
-const SEEN_RUNS_KEY = "emma.threadSeenRuns.v1";
+const SEEN_RUNS_KEY = "shinbo.threadSeenRuns.v1";
 
 export function seenRuns(): Record<string, string> {
   try {
@@ -626,7 +642,7 @@ export async function buildAttachedContext(folders: FolderGrant[], folderIds: st
       const folder = folders.find((item) => item.id === pick.folderId);
       const label = `${folder?.name ?? ""}/${pick.path}`;
       try {
-        const file = await window.emma.readFolderFile({ folderId: pick.folderId, path: pick.path });
+        const file = await window.shinbo.readFolderFile({ folderId: pick.folderId, path: pick.path });
         sections.push({ heading: `File ${folder?.name ?? ""}/${file.path}`, body: file.missing ? "That file is no longer on disk." : file.text, label });
       } catch (reason) {
         sections.push({ heading: `File ${label}`, body: `Could not be read: ${reasonText(reason)}`, label });
@@ -635,7 +651,7 @@ export async function buildAttachedContext(folders: FolderGrant[], folderIds: st
     }
     if (pick.kind === "attachment") {
       try {
-        const file = await window.emma.readAttachment(pick.id);
+        const file = await window.shinbo.readAttachment(pick.id);
         if (file.text === undefined) images.push(pick.id);
         sections.push(file.text === undefined
           ? { heading: `Image ${file.name}`, body: "The user attached this image to this message.", label: pick.name }
@@ -647,7 +663,7 @@ export async function buildAttachedContext(folders: FolderGrant[], folderIds: st
     }
     if (pick.kind === "artifact") {
       try {
-        const artifact = await window.emma.readArtifact(pick.id);
+        const artifact = await window.shinbo.readArtifact(pick.id);
         sections.push({ heading: `Artifact ${artifact.title}`, body: artifact.content, label: pick.title });
       } catch (reason) {
         sections.push({ heading: `Artifact ${pick.title}`, body: `Could not be read: ${reasonText(reason)}`, label: pick.title });
@@ -665,7 +681,7 @@ export async function buildAttachedContext(folders: FolderGrant[], folderIds: st
     }
     if (pick.kind === "component") {
       try {
-        const built = await window.emma.readComponent(pick.id);
+        const built = await window.shinbo.readComponent(pick.id);
         sections.push({ heading: `The component "${built.title}" (${built.id}), which you built into ${COMPONENT_ZONE_LABEL}${built.expands ? " and which opens full screen" : ""}${built.variables?.length ? `, reading ${built.variables.join(", ")}` : ""}`, body: built.code, label: pick.title });
       } catch (reason) {
         sections.push({ heading: `Component ${pick.title}`, body: `Could not be read: ${reasonText(reason)}`, label: pick.title });
@@ -678,7 +694,7 @@ export async function buildAttachedContext(folders: FolderGrant[], folderIds: st
       continue;
     }
     try {
-      const text = await window.emma.readNote(pick.path);
+      const text = await window.shinbo.readNote(pick.path);
       sections.push({ heading: `Note ${pick.title}`, body: text, label: pick.title });
     } catch (reason) {
       sections.push({ heading: `Note ${pick.title}`, body: `Could not be read: ${reasonText(reason)}`, label: pick.title });
@@ -691,10 +707,10 @@ export async function buildAttachedContext(folders: FolderGrant[], folderIds: st
   };
 }
 
-export const PICK_CONTEXT_EVENT = "emma:pick-context";
+export const PICK_CONTEXT_EVENT = "shinbo:pick-context";
 export const pickIntoComposer = (pick: ContextPick) => dispatchEvent(new CustomEvent(PICK_CONTEXT_EVENT, { detail: pick }));
 
-const MODEL_SWITCH_KEY = "emma.threadModelSwitches.v1";
+const MODEL_SWITCH_KEY = "shinbo.threadModelSwitches.v1";
 
 export interface ModelSwitch {
   at: number;

@@ -109,7 +109,7 @@ const runtime = await createFxTerminal({
   backend: "wasm",
   wasm: await readFile(wasmPath),
   terminal,
-  env: { EMMA_PROVIDER_API_KEY: "term-test-key" },
+  env: { SHINBO_PROVIDER_API_KEY: "term-test-key" },
   fetch: mockFetch,
   configStore: {
     get(configId) { return persistedConfig.get(configId) ?? null; },

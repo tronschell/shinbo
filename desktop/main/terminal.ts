@@ -6,6 +6,8 @@ import { MAX_TERMINAL_COLUMNS, MAX_TERMINAL_SCROLLBACK, MAX_TERMINAL_TABS, termi
 import { isWindows, shellArguments, shellBinary, terminateProcessTree } from "./platform";
 
 const SIGKILL_AFTER_MS = 2000;
+const OUTPUT_BATCH_MS = 16;
+const OUTPUT_BATCH_BYTES = 64 * 1024;
 
 type Entry = TerminalTab & {
   child: ChildProcess;
@@ -13,6 +15,9 @@ type Entry = TerminalTab & {
   chunkStart: number;
   bytes: number;
   written: number;
+  pending: Buffer[];
+  pendingBytes: number;
+  flushTimer?: ReturnType<typeof setTimeout>;
 };
 
 const snapshot = (entry: Entry): TerminalTab => ({
@@ -45,9 +50,9 @@ export class Terminals {
     const columns = size(request.columns, 80);
     const rows = size(request.rows, 24);
     const harness = request.cli ? cliHarness(request.cli) : undefined;
-    if (request.cli && !harness) throw new Error("Emma does not know that CLI.");
+    if (request.cli && !harness) throw new Error("Shinbo does not know that CLI.");
     const plan = request.signIn ? cliPlan(request.signIn) : undefined;
-    if (request.signIn && !plan) throw new Error("Emma does not know that plan.");
+    if (request.signIn && !plan) throw new Error("Shinbo does not know that plan.");
     const shell = isWindows ? shellBinary() : process.env.SHELL || "/bin/zsh";
     const command = plan?.signIn ?? harness?.bin;
     const windowsInteractive = /(?:pwsh|powershell)\.exe$/i.test(shell) ? ["-NoLogo"] : ["/d"];
@@ -71,6 +76,8 @@ export class Terminals {
       chunkStart: 0,
       bytes: 0,
       written: 0,
+      pending: [],
+      pendingBytes: 0,
     };
     this.tabs.set(entry.id, entry);
     child.stdin?.on("error", () => undefined);
@@ -80,6 +87,7 @@ export class Terminals {
       this.take(entry, Buffer.from(`\r\n[terminal could not start: ${reason.message}]\r\n`));
       this.ended(entry, null);
     });
+    child.on("close", () => this.flush(entry));
     child.on("exit", (code) => {
       this.take(entry, Buffer.from(`\r\n[session ended${code ? ` — exit ${code}` : ""}]\r\n`));
       this.ended(entry, code ?? null);
@@ -104,6 +112,7 @@ export class Terminals {
     const entry = this.tabs.get(id);
     if (!entry) return;
     this.tabs.delete(id);
+    this.flush(entry);
     if (entry.running) this.stop(entry);
     this.onChange();
   }
@@ -114,12 +123,16 @@ export class Terminals {
 
   buffer(id: string): { data: Buffer; at: number } {
     const entry = this.tabs.get(id);
-    return entry ? { data: Buffer.concat(entry.chunks.slice(entry.chunkStart) as Buffer[], entry.bytes), at: entry.written } : { data: Buffer.alloc(0), at: 0 };
+    if (!entry) return { data: Buffer.alloc(0), at: 0 };
+    const saved = { data: Buffer.concat(entry.chunks.slice(entry.chunkStart) as Buffer[], entry.bytes), at: entry.written };
+    this.flush(entry);
+    return saved;
   }
 
   stopAll(): Promise<void> {
     const stopping = [...this.tabs.values()].filter((entry) => entry.running).map((entry) => this.stop(entry));
     return Promise.all(stopping).then(() => {
+      for (const entry of this.tabs.values()) this.flush(entry);
       this.tabs.clear();
     });
   }
@@ -135,7 +148,13 @@ export class Terminals {
       else entry.child.kill("SIGHUP");
       if (entry.child.exitCode !== null || entry.child.signalCode !== null) return;
       await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, SIGKILL_AFTER_MS);
+        const done = () => {
+          clearTimeout(timer);
+          entry.child.off("exit", done);
+          resolve();
+        };
+        const timer = setTimeout(done, SIGKILL_AFTER_MS);
+        entry.child.once("exit", done);
         if (!isWindows) timer.unref();
       });
       if (entry.child.exitCode !== null || entry.child.signalCode !== null) return;
@@ -148,6 +167,7 @@ export class Terminals {
   }
 
   private ended(entry: Entry, code: number | null) {
+    this.flush(entry);
     if (!entry.running) return;
     entry.running = false;
     entry.exitCode = code;
@@ -155,6 +175,7 @@ export class Terminals {
   }
 
   private take(entry: Entry, chunk: Buffer) {
+    if (!this.tabs.has(entry.id)) return;
     entry.chunks.push(chunk);
     entry.bytes += chunk.length;
     entry.written += chunk.length;
@@ -166,6 +187,22 @@ export class Terminals {
       entry.chunks = entry.chunks.slice(entry.chunkStart);
       entry.chunkStart = 0;
     }
-    this.onData(entry.id, chunk, entry.written);
+    entry.pending.push(chunk);
+    entry.pendingBytes += chunk.length;
+    if (entry.pendingBytes >= OUTPUT_BATCH_BYTES) this.flush(entry);
+    else if (!entry.flushTimer) {
+      entry.flushTimer = setTimeout(() => this.flush(entry), OUTPUT_BATCH_MS);
+      entry.flushTimer.unref();
+    }
+  }
+
+  private flush(entry: Entry) {
+    clearTimeout(entry.flushTimer);
+    entry.flushTimer = undefined;
+    if (!entry.pendingBytes) return;
+    const data = Buffer.concat(entry.pending, entry.pendingBytes);
+    entry.pending = [];
+    entry.pendingBytes = 0;
+    this.onData(entry.id, data, entry.written);
   }
 }

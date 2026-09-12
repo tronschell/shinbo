@@ -87,7 +87,7 @@ int check_engine() {
 }
 
 int transcribe(const std::wstring& file) {
-    const auto extended_file = emma_windows_path::extended_length(file);
+    const auto extended_file = shinbo_windows_path::extended_length(file);
     if (extended_file.empty() || GetFileAttributesW(extended_file.c_str()) == INVALID_FILE_ATTRIBUTES) return fail("That recording is gone.");
     ISpStream* stream = nullptr;
     HRESULT result = CoCreateInstance(CLSID_SpStream, nullptr, CLSCTX_INPROC_SERVER, IID_ISpStream, reinterpret_cast<void**>(&stream));
@@ -156,12 +156,12 @@ int transcribe(const std::wstring& file) {
 }
 
 int self_test() {
-    const auto wide = wide_from_utf8("Emma speech");
-    if (wide != L"Emma speech" || utf8_from_wide(wide.c_str()) != "Emma speech"
-        || emma_windows_path::extended_length(L"C:/Users/Emma/recording.wav") != L"\\\\?\\C:\\Users\\Emma\\recording.wav"
-        || emma_windows_path::extended_length(L"\\\\server\\share\\recording.wav") != L"\\\\?\\UNC\\server\\share\\recording.wav"
-        || !emma_windows_path::extended_length(L"relative.wav").empty()
-        || emma_windows_path::without_extended_length(L"\\\\?\\UNC\\server\\share\\recording.wav") != L"\\\\server\\share\\recording.wav") return 1;
+    const auto wide = wide_from_utf8("Shinbo speech");
+    if (wide != L"Shinbo speech" || utf8_from_wide(wide.c_str()) != "Shinbo speech"
+        || shinbo_windows_path::extended_length(L"C:/Users/Shinbo/recording.wav") != L"\\\\?\\C:\\Users\\Shinbo\\recording.wav"
+        || shinbo_windows_path::extended_length(L"\\\\server\\share\\recording.wav") != L"\\\\?\\UNC\\server\\share\\recording.wav"
+        || !shinbo_windows_path::extended_length(L"relative.wav").empty()
+        || shinbo_windows_path::without_extended_length(L"\\\\?\\UNC\\server\\share\\recording.wav") != L"\\\\server\\share\\recording.wav") return 1;
     return 0;
 }
 
@@ -174,7 +174,7 @@ int wmain(int argc, wchar_t** argv) {
     } else if (argc >= 2) {
         result = transcribe(argv[1]);
     } else {
-        result = fail("usage: emma-transcribe <wav>|--check [locale]");
+        result = fail("usage: shinbo-transcribe <wav>|--check [locale]");
     }
     CoUninitialize();
     return result;

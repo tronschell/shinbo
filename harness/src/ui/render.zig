@@ -38,10 +38,7 @@ pub var green_style: []const u8 = "\x1b[38;5;252m";
 pub var red_style: []const u8 = "\x1b[38;5;252m";
 pub var diff_added_style: []const u8 = "\x1b[38;5;252m";
 pub var diff_removed_style: []const u8 = "\x1b[38;5;252m";
-// The line number and +/- sign carry the only color in an otherwise
-// monochrome diff: green for additions (#30A46C), red for deletions
-// (#E5484D). The line text stays neutral. Truecolor when the terminal
-// supports it, 256-color fallback otherwise.
+
 const diff_added_marker_truecolor = "\x1b[38;2;48;164;108m";
 const diff_removed_marker_truecolor = "\x1b[38;2;229;72;77m";
 const diff_added_marker_fallback = "\x1b[38;5;71m";
@@ -51,7 +48,7 @@ pub var diff_removed_marker_style: []const u8 = diff_removed_marker_fallback;
 pub var approval_button_active_style: []const u8 = "\x1b[48;5;255m\x1b[38;5;235m\x1b[1m";
 pub var approval_button_inactive_style: []const u8 = "\x1b[48;5;239m\x1b[38;5;255m";
 pub var selected_completion_style: []const u8 = "\x1b[1;38;5;255m";
-// Statusbar permissions "auto": a step brighter than the statusline gray.
+
 pub var permission_auto_style: []const u8 = "\x1b[38;5;252m";
 var active_terminal_background: ?TerminalRgb = null;
 
@@ -105,8 +102,6 @@ pub fn initTheme(light: bool, terminal_bg: ?TerminalRgb) void {
         permission_auto_style = "\x1b[38;5;252m";
     }
 
-    // The diff marker green/red reads the same on light and dark, so it is set
-    // once here rather than per-theme.
     if (truecolor_enabled) {
         diff_added_marker_style = diff_added_marker_truecolor;
         diff_removed_marker_style = diff_removed_marker_truecolor;
@@ -115,8 +110,6 @@ pub fn initTheme(light: bool, terminal_bg: ?TerminalRgb) void {
         diff_removed_marker_style = diff_removed_marker_fallback;
     }
 
-    // Delegate bar shade computation to the card module — it owns the logic
-    // that derives a subtle but visible shade from the terminal's actual bg.
     user_message_card.setTruecolor(truecolor_enabled);
     user_message_card.setStyle(light, terminal_bg);
     input_bar_style = user_message_card.user_message_style;
@@ -129,7 +122,6 @@ pub fn themeNeedsUpdate(light: bool, terminal_bg: ?TerminalRgb) bool {
     return current.r != background.r or current.g != background.g or current.b != background.b;
 }
 
-// Explicit theme overrides skip OSC 11, leaving `rgb` null for fallback shading.
 pub const ThemeDetection = theme_detection.Detection;
 pub const TerminalBackground = theme_protocol.Background;
 pub const explicitThemeOverride = theme_detection.explicitThemeOverride;
@@ -173,7 +165,7 @@ pub fn buildInputLineForRow(input: []const u8, cursor: usize, line_index: usize,
 pub fn welcomeMessage(alloc: std.mem.Allocator) ![]u8 {
     return std.fmt.allocPrint(
         alloc,
-        "{s}emma{s}{s} v{s} · Run /help for commands" ++ reset_style ++ "\n\n",
+        "{s}shinbo{s}{s} v{s} · Run /help for commands" ++ reset_style ++ "\n\n",
         .{ subtitle_style, reset_style, dim_style, main.version },
     );
 }
@@ -187,8 +179,6 @@ pub const StatuslineItems = struct {
     session_title: ?[]const u8 = null,
 };
 
-/// Cell budget for the session title segment. The title is capped at 8 words
-/// upstream, so this only bounds pathological single-word titles.
 const max_session_title_cells: usize = 32;
 
 fn compactModelLabel(model: []const u8, out: []u8) []const u8 {
@@ -306,8 +296,6 @@ fn composeWorkspaceIdentity(
         var end: usize = 0;
         if (statusline.git_branch) |branch| {
             if (branch.len > 0) {
-                // Below seven cells, showing fragments of both values is less
-                // useful than retaining the working-directory tail alone.
                 if (width_budget >= 7) {
                     const branch_width = display_width.visibleWidth(branch);
                     const max_branch_width = width_budget - 4;
@@ -648,9 +636,6 @@ test "render width zero emits no row bytes and first cursor column" {
     try std.testing.expectEqual(@as(u16, 1), view.cursor_col);
 }
 
-/// Writes the title to the same file the transcript renders to, so a host
-/// that redirects its output keeps the escape sequence out of the real
-/// stdout. `out` must outlive every call.
 pub fn terminalTitleFor(out: *const std.Io.File) host.TerminalTitle {
     return .{
         .context = @constCast(out),
@@ -723,8 +708,6 @@ test "terminal title writes the label to the caller's output file" {
     var sink = try tmp.dir.createFile(std.testing.io, "terminal-title.log", .{});
     defer sink.close(io_mod.getIo());
 
-    // A host that redirects its output keeps the escape sequence off the
-    // real stdout, which the Zig test runner owns as its protocol channel.
     terminalTitleFor(&sink).set("release notes");
 
     var written_file = try tmp.dir.openFile(io_mod.getIo(), "terminal-title.log", .{});
@@ -861,7 +844,7 @@ test "welcomeMessage shows version and help hint" {
     const message = try welcomeMessage(std.testing.allocator);
     defer std.testing.allocator.free(message);
 
-    try std.testing.expect(std.mem.find(u8, message, "emma") != null);
+    try std.testing.expect(std.mem.find(u8, message, "shinbo") != null);
     try std.testing.expect(std.mem.find(u8, message, main.version) != null);
     try std.testing.expect(std.mem.find(u8, message, "/help") != null);
 }
@@ -873,7 +856,7 @@ test "welcomeMessage keeps only the app name bright" {
 
     const expected = try std.fmt.allocPrint(
         std.testing.allocator,
-        "{s}emma{s}{s} v{s} · Run /help for commands" ++ reset_style ++ "\n\n",
+        "{s}shinbo{s}{s} v{s} · Run /help for commands" ++ reset_style ++ "\n\n",
         .{ subtitle_style, reset_style, dim_style, main.version },
     );
     defer std.testing.allocator.free(expected);

@@ -54,13 +54,13 @@ function notificationEnv(
 ) {
   return {
     HOME: home,
-    EMMA_PROVIDER_API_KEY: "fake-notification-key",
+    SHINBO_PROVIDER_API_KEY: "fake-notification-key",
     FX_GATEWAY_BASE_URL: gateway.baseUrl,
     FX_GATEWAY_CHAT_URL: gateway.chatUrl,
     FX_MODEL: FAKE_GATEWAY_MODEL,
     FX_AUTO_UPGRADE: "0",
-    // Sound behavior under test: skip the harness-wide FX_SOUND=0 default so
-    // the fixture settings and platform default stay authoritative.
+
+
     FX_SOUND: undefined,
     FX_TRACE_LOG: tracePath,
     FX_TRACE_SCOPES: "hooks,notifications",
@@ -319,8 +319,8 @@ test.skipIf(!tmuxAvailable())(
 test.skipIf(!tmuxAvailable())(
   "notifications sound handler runs once when a real permission blocks",
   async () => {
-    // Keep direct interaction sounds off so the raw pane capture isolates the
-    // attention-required transition.
+
+
     const fixture = createNotificationRoot({
       turn_end: false,
       attention_required: true,

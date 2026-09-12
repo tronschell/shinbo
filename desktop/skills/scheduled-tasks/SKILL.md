@@ -33,7 +33,7 @@ when the work branches or has to pass something between steps.
 | `0 9 * * 1` | five cron fields, **UTC** — Mondays at 09:00 |
 | `manual` | only when the user or you run it |
 | `after job-…` | when that task finishes, starting with its variables |
-| `on launch`, `on page-saved` | when Emma raises that app event |
+| `on launch`, `on page-saved` | when Shinbo raises that app event |
 
 A chain of `after` triggers is cut off after three hops, so two tasks that
 trigger each other cannot run forever.
@@ -54,7 +54,7 @@ and `text`.
 - `{{name}}` in ordinary `text` or script `input` becomes that variable;
   `{{last}}` is the last agent answer. An unset variable expands to nothing.
 - A script path is absolute, fixed rather than templated, and inside a folder
-  the user connected to Emma. `.py`, `.js`/`.mjs`/`.cjs`, `.sh` and `.zsh`
+  the user connected to Shinbo. `.py`, `.js`/`.mjs`/`.cjs`, `.sh` and `.zsh`
   have built-in runners; another script must be executable and carry a shebang.
 - A step with no `next` falls through to the node written below it, so a plain
   list of steps needs no wiring. `"next": "end"` finishes the run.

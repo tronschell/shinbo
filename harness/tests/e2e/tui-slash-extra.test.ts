@@ -133,7 +133,7 @@ describe.skipIf(!tmuxAvailable())("tui: credits slash command", () => {
         session = await TmuxSession.create({
           env: {
             HOME: home,
-            EMMA_PROVIDER_API_KEY: "credits-fake-key",
+            SHINBO_PROVIDER_API_KEY: "credits-fake-key",
             FX_E2E_GATEWAY_CREDITS_URL: gateway.url,
           },
           width: 120,
@@ -196,7 +196,7 @@ describe.skipIf(!tmuxAvailable() || CLIPBOARD_PROGRAM === null)("tui: clipboard 
           stderrPath,
           env: {
             HOME: homeDir,
-            EMMA_PROVIDER_API_KEY: "clipboard-fake-key",
+            SHINBO_PROVIDER_API_KEY: "clipboard-fake-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_E2E_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -252,7 +252,7 @@ describe.skipIf(!tmuxAvailable())("tui: active session transitions", () => {
           stderrPath,
           env: {
             HOME: homeDir,
-            EMMA_PROVIDER_API_KEY: "active-clear-fake-key",
+            SHINBO_PROVIDER_API_KEY: "active-clear-fake-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_E2E_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -323,7 +323,7 @@ describe.skipIf(SKIP)("tui: extra slash commands", () => {
           cwd: workDir,
           env: {
             HOME: homeDir,
-            EMMA_PROVIDER_API_KEY: "clear-fake-key",
+            SHINBO_PROVIDER_API_KEY: "clear-fake-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_E2E_GATEWAY_CHAT_URL: gateway.chatUrl,

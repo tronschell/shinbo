@@ -129,7 +129,7 @@ export function GoalView({ thread, busy, reload, onOpenThread }: { thread: Threa
   return <section className="conversation goal-view" aria-label="Goal">
     <header className="thread-bar">
       <h2>Goal</h2>
-      <InfoDot>While a goal is active Emma re-drives this thread turn after turn on her own, and stops when the objective is met with evidence, the same blocker stands {GOAL_BLOCKED_TURNS} turns running, or the token budget runs out.</InfoDot>
+      <InfoDot>While a goal is active Shinbo re-drives this thread turn after turn on her own, and stops when the objective is met with evidence, the same blocker stands {GOAL_BLOCKED_TURNS} turns running, or the token budget runs out.</InfoDot>
       <div className="thread-actions">{goal && <GoalPill status={goal.status} />}</div>
     </header>
     <div className="transcript">
@@ -138,16 +138,16 @@ export function GoalView({ thread, busy, reload, onOpenThread }: { thread: Threa
         <p className="goal-objective">{goal.objective}</p>
         <GoalLedger goal={goal} />
         <div className="goal-controls">
-          {goal.status === "active" && <button type="button" disabled={busy} onClick={() => run(window.emma.updateGoal({ threadId: thread.id, status: "paused" }))}>Pause</button>}
-          {resumable.includes(goal.status) && <button type="button" disabled={busy} onClick={() => run(window.emma.updateGoal({ threadId: thread.id, status: "active" }))}>Resume</button>}
-          {(goal.status === "budgetLimited" || goalTokensLeft(goal) === 0) && <button
+          {goal.status === "active" && <button type="button" disabled={busy} onClick={() => run(window.shinbo.updateGoal({ threadId: thread.id, status: "paused" }))}>Pause</button>}
+          {resumable.includes(goal.status) && goalTokensLeft(goal) > 0 && goal.turns < MAX_GOAL_TURNS && <button type="button" disabled={busy} onClick={() => run(window.shinbo.updateGoal({ threadId: thread.id, status: "active" }))}>Resume</button>}
+          {(goal.status === "budgetLimited" || goalTokensLeft(goal) === 0 || goal.turns >= MAX_GOAL_TURNS) && <button
             type="button"
             className="goal-primary"
             disabled={busy}
-            title={`Grant ${charLabel(DEFAULT_GOAL_TOKEN_BUDGET)} more tokens and put Emma back on it`}
-            onClick={() => run(window.emma.updateGoal({ threadId: thread.id, extraTokens: DEFAULT_GOAL_TOKEN_BUDGET }))}
+            title={`Grant ${charLabel(DEFAULT_GOAL_TOKEN_BUDGET)} more tokens and put Shinbo back on it`}
+            onClick={() => run(window.shinbo.updateGoal({ threadId: thread.id, extraTokens: DEFAULT_GOAL_TOKEN_BUDGET }))}
           >Continue · +{charLabel(DEFAULT_GOAL_TOKEN_BUDGET)}</button>}
-          <button type="button" className="goal-clear" disabled={busy} onClick={() => run(window.emma.clearGoal(thread.id))}>Clear</button>
+          <button type="button" className="goal-clear" disabled={busy} onClick={() => run(window.shinbo.clearGoal(thread.id))}>Clear</button>
         </div>
         {(goal.blockedReason || goal.blockedStreak > 0) && <section className="goal-band goal-blocker">
           <h3>Blocker {Math.min(Math.max(goal.blockedStreak, 1), GOAL_BLOCKED_TURNS)} of {GOAL_BLOCKED_TURNS}</h3>

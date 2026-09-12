@@ -1,29 +1,29 @@
 # Mobile
 
 A paired iPhone drives the same threads this computer does: it sends messages, reads
-the live run, answers the tool permission prompts Emma would otherwise put in
+the live run, answers the tool permission prompts Shinbo would otherwise put in
 front of you, and runs git. The phone app is a separate repository —
-[tronschell/emma-mobile](https://github.com/tronschell/emma-mobile) — and it
-talks to Emma **directly**, over your own network. There is no relay, no
+[tronschell/shinbo-mobile](https://github.com/tronschell/shinbo-mobile) — and it
+talks to Shinbo **directly**, over your own network. There is no relay, no
 Worker to deploy, no account to create, and no traffic through anyone else.
 
 Two things have to be true before a phone can pair:
 
-1. Emma Mobile is installed on the phone.
+1. Shinbo Mobile is installed on the phone.
 2. Both devices are on a network that can reach each other — your
    [Tailscale](https://tailscale.com) tailnet if you have one, the same Wi-Fi
    if you do not.
 
 ## The address
 
-Emma listens on port **47823** and pairs on whichever of this Mac's addresses a
+Shinbo listens on port **47823** and pairs on whichever of this Mac's addresses a
 phone can actually reach, chosen by [`tailnet.ts`](../desktop/main/tailnet.ts):
 
 1. A **Tailscale address** — anything in `100.64.0.0/10`, the CGNAT range
    Tailscale hands its nodes. This is what makes the pairing work from anywhere:
    install Tailscale on the Mac and the phone, sign both into the same account,
    and the address stays valid on cellular, at a hotel, behind carrier NAT.
-   Tailscale does the NAT traversal; Emma never sees it and writes no code for
+   Tailscale does the NAT traversal; Shinbo never sees it and writes no code for
    it.
 2. Otherwise **the LAN address**, which works while both devices are on the same
    Wi-Fi and stops working when you leave.
@@ -32,9 +32,9 @@ Loopback and internal interfaces are skipped — a phone cannot dial them. With 
 address at all, pairing fails with `This Mac has no Tailscale or local network
 address to pair on.`
 
-Nothing about Tailscale is required, configured, or automated by Emma. It is not
+Nothing about Tailscale is required, configured, or automated by Shinbo. It is not
 bundled, not shelled out to, not detected beyond reading the interface list. If
-a `100.x` address is there Emma uses it; if it is not, Emma uses the LAN. **Do
+a `100.x` address is there Shinbo uses it; if it is not, Shinbo uses the LAN. **Do
 not use Tailscale Funnel** — it publishes the port to the open internet, which
 is exactly what this design avoids.
 
@@ -48,8 +48,8 @@ phone is to build it yourself, which needs a Mac with Xcode, Node, and an Apple
 ID signed into Xcode.
 
 ```sh
-git clone https://github.com/tronschell/emma-mobile
-cd emma-mobile
+git clone https://github.com/tronschell/shinbo-mobile
+cd shinbo-mobile
 npm install
 npx expo run:ios --device
 ```
@@ -57,10 +57,10 @@ npx expo run:ios --device
 Expo Go cannot run it: `llama.rn`, `expo-live-activity`, and `expo-camera` are
 native modules, so the build is a real one. Pick your phone when prompted and
 pick your own Apple team when Xcode asks — `app.config.js` reads
-`EMMA_IOS_TEAM_ID` and `EMMA_IOS_BUNDLE_ID` if you would rather set them once:
+`SHINBO_IOS_TEAM_ID` and `SHINBO_IOS_BUNDLE_ID` if you would rather set them once:
 
 ```sh
-EMMA_IOS_TEAM_ID=XXXXXXXXXX npx expo run:ios --device
+SHINBO_IOS_TEAM_ID=XXXXXXXXXX npx expo run:ios --device
 ```
 
 A build signed with a free Apple ID **stops launching after seven days** and has
@@ -70,18 +70,18 @@ a TestFlight build would need.
 ## Pairing
 
 Set a **PIN** in **Settings → Mobile**, hit **Pair a phone**, then **Pair** in
-Emma Mobile and hold the camera over the code. The phone asks for the PIN; type
+Shinbo Mobile and hold the camera over the code. The phone asks for the PIN; type
 it and the pairing is done.
 
 What happens behind the sheet, in [`bridge.ts`](../desktop/main/bridge.ts):
 
-1. Emma mints a 32-byte key, hashes the PIN with scrypt and a fresh salt, and
+1. Shinbo mints a 32-byte key, hashes the PIN with scrypt and a fresh salt, and
    stages both **unsaved**.
-2. Emma binds the listener to `ws://<address>:47823`.
+2. Shinbo binds the listener to `ws://<address>:47823`.
 3. The QR is drawn immediately. It carries the address, the key, this Mac's
    name, and an expiry two minutes out. **It never carries the PIN.**
 4. The phone scans it and connects, offering
-   `sha256(key ‖ "emma-bridge-auth")` as the WebSocket subprotocol. A connection
+   `sha256(key ‖ "shinbo-bridge-auth")` as the WebSocket subprotocol. A connection
    that cannot name that token is rejected before a single byte of protocol is
    read, in constant time.
 5. The phone sends `unlock` with the PIN. Only that request is answered before
@@ -146,7 +146,7 @@ phone never has to wait for the old socket to time out.
 |---|---|
 | Threads | Read, create, rename, archive, send a message, steer or stop a run |
 | Live | The running agents, their steps, token counts and traces, streamed |
-| Permissions | Every ask Emma would show on the computer, answerable from the phone |
+| Permissions | Every ask Shinbo would show on the computer, answerable from the phone |
 | Git | Status, stage, commit, push, pull in your attached folders |
 | Models | List and switch the model or permission mode for a thread |
 
@@ -157,7 +157,7 @@ first wins. Asks expire after ten minutes either way.
 
 Each paired phone gets its own row in **Settings → Mobile**, listed by the day it
 was paired and whether it is connected. **Remove** it, twice — the button asks
-for confirmation in place. Emma sends that phone a `bye` frame, drops its socket,
+for confirmation in place. Shinbo sends that phone a `bye` frame, drops its socket,
 and rewrites `mobile-peers.json` without it. The other phones keep their sockets
 and carry on; the port only closes once nothing is paired.
 
@@ -168,7 +168,7 @@ sitting on the desk. **Getting a new phone is the same two steps** — remove th
 old one, then pair the new one. Every pairing mints its own key, so the removed
 phone fails the auth handshake before it can say anything.
 
-What Emma cannot do is reach into the old phone and clear what it already
+What Shinbo cannot do is reach into the old phone and clear what it already
 cached. The `bye` frame is its cue to forget the pairing, and only a phone that
 is connected at that moment receives one.
 
@@ -178,7 +178,7 @@ is connected at that moment receives one.
 this Mac's name, the scrypt
 hash of the PIN, and the pairing key **encrypted with the macOS keychain**
 through `safeStorage`. The PIN itself is never stored and never sent to the
-phone. Emma refuses to pair at all when the keychain is unavailable rather than
+phone. Shinbo refuses to pair at all when the keychain is unavailable rather than
 writing the key in plain text, and a record loads as no pairing at all when its
 key does not decrypt, its address is not a valid `ws://host:port`, its PIN hash
 is malformed, or its pairing was never proved with a PIN.

@@ -5,16 +5,6 @@ import { TerminalIcon } from "./terminal";
 import type { BrandDefinition } from "./brands";
 import { webSearchProvider, type WebSearchProvider } from "../shared/settings";
 
-const EMMA_OPEN = new URL("../assets/emma.webp", import.meta.url).href;
-const EMMA_SHUT = new URL("../assets/emma-blink.webp", import.meta.url).href;
-
-export function EmmaMark({ className = "" }: { className?: string }) {
-  return <span className={`emma-mark ${className}`} aria-hidden="true">
-    <img src={EMMA_OPEN} alt="" />
-    <img className="emma-lid" src={EMMA_SHUT} alt="" />
-  </span>;
-}
-
 const BOW = [
   ".####......####.",
   ".######..######.",
@@ -30,12 +20,20 @@ const BOW = [
 ];
 const BOW_PIXELS = BOW.flatMap((row, index) => [...row].map((ink, x) => ({ ink, x, y: index + 3 })).filter((pixel) => pixel.ink !== "."));
 
+const BOW_INK = "#f4156b";
+
+function Bow({ fill }: { fill: string }) {
+  return <svg viewBox="0 0 16 16" fill={fill} shapeRendering="crispEdges">
+    {BOW_PIXELS.map(({ ink, x, y }) => <rect key={`${x},${y}`} x={x} y={y} width="1" height="1" opacity={ink === "o" ? 0.5 : undefined} />)}
+  </svg>;
+}
+
+export function ShinboMark({ className = "" }: { className?: string }) {
+  return <span className={`shinbo-mark ${className}`} aria-hidden="true"><Bow fill={BOW_INK} /></span>;
+}
+
 export function Mark({ className = "" }: { className?: string }) {
-  return <span className={`mark ${className}`} aria-hidden="true">
-    <svg viewBox="0 0 16 16" fill="currentColor" shapeRendering="crispEdges">
-      {BOW_PIXELS.map(({ ink, x, y }) => <rect key={`${x},${y}`} x={x} y={y} width="1" height="1" opacity={ink === "o" ? 0.5 : undefined} />)}
-    </svg>
-  </span>;
+  return <span className={`mark ${className}`} aria-hidden="true"><Bow fill="currentColor" /></span>;
 }
 
 export function InfoDot({ children }: { children: ReactNode }) {

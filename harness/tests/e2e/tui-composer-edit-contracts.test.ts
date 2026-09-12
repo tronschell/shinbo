@@ -110,7 +110,7 @@ async function startFx(
     cwd: workspace,
     env: {
       HOME: home,
-      EMMA_PROVIDER_API_KEY: withGateway ? "fake-edit-contract-key" : undefined,
+      SHINBO_PROVIDER_API_KEY: withGateway ? "fake-edit-contract-key" : undefined,
       FX_GATEWAY_BASE_URL: gateway?.baseUrl,
       FX_GATEWAY_CHAT_URL: gateway?.chatUrl,
       FX_E2E_GATEWAY_MODELS_URL: gateway

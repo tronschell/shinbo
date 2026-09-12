@@ -126,7 +126,7 @@ function validateGatewayChatUrl(value) {
 }
 
 function createNativeCoreRuntime(addon, options) {
-  const apiKey = options.env?.EMMA_PROVIDER_API_KEY;
+  const apiKey = options.env?.SHINBO_PROVIDER_API_KEY;
   const model = options.env?.FX_MODEL;
   const gatewayChatUrl = options.env?.FX_GATEWAY_CHAT_URL;
   validateGatewayChatUrl(gatewayChatUrl);

@@ -81,7 +81,7 @@ export function codexEfforts(cache: unknown): Record<string, string[]> {
 export async function validateCatalogEffort(cli: string, options: CliOptions): Promise<void> {
   if (cli !== "codex" || !options.model || !options.effort) return;
   const supported = codexEfforts(await codexCache())[options.model];
-  if (supported && !supported.includes(options.effort)) throw new Error(`${options.model} does not advertise ${options.effort} thinking. Supported: ${supported.join(", ") || "none"}. Choose explicitly; Emma will not downgrade it.`);
+  if (supported && !supported.includes(options.effort)) throw new Error(`${options.model} does not advertise ${options.effort} thinking. Supported: ${supported.join(", ") || "none"}. Choose explicitly; Shinbo will not downgrade it.`);
 }
 
 async function piModels(): Promise<string[]> {
@@ -126,7 +126,7 @@ export class CliModelCatalog {
     const known = catalog[cli];
     if (!refresh && known && Date.now() - known.at < CLI_MODELS_STALE_MS && (cli !== "codex" || known.effortByModel)) return { cli, ...known };
     const held = this.inflight.get(cli);
-    if (held && !refresh) return held;
+    if (held) return held;
     const work = this.fetch(cli, resolve, known);
     this.inflight.set(cli, work);
     return work.finally(() => this.inflight.delete(cli));

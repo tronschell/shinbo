@@ -70,7 +70,7 @@ const { ComputerUseRuntime, computerAction, computerTools, MAX_RUN_STEPS }: type
 const thread = "1755000000-1a2b-3c4d5e6f-0";
 const runtimes: InstanceType<typeof ComputerUseRuntime>[] = [];
 const runtime = (progress?: (value: ComputerRunProgress) => void) => {
-  const computer = new ComputerUseRuntime("/fake/emma-computer", () => {}, () => {}, progress);
+  const computer = new ComputerUseRuntime("/fake/shinbo-computer", () => {}, () => {}, progress);
   runtimes.push(computer);
   computer.start(thread);
   return computer;
@@ -263,11 +263,11 @@ test("Windows helper identities and snapshot tokens pass the trust boundary", { 
 });
 
 test("discovery exposes app metadata without reading UI or asking", async () => {
-  apps.push({ ...target, id: "com.test.Emma", pid: process.pid });
+  apps.push({ ...target, id: "com.test.Shinbo", pid: process.pid });
   const computer = runtime();
   const listed = await computer.execute(thread, { action: "list_apps" }, async () => { throw new Error("No approval needed to list metadata"); });
   assert.match(listed, /com.test.Editor/);
-  assert.doesNotMatch(listed, /com.test.Emma/);
+  assert.doesNotMatch(listed, /com.test.Shinbo/);
   assert.equal(spawned.length, 0);
   assert.equal(sent.length, 0);
   assert.equal(captures, 0);
@@ -406,7 +406,7 @@ test("ambiguous app names need an exact PID and self control is refused", async 
   await assert.rejects(computer.execute(thread, state(), allow), /Several instances/);
   await computer.execute(thread, { ...state(), pid: target.pid }, allow);
   apps = [{ ...target, pid: process.pid }];
-  await assert.rejects(computer.execute(thread, { ...state(), pid: process.pid }, allow), /Emma itself/);
+  await assert.rejects(computer.execute(thread, { ...state(), pid: process.pid }, allow), /Shinbo itself/);
 });
 
 test("the step ceiling revokes access and the next turn asks again", async () => {

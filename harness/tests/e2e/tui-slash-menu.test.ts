@@ -485,9 +485,9 @@ function createModelsMenuFixture() {
   return { home, workspace, settingsPath, tapePath, stderrPath };
 }
 
-// The menu matcher searches skill paths, so this fixture's home directory must
-// not contain the substring "home": a "home" path segment would make the
-// query HOME match every installed skill.
+
+
+
 function createMentionGuardFixture() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "fx-mention-guard-")));
   workDirs.push(root);
@@ -645,7 +645,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: fixture.workspace,
         env: {
           HOME: fixture.home,
-          EMMA_PROVIDER_API_KEY: "fake-linked-menu-key",
+          SHINBO_PROVIDER_API_KEY: "fake-linked-menu-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -785,7 +785,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: fixture.workspace,
         env: {
           HOME: fixture.home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 120,
@@ -837,7 +837,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
 
       const env = {
         HOME: home,
-        EMMA_PROVIDER_API_KEY: "fake-title-rename-key",
+        SHINBO_PROVIDER_API_KEY: "fake-title-rename-key",
         FX_GATEWAY_BASE_URL: gateway.baseUrl,
         FX_GATEWAY_CHAT_URL: gateway.chatUrl,
         FX_MODEL: model,
@@ -856,11 +856,11 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
       });
       await session.waitForComposer(10_000);
 
-      // Before the first turn names the session, the workspace distinguishes
-      // parallel tabs while the model remains visible.
+
+
       expect(await session.paneTitle()).toBe(`fx · workspace · ${model}`);
 
-      // The first prompt names the session, and the tab follows it.
+
       await session.sendText("generate the release notes");
       await session.waitForText("TITLE_RENAME_COMPLETE", 30_000);
       await waitForPaneTitle(session, `fx · generate the release notes · ${model}`, 5_000);
@@ -882,7 +882,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         .map((entry) => entry.name);
       expect(sessionIds).toHaveLength(1);
 
-      // Resuming restores both the chosen name and active model context.
+
       gateway.stop();
       gateway = startFakeGateway([]);
       session = await TmuxSession.create({
@@ -932,7 +932,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-slash-footer-key",
+          SHINBO_PROVIDER_API_KEY: "fake-slash-footer-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: "openai/gpt-5",
@@ -972,7 +972,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-slash-footer-key",
+          SHINBO_PROVIDER_API_KEY: "fake-slash-footer-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: "openai/gpt-5",
@@ -1189,7 +1189,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 100,
@@ -1254,7 +1254,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
           cwd: workspace,
           env: {
             HOME: home,
-            EMMA_PROVIDER_API_KEY: undefined,
+            SHINBO_PROVIDER_API_KEY: undefined,
             FX_AUTO_UPGRADE: "0",
           },
           width: 100,
@@ -1346,7 +1346,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         stderrPath,
@@ -1409,7 +1409,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         stderrPath,
@@ -1488,7 +1488,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         (current) =>
           current.includes("resume-helper") &&
           !current.includes("Enter Use") &&
-          !current.includes("emma-cli has no provider credential"),
+          !current.includes("shinbo-cli has no provider credential"),
         5_000,
       );
       expect(composerContains(pane, "resume-helper")).toBe(true);
@@ -1516,7 +1516,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 100,
@@ -1613,7 +1613,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 100,
@@ -1691,7 +1691,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 100,
@@ -1761,7 +1761,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 60,
@@ -1832,7 +1832,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 100,
@@ -1915,7 +1915,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 100,
@@ -1975,7 +1975,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 100,
@@ -2034,7 +2034,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 100,
@@ -2070,7 +2070,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 100,
@@ -2140,7 +2140,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 100,
@@ -2217,7 +2217,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 100,
@@ -2332,7 +2332,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 120,
@@ -2432,7 +2432,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspaceRoot,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 120,
@@ -2491,7 +2491,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: fixture.workspace,
         env: {
           HOME: fixture.home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 120,
@@ -2734,7 +2734,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         stderrPath: fixture.stderrPath,
         env: {
           HOME: fixture.home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 120,
@@ -2827,7 +2827,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: fixture.workspace,
         env: {
           HOME: fixture.home,
-          EMMA_PROVIDER_API_KEY: "fake-models-menu-key",
+          SHINBO_PROVIDER_API_KEY: "fake-models-menu-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_E2E_GATEWAY_MODELS_URL: `${gateway.baseUrl}/coding-agent/v1/models`,
@@ -2939,7 +2939,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: fixture.workspace,
         env: {
           HOME: fixture.home,
-          EMMA_PROVIDER_API_KEY: "fake-models-menu-key",
+          SHINBO_PROVIDER_API_KEY: "fake-models-menu-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_E2E_GATEWAY_MODELS_URL: `${gateway.baseUrl}/coding-agent/v1/models`,
@@ -2989,7 +2989,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         stderrPath: fixture.stderrPath,
         env: {
           HOME: fixture.home,
-          EMMA_PROVIDER_API_KEY: "fake-model-picker-key",
+          SHINBO_PROVIDER_API_KEY: "fake-model-picker-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_E2E_GATEWAY_MODELS_URL: `${gateway.baseUrl}/coding-agent/v1/models`,
@@ -3031,7 +3031,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: fixture.workspace,
         env: {
           HOME: fixture.home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 120,
@@ -3073,7 +3073,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: fixture.workspace,
         env: {
           HOME: fixture.home,
-          EMMA_PROVIDER_API_KEY: "fake-active-skills-stream-key",
+          SHINBO_PROVIDER_API_KEY: "fake-active-skills-stream-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3121,7 +3121,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         stderrPath: fixture.stderrPath,
         env: {
           HOME: fixture.home,
-          EMMA_PROVIDER_API_KEY: "fake-active-slash-stream-key",
+          SHINBO_PROVIDER_API_KEY: "fake-active-slash-stream-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3183,7 +3183,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         stderrPath,
         env: {
           HOME: fixture.home,
-          EMMA_PROVIDER_API_KEY: "fake-catalog-approval-key",
+          SHINBO_PROVIDER_API_KEY: "fake-catalog-approval-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3232,7 +3232,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "fake-skill-token-key",
+            SHINBO_PROVIDER_API_KEY: "fake-skill-token-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3298,7 +3298,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "fake-mention-guard-key",
+            SHINBO_PROVIDER_API_KEY: "fake-mention-guard-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3347,7 +3347,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
           cwd: fixture.workspace,
           env: {
             HOME: fixture.home,
-            EMMA_PROVIDER_API_KEY: "fake-mention-space-key",
+            SHINBO_PROVIDER_API_KEY: "fake-mention-space-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3392,7 +3392,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: fixture.workspace,
         env: {
           HOME: fixture.home,
-          EMMA_PROVIDER_API_KEY: "fake-exact-picker-key",
+          SHINBO_PROVIDER_API_KEY: "fake-exact-picker-key",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
           FX_MODEL: FAKE_GATEWAY_MODEL,
@@ -3490,7 +3490,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 100,
@@ -3557,7 +3557,7 @@ describe.skipIf(SKIP)("tui: slash menu", () => {
         cwd: workspace,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: undefined,
+          SHINBO_PROVIDER_API_KEY: undefined,
           FX_AUTO_UPGRADE: "0",
         },
         width: 42,

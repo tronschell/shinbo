@@ -1,7 +1,7 @@
 # The context bar
 
 The thread inspector: the column down the right of a thread, built from
-components you arrange. Emma ships **eleven**
+components you arrange. Shinbo ships **eleven**
 ([`desktop/shared/context-bar.ts`](../desktop/shared/context-bar.ts) —
 `CONTEXT_WIDGETS`), drawn by
 [`desktop/src/context-bar.tsx`](../desktop/src/context-bar.tsx).
@@ -52,7 +52,7 @@ in [`desktop/shared/context-bar.ts`](../desktop/shared/context-bar.ts):
 
 | | |
 |---|---|
-| Counts | Messages, Emma replies, Attachments, Tool calls, Subagents, Sub threads |
+| Counts | Messages, Shinbo replies, Attachments, Tool calls, Subagents, Sub threads |
 | Speed | Avg tok/s (the ▮ curve rides this one), Generation time |
 | Tokens | Output tokens |
 | Context | Context carried, Context window, Context free, Context used, Largest segment |
@@ -69,7 +69,7 @@ unchecked; an empty stats component would only be a blank band.
 Up to `MAX_CONTEXT_PAGES` (**4**) arrangements, each named in
 `MAX_PAGE_NAME` (**20**) characters or fewer. With more than one, the bar's
 header becomes a `role="tablist"` row of page tabs; the chosen page id is
-remembered in `localStorage` under `emma.contextPage.v1`.
+remembered in `localStorage` under `shinbo.contextPage.v1`.
 
 Ships with three: **Context** (stats horizontal, then context and timeline),
 **Run** (tasks, plan, subagents, sub threads, git) and **Machine** (meters,
@@ -110,9 +110,9 @@ once, and a `metrics` list on anything but stats — or one that survives none o
 that — is dropped so the defaults draw. A page list that throws takes the whole settings object down
 to defaults rather than half-applying.
 
-## What Emma builds into it
+## What Shinbo builds into it
 
-The bar is also the one place a component can land — a widget Emma writes with
+The bar is also the one place a component can land — a widget Shinbo writes with
 the `component` tool, mounted under the built-in ones in the same `.bar-widget`
 chrome, with the same header row and the same padding. Its header carries ⤢ when
 it was built to open full screen, and ⋯ to switch it off or delete it. See
@@ -129,7 +129,7 @@ and takes the region's place, handed the same props the built-in gets: `thread`,
 `git`, `collapsed`, `setCollapsed`.
 
 The built-in is what shows when there is no module, and what comes back when one
-throws — the error boundary swaps it in and prints *"Emma's context could not
+throws — the error boundary swaps it in and prints *"Shinbo's context could not
 run, so the built-in is back"* ([`desktop/src/regions.tsx`](../desktop/src/regions.tsx)).
 See [plugins.md](plugins.md).
 
@@ -138,7 +138,7 @@ See [plugins.md](plugins.md).
 | Data | Produced by |
 |---|---|
 | Messages, replies, output tokens, tok/s, rate curve | `message.generation` on the thread. Its `durationMilliseconds` is the turn's wall clock less any time the turn spent parked on a permission prompt, so tok/s reads the model's speed rather than yours |
-| Attachment and skill rows | `recordUses` → `emma.threadContextUses.v1`, merged by `mergeUses`, capped at `MAX_USES` (32) |
+| Attachment and skill rows | `recordUses` → `shinbo.threadContextUses.v1`, merged by `mergeUses`, capped at `MAX_USES` (32) |
 | The transcript row | `historyUse` — the characters of every stored message |
 | The turn in flight | `inputTokens` and `toolCalls` summed over the live agents main broadcasts |
 | The residual row | `systemChars(lastInputTokens(thread), measuredChars)`, floored at 0 |

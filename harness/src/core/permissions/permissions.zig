@@ -378,9 +378,6 @@ pub fn permissionTargetForCallInScope(
     return std.fmt.allocPrint(arena, "{s}::{s}", .{ cwd, command });
 }
 
-/// Resolves the canonical requested path without requiring it to exist.
-/// Callers must first establish that the tool's ordinary target contract is
-/// an existing `path` argument.
 pub fn missingPathTargetForCallInScope(
     arena: std.mem.Allocator,
     scope: workspace_access.AccessScope,
@@ -397,9 +394,6 @@ pub fn missingPathTargetForCallInScope(
     );
 }
 
-/// Returns a normalized scope-checked identity for an existing-path request
-/// whose filesystem lookup failed before the tool could report that failure.
-/// This does not establish that the path exists or authorize execution.
 pub fn unresolvedPathTargetForCallInScope(
     arena: std.mem.Allocator,
     scope: workspace_access.AccessScope,
@@ -605,8 +599,6 @@ pub fn evaluatePreparedFileMutationTargetsInScope(
     return .{ .evaluated = evaluated };
 }
 
-/// Consumes a structurally validated target proof and projects policy-neutral
-/// execution targets for YOLO admission.
 pub fn authorizePreparedFileMutationTargets(
     alloc: std.mem.Allocator,
     prepared: *file_mutation_contract.ResolvedFileMutationTargets,
@@ -1510,7 +1502,6 @@ pub fn permissionRuleCategoryForGrant(permission_name: []const u8) ?[]const u8 {
     return permissionNameForTool(permission_name);
 }
 
-/// Returns the persistent rule pattern for a session grant. Caller owns the returned slice.
 pub fn permissionRulePatternForGrant(alloc: std.mem.Allocator, workspace_root: []const u8, permission_name: []const u8, pattern: []const u8) ![]u8 {
     const permission = permissionNameForTool(permission_name);
     if (isWebSearchToolName(permission)) return alloc.dupe(u8, "*");
@@ -3004,32 +2995,32 @@ test "root tree pattern spans every volume on windows and stays rooted on posix"
     try std.testing.expect(!directoryTreePatternMatches("/tmp/external/*", "/tmp/external/file.txt"));
 
     if (comptime !is_windows) {
-        try std.testing.expect(!directoryTreePatternMatches("/**", "C:\\Users\\emma\\file.txt"));
+        try std.testing.expect(!directoryTreePatternMatches("/**", "C:\\Users\\shinbo\\file.txt"));
         try std.testing.expect(!directoryTreePatternMatches("/tmp/external/**", "/tmp/External/file.txt"));
         try std.testing.expect(!directoryTreePatternMatches("/tmp/external/**", "/tmp/external\\file.txt"));
-        try std.testing.expect(!directoryTreePatternMatches("C:\\Users\\emma\\**", "C:\\Users\\emma\\file.txt"));
+        try std.testing.expect(!directoryTreePatternMatches("C:\\Users\\shinbo\\**", "C:\\Users\\shinbo\\file.txt"));
         return;
     }
 
-    try std.testing.expect(directoryTreePatternMatches("/**", "C:\\Users\\emma\\file.txt"));
+    try std.testing.expect(directoryTreePatternMatches("/**", "C:\\Users\\shinbo\\file.txt"));
     try std.testing.expect(directoryTreePatternMatches("/**", "d:/projects/app"));
     try std.testing.expect(directoryTreePatternMatches("/**", "\\\\server\\share\\file.txt"));
     try std.testing.expect(!directoryTreePatternMatches("/**", "C:file.txt"));
 
-    try std.testing.expect(directoryTreePatternMatches("/Users/emma/**", "C:\\Users\\Emma\\file.txt"));
-    try std.testing.expect(directoryTreePatternMatches("/users/emma/**", "D:/Users/emma"));
-    try std.testing.expect(directoryTreePatternMatches("/Users/emma/**", "\\\\server\\share\\Users\\emma\\file.txt"));
-    try std.testing.expect(!directoryTreePatternMatches("/Users/emma/**", "C:\\Users\\emma-evil\\file.txt"));
+    try std.testing.expect(directoryTreePatternMatches("/Users/shinbo/**", "C:\\Users\\Shinbo\\file.txt"));
+    try std.testing.expect(directoryTreePatternMatches("/users/shinbo/**", "D:/Users/shinbo"));
+    try std.testing.expect(directoryTreePatternMatches("/Users/shinbo/**", "\\\\server\\share\\Users\\shinbo\\file.txt"));
+    try std.testing.expect(!directoryTreePatternMatches("/Users/shinbo/**", "C:\\Users\\shinbo-evil\\file.txt"));
 
-    try std.testing.expect(directoryTreePatternMatches("C:\\Users\\emma\\**", "c:/users/EMMA/file.txt"));
-    try std.testing.expect(directoryTreePatternMatches("C:\\Users\\emma/**", "C:\\Users\\emma\\nested\\file.txt"));
-    try std.testing.expect(!directoryTreePatternMatches("C:\\Users\\emma\\**", "D:\\Users\\emma\\file.txt"));
-    try std.testing.expect(directoryTreePatternMatches("\\\\server\\share\\emma\\**", "//server/share/Emma/file.txt"));
-    try std.testing.expect(!directoryTreePatternMatches("\\\\server\\share\\emma\\**", "\\\\other\\share\\emma\\file.txt"));
+    try std.testing.expect(directoryTreePatternMatches("C:\\Users\\shinbo\\**", "c:/users/SHINBO/file.txt"));
+    try std.testing.expect(directoryTreePatternMatches("C:\\Users\\shinbo/**", "C:\\Users\\shinbo\\nested\\file.txt"));
+    try std.testing.expect(!directoryTreePatternMatches("C:\\Users\\shinbo\\**", "D:\\Users\\shinbo\\file.txt"));
+    try std.testing.expect(directoryTreePatternMatches("\\\\server\\share\\shinbo\\**", "//server/share/Shinbo/file.txt"));
+    try std.testing.expect(!directoryTreePatternMatches("\\\\server\\share\\shinbo\\**", "\\\\other\\share\\shinbo\\file.txt"));
 }
 
 test "root tree rule and session grant authorize the native absolute target" {
-    const target = if (comptime is_windows) "C:\\Users\\emma\\file.txt" else "/home/emma/file.txt";
+    const target = if (comptime is_windows) "C:\\Users\\shinbo\\file.txt" else "/home/shinbo/file.txt";
 
     var rules_buf = [_]types.PermissionRule{
         .{ .permission = @constCast("read"), .pattern = @constCast("/**"), .action = .allow },

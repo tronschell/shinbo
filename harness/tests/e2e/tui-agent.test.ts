@@ -17,7 +17,7 @@ describe.skipIf(SKIP)("tui: agent prompt", () => {
     async () => {
       session = await TmuxSession.create({
         env: {
-          EMMA_PROVIDER_API_KEY: process.env.EMMA_PROVIDER_API_KEY,
+          SHINBO_PROVIDER_API_KEY: process.env.SHINBO_PROVIDER_API_KEY,
         },
       });
       await session.waitForComposer(10_000);

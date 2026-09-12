@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
-const DEFAULT_DIR = path.join(os.homedir(), "Library", "Application Support", "Emma", "threads");
+const DEFAULT_DIR = path.join(os.homedir(), "Library", "Application Support", "Shinbo", "threads");
 
 const parse = (line) => {
   try {
@@ -50,6 +50,6 @@ export function ledgerOf(directory) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const directory = process.env.EMMA_DATA_DIR ? path.join(process.env.EMMA_DATA_DIR, "threads") : DEFAULT_DIR;
+  const directory = process.env.SHINBO_DATA_DIR ? path.join(process.env.SHINBO_DATA_DIR, "threads") : DEFAULT_DIR;
   for (const turn of ledgerOf(directory)) console.log(JSON.stringify(turn));
 }

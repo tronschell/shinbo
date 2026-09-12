@@ -16,7 +16,7 @@ export class RootBoundary extends Component<{ children: ReactNode }, { failed: s
   render() {
     if (!this.state.failed) return this.props.children;
     return <div className="root-failure" role="alert">
-      <h1>Emma stopped drawing this window</h1>
+      <h1>Shinbo stopped drawing this window</h1>
       <p>Every thread, note and artifact is on disk and untouched. Reloading brings the window back.</p>
       <button type="button" onClick={() => window.location.reload()}>Reload the window</button>
       <pre>{this.state.failed}</pre>

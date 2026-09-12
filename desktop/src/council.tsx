@@ -60,8 +60,8 @@ export function CouncilPanel({ threadId, mode, question, seed, picker, name, bra
 
   useEffect(() => {
     let live = true;
-    void window.emma.councilState(threadId).then((current) => { if (live && current) setState(current); }).catch(() => undefined);
-    const stop = window.emma.onCouncil((next) => { if (next.threadId === threadId) setState(next); });
+    void window.shinbo.councilState(threadId).then((current) => { if (live && current) setState(current); }).catch(() => undefined);
+    const stop = window.shinbo.onCouncil((next) => { if (next.threadId === threadId) setState(next); });
     return () => { live = false; stop(); };
   }, [threadId]);
 
@@ -75,7 +75,7 @@ export function CouncilPanel({ threadId, mode, question, seed, picker, name, bra
     setError("");
     setBusy(true);
     try {
-      setState(await window.emma.startCouncil({ threadId, question: asked.trim(), mode, seats }));
+      setState(await window.shinbo.startCouncil({ threadId, question: asked.trim(), mode, seats }));
       setView("bench");
     } catch (reason) { setError(reasonText(reason)); }
     finally { setBusy(false); }
@@ -83,11 +83,13 @@ export function CouncilPanel({ threadId, mode, question, seed, picker, name, bra
 
   const adopt = async (seat: string) => {
     setError("");
-    try { setState(await window.emma.adoptCouncil({ threadId, seatId: seat })); }
+    setBusy(true);
+    try { setState(await window.shinbo.adoptCouncil({ threadId, seatId: seat })); }
     catch (reason) { setError(reasonText(reason)); }
+    finally { setBusy(false); }
   };
 
-  const close = () => { void window.emma.closeCouncil(threadId).catch(() => undefined); onClose(); };
+  const close = () => { void window.shinbo.closeCouncil(threadId).catch(() => undefined); onClose(); };
 
   if (!state) {
     return <section className="council council-setup" aria-label="Seat a council">
@@ -132,7 +134,7 @@ export function CouncilPanel({ threadId, mode, question, seed, picker, name, bra
         {COUNCIL_VIEWS.map((id) => <button key={id} type="button" role="tab" aria-selected={view === id} title={VIEW_NAMES[id]} onClick={() => setView(id)}>{VIEW_GLYPHS[id]} {VIEW_NAMES[id]}</button>)}
       </span>
       {running
-        ? <button type="button" className="council-stop" onClick={() => void window.emma.stopCouncil(threadId)}>Stop</button>
+        ? <button type="button" className="council-stop" onClick={() => void window.shinbo.stopCouncil(threadId)}>Stop</button>
         : <button type="button" className="council-close" onClick={close} aria-label="Close the council">×</button>}
     </header>
 
@@ -154,9 +156,9 @@ export function CouncilPanel({ threadId, mode, question, seed, picker, name, bra
       <header><b>{winner ? `${winner.name}'s draft, taken as-is` : "The council's answer"}</b></header>
       <div className="council-verdict-body"><Markdown text={taken && !taken.error ? said(taken.text) : state.verdict} /></div>
       {state.phase === "waiting" && <div className="council-take">
-        <button type="button" className="picked" onClick={() => void adopt("")}>Land it</button>
+        <button type="button" className="picked" disabled={busy} onClick={() => void adopt("")}>{busy ? "Saving…" : "Land it"}</button>
         <span>or one draft alone</span>
-        {state.seats.map((seat) => <button key={seat.id} type="button" onClick={() => void adopt(seat.id)}>{seat.name}</button>)}
+        {state.seats.map((seat) => <button key={seat.id} type="button" disabled={busy} onClick={() => void adopt(seat.id)}>{seat.name}</button>)}
       </div>}
     </div>}
 

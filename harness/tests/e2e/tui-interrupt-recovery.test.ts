@@ -91,7 +91,7 @@ describe.skipIf(SKIP)("tui: interrupt recovery", () => {
         height: 40,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-text-queues-key",
+          SHINBO_PROVIDER_API_KEY: "fake-text-queues-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -191,7 +191,7 @@ describe.skipIf(SKIP)("tui: interrupt recovery", () => {
         height: 40,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-interrupt-recovery-key",
+          SHINBO_PROVIDER_API_KEY: "fake-interrupt-recovery-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -350,7 +350,7 @@ while :; do sleep 1; done
         height: 40,
         env: {
           HOME: home,
-          EMMA_PROVIDER_API_KEY: "fake-workspace-cancel-unwind-key",
+          SHINBO_PROVIDER_API_KEY: "fake-workspace-cancel-unwind-key",
           FX_AUTO_UPGRADE: "0",
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,

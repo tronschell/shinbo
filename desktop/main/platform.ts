@@ -2,10 +2,11 @@ import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process"
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { access, constants, realpath } from "node:fs/promises";
 import path from "node:path";
+import { preferredDataDirectory } from "./profile";
 
 export const isMac = process.platform === "darwin";
 export const isWindows = process.platform === "win32";
-export const WINDOWS_APP_USER_MODEL_ID = "com.squirrel.Emma.Emma";
+export const WINDOWS_APP_USER_MODEL_ID = "com.squirrel.Shinbo.Shinbo";
 const WINDOWS_META = /([()\][%!^"`<>&|;, *?])/g;
 const WINDOWS_SHIM = /\.(?:cmd|bat)$/i;
 const WINDOWS_SHIM_TARGET = /"%~?dp0%?[\\/]?([^"\r\n]+)"/g;
@@ -62,7 +63,7 @@ export function canonicalResetPath(root: string): string {
       const resolved = realpathSync.native(current);
       return missing.reverse().reduce((base, part) => path.join(base, part), resolved);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw new Error(`Reset blocked: refusing to delete unsafe Emma data path "${root}".`, { cause: error });
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw new Error(`Reset blocked: refusing to delete unsafe Shinbo data path "${root}".`, { cause: error });
       const parent = path.dirname(current);
       if (parent === current) return root;
       missing.push(path.basename(current));
@@ -73,12 +74,12 @@ export function canonicalResetPath(root: string): string {
 
 function resetRoot(value: string, platform: NodeJS.Platform, home: string, environment: NodeJS.ProcessEnv): string {
   const implementation = pathModule(platform);
-  if (!value || value.includes("\0") || !implementation.isAbsolute(value)) throw new Error(`Reset blocked: refusing to delete unsafe Emma data path "${value}".`);
+  if (!value || value.includes("\0") || !implementation.isAbsolute(value)) throw new Error(`Reset blocked: refusing to delete unsafe Shinbo data path "${value}".`);
   const resolved = implementation.normalize(value);
   const root = implementation.parse(resolved).root;
   const depth = implementation.relative(root, resolved).split(implementation.sep).filter(Boolean).length;
-  if (resolved === root || depth < 2) throw new Error(`Reset blocked: refusing to delete unsafe Emma data path "${value}".`);
-  if (home && implementation.isAbsolute(home) && pathInside(resolved, home, platform)) throw new Error(`Reset blocked: refusing to delete unsafe Emma data path "${value}".`);
+  if (resolved === root || depth < 2) throw new Error(`Reset blocked: refusing to delete unsafe Shinbo data path "${value}".`);
+  if (home && implementation.isAbsolute(home) && pathInside(resolved, home, platform)) throw new Error(`Reset blocked: refusing to delete unsafe Shinbo data path "${value}".`);
   const systemRoots = platform === "win32" ? [environment.SystemRoot, environment.WINDIR]
     .filter((candidate): candidate is string => Boolean(candidate?.trim()))
     .filter((candidate) => implementation.isAbsolute(candidate))
@@ -96,7 +97,7 @@ function resetRoot(value: string, platform: NodeJS.Platform, home: string, envir
   ].filter((candidate): candidate is string => Boolean(candidate?.trim()))
     .filter((candidate) => implementation.isAbsolute(candidate))
     .map((candidate) => implementation.normalize(candidate));
-  if ([...systemRoots, ...protectedRoots].some((candidate) => pathInside(resolved, candidate, platform))) throw new Error(`Reset blocked: refusing to delete unsafe Emma data path "${value}".`);
+  if ([...systemRoots, ...protectedRoots].some((candidate) => pathInside(resolved, candidate, platform))) throw new Error(`Reset blocked: refusing to delete unsafe Shinbo data path "${value}".`);
   const blockedDescendants = [
     ...systemRoots,
     environment.ProgramFiles,
@@ -106,20 +107,21 @@ function resetRoot(value: string, platform: NodeJS.Platform, home: string, envir
   ].filter((candidate): candidate is string => Boolean(candidate?.trim()))
     .filter((candidate) => implementation.isAbsolute(candidate))
     .map((candidate) => implementation.normalize(candidate));
-  if (blockedDescendants.some((candidate) => pathInside(candidate, resolved, platform))) throw new Error(`Reset blocked: refusing to delete unsafe Emma data path "${value}".`);
+  if (blockedDescendants.some((candidate) => pathInside(candidate, resolved, platform))) throw new Error(`Reset blocked: refusing to delete unsafe Shinbo data path "${value}".`);
   return resolved;
 }
 
 function defaultResetRoot(platform: NodeJS.Platform, home: string, environment: NodeJS.ProcessEnv): string {
   const implementation = pathModule(platform);
+  let root: string;
   if (platform === "win32") {
     const appData = [environment.APPDATA, environment.LOCALAPPDATA, environment.USERPROFILE].find((value) => Boolean(value?.trim()))?.trim();
-    if (!appData) throw new Error("Reset blocked: Windows data location is unavailable; set EMMA_DATA_DIR to an app-specific folder.");
-    return environment.APPDATA?.trim() || environment.LOCALAPPDATA?.trim()
-      ? implementation.join(appData, "Emma")
-      : implementation.join(appData, "AppData", "Roaming", "Emma");
-  }
-  return implementation.join(home, "Library", "Application Support", "Emma");
+    if (!appData) throw new Error("Reset blocked: Windows data location is unavailable; set SHINBO_DATA_DIR to an app-specific folder.");
+    root = environment.APPDATA?.trim() || environment.LOCALAPPDATA?.trim()
+      ? implementation.join(appData, "Shinbo")
+      : implementation.join(appData, "AppData", "Roaming", "Shinbo");
+  } else root = implementation.join(home, "Library", "Application Support", "Shinbo");
+  return preferredDataDirectory(root, [implementation.join(implementation.dirname(root), "Emma")]);
 }
 
 export function resetDataRoots(
@@ -186,10 +188,10 @@ export function shellArguments(command: string, login = true): string[] {
   return ["-NoLogo", "-NonInteractive", "-Command", `${WINDOWS_SHELL_PRELUDE}${command}${WINDOWS_SHELL_EPILOGUE}`];
 }
 
-export function windowsShortcutFiles(environment: NodeJS.ProcessEnv = process.env): string[] {
+export function windowsShortcutFiles(environment: NodeJS.ProcessEnv = process.env, name = "Shinbo"): string[] {
   const roaming = environment.APPDATA?.trim() || path.win32.join(environment.USERPROFILE?.trim() || "", "AppData", "Roaming");
   const programs = path.win32.join(roaming, "Microsoft", "Windows", "Start Menu", "Programs");
-  return [path.win32.join(programs, "Emma.lnk"), path.win32.join(programs, WINDOWS_INSTALLER_COMPANY, "Emma.lnk")];
+  return [path.win32.join(programs, `${name}.lnk`), path.win32.join(programs, WINDOWS_INSTALLER_COMPANY, `${name}.lnk`)];
 }
 
 export async function windowsShimTarget(shim: string): Promise<{ command: string; args: string[] } | undefined> {

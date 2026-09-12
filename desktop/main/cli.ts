@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -39,7 +40,7 @@ export async function signedIn(cli: string): Promise<boolean | undefined> {
 
 export class CliRuns {
   private runs = new Map<string, Entry>();
-  private stopping = new Map<string, Promise<void>>();
+  private stopping = new Map<ChildProcess, Promise<void>>();
   private counter = 0;
   private notifyAt = 0;
   private pending?: NodeJS.Timeout;
@@ -74,7 +75,7 @@ export class CliRuns {
 
   async start(options: { threadId: string; cli: string; prompt: string; cwd: string; folder: string; unattended: boolean; model?: string; effort?: string; fromRuns?: string[] }): Promise<CliRun> {
     const harness = cliHarness(options.cli);
-    if (!harness) throw new Error(`Emma does not know a CLI called ${options.cli.slice(0, 32)}.`);
+    if (!harness) throw new Error(`Shinbo does not know a CLI called ${options.cli.slice(0, 32)}.`);
     const selected = validateCliOptions(options.cli, options);
     await validateCatalogEffort(options.cli, selected);
     const binary = await this.resolve(harness.bin);
@@ -115,7 +116,7 @@ export class CliRuns {
     if (!entry) throw new Error(`There is no CLI run called ${id.slice(0, 32)}.`);
     if (entry.status === "running") throw new Error(`${id} is still working on its previous turn. Read it until it goes idle, or stop it.`);
     const harness = cliHarness(entry.cli);
-    if (!harness) throw new Error(`Emma no longer knows a CLI called ${entry.cli}.`);
+    if (!harness) throw new Error(`Shinbo no longer knows a CLI called ${entry.cli}.`);
     const binary = await this.resolve(harness.bin);
     if (!binary) throw new Error(`${harness.label} is no longer on the PATH.`);
     const selected = validateCliOptions(entry.cli, { model: entry.model, effort: entry.effort, ...options });
@@ -221,7 +222,7 @@ export class CliRuns {
       const deadline = setTimeout(() => this.stop(entry.id), MAX_TURN_MS);
       deadline.unref();
       const finish = (note: string, code: number | null, failed: boolean) => {
-        if (entry.status !== "running") return;
+        if (entry.child !== child || entry.status !== "running") return;
         clearTimeout(deadline);
         entry.child = undefined;
         entry.status = failed ? "failed" : "idle";
@@ -264,20 +265,20 @@ export class CliRuns {
   }
 
   private stopEntry(entry: Entry): Promise<void> {
-    const existing = this.stopping.get(entry.id);
+    const child = entry.child;
+    const pid = child?.pid;
+    if (!child || entry.status !== "running" || pid === undefined) return Promise.resolve();
+    const existing = this.stopping.get(child);
     if (existing) return existing;
-    const pid = entry.child?.pid;
-    if (entry.status !== "running" || pid === undefined) return Promise.resolve();
+    const current = () => entry.child === child && (!isWindows || (child.exitCode === null && child.signalCode === null));
+    if (!current()) return Promise.resolve();
     const stopping = terminateProcessTree(pid).then(async () => {
-      if (entry.status !== "running") return;
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, SIGKILL_AFTER_MS);
-        if (!isWindows) timer.unref();
-      });
-      if (entry.status === "running") await terminateProcessTree(pid, "SIGKILL");
+      if (entry.child !== child) return;
+      await once(child, "close", { signal: AbortSignal.timeout(SIGKILL_AFTER_MS) }).catch(() => {});
+      if (current()) await terminateProcessTree(pid, "SIGKILL");
     });
-    this.stopping.set(entry.id, stopping);
-    void stopping.then(() => this.stopping.delete(entry.id), () => this.stopping.delete(entry.id));
+    this.stopping.set(child, stopping);
+    void stopping.then(() => this.stopping.delete(child), () => this.stopping.delete(child));
     return stopping;
   }
 

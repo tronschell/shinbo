@@ -1,10 +1,10 @@
-/**
- * Model-backed A/B harness for agent-quality rows.
- *
- * This compares two explicit fx binaries on the same focused matrix rows. It is
- * intentionally not a no-key CI gate: results are noisy model-backed signals,
- * reported as paired pass-rate deltas with raw artifacts for inspection.
- */
+
+
+
+
+
+
+
 import { spawn as nodeSpawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -216,7 +216,7 @@ function sideBinary(config: AbConfig, side: AbSide): string {
 }
 
 function sanitizedEnvMetadata(model: string): Record<string, string> {
-  const keys = ["FX_MODEL", "EMMA_PROVIDER_API_KEY", "NO_COLOR"];
+  const keys = ["FX_MODEL", "SHINBO_PROVIDER_API_KEY", "NO_COLOR"];
   const metadata: Record<string, string> = {};
   for (const key of keys) {
     const value = key === "FX_MODEL" ? model : process.env[key];
@@ -285,7 +285,7 @@ export async function runAbTrial(
     HOME: trialHome,
     NO_COLOR: "1",
     FX_MODEL: config.model,
-    EMMA_PROVIDER_API_KEY: process.env.EMMA_PROVIDER_API_KEY,
+    SHINBO_PROVIDER_API_KEY: process.env.SHINBO_PROVIDER_API_KEY,
   };
 
   const versionOutput = await versionFor(binaryPath, env);

@@ -7,9 +7,9 @@ import { defaultVaultRoot, vaultReady } from "../main/setup";
 import { privacySettingsUrl, SETUP_PERMISSIONS } from "../shared/setup";
 import { DEFAULT_VAULT_FOLDER, type VaultChoice } from "../shared/vault";
 
-const workspace = () => mkdtempSync(path.join(tmpdir(), "emma-setup-"));
+const workspace = () => mkdtempSync(path.join(tmpdir(), "shinbo-setup-"));
 
-test("only the permissions Emma asks for open a settings pane", () => {
+test("only the permissions Shinbo asks for open a settings pane", () => {
   for (const permission of SETUP_PERMISSIONS) {
     assert.equal(privacySettingsUrl(permission.id), `x-apple.systempreferences:${permission.pane}`);
     assert.match(permission.pane, /^com\.apple\.preference\.[a-z]+(\?[A-Za-z_]+)?$/);
@@ -26,7 +26,7 @@ const writesAnyway = process.getuid?.() === 0 ? "root writes anywhere"
   : process.platform === "win32" ? "a read-only Windows folder still accepts new files"
   : false;
 
-test("readiness is answered by writing, so a vault Emma cannot write reads as denied", { skip: writesAnyway }, () => {
+test("readiness is answered by writing, so a vault Shinbo cannot write reads as denied", { skip: writesAnyway }, () => {
   const root = path.join(workspace(), "Second Brain");
   const notes = path.join(root, DEFAULT_VAULT_FOLDER);
   mkdirSync(notes, { recursive: true });

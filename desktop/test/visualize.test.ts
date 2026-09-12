@@ -29,7 +29,7 @@ test("the page carries its own policy, because the workspace's would make it ine
   const drawn = visualPage("<p>hi</p>");
   assert.ok(drawn.startsWith("<!doctype html>"));
   assert.ok(drawn.includes("<p>hi</p>"));
-  assert.ok(drawn.includes("--accent:#ff6a3d"));
+  assert.ok(drawn.includes("--accent:#ff5c94"));
   assert.ok(drawn.includes("ResizeObserver"));
   assert.ok(VISUAL_CSP.includes("default-src 'none'"));
   assert.ok(VISUAL_CSP.includes("script-src 'unsafe-inline'"));
@@ -78,7 +78,7 @@ test("pointing at a part of a picture attaches that part, and only that part", a
   const drawn = visualPage("<div id='bars'>x</div>");
   assert.ok(drawn.includes(VISUAL_PICK_MESSAGE));
   assert.ok(drawn.includes(VISUAL_PICKED_MESSAGE));
-  assert.ok(drawn.includes("data-emma-lit"));
+  assert.ok(drawn.includes("data-shinbo-lit"));
 
   const pick: ContextPick = { kind: "visual", id: "v1-abc:div#bars", title: "Release health", label: "div#bars", html: "<div id='bars'>x</div>" };
   assert.equal(pickKey(pick), "visual:v1-abc:div#bars");

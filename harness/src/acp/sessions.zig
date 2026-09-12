@@ -742,6 +742,8 @@ fn activateSession(
     store: session_store.Store,
     activation: SessionActivation,
 ) !void {
+    const fresh_handoff = if (activation.writable.state.context_handoff) |handoff| try state.alloc.dupe(u8, handoff) else null;
+    errdefer if (fresh_handoff) |handoff| state.alloc.free(handoff);
     try server.releaseActiveSession(state);
     state.active_session = .{
         .session_id = activation.session_id,
@@ -762,6 +764,7 @@ fn activateSession(
         .sandbox_backend = state.sandbox_backend,
         .permission_rules = state.permission_rules,
         .session_rt = activation.session_rt,
+        .fresh_handoff = fresh_handoff,
         .mcp = activation.mcp,
         .cancel_flag = std.atomic.Value(bool).init(false),
         .pending_prompt_id = null,
@@ -835,15 +838,7 @@ fn handleLoadFailure(
             .message = "One-off child sessions cannot accept additional prompts",
         });
     }
-    if (err == error.InvalidSessionFormat or
-        err == error.UnsupportedSessionSchema or
-        err == error.LegacySessionTooLarge or
-        err == error.LegacySessionReadResourceExhausted or
-        err == error.SessionAuthorityBoundaryUnavailable or
-        err == error.SessionAuthorityIntentCleanupPending or
-        err == error.SessionPathUnsafe or
-        err == error.DurablePathUnsafe)
-    {
+    if (err != error.SessionNotFound and err != error.FileNotFound) {
         return state.writer.writeError(alloc, msg.id, .{
             .code = ErrorCode.internal_error,
             .message = "Session could not be loaded",
@@ -946,10 +941,6 @@ fn sendUserHistoryChunk(state: *server.ServerState, alloc: Allocator, session_id
     try state.writer.writeNotification(alloc, "session/update", out.writer.buffered());
 }
 
-/// Replayed as `tool_call` updates, not as the model-facing replay text: that text
-/// is context for the next request, and sent as an agent message it reached the
-/// client as a wall of raw JSON tool output claiming to be something the model said.
-/// The TUI has always hidden it; ACP clients were the ones leaking it.
 fn sendExecutionHistory(
     state: *server.ServerState,
     alloc: Allocator,
@@ -997,8 +988,6 @@ fn sendToolCallHistory(
     try open.writer.writeAll("}");
     try state.writer.writeNotification(alloc, "session/update", open.writer.buffered());
 
-    // The output rides on the update, not the opening call: `tool_call` has no
-    // content field, and a client merges the two into one entry.
     var body: std.Io.Writer.Allocating = .init(alloc);
     defer body.deinit();
     try body.writer.writeAll(result.output);
@@ -1134,7 +1123,7 @@ pub fn writeProviderConfigOption(
 ) !void {
     try w.writeAll("{\"id\":\"provider\",\"name\":\"Provider\",\"category\":\"model\",\"type\":\"select\",\"currentValue\":");
     try writeJsonStr(@tagName(current), w);
-    try w.writeAll(",\"options\":[{\"value\":\"gateway\",\"name\":\"Emma provider\"}]}");
+    try w.writeAll(",\"options\":[{\"value\":\"gateway\",\"name\":\"Shinbo provider\"}]}");
 }
 
 pub fn writeModeConfigOption(
@@ -1347,7 +1336,7 @@ test "ACP interrupted history replay hides model-only abort context" {
     try std.testing.expect(std.mem.find(u8, captured, "<turn_aborted>") == null);
 }
 
-test "ACP load maps one-off child denial to invalid params" {
+test "ACP load distinguishes missing sessions from access and child ownership failures" {
     const alloc = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1376,6 +1365,8 @@ test "ACP load maps one-off child denial to invalid params" {
             &msg,
             error.OneOffSessionNotResumable,
         );
+        try handleLoadFailure(&state, arena, &msg, error.AccessDenied);
+        try handleLoadFailure(&state, arena, &msg, error.SessionNotFound);
         try std.testing.expect(state.active_session == null);
         try capture.sync(io_mod.getIo());
     }
@@ -1388,6 +1379,8 @@ test "ACP load maps one-off child denial to invalid params" {
     const captured = try io_mod.readFileToEnd(alloc, &captured_file, 4096);
     defer alloc.free(captured);
     try std.testing.expect(std.mem.find(u8, captured, "\"code\":-32602") != null);
+    try std.testing.expect(std.mem.find(u8, captured, "\"code\":-32603,\"message\":\"Session could not be loaded\"") != null);
+    try std.testing.expect(std.mem.find(u8, captured, "\"code\":-32602,\"message\":\"Session not found\"") != null);
     try std.testing.expect(std.mem.find(
         u8,
         captured,
@@ -1505,7 +1498,7 @@ fn initAcpSessionTestState(
         .writer = .{ .stdout = capture },
         .workspace_root = workspace,
         .api_key = api_key,
-        .credential_source = .emma_provider_api_key,
+        .credential_source = .shinbo_provider_api_key,
         .selected_model = selected_model,
         .configured_model = configured_model,
         .agent_step_limit = 8,

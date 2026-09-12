@@ -69,22 +69,22 @@ static uint64_t process_birth(pid_t pid) {
     return info.pbi_start_tvsec * 1000000 + info.pbi_start_tvusec;
 }
 
-static NSString *emma_binary_path(pid_t blocked_pid) {
+static NSString *shinbo_binary_path(pid_t blocked_pid) {
     char buffer[PROC_PIDPATHINFO_MAXSIZE] = {0};
     int length = proc_pidpath(blocked_pid, buffer, sizeof(buffer));
     return length > 0 ? [[NSString alloc] initWithBytes:buffer length:(NSUInteger)length encoding:NSUTF8StringEncoding] : nil;
 }
 
-static BOOL emma_binary_name(NSString *path) {
+static BOOL shinbo_binary_name(NSString *path) {
     NSString *stem = path.lastPathComponent.stringByDeletingPathExtension.lowercaseString;
-    return [@[@"emma", @"emma-host", @"emma-cli", @"emma-pty", @"emma-computer", @"emma-option-tap", @"emma-transcribe"] containsObject:stem];
+    return [@[@"shinbo", @"shinbo-host", @"shinbo-cli", @"shinbo-pty", @"shinbo-computer", @"shinbo-option-tap", @"shinbo-transcribe"] containsObject:stem];
 }
 
-static BOOL emma_owned(NSString *bundle_path, pid_t pid, pid_t blocked_pid) {
+static BOOL shinbo_owned(NSString *bundle_path, pid_t pid, pid_t blocked_pid) {
     if (pid == getpid() || pid == blocked_pid || !bundle_path.length) return YES;
-    if (emma_binary_name(bundle_path)) return YES;
-    NSString *emma = emma_binary_path(blocked_pid);
-    return emma.length && ([emma isEqualToString:bundle_path] || [emma hasPrefix:[bundle_path stringByAppendingString:@"/"]]);
+    if (shinbo_binary_name(bundle_path)) return YES;
+    NSString *shinbo = shinbo_binary_path(blocked_pid);
+    return shinbo.length && ([shinbo isEqualToString:bundle_path] || [shinbo hasPrefix:[bundle_path stringByAppendingString:@"/"]]);
 }
 
 static NSDictionary *application_identity(NSRunningApplication *application) {
@@ -110,7 +110,7 @@ static BOOL valid_identity(id value, pid_t blocked_pid) {
         && bounded_string(identity[@"path"], 4096, NO) && [identity[@"path"] hasPrefix:@"/"]
         && finite_number(identity[@"launchedAt"], &launched) && launched > 0
         && integer_in_range(identity[@"pid"], 1, INT_MAX)
-        && !emma_owned(identity[@"path"], (pid_t)[identity[@"pid"] intValue], blocked_pid);
+        && !shinbo_owned(identity[@"path"], (pid_t)[identity[@"pid"] intValue], blocked_pid);
 }
 
 static NSDictionary *list_applications(pid_t blocked_pid) {
@@ -529,7 +529,7 @@ static NSDictionary *mutation_result(AXError error) {
     [self appendElement:_root depth:0 text:text];
     if (![self validApplication]) return failure(@"The approved app has closed or changed. Open it and request approval again.");
     if (cancelled) return failure(@"App control was stopped.");
-    if (_elements.count <= 1) return failure(@"The app exposes no accessible controls. Open its window first. Emma will not activate it or use global input.");
+    if (_elements.count <= 1) return failure(@"The app exposes no accessible controls. Open its window first. Shinbo will not activate it or use global input.");
     _snapshot = NSUUID.UUID.UUIDString;
     _snapshot_at = [NSDate timeIntervalSinceReferenceDate];
     if (!within_deadline() || _elements.count >= max_elements || _truncated) [text appendString:@"State is truncated by the time, size, or element limit.\n"];
@@ -598,7 +598,7 @@ static NSDictionary *mutation_result(AXError error) {
     operation_deadline = [NSDate timeIntervalSinceReferenceDate] + 5;
     if (!validate_action(request)) return failure(@"Invalid app action or unsupported fields.");
     if (![self validApplication]) return failure(@"The approved app has closed or changed. Open it and request approval again.");
-    if (!AXIsProcessTrusted()) return failure(@"Accessibility permission is required. Enable Emma in System Settings > Privacy & Security > Accessibility, then relaunch Emma.");
+    if (!AXIsProcessTrusted()) return failure(@"Accessibility permission is required. Enable Shinbo in System Settings > Privacy & Security > Accessibility, then relaunch Shinbo.");
     if ([request[@"action"] isEqualToString:@"get_app_state"]) return [self state];
     NSString *snapshot = _snapshot;
     _snapshot = nil;
@@ -648,7 +648,7 @@ static NSDictionary *mutation_result(AXError error) {
     NSDictionary *cursor = [self cursorForElement:element];
     id focused = attribute(_root, kAXFocusedUIElementAttribute);
     if (!focused || CFGetTypeID((__bridge CFTypeRef)focused) != AXUIElementGetTypeID()
-        || !CFEqual((__bridge CFTypeRef)focused, element)) return failure(@"Key input requires the app's already-focused control. Emma will not activate or focus the app.");
+        || !CFEqual((__bridge CFTypeRef)focused, element)) return failure(@"Key input requires the app's already-focused control. Shinbo will not activate or focus the app.");
     CGKeyCode key = 0;
     if (!named_key(request[@"key"], &key) || ![self validApplication] || ![self allowedElement:element] || !within_deadline()) return failure(@"The approved app or focused control changed. Get app state again.");
     CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStatePrivate);
@@ -764,10 +764,10 @@ static void self_test(void) {
     invalid[@"path"] = @"Test.app";
     assert(!valid_identity(invalid, 0));
     assert(![mutation_result(kAXErrorCannotComplete)[@"ok"] boolValue]);
-    assert(emma_owned(@"/Applications/Emma.app", 7, getpid()));
-    assert(emma_owned(@"/Applications/Emma.app/Contents/MacOS/emma-cli", 7, 1));
-    assert(emma_owned(@"/Applications/Notes.app", getpid(), 1));
-    assert(!emma_owned(@"/Applications/Notes.app", 7, 1));
+    assert(shinbo_owned(@"/Applications/Shinbo.app", 7, getpid()));
+    assert(shinbo_owned(@"/Applications/Shinbo.app/Contents/MacOS/shinbo-cli", 7, 1));
+    assert(shinbo_owned(@"/Applications/Notes.app", getpid(), 1));
+    assert(!shinbo_owned(@"/Applications/Notes.app", 7, 1));
     assert(resolvable_app_name(@"Google Chrome"));
     assert(!resolvable_app_name(@"/Applications/Notes.app"));
     assert(!resolvable_app_name(@""));
@@ -807,8 +807,8 @@ int main(int argc, const char *argv[]) {
                 return 1;
             }
             NSDictionary *target = launch_target(url);
-            if (emma_binary_name(target[@"target"]) || [target[@"name"] caseInsensitiveCompare:@"Emma"] == NSOrderedSame) {
-                write_result(failure(@"Emma cannot start itself."));
+            if (shinbo_binary_name(target[@"target"]) || [target[@"name"] caseInsensitiveCompare:@"Shinbo"] == NSOrderedSame) {
+                write_result(failure(@"Shinbo cannot start itself."));
                 return 1;
             }
             if (resolving) {

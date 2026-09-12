@@ -1,12 +1,12 @@
 ---
 name: meta-harness
-description: How to run the user's other coding CLIs — Claude Code, Codex, Pi, OpenCode, Gemini CLI, Cursor, Antigravity CLI — from inside Emma with the `cli` and `cli_runs` tools; which one to pick, how to brief it, how to take turns with it, and when to do the work yourself instead. Use whenever the user names one of those CLIs, asks for a second agent's take on the same code, asks what coding agents they have installed, or asks to hand a job to something other than Emma.
+description: How to run the user's other coding CLIs — Claude Code, Codex, Pi, OpenCode, Gemini CLI, Cursor, Antigravity CLI — from inside Shinbo with the `cli` and `cli_runs` tools; which one to pick, how to brief it, how to take turns with it, and when to do the work yourself instead. Use whenever the user names one of those CLIs, asks for a second agent's take on the same code, asks what coding agents they have installed, or asks to hand a job to something other than Shinbo.
 ---
 
 # Running the other CLIs
 
-Emma is a meta harness. The user has already installed and configured coding
-agents — Claude Code, Codex, Pi, OpenCode, Gemini CLI, Cursor, Antigravity CLI — and Emma runs the one they
+Shinbo is a meta harness. The user has already installed and configured coding
+agents — Claude Code, Codex, Pi, OpenCode, Gemini CLI, Cursor, Antigravity CLI — and Shinbo runs the one they
 want in the thread's own folder rather than reimplementing it.
 
 This skill ships with the app and is rewritten from `desktop/skills/` on every
@@ -30,7 +30,7 @@ a CLI that is not on the PATH is the failure you will actually hit.
 
 ## Picking one
 
-**Do the work yourself** unless there is a reason not to. Emma has the folder,
+**Do the work yourself** unless there is a reason not to. Shinbo has the folder,
 the thread, and the user's attention; handing a job sideways costs a whole extra
 model and buys nothing by default.
 
@@ -38,9 +38,9 @@ Reach for a CLI when:
 
 - **The user named one.** "Ask Codex", "have Claude Code do it" — that is the
   whole decision, do not talk them out of it.
-- **They want a second opinion** on code Emma already looked at. Two agents
+- **They want a second opinion** on code Shinbo already looked at. Two agents
   disagreeing about a bug is worth more than one agent asserting twice.
-- **That CLI is set up for this project and Emma is not.** Its own
+- **That CLI is set up for this project and Shinbo is not.** Its own
   `AGENTS.md`, `CLAUDE.md`, MCP servers, hooks and skills all load when it runs
   — that is the point of running it rather than copying its config.
 - **The job is long and self-contained.** A migration across forty files is a
@@ -81,9 +81,9 @@ The user can type into the run's tab too, and often will — the terminal is
 pinned at the top of the thread while it works, so they are watching. Do not
 narrate what they can already see; say what you are handing over and why.
 
-Sessions: Claude Code and Pi resume by an id Emma owns. Emma's Codex, OpenCode,
+Sessions: Claude Code and Pi resume by an id Shinbo owns. Shinbo's Codex, OpenCode,
 Gemini, Cursor, and Antigravity adapters currently resume the newest session in
-the folder. Keep one run of each going per folder; Emma refuses to resume an
+the folder. Keep one run of each going per folder; Shinbo refuses to resume an
 older run once it knows about a newer one. Some vendors also expose explicit
 session ids, but these adapters do not capture them yet.
 
@@ -135,10 +135,10 @@ Multiple sources combine in the order supplied, up to eight from this thread.
 State the next task in `prompt`; do not rely on the previous output to tell the
 next harness what the user authorized. Files already remain in their source
 folders: name their paths explicitly when the deliverable is a file. If an output
-is too large, have its source save it to a file and hand over the path; Emma
+is too large, have its source save it to a file and hand over the path; Shinbo
 rejects oversized handoffs instead of silently losing content.
 
-Runs in the same folder take turns. Emma refuses simultaneous harness writes,
+Runs in the same folder take turns. Shinbo refuses simultaneous harness writes,
 and refuses to resume an older run of a harness that only resumes its newest
 folder session. Continue the newest run, or start a fresh one with the needed
 sources. External terminal sessions are outside this tracking.
@@ -171,11 +171,11 @@ and account. Codex's catalog includes model-specific effort levels when known.
 Claude Code uses `--effort`, Codex uses `--config model_reasoning_effort`, Pi uses
 `--thinking`, OpenCode uses `--variant`, and Antigravity uses `--effort` with
 `agy`. OpenCode variants can be custom names from the user's configuration.
-Cursor and Gemini accept `model`; Emma rejects a separate `effort` because it
+Cursor and Gemini accept `model`; Shinbo rejects a separate `effort` because it
 has no verified per-run flag for those CLIs. Use their native configuration or
 an explicitly selected model variant instead.
 
-Omitted options preserve the selection on `send`. Empty strings reset Emma's
+Omitted options preserve the selection on `send`. Empty strings reset Shinbo's
 explicit overrides to the harness defaults. New handoffs use the destination's
 own selections, not the source's. Model and thinking controls in the run panel
 apply to the next turn and cannot change an active turn. The same controls are

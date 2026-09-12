@@ -29,7 +29,7 @@ export function windowsSystemExecutable(name, environment = process.env) {
 }
 
 export function squirrelStagingDirectory() {
-  return mkdtempSync(path.join(tmpdir(), "emma-squirrel-"));
+  return mkdtempSync(path.join(tmpdir(), "shinbo-squirrel-"));
 }
 
 export function publishStagedBuild(staging, out, names) {

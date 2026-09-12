@@ -6516,7 +6516,7 @@ fn nativeTerminalPath(buffer: []u8) !?[]const u8 {
     const suffix = std.fmt.bytesToHex(random_bytes, .lower);
     return try std.fmt.bufPrint(
         buffer,
-        "\\\\.\\pipe\\emma-terminal-{s}",
+        "\\\\.\\pipe\\shinbo-terminal-{s}",
         .{&suffix},
     );
 }

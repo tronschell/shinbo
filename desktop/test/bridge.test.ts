@@ -27,7 +27,7 @@ const electron = {
 const electronPath = require.resolve("electron");
 require.cache[electronPath] = { id: electronPath, filename: electronPath, loaded: true, exports: electron } as unknown as NodeModule;
 
-const mac = { host: "emma-test.local", addresses: ["127.0.0.1"] };
+const mac = { host: "shinbo-test.local", addresses: ["127.0.0.1"] };
 const tailnetPath = require.resolve("../main/tailnet");
 require.cache[tailnetPath] = {
   id: tailnetPath,
@@ -50,7 +50,7 @@ const asking = (id: string): PermissionAsk => ({
   id,
   threadId: "t1",
   tool: "edit",
-  summary: "Emma wants to edit a file",
+  summary: "Shinbo wants to edit a file",
   detail: "d".repeat(4096),
   askedAt: Date.now(),
   expiresAt: Date.now() + MAX_ASK_MS,
@@ -58,11 +58,11 @@ const asking = (id: string): PermissionAsk => ({
 
 type Harness = ReturnType<typeof createBridge> & { listened: Promise<void> };
 
-function bridgeOn(t: TestContext, live: () => LiveState = idle, dispatch: () => Promise<unknown> = () => Promise.resolve({}), userData = mkdtempSync(path.join(tmpdir(), "emma-bridge-"))): Harness {
+function bridgeOn(t: TestContext, live: () => LiveState = idle, dispatch: () => Promise<unknown> = () => Promise.resolve({}), userData = mkdtempSync(path.join(tmpdir(), "shinbo-bridge-"))): Harness {
   let ready: () => void;
   const listened = new Promise<void>((resolve, reject) => {
     ready = resolve;
-    const late = setTimeout(() => reject(new Error(`nothing is listening for emma-test.local on 127.0.0.1:${BRIDGE_PORT} — is another test process still holding it?`)), 5_000);
+    const late = setTimeout(() => reject(new Error(`nothing is listening for shinbo-test.local on 127.0.0.1:${BRIDGE_PORT} — is another test process still holding it?`)), 5_000);
     late.unref();
   });
   const bridge = createBridge({
@@ -127,7 +127,7 @@ test("the QR carries the address and key, and never the PIN", async (t) => {
   const bridge = bridgeOn(t);
   const payload = await bridge.pair(PIN);
   await bridge.listened;
-  assert.equal(payload.addr, `ws://emma-test.local:${BRIDGE_PORT}`);
+  assert.equal(payload.addr, `ws://shinbo-test.local:${BRIDGE_PORT}`);
   assert.equal(payload.name, "Test Mac");
   assert.equal(Buffer.from(payload.key, "base64url").length, 32);
   assert.doesNotMatch(JSON.stringify(payload), new RegExp(PIN));
@@ -185,7 +185,7 @@ test("a pairing nobody scans expires on its own, without help from the renderer"
   t.after(() => mock.timers.reset());
   const bridge = bridgeOn(t);
   await bridge.pair(PIN);
-  assert.equal(bridge.status().addr, `ws://emma-test.local:${BRIDGE_PORT}`);
+  assert.equal(bridge.status().addr, `ws://shinbo-test.local:${BRIDGE_PORT}`);
   mock.timers.tick(PAIRING_TTL_MS);
   assert.equal(bridge.status().devices.length, 0);
   assert.equal(bridge.status().pairing, false, "the staged pairing outlived its own deadline");
@@ -383,26 +383,26 @@ function dispatchOn(sandbox: Record<string, unknown>): Dispatch {
 }
 
 test("readImage reads a granted or attached file, and refuses a stray path that merely ends in .jpg", async () => {
-  const grant = "/Users/tester/Projects/emma";
+  const grant = "/Users/tester/Projects/shinbo";
   let read = "";
   const dispatch = dispatchOn({
     namedPath: (value: unknown) => (typeof value === "string" ? value : undefined),
     pathInside: (root: string, file: string) => file.startsWith(`${root}/`),
-    folders: { list: () => [{ id: "f1", path: grant, name: "emma" }] },
-    attachments: { holds: (file: string) => file === "/Users/tester/Library/emma/attachments/a.png" },
-    nativeImage: { createFromPath: (file: string) => { read = file; return { isEmpty: () => false }; } },
+    folders: { list: () => [{ id: "f1", path: grant, name: "shinbo" }] },
+    attachments: { holds: (file: string) => file === "/Users/tester/Library/shinbo/attachments/a.png" },
+    attachmentImage: async (file: string) => { read = file; return { isEmpty: () => false }; },
     compressScreenFrame: () => ({ image: "data:image/jpeg;base64,AAAA" }),
   });
 
   await assert.rejects(
     dispatch("readImage", { path: "/Users/tester/Pictures/passport-scan.jpg" }),
-    /Not an image Emma can show/,
+    /Not an image Shinbo can show/,
     "a paired phone read a picture that is in no granted folder and is attached to nothing",
   );
   assert.equal(read, "", "the refused path was opened off disk anyway");
 
   assert.deepEqual({ ...(await dispatch("readImage", { path: `${grant}/docs/shot.png` })) }, { mime: "image/jpeg", base64: "AAAA" });
-  assert.ok(await dispatch("readImage", { path: "/Users/tester/Library/emma/attachments/a.png" }));
+  assert.ok(await dispatch("readImage", { path: "/Users/tester/Library/shinbo/attachments/a.png" }));
 });
 
 test("a folder a phone names is granted only once someone at the Mac approves it", async () => {
@@ -421,32 +421,32 @@ test("a folder a phone names is granted only once someone at the Mac approves it
     pathInside: (root: string, target: string) => target === root || target.startsWith(`${root}/`),
     confirmOnMac: async (_message: string, detail: string) => { asked.push(detail); return answer; },
     folders: { list: () => held, add: (directory: string) => { granted.push(directory); return []; } },
-    visibleFolders: () => granted.map((directory) => ({ id: directory, path: directory, name: "emma" })),
+    visibleFolders: () => granted.map((directory) => ({ id: directory, path: directory, name: "shinbo" })),
   });
 
-  await assert.rejects(dispatch("addFolder", { path: "Projects/emma" }), /full path/, "a relative path was accepted");
+  await assert.rejects(dispatch("addFolder", { path: "Projects/shinbo" }), /full path/, "a relative path was accepted");
   await assert.rejects(dispatch("addFolder", { path: "/etc" }), /home folder/, "a phone granted a folder outside the home folder");
   await assert.rejects(dispatch("addFolder", { path: `${home}/Projects/away` }), /home folder/, "a symlink out of home read as a folder in home");
   assert.deepEqual(asked, [], "a path the shape checks turned away still interrupted the Mac");
 
-  await assert.rejects(dispatch("addFolder", { path: `${home}/Projects/emma` }), /approved/, "a folder nobody approved was granted anyway");
+  await assert.rejects(dispatch("addFolder", { path: `${home}/Projects/shinbo` }), /approved/, "a folder nobody approved was granted anyway");
   await assert.rejects(dispatch("addFolder", { path: home }), /approved/, "the home folder itself was granted from a phone");
   assert.deepEqual(granted, [], "a folder was granted before anyone at the Mac answered");
   assert.equal(asked.length, 2, "the Mac was not asked about a folder it had never granted");
-  assert.match(asked[0], new RegExp(`${home}/Projects/emma`), "the question did not name the folder being handed over");
+  assert.match(asked[0], new RegExp(`${home}/Projects/shinbo`), "the question did not name the folder being handed over");
 
   answer = true;
-  await dispatch("addFolder", { path: `${home}/Projects/emma` });
-  assert.deepEqual(granted, [`${home}/Projects/emma`], "an approved folder was refused");
+  await dispatch("addFolder", { path: `${home}/Projects/shinbo` });
+  assert.deepEqual(granted, [`${home}/Projects/shinbo`], "an approved folder was refused");
 
   held.push({ path: `${home}/Projects/kept` });
   answer = false;
   await dispatch("addFolder", { path: `${home}/Projects/kept` });
-  assert.deepEqual(granted, [`${home}/Projects/emma`, `${home}/Projects/kept`], "a folder already granted was refused");
+  assert.deepEqual(granted, [`${home}/Projects/shinbo`, `${home}/Projects/kept`], "a folder already granted was refused");
   assert.equal(asked.length, 3, "re-adding a folder the Mac already granted asked again");
 });
 
-test("a revert puts back the body Emma recorded, not the one the phone sent", async () => {
+test("a revert puts back the body Shinbo recorded, not the one the phone sent", async () => {
   const written: { path: string; body: string }[] = [];
   const changes = [
     { folderId: "f1", path: "src/index.ts", before: "the recorded body\n", after: "rewritten\n", at: 1 },
@@ -461,16 +461,16 @@ test("a revert puts back the body Emma recorded, not the one the phone sent", as
     agents: { list: () => [{ threadId: "t1" }], changes: (threadId: string) => threadId === "t1" ? changes : [] },
     escapesRoot: () => false,
     changed: () => {},
-    folders: { directory: () => "/Users/tester/Projects/emma", write: (_id: string, file: string, body: string) => { written.push({ path: file, body }); } },
+    folders: { directory: () => "/Users/tester/Projects/shinbo", write: (_id: string, file: string, body: string) => { written.push({ path: file, body }); } },
   });
 
-  await assert.rejects(dispatch("revertChange", { folderId: "f1", path: ".git/hooks/pre-commit" }), /Emma rewrote/, "a path Emma never rewrote was written from a phone");
-  await assert.rejects(dispatch("revertChange", { folderId: "f2", path: "src/index.ts" }), /Emma rewrote/, "a change recorded against another folder stood in for this one");
-  await assert.rejects(dispatch("revertChange", { folderId: "f1", path: "src/new.ts" }), /Emma rewrote/, "a file Emma created was reverted to a body it never had");
+  await assert.rejects(dispatch("revertChange", { folderId: "f1", path: ".git/hooks/pre-commit" }), /Shinbo rewrote/, "a path Shinbo never rewrote was written from a phone");
+  await assert.rejects(dispatch("revertChange", { folderId: "f2", path: "src/index.ts" }), /Shinbo rewrote/, "a change recorded against another folder stood in for this one");
+  await assert.rejects(dispatch("revertChange", { folderId: "f1", path: "src/new.ts" }), /Shinbo rewrote/, "a file Shinbo created was reverted to a body it never had");
   assert.deepEqual(written, [], "a file was written before the recorded change decided anything");
 
   assert.deepEqual({ ...(await dispatch("revertChange", { folderId: "f1", path: "src/index.ts" })) }, { reverted: true });
-  assert.deepEqual(written, [{ path: "src/index.ts", body: "the recorded body\n" }], "the revert wrote something other than the body Emma recorded");
+  assert.deepEqual(written, [{ path: "src/index.ts", body: "the recorded body\n" }], "the revert wrote something other than the body Shinbo recorded");
 });
 
 test("an MCP server a phone installs is approved at the Mac and cannot steer how programs load", async () => {
@@ -538,8 +538,85 @@ test("a phone that replays one request id is answered from the first reply, not 
   assert.equal(steered, 2, "a genuinely new request was swallowed by the dedupe guard");
 });
 
+test("overlapping phone retries share an active mutation despite cache pressure", async () => {
+  let release!: () => void;
+  const wait = new Promise<void>((resolve) => { release = resolve; });
+  let steered = 0;
+  const dispatch = dispatchOn({
+    MAX_REPLIES_PER_THREAD: 1,
+    MAX_REPLY_THREADS: 1,
+    agentMessage: (params: Record<string, unknown>) => ({ threadId: String(params.threadId), text: String(params.text) }),
+    steerThread: async (_thread: string, text: string) => { steered += 1; if (text === "waiting") await wait; },
+  });
+  const params = { threadId: "t1", clientId: "c1", text: "waiting" };
+  const first = dispatch("steerAgent", params);
+  await dispatch("steerAgent", { threadId: "t1", clientId: "c2", text: "other" });
+  await dispatch("steerAgent", { threadId: "t2", clientId: "c3", text: "other" });
+  const retry = dispatch("steerAgent", params);
+  release();
+  assert.equal(await first, await retry);
+  assert.equal(steered, 3);
+});
+
+test("a failed phone mutation can be retried with the same client ID", async () => {
+  let attempts = 0;
+  const dispatch = dispatchOn({
+    agentMessage: () => ({ threadId: "t1", text: "retry" }),
+    steerThread: async () => { if (++attempts === 1) throw new Error("temporarily unavailable"); },
+  });
+  const params = { threadId: "t1", clientId: "c1", text: "retry" };
+  await assert.rejects(dispatch("steerAgent", params), /temporarily unavailable/);
+  assert.equal((await dispatch("steerAgent", params)).steered, true);
+  assert.equal(attempts, 2);
+});
+
+test("replacing a pairing closes the old phone and commits only the new peer", async (t) => {
+  const userData = mkdtempSync(path.join(tmpdir(), "shinbo-bridge-"));
+  let dispatched = 0;
+  const bridge = bridgeOn(t, idle, async () => { dispatched += 1; return {}; }, userData);
+  const firstPayload = await bridge.pair("1111");
+  await bridge.listened;
+  const first = await phoneOn(firstPayload);
+  t.after(() => first.ws.terminate());
+  const nextPayload = await bridge.pair("2222");
+  await first.settle();
+  assert.notEqual(first.ws.readyState, WebSocket.OPEN);
+  assert.equal(dispatched, 0);
+  for (let i = 0; i < 200 && !bridge.status().listening; i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+  const second = await phoneOn(nextPayload);
+  t.after(() => second.ws.terminate());
+  const unlocked = await second.ask("unlock", "unlock", { pin: "2222" });
+  assert.ok(unlocked?.k === "res" && unlocked.ok);
+  const answered = await second.ask("snapshot", "snapshot", {});
+  assert.ok(answered?.k === "res" && answered.ok);
+  assert.equal(dispatched, 1);
+  const peers = JSON.parse(readFileSync(path.join(userData, "mobile-peers.json"), "utf8")) as { key: string; verified: boolean }[];
+  assert.equal(peers.length, 1);
+  assert.equal(peers[0].verified, true);
+  assert.equal(electron.safeStorage.decryptString(Buffer.from(peers[0].key, "base64")), nextPayload.key);
+});
+
+test("a canceled or replaced address lookup cannot revive its pairing", async (t) => {
+  const pending: ((host: string) => void)[] = [];
+  t.mock.method(require.cache[tailnetPath]!.exports, "pairingHost", () => new Promise<string>((resolve) => pending.push(resolve)));
+  const bridge = bridgeOn(t);
+  const canceled = bridge.pair(PIN);
+  bridge.cancelPair();
+  pending.shift()!(mac.host);
+  await assert.rejects(canceled, /canceled or replaced/);
+  assert.equal(bridge.status().pairing, false);
+  const stale = bridge.pair("1111");
+  const latest = bridge.pair("2222");
+  pending.shift()!(mac.host);
+  await assert.rejects(stale, /canceled or replaced/);
+  pending.shift()!(mac.host);
+  await latest;
+  await bridge.listened;
+  assert.equal(bridge.status().pairing, true);
+});
+
 test("a key revoked before a restart is still turned away at the door", async (t) => {
-  const userData = mkdtempSync(path.join(tmpdir(), "emma-bridge-"));
+  const userData = mkdtempSync(path.join(tmpdir(), "shinbo-bridge-"));
   const before = bridgeOn(t, idle, () => Promise.resolve({}), userData);
   const payload = await before.pair(PIN);
   await before.listened;
@@ -655,14 +732,14 @@ test("a list a phone asks for is sealed into one frame, however much the Mac hol
   const rows = <T>(count: number, make: (index: number) => T) => Array.from({ length: count }, (_, index) => make(index));
   const dispatch = dispatchOn({
     boundedCapabilityId: (value: unknown) => value,
-    memoryRoot: () => "/Users/tester/Library/emma/memories",
+    memoryRoot: () => "/Users/tester/Library/shinbo/memories",
     runMemoryCommand: async () => {},
     listMemories: async () => rows(256, (i) => ({ path: `/memories/${i}.md`, bytes: 262_144, updatedAt: i, text: big(262_144) })),
     readVault: () => ({ kind: "obsidian", path: "/Users/tester/Vault" }),
     listNotes: () => rows(2000, (i) => ({
-      path: `/Users/tester/Vault/Emma/note-${i}.md`, relative: `Emma/note-${i}.md`, title: big(200),
-      tags: ["reading", "ui"], savedAt: "2026-09-01T09:00:00.000Z", kind: "page", folder: "Emma",
-      excerpt: big(280), image: `/Users/tester/Vault/Emma/attachments/note-${i}.png`, sourceUrl: big(2048),
+      path: `/Users/tester/Vault/Shinbo/note-${i}.md`, relative: `Shinbo/note-${i}.md`, title: big(200),
+      tags: ["reading", "ui"], savedAt: "2026-09-01T09:00:00.000Z", kind: "page", folder: "Shinbo",
+      excerpt: big(280), image: `/Users/tester/Vault/Shinbo/attachments/note-${i}.png`, sourceUrl: big(2048),
     })),
     listTaskLists: async () => rows(64, (i) => ({
       id: `tl-${i}`, title: big(200), goal: big(1000), updatedAt: "2026-09-01T09:00:00.000Z", threadId: "t1",
@@ -709,7 +786,7 @@ test("a list a phone asks for is sealed into one frame, however much the Mac hol
 
 test("a list that was trimmed says so, and one that fits does not", async () => {
   const note = (index: number, chars: number) => ({
-    path: `/Users/tester/Vault/Emma/note-${index}.md`, relative: `Emma/note-${index}.md`, title: "Kept",
+    path: `/Users/tester/Vault/Shinbo/note-${index}.md`, relative: `Shinbo/note-${index}.md`, title: "Kept",
     tags: [], savedAt: "2026-09-01T09:00:00.000Z", kind: "note", excerpt: "x".repeat(chars),
   });
   const vault = { kind: "obsidian", path: "/Users/tester/Vault" };
@@ -742,10 +819,10 @@ test("a command from a phone does not run until somebody at the Mac says so", as
   const dispatch = dispatchOn({
     runCommandRequest,
     homedir: () => "/Users/tester",
-    folderNames: (ids: string[]) => ids.map(() => "emma"),
+    folderNames: (ids: string[]) => ids.map(() => "shinbo"),
     folders: { directory: (id: string) => {
       if (id !== "f1") throw new Error("That folder is not granted.");
-      return "/Users/tester/Projects/emma";
+      return "/Users/tester/Projects/shinbo";
     } },
     confirmOnMac: async (_message: string, detail: string) => { asked.push(detail); return answer; },
     background: { start: (cwd: string, command: string, folder: string) => {
@@ -768,9 +845,9 @@ test("a command from a phone does not run until somebody at the Mac says so", as
   answer = true;
   assert.deepEqual(
     { ...(await dispatch("runCommand", { command: "npm test", folderId: "f1" })) },
-    { id: "bg-1", command: "npm test", folder: "emma", status: "running", exitCode: null, startedAt: 1 },
+    { id: "bg-1", command: "npm test", folder: "shinbo", status: "running", exitCode: null, startedAt: 1 },
   );
-  assert.deepEqual(started, [{ cwd: "/Users/tester/Projects/emma", command: "npm test", folder: "emma" }], "an approved command ran somewhere other than its folder");
+  assert.deepEqual(started, [{ cwd: "/Users/tester/Projects/shinbo", command: "npm test", folder: "shinbo" }], "an approved command ran somewhere other than its folder");
 
   await dispatch("runCommand", { command: "uptime" });
   assert.equal(started[1].cwd, "/Users/tester", "a command with no folder ran outside the home folder");
@@ -781,6 +858,8 @@ test("clearThreadContext empties the context window without deleting the thread"
   const forgotten: string[] = [];
   const compactNext = new Set(["t1", "t2"]);
   const dispatch = dispatchOn({
+    path,
+    forgetHarnessSession: (_home: string, id: string) => forgotten.push(`saved:${id}`),
     boundedCapabilityId: (value: unknown, label: string) => {
       if (typeof value !== "string" || !value || value.length > 256) throw new Error(`${label} is invalid`);
       return value;
@@ -796,7 +875,7 @@ test("clearThreadContext empties the context window without deleting the thread"
   assert.deepEqual(forgotten, [], "a session was forgotten before the thread id was checked");
 
   assert.deepEqual({ ...(await dispatch("clearThreadContext", { threadId: "t1" })) }, { cleared: true });
-  assert.deepEqual(forgotten, ["claude:t1", "codex:t1"], "a harness kept replaying the thread it was told to forget");
+  assert.deepEqual(forgotten, ["saved:t1", "claude:t1", "codex:t1"], "a harness kept replaying the thread it was told to forget");
   assert.deepEqual([...compactNext], ["t2"], "a compaction stayed queued against the thread that was just cleared");
 });
 

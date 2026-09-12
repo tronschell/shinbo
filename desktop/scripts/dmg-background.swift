@@ -78,8 +78,8 @@ for scale in [1, 2] {
         string.draw(at: .zero)
         NSGraphicsContext.restoreGraphicsState()
     }
-    text("WELCOME TO EMMA", y: 43, font: .monospacedSystemFont(ofSize: 10, weight: .medium), ink: 0xe481ad, tracking: 2.3)
-    text("Drag Emma to Applications", y: 67, font: .systemFont(ofSize: 27, weight: .medium), ink: 0xf3eef0, tracking: -0.8)
+    text("WELCOME TO SHINBO", y: 43, font: .monospacedSystemFont(ofSize: 10, weight: .medium), ink: 0xe481ad, tracking: 2.3)
+    text("Drag Shinbo to Applications", y: 67, font: .systemFont(ofSize: 27, weight: .medium), ink: 0xf3eef0, tracking: -0.8)
     text(version, y: 353, font: .monospacedSystemFont(ofSize: 11, weight: .regular), ink: 0xaaa1a8, tracking: 1)
     color(0xaaa1a8).setStroke()
     let arrow = NSBezierPath()

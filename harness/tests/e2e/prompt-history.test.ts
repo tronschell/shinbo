@@ -22,7 +22,7 @@ import {
 
 const TIMEOUT = 20_000;
 const REJECTED_GATEWAY_AUTH = {
-  EMMA_PROVIDER_API_KEY: "e2e-placeholder",
+  SHINBO_PROVIDER_API_KEY: "e2e-placeholder",
   NO_COLOR: "1",
 };
 

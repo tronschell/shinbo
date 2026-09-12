@@ -15,7 +15,8 @@ const subscribe = (name: string) => (listener: (value: Event) => void) => {
   removeItem: () => undefined,
 };
 (globalThis as unknown as { window: unknown }).window = {
-  emma: {
+  shinbo: {
+    request: async () => { throw new Error("No saved thread"); },
     onActivity: subscribe("activity"),
     onDelta: subscribe("delta"),
     onStep: subscribe("step"),
@@ -23,6 +24,7 @@ const subscribe = (name: string) => (listener: (value: Event) => void) => {
     onContextExperiment: subscribe("experiment"),
     onRoutedModel: subscribe("model"),
     onContextBreakdown: subscribe("breakdown"),
+    onChanged: () => 0,
     onAgents: () => () => undefined,
     listAgents: async () => [],
     listSpans: async () => ({}),

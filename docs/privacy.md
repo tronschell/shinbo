@@ -23,27 +23,27 @@ to a file in this repo.
 | Computer use | Running-app metadata; approved app's accessibility text and action results | The turn's model as tool results; actions execute in the approved app |
 | Annotated screen context | A compressed JPEG | Stays in Electron's main process |
 | Notes you keep | Markdown and attachments | Written into the vault folder **you** chose; the note tagger may also send text to its configured model |
-| Threads and jobs | Markdown | The Rust data root, moved by `EMMA_DATA_DIR` |
+| Threads and jobs | Markdown | The Rust data root, moved by `SHINBO_DATA_DIR` |
 | Traces, task lists, plans, memories, artifacts and settings | Markdown and JSON | Electron's `userData` directory; see [data.md](data.md) for the separate roots |
 | Component `fetch` | The widget's request, with approved `{{NAME}}` placeholders filled in from saved variables | The fixed public HTTPS destination shown in the credential-request approval; keyless widgets can fetch without credential approval |
 | Provider keys | Your API keys | OS-secure-storage-encrypted on disk, child-process environments, and the configured service as authentication |
 | Browser, MCP servers and coding CLIs | Pages, prompts, tool arguments and credentials used by those integrations | Their configured services; they are not covered by Private routing |
 
-Emma does not configure an analytics service or a crash-report uploader. It does
+Shinbo does not configure an analytics service or a crash-report uploader. It does
 record local usage and execution traces. Model providers, update servers and
 other services still receive the requests listed above and their network metadata.
 
 ## The thread turn
 
 This sends the most. [main.ts](../desktop/main/main.ts) catches the renderer's
-`sendMessage` and runs the turn on `emma-cli`, the Zig harness in
-[harness/](../harness) — Emma's fork of
+`sendMessage` and runs the turn on `shinbo-cli`, the Zig harness in
+[harness/](../harness) — Shinbo's fork of
 [vercel-labs/fx](https://github.com/vercel-labs/fx). The harness makes the HTTP
-call: [emma_openai.zig](../harness/src/gateway/emma_openai.zig) builds the body and
-posts it to `EMMA_PROVIDER_CHAT_URL`. The bearer token is
-`EMMA_PROVIDER_API_KEY`, set by [harness.ts](../desktop/main/harness.ts) from the
+call: [shinbo_openai.zig](../harness/src/gateway/shinbo_openai.zig) builds the body and
+posts it to `SHINBO_PROVIDER_CHAT_URL`. The bearer token is
+`SHINBO_PROVIDER_API_KEY`, set by [harness.ts](../desktop/main/harness.ts) from the
 selected provider's credential, or the stored OpenRouter key for that route. A
-`codex:` model points that URL at a loopback relay in Emma's main process, which
+`codex:` model points that URL at a loopback relay in Shinbo's main process, which
 forwards the same turn to `https://chatgpt.com/backend-api/codex/responses`
 under your `codex login` token — see [models.md](models.md).
 
@@ -53,27 +53,27 @@ the alternative is an agent loose in your home directory.
 
 ## OpenRouter, honestly
 
-**Emma cannot read or change your provider account's logging settings.**
+**Shinbo cannot read or change your provider account's logging settings.**
 OpenRouter documents separate opt-ins for private input/output logging and use
 of prompts to improve its product. Review its
 [data-collection policy](https://openrouter.ai/docs/guides/privacy/data-collection)
 and your [account settings](https://openrouter.ai/settings/privacy). A model being
 free or paid is not a privacy guarantee.
 
-**Emma's own switch is off by default.** *Private routing* in **Settings →
+**Shinbo's own switch is off by default.** *Private routing* in **Settings →
 Models** (`settings.requireZeroRetention`) demands no-training, zero-retention
 endpoints and fails the turn rather than route around them. Turning it on sets
-`EMMA_OPENROUTER_ZDR` in Electron's environment and recycles the idle harnesses,
-because `emma-cli` reads the flag from its spawn environment.
+`SHINBO_OPENROUTER_ZDR` in Electron's environment and recycles the idle harnesses,
+because `shinbo-cli` reads the flag from its spawn environment.
 
-With it set and the chat URL pointing at OpenRouter, `emma_openai.zig` appends
+With it set and the chat URL pointing at OpenRouter, `shinbo_openai.zig` appends
 exactly this to the request body:
 
 ```json
 "provider":{"data_collection":"deny","zdr":true}
 ```
 
-`isOpenRouter()` is a substring check for `://openrouter.ai/`; point Emma anywhere
+`isOpenRouter()` is a substring check for `://openrouter.ai/`; point Shinbo anywhere
 else and the keys are not sent, because they are OpenRouter's own vocabulary.
 
 **What it does not cover.** The flag rides the harness request body only. Electron
@@ -142,7 +142,7 @@ or `https:` on `localhost`, `127.0.0.1` or `[::1]`, and nothing else. Cleanup th
 cannot run returns the raw transcript rather than sending it elsewhere.
 
 Audio never touches durable storage: a temp WAV under
-`mkdtemp(tmpdir(), "emma-voice-")` at mode `0o600`, removed in a `finally`.
+`mkdtemp(tmpdir(), "shinbo-voice-")` at mode `0o600`, removed in a `finally`.
 `MAX_UTTERANCE_BYTES` is 12 MiB. See [voice.md](voice.md).
 
 ## App text and images
@@ -182,7 +182,7 @@ A key you paste is encrypted through Electron's `safeStorage` (the operating
 system's secure credential store),
 base64-encoded, and written to `<userData>/credentials.json` — a `.tmp` file at
 mode `0o600` in a directory created `0o700`, renamed into place
-([credentials.ts](../desktop/main/credentials.ts)). Before every save Emma
+([credentials.ts](../desktop/main/credentials.ts)). Before every save Shinbo
 round-trips a probe value through `safeStorage`; if that fails, or secure
 storage is unavailable, `save()` throws rather than settle for something weaker.
 
@@ -190,15 +190,15 @@ A key encrypted by a process that dies before Chromium flushes `Local State`
 cannot be read again: Chromium mints a fresh profile key when it finds none on
 disk and only persists it, DPAPI-wrapped under `os_crypt.encrypted_key`, at a
 clean shutdown. The Windows installer's first-run relaunch is short-lived enough
-to land in that window. Emma does not delete what it cannot read. Each entry is
+to land in that window. Shinbo does not delete what it cannot read. Each entry is
 decrypted on its own, the ones that fail are kept as opaque ciphertext and
 rewritten verbatim on the next save, and the list API reports them as
 `readable: false` so Settings and the setup cards can say which key to paste
 again. Replacing or removing that slot is the only thing that clears it.
 
-`applyToEnv(process.env)` decrypts onto Electron's environment, which `emma-cli`
+`applyToEnv(process.env)` decrypts onto Electron's environment, which `shinbo-cli`
 inherits. The Rust host inherits it too but reads no key: nothing in Rust makes a
-network request. An entry Emma could not decrypt is never applied to the
+network request. An entry Shinbo could not decrypt is never applied to the
 environment. The credential-list API returns masks, not full keys:
 `{ env, masked, readable }`. `maskSecret` shows the first six and last four
 characters of a long key, and an unreadable slot carries an empty mask. Keys are sent to their configured services as authentication; they do
@@ -223,21 +223,21 @@ Every window is built by `secureWindow()`: `nodeIntegration: false`,
 **Navigation.** `will-navigate` is prevented for any URL that differs from the
 current one. `setWindowOpenHandler` denies everything; a URL that passes
 `externalUrl` goes to `shell.openExternal`, so an ordinary link opens in your
-browser instead of inside Emma.
+browser instead of inside Shinbo.
 
 **Electron permissions.** Both handlers run through `pageMayAsk`: the request must
-come from one of Emma's own windows, and only `clipboard-sanitized-write` and
+come from one of Shinbo's own windows, and only `clipboard-sanitized-write` and
 audio-only `media` are ever granted. Camera, geolocation, notifications, clipboard
 *read*, MIDI, USB and HID are denied.
 
 **CSP**, from [index.html](../desktop/index.html):
 
 ```
-default-src 'self'; script-src 'self' emma-artifact: emma-component:;
+default-src 'self'; script-src 'self' shinbo-artifact: shinbo-component:;
 style-src 'self' 'unsafe-inline'; font-src 'self' data:;
-img-src 'self' data: emma-component:;
-connect-src 'self' emma-artifact: emma-component: ws://127.0.0.1:* ws://localhost:*;
-frame-src 'self' emma-artifact: emma-visual:;
+img-src 'self' data: shinbo-component:;
+connect-src 'self' shinbo-artifact: shinbo-component: ws://127.0.0.1:* ws://localhost:*;
+frame-src 'self' shinbo-artifact: shinbo-visual:;
 object-src 'none'; base-uri 'none'; form-action 'none'
 ```
 
@@ -266,8 +266,8 @@ Choosing a local thread model changes that route, not all network activity.
 Secondary models, the catalog, update checks, widgets and enabled integrations
 have separate routes. Review those before treating a setup as offline.
 
-**Reset Emma**, in **Settings → Data & privacy**, deletes every thread, artifact,
-plan, connected folder, saved key and setting on this computer, then restarts Emma
+**Reset Shinbo**, in **Settings → Data & privacy**, deletes every thread, artifact,
+plan, connected folder, saved key and setting on this computer, then restarts Shinbo
 empty. The notes in your vault are left where they are — they are your files, in
 your folder. It cannot be undone.
 

@@ -1,10 +1,14 @@
 import { Buffer } from "node:buffer";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { isWindows, realPathInside, samePath } from "./platform";
 import {
   ATTACHMENT_FOLDER,
+  FRONTMATTER,
+  type Frontmatter,
+  parseFrontmatter,
   DEFAULT_VAULT_FOLDER,
   MAX_ATTACHMENT_BYTES,
   MAX_NOTE_BYTES,
@@ -30,7 +34,6 @@ const IMAGE_DATA_URL = /^data:image\/(png|jpe?g|webp|gif);base64,([A-Za-z0-9+/=\
 const EMBED = /!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]|!\[[^\]]*\]\(([^)\s]+)\)/;
 const IMAGE_FILE = /\.(png|jpe?g|gif|bmp)$/i;
 const MAX_EXCERPT = 280;
-const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 const OBSIDIAN_CONFIG = isWindows
   ? path.join(process.env.APPDATA || path.join(homedir(), "AppData", "Roaming"), "obsidian", "obsidian.json")
   : path.join(homedir(), "Library", "Application Support", "obsidian", "obsidian.json");
@@ -52,8 +55,6 @@ const OBSIDIAN_APPS = isWindows ? (() => {
   return [...new Set(candidates)];
 })() : ["/Applications/Obsidian.app", path.join(homedir(), "Applications", "Obsidian.app")];
 const BREW = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"];
-
-type Frontmatter = Record<string, string | string[]>;
 
 function attempt(action: () => void): boolean {
   try {
@@ -79,7 +80,7 @@ function writeAtomic(file: string, data: string | Buffer, mode?: number): void {
 }
 
 function normalizeVault(value: unknown): VaultChoice {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Pick the folder Emma should keep your notes in.");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Pick the folder Shinbo should keep your notes in.");
   const choice = value as Partial<VaultChoice>;
   const root = typeof choice.root === "string" ? choice.root.trim() : "";
   if (!root || !path.isAbsolute(root)) throw new Error("Name your vault with a full path.");
@@ -114,7 +115,7 @@ export function vaultWritable(vault: VaultChoice): boolean {
   } catch {
     return false;
   }
-  const probe = path.join(folder, ".emma-write-check");
+  const probe = path.join(folder, ".shinbo-write-check");
   return attempt(() => {
     writeFileSync(probe, "");
     rmSync(probe);
@@ -156,33 +157,6 @@ function serializeFrontmatter(fields: Frontmatter): string {
   return `---\n${lines.join("\n")}\n---\n`;
 }
 
-function scalar(raw: string): string | string[] {
-  const value = raw.trim();
-  if (value.startsWith("[")) {
-    return value.slice(1, value.endsWith("]") ? -1 : undefined).split(",").map((item) => item.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
-  }
-  if (value.startsWith('"')) {
-    try {
-      const parsed: unknown = JSON.parse(value);
-      return typeof parsed === "string" ? parsed : value;
-    } catch {
-      return value;
-    }
-  }
-  return value;
-}
-
-function parseFrontmatter(text: string): Frontmatter | null {
-  const match = FRONTMATTER.exec(text);
-  if (!match) return null;
-  const fields: Frontmatter = {};
-  for (const line of match[1].split(/\r?\n/)) {
-    const pair = /^([A-Za-z][A-Za-z0-9_-]*):[ \t]*(.*)$/.exec(line);
-    if (pair) fields[pair[1]] = scalar(pair[2]);
-  }
-  return fields;
-}
-
 function fallbackTitle(request: KeepRequest): string {
   const line = (request.text ?? "").split("\n").map((item) => item.trim()).find(Boolean);
   if (request.kind === "page" && request.sourceUrl) {
@@ -209,13 +183,15 @@ function freeNotePath(folder: string, slug: string): { file: string; relative: s
 
 function writeAttachment(vault: VaultChoice, stem: string, image: string): string {
   const match = IMAGE_DATA_URL.exec(image.trim());
-  if (!match) throw new Error("That screenshot is not an image Emma can keep.");
+  if (!match) throw new Error("That screenshot is not an image Shinbo can keep.");
   const data = Buffer.from(match[2], "base64");
   if (!data.length || data.length > MAX_ATTACHMENT_BYTES) throw new Error("That screenshot is too large to keep.");
   const folder = attachmentFolder(vault);
-  const name = `${stem}.${match[1] === "jpeg" || match[1] === "jpg" ? "jpg" : match[1]}`;
+  const extension = match[1] === "jpeg" || match[1] === "jpg" ? "jpg" : match[1];
+  let name = `${stem}.${extension}`;
+  for (let index = 2; existsSync(path.join(folder, name)); index += 1) name = `${stem}-${index}.${extension}`;
   const file = path.join(folder, name);
-  if (!realPathInside(folder, file)) throw new Error("Emma will not write outside your knowledge folder.");
+  if (!realPathInside(folder, file)) throw new Error("Shinbo will not write outside your knowledge folder.");
   mkdirSync(folder, { recursive: true });
   writeAtomic(file, data);
   return name;
@@ -254,11 +230,11 @@ function noteBody(request: KeepRequest, embed: string): string {
 
 export async function keepNote(vault: VaultChoice, request: KeepRequest): Promise<KeptNote> {
   const choice = normalizeVault(vault);
-  if (!request || typeof request !== "object" || !isKeepKind(request.kind)) throw new Error("Emma keeps screenshots, highlights, pages and notes.");
+  if (!request || typeof request !== "object" || !isKeepKind(request.kind)) throw new Error("Shinbo keeps screenshots, highlights, pages and notes.");
   const folder = notesRoot(choice);
   const title = clampBytes((((request.title ?? "").trim() || fallbackTitle(request)).replace(/\s+/g, " ")), MAX_TITLE_BYTES);
   const { file, relative } = freeNotePath(folder, noteSlug(title));
-  if (!realPathInside(folder, file)) throw new Error("Emma will not write outside your knowledge folder.");
+  if (!realPathInside(folder, file)) throw new Error("Shinbo will not write outside your knowledge folder.");
   const sourceUrl = typeof request.sourceUrl === "string" ? request.sourceUrl.trim().slice(0, 2048) : "";
   const sourceApplication = typeof request.sourceApplication === "string" ? request.sourceApplication.trim().slice(0, 120) : "";
   const embed = request.kind === "screenshot" && typeof request.image === "string" && request.image
@@ -273,7 +249,8 @@ export async function keepNote(vault: VaultChoice, request: KeepRequest): Promis
     ...(sourceApplication ? { application: sourceApplication } : {}),
     tags: [],
   };
-  const body = clampBytes(noteBody(request, embed), MAX_NOTE_BYTES);
+  const body = noteBody(request, embed);
+  if (Buffer.byteLength(body, "utf8") > MAX_NOTE_BYTES) throw new Error(`That formatted note exceeds ${MAX_NOTE_BYTES / 1024} KB. Shorten it or keep the full text in a file.`);
   writeAtomic(file, `${serializeFrontmatter(fields)}\n${body}\n`);
   const image = noteImage(folder, body);
   return {
@@ -290,10 +267,10 @@ export async function keepNote(vault: VaultChoice, request: KeepRequest): Promis
   };
 }
 
-function readNote(root: string, name: string): KeptNote | null {
+async function readNote(root: string, name: string): Promise<KeptNote | null> {
   const file = path.join(root, name);
   try {
-    const text = readFileSync(file, "utf8");
+    const text = await readFile(file, "utf8");
     const fields = parseFrontmatter(text);
     const kind = fields?.kind;
     if (!fields || !isKeepKind(kind)) return null;
@@ -310,7 +287,7 @@ function readNote(root: string, name: string): KeptNote | null {
       ...(held ? { folder: held } : {}),
       title: title || name.replace(/\.md$/, ""),
       tags: (Array.isArray(fields.tags) ? fields.tags : []).filter(validTag).slice(0, MAX_TAGS),
-      savedAt: Number.isNaN(Date.parse(saved)) ? statSync(file).mtime.toISOString() : saved,
+      savedAt: Number.isNaN(Date.parse(saved)) ? (await stat(file)).mtime.toISOString() : saved,
       kind,
       excerpt: noteExcerpt(body),
       ...(image ? { image } : {}),
@@ -345,9 +322,9 @@ function subfolders(root: string): string[] {
 
 export function notesRoot(vault: VaultChoice): string {
   const choice = normalizeVault(vault);
-  if (!isDirectory(choice.root)) throw new Error(`Your vault is not at ${choice.root} any more. It was moved, renamed or unmounted, so Emma is not reading or writing your notes until you choose it again on the Knowledge base page.`);
+  if (!isDirectory(choice.root)) throw new Error(`Your vault is not at ${choice.root} any more. It was moved, renamed or unmounted, so Shinbo is not reading or writing your notes until you choose it again on the Knowledge base page.`);
   const folder = noteFolder(choice);
-  if (!isDirectory(folder)) throw new Error(`Your knowledge folder is not at ${folder} any more. It was moved, renamed or deleted, so Emma is not reading or writing your notes until you choose it again on the Knowledge base page.`);
+  if (!isDirectory(folder)) throw new Error(`Your knowledge folder is not at ${folder} any more. It was moved, renamed or deleted, so Shinbo is not reading or writing your notes until you choose it again on the Knowledge base page.`);
   return folder;
 }
 
@@ -359,12 +336,12 @@ export function noteInVault(vault: VaultChoice, value: unknown): string {
   return path.relative(root, full);
 }
 
-export function listNotes(vault: VaultChoice): KeptNote[] {
+export async function listNotes(vault: VaultChoice): Promise<KeptNote[]> {
   const root = notesRoot(vault);
   const names = [...markdownIn(root), ...subfolders(root).flatMap((name) => markdownIn(path.join(root, name), `${name}/`))];
   const notes: KeptNote[] = [];
   for (const name of names.slice(0, MAX_VAULT_NOTES * 2)) {
-    const note = readNote(root, name);
+    const note = await readNote(root, name);
     if (note) notes.push(note);
   }
   return notes.sort((left, right) => right.savedAt.localeCompare(left.savedAt)).slice(0, MAX_VAULT_NOTES);
@@ -380,7 +357,7 @@ export function createNoteFolder(vault: VaultChoice, value: unknown): NoteFolder
   if (!validNoteFolder(value)) throw new Error("Name the folder without slashes, and keep it short.");
   const name = value.trim();
   const folder = path.join(root, name);
-  if (!realPathInside(root, folder)) throw new Error("Emma will not write outside your knowledge folder.");
+  if (!realPathInside(root, folder)) throw new Error("Shinbo will not write outside your knowledge folder.");
   if (existsSync(folder)) throw new Error(`Your knowledge base already keeps a folder called ${name}.`);
   mkdirSync(folder, { recursive: true });
   return { name, changedAt: statSync(folder).mtime.toISOString() };
@@ -392,7 +369,7 @@ export function renameNoteFolder(vault: VaultChoice, current: unknown, next: unk
   const name = next.trim();
   const from = path.join(root, current.trim());
   const to = path.join(root, name);
-  if (!realPathInside(root, from) || !realPathInside(root, to)) throw new Error("Emma will not write outside your knowledge folder.");
+  if (!realPathInside(root, from) || !realPathInside(root, to)) throw new Error("Shinbo will not write outside your knowledge folder.");
   if (!isDirectory(from)) throw new Error(`Your knowledge base has no folder called ${current.trim()}.`);
   if (to !== from) {
     if (existsSync(to) && to.toLowerCase() !== from.toLowerCase()) throw new Error(`Your knowledge base already keeps a folder called ${name}.`);
@@ -410,14 +387,15 @@ export function moveNote(vault: VaultChoice, relative: string, into: unknown): s
   const folder = name ? path.join(root, name) : root;
   if (!isDirectory(folder)) throw new Error(`Your knowledge base has no folder called ${name}.`);
   const to = path.join(folder, path.basename(relative));
-  if (to === from) return path.relative(root, to);
+  const moved = path.relative(root, to).split(path.sep).join("/");
+  if (to === from) return moved;
   if (!realPathInside(root, to) || existsSync(to)) throw new Error("A note by that name is already filed there.");
   renameSync(from, to);
-  return path.relative(root, to);
+  return moved;
 }
 
 export function applyNoteTags(notePath: string, title: string, tags: readonly string[]): void {
-  if (typeof notePath !== "string" || !path.isAbsolute(notePath) || !notePath.endsWith(".md")) throw new Error("That is not a note Emma saved.");
+  if (typeof notePath !== "string" || !path.isAbsolute(notePath) || !notePath.endsWith(".md")) throw new Error("That is not a note Shinbo saved.");
   const text = readFileSync(notePath, "utf8");
   const match = FRONTMATTER.exec(text);
   const fields = match ? parseFrontmatter(text) : null;

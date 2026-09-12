@@ -44,7 +44,7 @@ test("tool options preserve exact selections, explicit resets, and reject malfor
 });
 
 test("a harness chain keeps independent model and effort selections across resume and resets", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "emma-cli-options-"));
+  const directory = await mkdtemp(join(tmpdir(), "shinbo-cli-options-"));
   const binary = await writeFakeCli(directory, `process.stdout.write(JSON.stringify({args:process.argv.slice(2),effort:process.env.CLAUDE_CODE_EFFORT_LEVEL}));\n`);
   const runs = new CliRuns(() => undefined);
   const paths = Reflect.get(runs, "paths") as Map<string, string>;

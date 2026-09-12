@@ -54,7 +54,7 @@
 .dash-projects li > .dash-spark { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
 .dash-projects b { grid-row: 1 / span 2; grid-column: 3; align-self: center; color: var(--text-3); font: var(--fs-2xs)/1.4 var(--font-mono); font-weight: 400; text-align: right; }
 .dash-projects li[data-hue="rose"] .dash-spark i { background: color-mix(in srgb, var(--rose) 60%, transparent); }
-.dash-projects li[data-hue="orange"] .dash-spark i { background: color-mix(in srgb, var(--orange) 60%, transparent); }
+.dash-projects li[data-hue="pink"] .dash-spark i { background: color-mix(in srgb, var(--pink) 60%, transparent); }
 .dash-projects li[data-hue="lime"] .dash-spark i { background: color-mix(in srgb, var(--lime) 60%, transparent); }
 .dash-projects li[data-hue="teal"] .dash-spark i { background: color-mix(in srgb, var(--teal) 60%, transparent); }
 .dash-projects li[data-hue="blue"] .dash-spark i { background: color-mix(in srgb, var(--blue) 60%, transparent); }
@@ -71,7 +71,7 @@
 .dash-tiles button:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 .dash-tiles em { color: var(--text-3); font: var(--fs-2xs)/1 var(--font-mono); font-style: normal; letter-spacing: var(--ls-caps); }
 .dash-tiles button[data-hue="rose"] em { color: var(--rose); }
-.dash-tiles button[data-hue="orange"] em { color: var(--orange); }
+.dash-tiles button[data-hue="pink"] em { color: var(--pink); }
 .dash-tiles button[data-hue="lime"] em { color: var(--lime); }
 .dash-tiles button[data-hue="teal"] em { color: var(--teal); }
 .dash-tiles button[data-hue="blue"] em { color: var(--blue); }

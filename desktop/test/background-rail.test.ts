@@ -32,7 +32,7 @@ test("background rail makes its final read and stops after exit", async () => {
     const environment = {
       open: "bg1",
       setOutput: (value: string) => outputs.push(value),
-      window: { emma: { readBackground: async (id: string) => { ids.push(id); return readings.shift() ?? null; } } },
+      window: { shinbo: { readBackground: async (id: string) => { ids.push(id); return readings.shift() ?? null; } } },
       setInterval: (callback: () => void) => { const timer = { callback, cleared: false }; timers.push(timer); return timer; },
       clearInterval: (timer: Timer) => { timer.cleared = true; clears += 1; },
     };

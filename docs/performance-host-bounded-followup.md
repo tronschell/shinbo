@@ -1,0 +1,11 @@
+# Bounded host/main follow-up
+
+This read-only sweep excluded the already documented performance fixes and traced remaining host/main persistence, targeted loading, library enumeration, and indexing boundaries. The only actionable finding was the sequential targeted-read cache retention exposed by subscription history selection; its minimal fix, failing/passing operation counts, correctness checks, and tradeoff are documented in `performance-model-plan-history.md`. It is an integration correction, not a new counted issue.
+
+Reviewed `ThreadStore::read`, `load`, `cached`, `keep_parsed`, `save`, cached/uncached listing, compact summaries, metadata invalidation, malformed records, and every core live-store caller. Mutating calls still require owned records and atomic saves. The parent-existence read copies a full parent, but no additional high-priority user-visible stall was established beyond the already documented storage copying/codec work. No format, transactional, retention-period, or durability shortcut was introduced.
+
+Reviewed Electron Host snapshot reuse/invalidation, startup/auto-name summaries, agent-tool histories, export/subscription selection, context persistence callers, and final trace recording. Trace flush is once per completed run and returns no full transcript. Context files contain per-thread settings and change at explicit selection/turn boundaries; their synchronous whole-map persistence is a remaining scaling cost, but no supported urgent workload was demonstrated in this bounded pass. No speculative persistence queue or cache was added.
+
+Reviewed semantic-grep indexing ownership, worker/proxy paths, and existing cancellation, plus the note tagging/mention paths' remaining synchronous reads. Index processing occurs in owned workers, with fixed embedding concurrency; the prior shutdown/cancellation work covers the identified abandoned-work path. Note reads in the inspected mention path enforce the existing per-file limit. No further independent P1 was established, and no CPU timing benchmark was run for this sweep.
+
+The targeted-cache correction passes its focused actual-store regression and all required Rust checks. The rest of this sweep is source/caller coverage, not measured proof that all remaining paths are optimal.

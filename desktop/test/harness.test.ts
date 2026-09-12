@@ -1,4 +1,5 @@
 import test from "node:test";
+import fs from "node:fs";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -8,7 +9,7 @@ import { withThinking } from "../shared/thinking";
 import { artifactWritten } from "../shared/artifacts";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { defaultHarnessExperiments, validateHarnessExperiments } from "../shared/settings";
-import { CLOSED_BY_EMMA, fixPrompt, harnessHealth, STALL_MS, stoppedReason, type HarnessLogLine, type HarnessState } from "../shared/harness-log";
+import { CLOSED_BY_SHINBO, fixPrompt, harnessHealth, STALL_MS, stoppedReason, type HarnessLogLine, type HarnessState } from "../shared/harness-log";
 import { Harness, HARNESS_MODE_ID, INTERRUPTED_CALL, RESTARTED_BY_YOU, explainFailure, callEscapesWorkspace, compactionReported, contextBreakdownReported, contextExperimentFired, describePath, effortOption, escapesRoot, experimentOption, failedTurn, harnessKey, recoveredSessionTraces, toolCallText, toolOutput, turnUsageReported, unwrapMcpResult, type HarnessToolCall, type PermissionAsk, type PermissionContext, type PermissionOption } from "../main/harness";
 import { decodeSpans, encodeSpans } from "../shared/trace";
 
@@ -20,7 +21,7 @@ function harness(
   answer: (ask: PermissionAsk, options: PermissionOption[]) => Promise<string | null>,
   idleMs?: number,
   runTool: (threadId: string, name: string, args: Record<string, unknown>) => Promise<string> = async () => "",
-  home = path.join(tmpdir(), `emma-harness-${process.pid}`),
+  home = path.join(tmpdir(), `shinbo-harness-${process.pid}`),
 ) {
   const deltas: { threadId: string; delta: string }[] = [];
   const thoughts: string[] = [];
@@ -73,26 +74,26 @@ test("activity updates never become answer or thought deltas", () => {
   const { client, activities, deltas, thoughts, calls } = harness(async () => null);
   const inner = client as unknown as { threadsBySession: Map<string, string>; handleUpdate: (params: Record<string, unknown>) => void };
   inner.threadsBySession.set("session", "thread");
-  inner.handleUpdate({ sessionId: "unknown", update: { sessionUpdate: "_emma_activity" } });
-  inner.handleUpdate({ sessionId: "session", update: { sessionUpdate: "_emma_activity" } });
+  inner.handleUpdate({ sessionId: "unknown", update: { sessionUpdate: "_shinbo_activity" } });
+  inner.handleUpdate({ sessionId: "session", update: { sessionUpdate: "_shinbo_activity" } });
   assert.deepEqual(activities, ["thread"]);
   assert.deepEqual(deltas, []);
   assert.deepEqual(thoughts, []);
   assert.deepEqual(calls, []);
 });
 
-test("every mode routes its decision back to Emma", () => {
+test("every mode routes its decision back to Shinbo", () => {
 
   assert.equal(HARNESS_MODE_ID, "ask");
 });
 
 test("session checkpoints restore tool calls missing from a stored trace", () => {
-  const home = mkdtempSync(path.join(tmpdir(), "emma-recovered-trace-"));
+  const home = mkdtempSync(path.join(tmpdir(), "shinbo-recovered-trace-"));
   const sessionId = "session-one";
   const threadId = "thread-one";
   const session = path.join(home, ".fx", "sessions", sessionId);
   mkdirSync(session, { recursive: true });
-  writeFileSync(path.join(home, "emma-sessions.json"), JSON.stringify({ [threadId]: sessionId }));
+  writeFileSync(path.join(home, "shinbo-sessions.json"), JSON.stringify({ [threadId]: sessionId }));
   writeFileSync(path.join(session, "checkpoint.json"), JSON.stringify({
     state: {
       updated_at_ms: 400_000,
@@ -139,7 +140,7 @@ test("session checkpoints restore tool calls missing from a stored trace", () =>
 });
 
 test("a path outside the workspace is an escape, and one inside is not", () => {
-  const root = path.join(tmpdir(), `emma-sandbox-${process.pid}`);
+  const root = path.join(tmpdir(), `shinbo-sandbox-${process.pid}`);
   mkdirSync(path.join(root, "inside"), { recursive: true });
   writeFileSync(path.join(root, "inside", "file.txt"), "x");
 
@@ -155,8 +156,8 @@ test("a path outside the workspace is an escape, and one inside is not", () => {
 });
 
 test("a symlink pointing out of the workspace does not smuggle a write through", () => {
-  const root = path.join(tmpdir(), `emma-symlink-${process.pid}`);
-  const outside = path.join(tmpdir(), `emma-outside-${process.pid}`);
+  const root = path.join(tmpdir(), `shinbo-symlink-${process.pid}`);
+  const outside = path.join(tmpdir(), `shinbo-outside-${process.pid}`);
   mkdirSync(root, { recursive: true });
   mkdirSync(outside, { recursive: true });
   try { symlinkSync(outside, path.join(root, "bridge")); } catch { return; }
@@ -165,7 +166,7 @@ test("a symlink pointing out of the workspace does not smuggle a write through",
 });
 
 test("an escape is caught in any path-shaped argument, not just the first", () => {
-  const root = path.join(tmpdir(), `emma-args-${process.pid}`);
+  const root = path.join(tmpdir(), `shinbo-args-${process.pid}`);
   mkdirSync(root, { recursive: true });
 
   assert.equal(callEscapesWorkspace(root, { path: "inside.txt" }), false);
@@ -282,7 +283,7 @@ test("a harness that has gone quiet reports how long, and closing it hands the w
   client.close();
   const closed = await wedged.then(() => "", (error: Error) => error.message);
   assert.match(closed, /Harness closed/);
-  assert.equal(explainFailure(closed), "Emma was closed while it was in flight. Send Continue to pick it back up");
+  assert.equal(explainFailure(closed), "Shinbo was closed while it was in flight. Send Continue to pick it back up");
 });
 
 test("restarting the agent says so, rather than blaming a close", async () => {
@@ -318,7 +319,7 @@ function departingChild(leaveAfterEof: boolean) {
   return child;
 }
 
-test("closing lets emma-cli leave on its own once its stdin ends", async () => {
+test("closing lets shinbo-cli leave on its own once its stdin ends", async () => {
   const { client } = harness(async () => "allow_once");
   const child = departingChild(true);
   (client as unknown as { child: unknown }).child = child;
@@ -327,7 +328,7 @@ test("closing lets emma-cli leave on its own once its stdin ends", async () => {
   assert.equal(child.exitCode, 0);
 });
 
-test("closing still kills an emma-cli that ignores its stdin ending", async () => {
+test("closing still kills a shinbo-cli that ignores its stdin ending", async () => {
   const { client } = harness(async () => "allow_once");
   const child = departingChild(false);
   (client as unknown as { child: unknown }).child = child;
@@ -431,11 +432,11 @@ test("a subagent left running when its process dies is told, not left spinning",
   assert.equal(client.busy, false);
 });
 
-test("one of Emma's own tools runs in Emma and its answer reaches the harness", async () => {
+test("one of Shinbo's own tools runs in Shinbo and its answer reaches the harness", async () => {
 
   const { client, text, toolRequests } = harness(async () => "allow_once", undefined, async () => "two threads");
   try {
-    await client.prompt("thread-1", workspace, "emmatool", "ask");
+    await client.prompt("thread-1", workspace, "shinbotool", "ask");
     assert.deepEqual(toolRequests, [{ threadId: "thread-1", name: "threads", args: { action: "list", limit: 5 } }]);
     assert.equal(text().at(-1), "output:11:two threads");
   } finally {
@@ -443,31 +444,51 @@ test("one of Emma's own tools runs in Emma and its answer reaches the harness", 
   }
 });
 
-test("a tool that throws in Emma answers the harness instead of hanging it", async () => {
+test("a tool that throws in Shinbo answers the harness instead of hanging it", async () => {
 
   const { client, text } = harness(async () => "allow_once", undefined, async () => { throw new Error("not in plan mode"); });
   try {
-    await client.prompt("thread-1", workspace, "emmatool", "ask");
+    await client.prompt("thread-1", workspace, "shinbotool", "ask");
     assert.equal(text().at(-1), "output:16:not in plan ");
   } finally {
     client.close();
   }
 });
 
+test("M1 switching to a model with unknown context metadata clears the previous window", async () => {
+  const { client, logs } = harness(async () => "allow_once");
+  try {
+    await client.prompt("window-switch", workspace, "first", "ask", "known", { contextWindow: 200_000 });
+    await client.prompt("window-switch", workspace, "second", "ask", "unknown");
+    const windows = logs.filter((line) => line.flow === "out").map((line) => JSON.parse(line.body)).filter((message) => message.method === "session/set_config_option" && message.params.configId === "context_window").map((message) => message.params.value);
+    assert.deepEqual(windows, ["200000", "0"]);
+  } finally { await client.close(); }
+});
+
+test("M2 a failed app tool retains its diagnostic and reports failure in the ACP result", async () => {
+  const { client, logs } = harness(async () => "allow_once", undefined, async () => { throw new Error("ENOSPC: note could not be written"); });
+  try {
+    await client.prompt("failed-tool", workspace, "shinbotool", "ask");
+    const reply = logs.filter((line) => line.flow === "out").map((line) => JSON.parse(line.body)).find((message) => message.id === 98 && message.result);
+    assert.equal(reply?.result.isError, true);
+    assert.equal(reply?.result.output, "ENOSPC: note could not be written");
+  } finally { await client.close(); }
+});
+
 test("a tool that answers with more than the cap is cut, not sent whole", async () => {
   const { client, text } = harness(async () => "allow_once", undefined, async () => "x".repeat(70_000));
   try {
-    await client.prompt("thread-1", workspace, "emmatool", "ask");
+    await client.prompt("thread-1", workspace, "shinbotool", "ask");
     assert.equal(text().at(-1), `output:${64 * 1024}:xxxxxxxxxxxx`);
   } finally {
     client.close();
   }
 });
 
-test("a call naming a session Emma does not know is refused, not run", async () => {
+test("a call naming a session Shinbo does not know is refused, not run", async () => {
   const { client, text, toolRequests } = harness(async () => "allow_once", undefined, async () => "ran anyway");
   try {
-    await client.prompt("thread-1", workspace, "emmatool nosession", "ask");
+    await client.prompt("thread-1", workspace, "shinbotool nosession", "ask");
 
     assert.deepEqual(toolRequests, []);
     assert.equal(text().at(-1), "error:Unknown session or tool");
@@ -476,7 +497,7 @@ test("a call naming a session Emma does not know is refused, not run", async () 
   }
 });
 
-test("computer calls from the current parent turn reach Emma once", async () => {
+test("computer calls from the current parent turn reach Shinbo once", async () => {
   const { client, text, toolRequests } = harness(async () => "allow_once", undefined, async () => "apps");
   try {
     await client.prompt("thread-computer", workspace, "computer replay", "full");
@@ -488,7 +509,7 @@ test("computer calls from the current parent turn reach Emma once", async () => 
   }
 });
 
-test("child and unattributed computer calls never reach Emma", async () => {
+test("child and unattributed computer calls never reach Shinbo", async () => {
   for (const scenario of ["child", "unknown", "completed"]) {
     const { client, text, toolRequests } = harness(async () => "allow_once", undefined, async () => "ran anyway");
     try {
@@ -643,7 +664,7 @@ test("a turn started inside a turn needs a process of its own, not the one its p
   });
   try {
     await spare.client.start();
-    await parent.client.prompt("thread-root", workspace, "emmatool", "ask");
+    await parent.client.prompt("thread-root", workspace, "shinbotool", "ask");
     assert.deepEqual(nested, ["queued", "ran"], "a turn started inside a turn waits for the turn that started it");
     await queued;
     assert.equal(harnessKey(workspace), workspace);
@@ -684,8 +705,8 @@ test("separately-streamed reasoning rejoins the answer as one foldable message",
 });
 
 test("a thread keeps its harness session across a restart", async () => {
-  const home = path.join(tmpdir(), `emma-harness-restart-${process.pid}`);
-  const index = (dir: string) => JSON.parse(readFileSync(path.join(dir, "emma-sessions.json"), "utf8")) as Record<string, string>;
+  const home = path.join(tmpdir(), `shinbo-harness-restart-${process.pid}`);
+  const index = (dir: string) => JSON.parse(readFileSync(path.join(dir, "shinbo-sessions.json"), "utf8")) as Record<string, string>;
 
   const first = harness(async () => "allow_once", undefined, async () => "", home);
   try {
@@ -698,7 +719,7 @@ test("a thread keeps its harness session across a restart", async () => {
   assert.ok(before?.startsWith("sess_2_"), before);
   assert.notEqual(index(home)["thread-a"], before);
 
-  const alias = path.join(tmpdir(), `emma-harness-alias-${process.pid}`);
+  const alias = path.join(tmpdir(), `shinbo-harness-alias-${process.pid}`);
   try { symlinkSync(home, alias, "junction"); } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
   }
@@ -822,7 +843,7 @@ test("the prefix breakdown crosses the same channel, byte for byte with the Zig 
   assert.equal(contextBreakdownReported({}), undefined);
 });
 
-test("everything Emma sends the agent is recorded, minus the streamed chunks", async () => {
+test("everything Shinbo sends the agent is recorded, minus the streamed chunks", async () => {
   const { client, logs } = harness(async () => "allow_once");
   try {
     await client.prompt("thread-1", workspace, "do it", "acceptEdits");
@@ -857,18 +878,18 @@ test("the user prompt stays ahead of attached context", async () => {
   }
 });
 
-test("a process that dies says so on the log, and a close Emma asked for does not", async () => {
+test("a process that dies says so on the log, and a close Shinbo asked for does not", async () => {
   const { client, logs } = harness(async () => "allow_once");
   await client.prompt("thread-1", workspace, "hello", "ask");
   client.close();
   const stopped = logs.filter((line) => line.flow === "err" && line.label === "stopped");
   assert.equal(stopped.length, 1);
-  assert.equal(stopped[0].body, CLOSED_BY_EMMA);
-  assert.equal(harnessHealth([{ cwd: workspace, running: false, busy: false, silentMs: 10, failure: CLOSED_BY_EMMA }]), "ready");
+  assert.equal(stopped[0].body, CLOSED_BY_SHINBO);
+  assert.equal(harnessHealth([{ cwd: workspace, running: false, busy: false, silentMs: 10, failure: CLOSED_BY_SHINBO }]), "ready");
 });
 
 test("a handshake the agent refuses leaves a dead client, not a running one", async () => {
-  const { client, logs } = harness(async () => "allow_once", undefined, async () => "", path.join(tmpdir(), `emma-refused-handshake-${process.pid}`));
+  const { client, logs } = harness(async () => "allow_once", undefined, async () => "", path.join(tmpdir(), `shinbo-refused-handshake-${process.pid}`));
   await assert.rejects(client.prompt("thread-1", workspace, "refuse-initialize", "ask"));
   assert.equal(client.running, false);
   assert.equal(client.state.failure, "no credential");
@@ -876,30 +897,30 @@ test("a handshake the agent refuses leaves a dead client, not a running one", as
   client.close();
 });
 
-test("health reads the process, and offline is a death Emma did not ask for", () => {
+test("health reads the process, and offline is a death Shinbo did not ask for", () => {
   const state = (extra: Partial<HarnessState>): HarnessState =>
     ({ cwd: workspace, running: false, busy: false, silentMs: 0, failure: "", ...extra });
   assert.equal(harnessHealth([]), "ready");
   assert.equal(harnessHealth([state({ running: true })]), "online");
   assert.equal(harnessHealth([state({ running: true, silentMs: STALL_MS + 1 })]), "online");
   assert.equal(harnessHealth([state({ running: true, busy: true, silentMs: STALL_MS + 1 })]), "stalled");
-  assert.equal(harnessHealth([state({ failure: "emma-cli exited with code 1" })]), "offline");
-  assert.equal(harnessHealth([state({ failure: CLOSED_BY_EMMA })]), "ready");
+  assert.equal(harnessHealth([state({ failure: "shinbo-cli exited with code 1" })]), "offline");
+  assert.equal(harnessHealth([state({ failure: CLOSED_BY_SHINBO })]), "ready");
   assert.equal(stoppedReason([state({ failure: '"work" is no longer at /tmp/work — reconnect it from the ＋ menu.' })]), '"work" is no longer at /tmp/work — reconnect it from the ＋ menu.');
   assert.equal(stoppedReason([state({ running: true })]), "");
-  assert.equal(stoppedReason([state({ failure: CLOSED_BY_EMMA })]), "");
+  assert.equal(stoppedReason([state({ failure: CLOSED_BY_SHINBO })]), "");
 });
 
 test("the fix prompt carries the failure and the traffic, not just the word broken", () => {
   const prompt = fixPrompt({
-    processes: [{ cwd: workspace, running: false, busy: false, silentMs: 4000, failure: "emma-cli exited with code 101" }],
+    processes: [{ cwd: workspace, running: false, busy: false, silentMs: 4000, failure: "shinbo-cli exited with code 101" }],
     lines: [
       { at: 0, flow: "out", label: "session/prompt #7", body: '{"method":"session/prompt"}' },
       { at: 1, flow: "err", label: "stderr", body: "thread 'main' panicked" },
     ],
   });
   assert.ok(prompt.includes("agent offline"), prompt);
-  assert.ok(prompt.includes("emma-cli exited with code 101"));
+  assert.ok(prompt.includes("shinbo-cli exited with code 101"));
   assert.ok(prompt.includes("thread 'main' panicked"));
   assert.ok(prompt.includes("desktop/main/harness.ts"));
 });
@@ -912,7 +933,7 @@ test("a blank title on a progress update is nothing to merge, not a wipe", () =>
 });
 
 test("a first turn names what it is waiting on, so the wait is never just \u201cworking\u201d", async () => {
-  const { client, phases } = harness(async () => null, undefined, async () => "", path.join(tmpdir(), `emma-phases-${process.pid}-${Date.now()}`));
+  const { client, phases } = harness(async () => null, undefined, async () => "", path.join(tmpdir(), `shinbo-phases-${process.pid}-${Date.now()}`));
   try {
     await client.prompt("thread-phase", workspace, "hello", "ask");
   } finally {
@@ -930,30 +951,30 @@ test("a first turn names what it is waiting on, so the wait is never just \u201c
 
 test("an automatic compaction is read off its own update, and bounded", () => {
   assert.deepEqual(
-    compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 12, summaryChars: 2480, modelWritten: true }),
+    compactionReported({ sessionUpdate: "_shinbo_compacted", removedTurns: 12, summaryChars: 2480, modelWritten: true }),
     { removedTurns: 12, summaryChars: 2480, modelWritten: true, fresh: false },
   );
   assert.deepEqual(
-    compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: "3", summaryChars: -9, modelWritten: "yes" }),
+    compactionReported({ sessionUpdate: "_shinbo_compacted", removedTurns: "3", summaryChars: -9, modelWritten: "yes" }),
     undefined,
   );
   assert.deepEqual(
-    compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 4.7, summaryChars: -9, modelWritten: "yes" }),
+    compactionReported({ sessionUpdate: "_shinbo_compacted", removedTurns: 4.7, summaryChars: -9, modelWritten: "yes" }),
     { removedTurns: 4, summaryChars: 0, modelWritten: false, fresh: false },
   );
   assert.deepEqual(
-    compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 9, summaryChars: 300, modelWritten: true, fresh: true, handoff: "Goal: ship" }),
+    compactionReported({ sessionUpdate: "_shinbo_compacted", removedTurns: 9, summaryChars: 300, modelWritten: true, fresh: true, handoff: "Goal: ship" }),
     { removedTurns: 9, summaryChars: 300, modelWritten: true, fresh: true, handoff: "Goal: ship" },
   );
   assert.deepEqual(
-    compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 9, summaryChars: 300, modelWritten: false, fresh: false, handoff: "Actual resulting summary", historyChars: 440 }),
+    compactionReported({ sessionUpdate: "_shinbo_compacted", removedTurns: 9, summaryChars: 300, modelWritten: false, fresh: false, handoff: "Actual resulting summary", historyChars: 440 }),
     { removedTurns: 9, summaryChars: 300, modelWritten: false, fresh: false, handoff: "Actual resulting summary", historyChars: 440 },
   );
-  assert.equal(compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 9, summaryChars: 300, modelWritten: true, fresh: true, handoff: "h".repeat(30_000) })?.handoff?.length, 20_000);
+  assert.equal(compactionReported({ sessionUpdate: "_shinbo_compacted", removedTurns: 9, summaryChars: 300, modelWritten: true, fresh: true, handoff: "h".repeat(30_000) })?.handoff?.length, 20_000);
   for (const historyChars of [-1, 1.5, "100", Infinity]) {
-    assert.equal(compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 2, historyChars })?.historyChars, undefined);
+    assert.equal(compactionReported({ sessionUpdate: "_shinbo_compacted", removedTurns: 2, historyChars })?.historyChars, undefined);
   }
-  assert.equal(compactionReported({ sessionUpdate: "_emma_compacted", removedTurns: 0, summaryChars: 100, modelWritten: true }), undefined);
+  assert.equal(compactionReported({ sessionUpdate: "_shinbo_compacted", removedTurns: 0, summaryChars: 100, modelWritten: true }), undefined);
   assert.equal(compactionReported({ sessionUpdate: "session_info_update", removedTurns: 12 }), undefined);
 });
 
@@ -1059,7 +1080,7 @@ test("a recovery replayed while the session opens is not why the next run stoppe
     async () => "allow_once",
     undefined,
     undefined,
-    path.join(tmpdir(), `emma-harness-stale-recovery-${process.pid}`),
+    path.join(tmpdir(), `shinbo-harness-stale-recovery-${process.pid}`),
   );
   await client.prompt("t_stale", workspace, "hello", "ask");
   assert.equal(client.paused.get("t_stale"), undefined);
@@ -1067,7 +1088,7 @@ test("a recovery replayed while the session opens is not why the next run stoppe
 });
 
 test("a run whose project folder was deleted names the folder, not the agent binary", async () => {
-  const gone = path.join(tmpdir(), `emma-gone-${process.pid}`);
+  const gone = path.join(tmpdir(), `shinbo-gone-${process.pid}`);
   rmSync(gone, { recursive: true, force: true });
   const client = new Harness({
     binaryPath: process.execPath,
@@ -1082,26 +1103,26 @@ test("a run whose project folder was deleted names the folder, not the agent bin
 });
 
 test("the configured vision route reaches the child, and no vision route leaves the session route alone", async (t) => {
-  const inherited = Object.fromEntries(["EMMA_VISION_MODEL", "EMMA_VISION_CHAT_URL", "EMMA_VISION_API_KEY", "EMMA_TEST_ENV_DUMP"].map((key) => [key, process.env[key]]));
+  const inherited = Object.fromEntries(["SHINBO_VISION_MODEL", "SHINBO_VISION_CHAT_URL", "SHINBO_VISION_API_KEY", "SHINBO_TEST_ENV_DUMP"].map((key) => [key, process.env[key]]));
   t.after(() => {
     for (const [key, value] of Object.entries(inherited)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
   });
-  process.env.EMMA_VISION_MODEL = "inherited/eyes";
-  process.env.EMMA_VISION_CHAT_URL = "https://inherited.example/v1/chat/completions";
-  process.env.EMMA_VISION_API_KEY = "inherited-key";
-  const scratch = mkdtempSync(path.join(tmpdir(), "emma-vision-env-"));
+  process.env.SHINBO_VISION_MODEL = "inherited/eyes";
+  process.env.SHINBO_VISION_CHAT_URL = "https://inherited.example/v1/chat/completions";
+  process.env.SHINBO_VISION_API_KEY = "inherited-key";
+  const scratch = mkdtempSync(path.join(tmpdir(), "shinbo-vision-env-"));
   t.after(() => rmSync(scratch, { recursive: true, force: true }));
   const dump = path.join(scratch, "env.json");
   const agent = path.join(scratch, "agent.mjs");
   writeFileSync(agent, [
     'import { writeFileSync } from "node:fs";',
-    'writeFileSync(process.env.EMMA_TEST_ENV_DUMP, JSON.stringify(process.env));',
+    'writeFileSync(process.env.SHINBO_TEST_ENV_DUMP, JSON.stringify(process.env));',
     `await import(${JSON.stringify(pathToFileURL(fakeAgent).href)});`,
   ].join("\n"));
-  process.env.EMMA_TEST_ENV_DUMP = dump;
+  process.env.SHINBO_TEST_ENV_DUMP = dump;
   const start = async (vision?: { model: string; chatUrl: string; apiKey: string }) => {
     const client = new Harness({
       binaryPath: process.execPath,
@@ -1135,16 +1156,67 @@ test("the configured vision route reaches the child, and no vision route leaves 
   };
 
   const configured = await start({ model: "vendor/eyes:free", chatUrl: "https://vision.example/v1/chat/completions", apiKey: "vision-key" });
-  assert.equal(configured.EMMA_PROVIDER_API_KEY, "session-key");
-  assert.equal(configured.EMMA_PROVIDER_CHAT_URL, "https://session.example/v1/chat/completions");
-  assert.equal(configured.EMMA_VISION_MODEL, "vendor/eyes:free");
-  assert.equal(configured.EMMA_VISION_CHAT_URL, "https://vision.example/v1/chat/completions");
-  assert.equal(configured.EMMA_VISION_API_KEY, "vision-key");
+  assert.equal(configured.SHINBO_PROVIDER_API_KEY, "session-key");
+  assert.equal(configured.SHINBO_PROVIDER_CHAT_URL, "https://session.example/v1/chat/completions");
+  assert.equal(configured.SHINBO_VISION_MODEL, "vendor/eyes:free");
+  assert.equal(configured.SHINBO_VISION_CHAT_URL, "https://vision.example/v1/chat/completions");
+  assert.equal(configured.SHINBO_VISION_API_KEY, "vision-key");
 
   const bare = await start();
-  assert.equal(bare.EMMA_PROVIDER_CHAT_URL, "https://session.example/v1/chat/completions");
-  assert.equal(bare.EMMA_VISION_MODEL, undefined);
-  assert.equal(bare.EMMA_VISION_CHAT_URL, undefined);
-  assert.equal(bare.EMMA_VISION_API_KEY, undefined);
+  assert.equal(bare.SHINBO_PROVIDER_CHAT_URL, "https://session.example/v1/chat/completions");
+  assert.equal(bare.SHINBO_VISION_MODEL, undefined);
+  assert.equal(bare.SHINBO_VISION_CHAT_URL, undefined);
+  assert.equal(bare.SHINBO_VISION_API_KEY, undefined);
 
+});
+
+test("R7-2 a partial session-index write cannot destroy prior sessions or start unrecorded work", async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), "shinbo-session-durability-"));
+  const original = Object.fromEntries(Array.from({ length: 12 }, (_, index) => [`task-${index}`, `session-${index}`]));
+  const index = path.join(home, "shinbo-sessions.json");
+  writeFileSync(index, JSON.stringify(original));
+  const { client, logs } = harness(async () => null, undefined, async () => "", home);
+  const write = fs.writeFileSync;
+  const failure = t.mock.method(fs, "writeFileSync", (file: Parameters<typeof write>[0], data: Parameters<typeof write>[1], options: Parameters<typeof write>[2]) => {
+    write(file, String(data).slice(0, 4), options);
+    throw new Error("ENOSPC: session index write failed");
+  });
+  let refused = false;
+  try {
+    await client.prompt("new-task", workspace, "hello", "ask").catch(() => { refused = true; });
+    let retained = 0;
+    try { retained = Object.keys(JSON.parse(readFileSync(index, "utf8"))).length; } catch { retained = 0; }
+    const prompts = logs.filter((line) => line.flow === "out" && JSON.parse(line.body).method === "session/prompt").length;
+    t.diagnostic(`retainedSessions=${retained}/12; modelPrompts=${prompts}; refused=${refused}`);
+    assert.equal(retained, 12);
+    assert.equal(prompts, 0);
+    assert.equal(refused, true);
+    failure.mock.restore();
+    await client.prompt("new-task", workspace, "retry", "ask");
+    assert.equal(Object.keys(JSON.parse(readFileSync(index, "utf8"))).length, 13);
+  } finally {
+    failure.mock.restore();
+    await client.close();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+for (const control of ["cancel", "steer"] as const) test(`R7-4 clearing the next context keeps ${control} connected to the current turn`, async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), `shinbo-clear-${control}-`));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const run = harness(async () => {
+    run.client.forgetSession("cleared-live-task");
+    if (control === "cancel") await run.client.cancel("cleared-live-task");
+    else await run.client.steer("cleared-live-task", "Please stop that approach").catch(() => undefined);
+    return null;
+  }, undefined, async () => "", home);
+  try {
+    await run.client.prompt("cleared-live-task", workspace, "Do the work", "ask");
+    const forwarded = run.logs.filter((line) => line.flow === "out" && JSON.parse(line.body).method === `session/${control}`).length;
+    t.diagnostic(`control=${control}; forwarded=${forwarded}`);
+    assert.equal(forwarded, 1);
+    assert.equal(await run.client.steer("unrelated-task", "wrong task"), false);
+  } finally {
+    await run.client.close();
+  }
 });

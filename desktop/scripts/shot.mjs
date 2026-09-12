@@ -1,8 +1,8 @@
-// Dev-only: drive the running dev Electron over CDP to capture view screenshots.
-// Usage: node scripts/shot.mjs <port> <out-dir> [width] [height]
+
+
 import { writeFileSync } from "node:fs";
 
-const [port = "9223", outDir = "/tmp/emma-shots", width = "1440", height = "900"] = process.argv.slice(2);
+const [port = "9223", outDir = "/tmp/shinbo-shots", width = "1440", height = "900"] = process.argv.slice(2);
 
 const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
 const page = targets.find((t) => t.type === "page" && !t.url.includes("?"));
@@ -44,15 +44,15 @@ const shot = async (name) => {
 await send("Page.enable");
 await send("Runtime.enable");
 await send("Emulation.setDeviceMetricsOverride", { width: Number(width), height: Number(height), deviceScaleFactor: 2, mobile: false });
-// The window holds whatever bundle it booted with, so without this every capture
-// silently documents a stale build — which is worse than no capture at all.
-// ponytail: fixed 1.2s settle rather than waiting on a load event; bump if the
-// first frame ever lands mid-render.
+
+
+
+
 await send("Page.reload", { ignoreCache: true });
 await wait(1200);
 
-// Threads, Knowledge Base, Agent, Scheduled live in .sidebar-nav; Settings is
-// the gear in the foot, so select by data-view rather than by position.
+
+
 const clickNav = (view) => evaluate(`document.querySelector('[data-view="${view}"]').click(), true`);
 
 const done = [];
@@ -62,7 +62,7 @@ for (const view of ["threads", "knowledge", "agent", "scheduled", "archive", "se
   done.push(await shot(view));
 }
 
-// Settings sub-pages, in sub-nav order.
+
 const settingsCount = await evaluate(`document.querySelectorAll(".settings-sidebar button").length`);
 for (let index = 1; index < settingsCount; index++) {
   await evaluate(`document.querySelectorAll(".settings-sidebar button")[${index}].click(), true`);
@@ -70,7 +70,7 @@ for (let index = 1; index < settingsCount; index++) {
   done.push(await shot(`settings-${index}`));
 }
 
-// Back to threads, then open the composer add-menu and the model dialog.
+
 await clickNav("threads");
 await wait(500);
 await evaluate(`document.querySelector(".source-trigger")?.click(), true`);
@@ -81,9 +81,9 @@ await wait(300);
 await evaluate(`document.querySelector(".model-button")?.click(), true`);
 await wait(900);
 done.push(await shot("model-menu"));
-// ...and one level in. The root pane is three label/value rows; the model list
-// with its vendor marks and tab stops only exists inside the Model pane, and a
-// bare `.model-menu button` selector picks the header's close mark instead.
+
+
+
 await evaluate(`[...document.querySelectorAll(".model-menu-row.pair")].find((row) => row.textContent.trim().startsWith("Model"))?.click(), true`);
 await wait(600);
 done.push(await shot("model-menu-submenu"));

@@ -1101,13 +1101,14 @@ pub fn Handlers(comptime App: type) type {
                     defer display_path.deinit(app.alloc);
                     break :blk try std.fmt.allocPrint(app.alloc, "Deleted {s} (was newly created)", .{display_path.bytes});
                 },
+                .failed => |err| try std.fmt.allocPrint(app.alloc, "Could not undo ({s}). The saved change is still available; fix the file access problem and retry /undo.", .{@errorName(err)}),
                 .empty => try app.alloc.dupe(u8, "Nothing to undo."),
             };
             defer app.alloc.free(msg);
             switch (result) {
                 .restored => |path| std.heap.c_allocator.free(path),
                 .deleted => |path| std.heap.c_allocator.free(path),
-                .empty => {},
+                .failed, .empty => {},
             }
             try app.writeDomainNotice(.{
                 .topic = "undo",
@@ -4158,7 +4159,7 @@ test "trace auth summary preserves missing and loaded status text" {
 
     var credential = credentials.Credential{
         .token = try alloc.dupe(u8, "token"),
-        .source = .emma_provider_api_key,
+        .source = .shinbo_provider_api_key,
     };
     defer credential.deinit(alloc);
     _ = app.auth.adoptCredential(alloc, &credential);

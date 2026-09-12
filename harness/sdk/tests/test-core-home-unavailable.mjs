@@ -55,7 +55,7 @@ const agent = await Promise.race([
     wasm: await readFile(wasmPath),
     fetch: mockFetch,
     env: {
-      EMMA_PROVIDER_API_KEY: "sdk-test-key",
+      SHINBO_PROVIDER_API_KEY: "sdk-test-key",
       HOME: "/repo",
     },
     workspace: {

@@ -137,7 +137,7 @@ pub fn modelPromptOverlay(model: []const u8) ?[]const u8 {
 const system_prompt_override_bytes = 128 * 1024;
 var override_storage: [system_prompt_override_bytes * 4]u8 = undefined;
 
-pub const system_prompt_path_env = "EMMA_SYSTEM_PROMPT";
+pub const system_prompt_path_env = "SHINBO_SYSTEM_PROMPT";
 
 pub fn systemPrompt() []const u8 {
     if (io_mod.getenv(system_prompt_path_env)) |path| {
@@ -3760,9 +3760,9 @@ test "a system prompt file replaces the built-in sections and keeps the tool con
 
     try std.testing.expect(readSystemPromptOverride(home) == null);
 
-    try writeTestFile(tmp.dir, ".fx/system-prompt.md", "\n  You are Emma.\n  ");
+    try writeTestFile(tmp.dir, ".fx/system-prompt.md", "\n  You are Shinbo.\n  ");
     const replaced = readSystemPromptOverride(home).?;
-    try std.testing.expect(std.mem.startsWith(u8, replaced, "You are Emma."));
+    try std.testing.expect(std.mem.startsWith(u8, replaced, "You are Shinbo."));
     try expectContains(replaced, tools_and_verification_section);
     try expectNotContains(replaced, identity_section);
 

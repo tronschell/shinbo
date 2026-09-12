@@ -84,9 +84,8 @@ type Draft = Proposal & { key: string };
 
 let pending: Draft | null = null;
 
-function useTurns(snapshot: Snapshot) {
+function useTurns(snapshot: Snapshot, enabled: boolean) {
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [ready, setReady] = useState(false);
   const threads = useMemo(() => {
     const bench = benchKin(snapshot.threads, readBench().runs.flatMap((run) => run.threads));
     return snapshot.threads
@@ -96,31 +95,36 @@ function useTurns(snapshot: Snapshot) {
       .map((thread) => ({ id: thread.id, title: thread.title, updatedAt: thread.updatedAt }));
   }, [snapshot.threads]);
   const signature = threads.map((thread) => `${thread.id}:${thread.updatedAt}`).join(",");
+  const request = useMemo(() => ({ enabled, signature }), [enabled, signature]);
+  const [loaded, setLoaded] = useState<typeof request | null>(null);
   useEffect(() => {
+    if (!request.enabled) return;
     let live = true;
     const since = Date.now() - READ_DAYS * DAY_MS;
     void (async () => {
       const rows: Turn[] = [];
       for (let index = 0; index < threads.length && live; index += 4) {
         const batch = await Promise.all(threads.slice(index, index + 4).map(async (thread) => {
-          const traces = await window.emma.threadTraces(thread.id).catch(() => []);
+          const traces = await window.shinbo.threadTraces(thread.id).catch(() => []);
+          if (!live) return [];
           return traces.flatMap((trace) => readTurns(trace, thread));
         }));
         rows.push(...batch.flat());
       }
       if (!live) return;
       setTurns(distinctTurns(rows).filter((turn) => turn.at >= since));
-      setReady(true);
+      setLoaded(request);
     })();
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature]);
-  return { turns, ready, read: threads.length };
+  }, [request]);
+  return { turns, ready: enabled && loaded === request, read: threads.length, clear: () => setTurns([]) };
 }
 
 export default function AgentView({ snapshot, act, busy, openThread, projectName, mode, model, pickers }: { snapshot: Snapshot; act: Act; busy: boolean; openThread: (id: string) => void; projectName: (thread: Thread) => string; mode: string; model: string; pickers: BenchPickers }) {
   const [tab, setTab] = useState<"activity" | "improvement" | "worktrees" | "bench">("activity");
   const [memories, setMemories] = useState(false);
+  const [evidenceOpened, setEvidenceOpened] = useState(false);
   const [store, setStore] = useState(readImprovements);
   const [draft, setDraft] = useState<Draft | null>(pending);
   useEffect(() => { pending = draft; }, [draft]);
@@ -131,7 +135,11 @@ export default function AgentView({ snapshot, act, busy, openThread, projectName
   const [proposals, setProposals] = useState<Record<string, Proposal>>({});
   const [ticked, setTicked] = useState<string[]>([]);
   const [queue, setQueue] = useState(readQueue);
-  const { turns, ready, read } = useTurns(snapshot);
+  const { turns, ready, read, clear } = useTurns(snapshot, tab === "improvement");
+  const pickTab = (next: typeof tab) => {
+    if (tab === "improvement" && next !== tab) clear();
+    setTab(next);
+  };
   const dated = useMemo(() => {
     const since = nowMs() - days * DAY_MS;
     return turns.filter((turn) => turn.at >= since);
@@ -220,7 +228,7 @@ export default function AgentView({ snapshot, act, busy, openThread, projectName
     const proposal = proposalOf(item);
     try {
       const thread = await act("createThread") as { id?: string } | undefined;
-      if (!thread?.id) throw new Error("Emma could not open a thread for this");
+      if (!thread?.id) throw new Error("Shinbo could not open a thread for this");
       await act("renameThread", { threadId: thread.id, title: `Fix · ${item.tool}`.slice(0, 120) });
       const answered = await act("sendMessage", { threadId: thread.id, content: briefFor(item, proposal) }) as Thread | undefined;
       const written = latestReply(answered).trim().slice(0, MAX_ADDITION_CHARS);
@@ -233,7 +241,7 @@ export default function AgentView({ snapshot, act, busy, openThread, projectName
     setError("");
     try {
       const thread = await act("createThread") as { id?: string } | undefined;
-      if (!thread?.id) throw new Error("Emma could not open an analysis thread");
+      if (!thread?.id) throw new Error("Shinbo could not open an analysis thread");
       await act("renameThread", { threadId: thread.id, title: `Analyze runs · ${scopeLabel(scope)}`.slice(0, 120) });
       await act("sendMessage", { threadId: thread.id, content: analysisBrief(windowed, scope, days) });
       openThread(thread.id);
@@ -244,16 +252,16 @@ export default function AgentView({ snapshot, act, busy, openThread, projectName
     <header>
       <div className="agent-head">
         <h2>{tab === "activity" ? "Agent activity" : tab === "worktrees" ? "Worktrees" : tab === "bench" ? "Bench" : "What keeps going wrong"}</h2>
-        {tab === "improvement" && <InfoDot>Emma stores a trace of every turn it finishes: each tool call, how long it took, and whether it failed. This page groups the failures from the window you pick, drafts a change about the ones that repeat, and — once you approve it — runs the next turns half with the change and half without. That live split is a hint, not a measurement: it has no fixed size and it moves with every turn, so it can only tell you whether the change is worth a bench run. Keeping a change takes a finished run on the bench below, against cases and a metric declared before the numbers arrive. Reverting takes nothing — dropping a change never needs proof. Nothing here is applied without you. Reading this page is local; asking Emma to analyze runs sends the evidence it reads to your selected model.</InfoDot>}
+        {tab === "improvement" && <InfoDot>Shinbo stores a trace of every turn it finishes: each tool call, how long it took, and whether it failed. This page groups the failures from the window you pick, drafts a change about the ones that repeat, and — once you approve it — runs the next turns half with the change and half without. That live split is a hint, not a measurement: it has no fixed size and it moves with every turn, so it can only tell you whether the change is worth a bench run. Keeping a change takes a finished run on the bench below, against cases and a metric declared before the numbers arrive. Reverting takes nothing — dropping a change never needs proof. Nothing here is applied without you. Reading this page is local; asking Shinbo to analyze runs sends the evidence it reads to your selected model.</InfoDot>}
         {tab === "activity" && <InfoDot>Everything on this tab is counted from the threads already on this computer: when they ran, which project they belong to, and which of them spawned subagents. Nothing is uploaded and nothing is asked of a model to draw it.</InfoDot>}
       </div>
     </header>
 
     <div className="plugins-tabs agent-tabs" role="tablist" aria-label="Agent activity, self improvement, worktrees and the bench">
-      <button type="button" role="tab" aria-selected={tab === "activity"} className={tab === "activity" ? "on" : ""} onClick={() => setTab("activity")}>Agent activity</button>
-      <button type="button" role="tab" aria-selected={tab === "improvement"} className={tab === "improvement" ? "on" : ""} onClick={() => setTab("improvement")}>Self improvement</button>
-      <button type="button" role="tab" aria-selected={tab === "bench"} className={tab === "bench" ? "on" : ""} onClick={() => setTab("bench")}>Bench</button>
-      <button type="button" role="tab" aria-selected={tab === "worktrees"} className={tab === "worktrees" ? "on" : ""} onClick={() => setTab("worktrees")}>Worktrees</button>
+      <button type="button" role="tab" aria-selected={tab === "activity"} className={tab === "activity" ? "on" : ""} onClick={() => pickTab("activity")}>Agent activity</button>
+      <button type="button" role="tab" aria-selected={tab === "improvement"} className={tab === "improvement" ? "on" : ""} onClick={() => pickTab("improvement")}>Self improvement</button>
+      <button type="button" role="tab" aria-selected={tab === "bench"} className={tab === "bench" ? "on" : ""} onClick={() => pickTab("bench")}>Bench</button>
+      <button type="button" role="tab" aria-selected={tab === "worktrees"} className={tab === "worktrees" ? "on" : ""} onClick={() => pickTab("worktrees")}>Worktrees</button>
       <button type="button" className="agent-memories-open" aria-haspopup="dialog" onClick={() => setMemories(true)}>Memories</button>
     </div>
 
@@ -354,7 +362,7 @@ export default function AgentView({ snapshot, act, busy, openThread, projectName
         <header>
           <div><span className="repairs-eyebrow">Friction · read from your own traces</span><ScopeMark scope={scope} /></div>
           <small>{days} days · {read} {plural(read, "thread")} read</small>
-          <button type="button" disabled={busy || !ready || !windowed.length} onClick={() => void analyze()}>Ask Emma to analyze these runs · 1 turn</button>
+          <button type="button" disabled={busy || !ready || !windowed.length} onClick={() => void analyze()}>Ask Shinbo to analyze these runs · 1 turn</button>
         </header>
         {friction.map((item) => {
           const proposal = proposalOf(item);
@@ -384,7 +392,7 @@ export default function AgentView({ snapshot, act, busy, openThread, projectName
                 {line.text || "(nothing was said)"}
               </p>)}
               {shaped ? <>
-                <label className="sr-only" htmlFor={`addition-${item.key}`}>What to add. Finish the line, or paste what Emma answered.</label>
+                <label className="sr-only" htmlFor={`addition-${item.key}`}>What to add. Finish the line, or paste what Shinbo answered.</label>
                 <textarea id={`addition-${item.key}`} value={proposal.addition} maxLength={MAX_ADDITION_CHARS} rows={4} disabled={busy}
                   onChange={(event) => editProposal(item, { ...proposal, addition: event.target.value })} />
                 <dl className="repairs-pair">
@@ -394,11 +402,11 @@ export default function AgentView({ snapshot, act, busy, openThread, projectName
                 </dl>
                 <div className="agent-actions">
                   <button type="button" disabled={busy || !valid(proposal)} onClick={() => tick(item.key)}>{on ? "Take it out" : "Add to the queue"}</button>
-                  <button type="button" disabled={busy} onClick={() => void handOver(item)}>Ask Emma to write it · 1 turn</button>
+                  <button type="button" disabled={busy} onClick={() => void handOver(item)}>Ask Shinbo to write it · 1 turn</button>
                 </div>
               </> : <p className="repairs-note">
                 Calls you refused, calls you stopped, and commands that merely exited non-zero.
-                <InfoDot>Every trial is judged on failed tool calls per turn, and these are failures no standing instruction can remove. Left proposable, the cheapest way for a change to win would be for Emma to stop asking you things. They stay on the page because they are still what the last {days} days cost, and they stay out of the queue because nothing you write would move them.</InfoDot>
+                <InfoDot>Every trial is judged on failed tool calls per turn, and these are failures no standing instruction can remove. Left proposable, the cheapest way for a change to win would be for Shinbo to stop asking you things. They stay on the page because they are still what the last {days} days cost, and they stay out of the queue because nothing you write would move them.</InfoDot>
               </p>}
               {looks.map((row) => <div key={row.id} className="agent-actions">
                 <button type="button" disabled={busy || benched || !!trial || draft?.key === row.id} onClick={() => retry(row)}>Another look at this one</button>
@@ -413,10 +421,10 @@ export default function AgentView({ snapshot, act, busy, openThread, projectName
       </div>
     </div>
 
-    <details className="repairs-evidence">
+    <details className="repairs-evidence" onToggle={(event) => { if (event.currentTarget.open) setEvidenceOpened(true); }}>
       <summary>Run evidence · {windowed.length} {plural(windowed.length, "run")}</summary>
       <p className="repairs-note">Saved calls, outcomes and run context, including subagents. Older runs may lack prompt or model data. Stored traces retain up to 64 turns per thread and 1 MiB per trace.</p>
-      {windowed.slice().sort((a, b) => b.at - a.at).map((turn, index) => <details key={`${turn.threadId}:${turn.at}:${index}`}>
+      {evidenceOpened && windowed.slice().sort((a, b) => b.at - a.at).map((turn, index) => <details key={`${turn.threadId}:${turn.at}:${index}`}>
         <summary><ScopeMark scope={turn.model ? `model:${turn.model}` : "unknown"} /><span>{day(turn.at)} · {turn.thread}</span><small>{turn.steps} calls · {turn.failures} failed · {short.format(turn.tokens)} tokens</small></summary>
         <button type="button" className="agent-receipt" onClick={() => openThread(turn.threadId)}>Open thread</button>
         {Object.entries(turn.context).map(([key, value]) => <details key={key}><summary>{{ systemPrompt: "System prompt", skillContext: "Skills and instructions", configuration: "Run settings and tool overrides", changes: "Applied changes" }[key] ?? key}</summary><pre>{value}</pre></details>)}
@@ -429,7 +437,7 @@ export default function AgentView({ snapshot, act, busy, openThread, projectName
     {draft && <ProposalPanel draft={draft} models={models} full={room(store.items) <= 0} busy={busy || benched} onChange={setDraft} onStart={start} onDiscard={() => setDraft(null)} />}
 
     {decided.length > 0 && <section className="evidence-table">
-      <header><div><span>Decided</span><h3>What Emma changed about itself</h3></div><small>Kept lessons apply on matching models</small></header>
+      <header><div><span>Decided</span><h3>What Shinbo changed about itself</h3></div><small>Kept lessons apply on matching models</small></header>
       {decided.slice().sort((left, right) => (right.decidedAt ?? 0) - (left.decidedAt ?? 0)).map((item) => <details key={item.id}>
         <summary>
           <span><strong>{paused(item) ? "retesting" : item.state}</strong><small>{item.title}{fromBench(item) ? "" : " · no bench run behind it"}{paused(item) ? " · off while retested" : held.has(item.id) ? ` · past the ${MAX_KEPT}-lesson ceiling` : ""}</small></span>
@@ -453,16 +461,16 @@ function MemoriesDialog({ close }: { close: () => void }) {
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let live = true;
-    void window.emma.listMemories()
+    void window.shinbo.listMemories()
       .then((found) => { if (live) setNotes(found); })
       .catch((reason: unknown) => { if (live) { setError(reasonText(reason)); setNotes([]); } });
     return () => { live = false; };
   }, []);
   const forget = (path: string) => {
-    if (!confirm(`Delete ${path}? Emma loses it for good.`)) return;
+    if (!confirm(`Delete ${path}? Shinbo loses it for good.`)) return;
     setBusy(true);
     setError("");
-    void window.emma.deleteMemory(path)
+    void window.shinbo.deleteMemory(path)
       .then(setNotes)
       .catch((reason: unknown) => setError(reasonText(reason)))
       .finally(() => setBusy(false));
@@ -473,12 +481,12 @@ function MemoriesDialog({ close }: { close: () => void }) {
       <header>
         <div>
           <span>{notes ? `${notes.length} ${plural(notes.length, "file")}` : "Reading…"}</span>
-          <h2 id="memories-title">Memories<InfoDot>Emma writes these itself, between conversations, into its own notes directory on this computer. Every turn is handed what is in them. Nothing else reads them and nothing leaves this computer.</InfoDot></h2>
+          <h2 id="memories-title">Memories<InfoDot>Shinbo writes these itself, between conversations, into its own notes directory on this computer. Every turn is handed what is in them. Nothing else reads them and nothing leaves this computer.</InfoDot></h2>
         </div>
         <button type="button" onClick={close} aria-label="Close memories">×</button>
       </header>
       {error && <p className="dialog-error">{error}</p>}
-      {notes?.length === 0 && <Empty copy="Emma has written nothing down yet." />}
+      {notes?.length === 0 && <Empty copy="Shinbo has written nothing down yet." />}
       {notes?.map((note) => <details key={note.path} className="memory-note">
         <summary>
           <span><strong>{note.path.replace("/memories/", "")}</strong><small>{day(note.updatedAt)} · {Math.max(1, Math.round(note.bytes / 1024))}K</small></span>
@@ -573,7 +581,7 @@ function ProposalPanel({ draft, models, full, busy, onChange, onStart, onDiscard
 
 export function briefFor(friction: Friction, proposal = draftProposal(friction)): string {
   return [
-    "Emma found a pattern in its own past runs and needs one line to fix it. That is you.",
+    "Shinbo found a pattern in its own past runs and needs one line to fix it. That is you.",
     `The proposed change applies to ${scopeLabel(proposal.scope ?? "")}. Keep the recommendation specific to that scope; these traces do not prove other models behave the same way.`,
     `The change goes into ${leverNames[proposal.lever]}.`,
     "",
@@ -593,7 +601,7 @@ export function briefFor(friction: Friction, proposal = draftProposal(friction))
 
 export function analysisBrief(turns: readonly Turn[], scope: string, days: number): string {
   return [
-    `Analyze Emma's saved run evidence from the last ${days} days for ${scopeLabel(scope)}: ${turns.length} agent runs.`,
+    `Analyze Shinbo's saved run evidence from the last ${days} days for ${scopeLabel(scope)}: ${turns.length} agent runs.`,
     "Read these threads with read_trace, paging with offset until you have covered the selected dates. Use recorded model identities, systemPrompt, skillContext, configuration and changes; current settings are not evidence of what an older run used.",
     ...[...new Set(turns.map((turn) => turn.threadId))].map((id) => `- ${id}`),
     "Look for repeated or near-identical calls, unnecessary discovery, failed arguments, tool or skill problems, conflicting instructions, prompt problems, and excess requests, tokens, cost or time. Inspect successful runs as well as failures.",

@@ -74,7 +74,7 @@ function permissionEnv(
 ) {
   return {
     HOME: home,
-    EMMA_PROVIDER_API_KEY: "permission-error-fake-key",
+    SHINBO_PROVIDER_API_KEY: "permission-error-fake-key",
     FX_GATEWAY_BASE_URL: gateway.baseUrl,
     FX_GATEWAY_CHAT_URL: gateway.chatUrl,
     FX_E2E_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -194,7 +194,7 @@ describe("generic permission typed errors", () => {
           cwd: root.workspace,
           env: {
             HOME: root.home,
-            EMMA_PROVIDER_API_KEY: "permission-error-fake-key",
+            SHINBO_PROVIDER_API_KEY: "permission-error-fake-key",
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
             FX_E2E_GATEWAY_CHAT_URL: gateway.chatUrl,

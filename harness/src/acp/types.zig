@@ -372,11 +372,11 @@ pub fn writeToolCallWithPath(
     try w.writeAll(",\"status\":");
     try writeJsonStr(status.jsonString(), w);
     if (file_path) |value| {
-        try w.writeAll(",\"_emma_filePath\":");
+        try w.writeAll(",\"_shinbo_filePath\":");
         try writeJsonStr(value, w);
     }
     if (tool_name) |value| {
-        try w.writeAll(",\"_emma_toolName\":");
+        try w.writeAll(",\"_shinbo_toolName\":");
         try writeJsonStr(value, w);
     }
     if (raw_input_json) |json| {

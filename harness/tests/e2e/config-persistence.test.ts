@@ -27,7 +27,7 @@ import {
 
 const TIMEOUT = 20_000;
 const NO_AUTH = {
-  EMMA_PROVIDER_API_KEY: "",
+  SHINBO_PROVIDER_API_KEY: "",
   FX_MODEL: undefined,
   NO_COLOR: "1",
 };
@@ -581,7 +581,7 @@ describe.skipIf(!tmuxAvailable())("config persistence", () => {
         });
         await session.waitForText("Run /help", TIMEOUT);
         await session.sendText("/output quiet");
-        await session.waitForText("emma-cli has no provider credential", TIMEOUT);
+        await session.waitForText("shinbo-cli has no provider credential", TIMEOUT);
         expect(composerContains(await session.capturePane(), "/output quiet")).toBe(
           true,
         );
@@ -719,7 +719,7 @@ describe.skipIf(!tmuxAvailable())("config persistence", () => {
           cwd: realpathSync(workspace),
           env: {
             ...NO_AUTH,
-            EMMA_PROVIDER_API_KEY: "fake-standard-key",
+            SHINBO_PROVIDER_API_KEY: "fake-standard-key",
             HOME: home,
             FX_E2E_GATEWAY_MODELS_URL: `${gateway.baseUrl}/coding-agent/v1/models`,
           },
@@ -868,7 +868,7 @@ describe.skipIf(!tmuxAvailable())("config persistence", () => {
         );
         const gatewayEnv = {
           ...NO_AUTH,
-          EMMA_PROVIDER_API_KEY: "fake-capability-key",
+          SHINBO_PROVIDER_API_KEY: "fake-capability-key",
           HOME: home,
           FX_GATEWAY_BASE_URL: gateway.baseUrl,
           FX_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -1124,7 +1124,7 @@ describe.skipIf(!tmuxAvailable())("config persistence", () => {
           cwd: workspaceRoot,
           env: {
             ...NO_AUTH,
-            EMMA_PROVIDER_API_KEY: "fake-capability-key",
+            SHINBO_PROVIDER_API_KEY: "fake-capability-key",
             HOME: home,
             FX_GATEWAY_BASE_URL: gateway.baseUrl,
             FX_GATEWAY_CHAT_URL: gateway.chatUrl,
@@ -2294,7 +2294,7 @@ describe.skipIf(!tmuxAvailable())("config persistence", () => {
             cwd: workspaceRoot,
             env: {
               HOME: home,
-              EMMA_PROVIDER_API_KEY: "fake-restored-root-key",
+              SHINBO_PROVIDER_API_KEY: "fake-restored-root-key",
               FX_AUTO_UPGRADE: "0",
               FX_GATEWAY_BASE_URL: gateway.baseUrl,
               FX_GATEWAY_CHAT_URL: gateway.chatUrl,

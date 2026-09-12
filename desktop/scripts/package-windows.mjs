@@ -91,7 +91,7 @@ const zipEntries = (file) => {
   return entries;
 };
 const verifyNupkg = (signTool, file) => {
-  const extraction = mkdtempSync(path.join(tmpdir(), "emma-nupkg-"));
+  const extraction = mkdtempSync(path.join(tmpdir(), "shinbo-nupkg-"));
   try {
     let verified = 0;
     for (const entry of zipEntries(file)) {
@@ -110,7 +110,7 @@ const verifyNupkg = (signTool, file) => {
 const version = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")).version;
 assert.match(version, /^\d+\.\d+\.\d+$/, "The root package.json needs a stable X.Y.Z version.");
 
-run("cargo", ["build", "--locked", "--release", "-p", "emma-host"], root);
+run("cargo", ["build", "--locked", "--release", "-p", "shinbo-host"], root);
 run("zig", ["build", "-Doptimize=ReleaseSafe"], path.join(root, "harness"));
 run("npm.cmd", ["run", "build:native"]);
 run("npm.cmd", ["run", "vendor:ripgrep"]);
@@ -119,7 +119,7 @@ run("npm.cmd", ["run", "build"]);
 const notices = path.join(staging, "notices");
 mkdirSync(notices, { recursive: true });
 for (const [source, name] of [
-  ["LICENSE", "Emma-LICENSE.txt"],
+  ["LICENSE", "Shinbo-LICENSE.txt"],
   ["harness/LICENSE", "Harness-LICENSE.txt"],
   ["harness/THIRD_PARTY_NOTICES.md", "Harness-NOTICES.md"],
   ["harness/FORK.md", "Harness-FORK.md"],
@@ -138,13 +138,13 @@ writeFileSync(path.join(notices, "Ripgrep-LICENSE.txt"), ["COPYING", "LICENSE-MI
 const zvecModules = path.join(desktop, "vendor/zvec-grep/node_modules");
 writeFileSync(path.join(notices, "Zvec-grep-LICENSES.txt"), globSync("**/{LICENSE,LICENCE,COPYING,NOTICE}*", { cwd: zvecModules }).filter((name) => statSync(path.join(zvecModules, name)).isFile()).sort().map((name) => `${name}\n\n${readFileSync(path.join(zvecModules, name), "utf8")}`).join("\n\n"));
 
-const loadingGif = path.join(desktop, "assets/installer/emma-setup.gif");
+const loadingGif = path.join(desktop, "assets/installer/shinbo-setup.gif");
 assert.ok(existsSync(loadingGif), `Missing installer splash: ${loadingGif}`);
 
-const nativeHelpers = ["emma-option-tap.exe", "emma-computer.exe", "emma-transcribe.exe", "emma-pty.exe"];
+const nativeHelpers = ["shinbo-option-tap.exe", "shinbo-computer.exe", "shinbo-transcribe.exe", "shinbo-pty.exe"];
 const required = [
-  path.join(root, "target/release/emma-host.exe"),
-  path.join(root, "harness/zig-out/bin/emma-cli.exe"),
+  path.join(root, "target/release/shinbo-host.exe"),
+  path.join(root, "harness/zig-out/bin/shinbo-cli.exe"),
   path.join(desktop, "vendor/rg.exe"),
   ...nativeHelpers.map((name) => path.join(desktop, "dist-native", name)),
   path.join(desktop, "skills"),
@@ -152,8 +152,8 @@ const required = [
 ];
 for (const resource of required) assert.ok(existsSync(resource), `Missing Windows resource: ${resource}`);
 
-const ico = path.join(staging, "emma.ico");
-cpSync(path.join(desktop, "assets/emma.ico"), ico);
+const ico = path.join(staging, "shinbo.ico");
+cpSync(path.join(desktop, "assets/shinbo.ico"), ico);
 const icon = readFileSync(ico);
 assert.equal(icon.readUInt16LE(0), 0, "Invalid ICO reserved field.");
 assert.equal(icon.readUInt16LE(2), 1, "Invalid ICO type.");
@@ -170,7 +170,7 @@ for (const size of [16, 32, 48, 256]) assert.ok(iconSizes.includes(size), `The W
 const bundled = /^\/(?:package\.json$|dist-main(?:$|\/(?:main|shared)(?:\/|$))|dist-renderer(?:\/|$)|node_modules(?:$|\/ws(?:\/|$)))/;
 await packager({
   dir: desktop,
-  name: "Emma",
+  name: "Shinbo",
   icon: ico,
   platform: "win32",
   arch,
@@ -179,19 +179,19 @@ await packager({
   asar: true,
   appVersion: version,
   buildVersion: version,
-  win32metadata: { CompanyName: "Tronschell", ProductName: "Emma", FileDescription: "Emma" },
+  win32metadata: { CompanyName: "Tronschell", ProductName: "Shinbo", FileDescription: "Shinbo" },
   extraResource: required,
   ignore: (file) => file !== "" && !bundled.test(file),
   afterCopy: [({ buildPath }) => {
     const file = path.join(buildPath, "package.json");
     const pkg = JSON.parse(readFileSync(file, "utf8"));
-    writeFileSync(file, `${JSON.stringify({ ...pkg, productName: "Emma", version }, null, 2)}\n`);
+    writeFileSync(file, `${JSON.stringify({ ...pkg, productName: "Shinbo", version }, null, 2)}\n`);
   }],
 });
 
-const app = path.join(staging, `Emma-win32-${arch}`);
+const app = path.join(staging, `Shinbo-win32-${arch}`);
 run(process.execPath, ["scripts/trim-packaged-locales.mjs", app]);
-const executable = path.join(app, "Emma.exe");
+const executable = path.join(app, "Shinbo.exe");
 assert.ok(existsSync(executable), `Missing packaged executable: ${executable}`);
 verifyPeArchitecture(executable);
 const archive = path.join(app, "resources", "app.asar");
@@ -215,26 +215,26 @@ const windowsSign = certificateFile ? {
   certificatePassword,
   hashes: ["sha256"],
   timestampServer: process.env.WINDOWS_TIMESTAMP_SERVER?.trim() || "http://timestamp.digicert.com",
-  description: "Emma",
-  website: "https://github.com/tronschell/emma",
+  description: "Shinbo",
+  website: "https://github.com/tronschell/shinbo",
 } : undefined;
 await createWindowsInstaller({
   appDirectory: app,
   outputDirectory: squirrel,
   authors: "Tronschell",
   description: "A self-learning, self-building metaharness.",
-  name: "Emma",
-  exe: "Emma.exe",
-  setupExe: `Emma-${version}-win32-${arch}-Setup.exe`,
+  name: "Shinbo",
+  exe: "Shinbo.exe",
+  setupExe: `Shinbo-${version}-win32-${arch}-Setup.exe`,
   setupIcon: ico,
   loadingGif,
-  iconUrl: "https://raw.githubusercontent.com/tronschell/emma/main/desktop/assets/emma.ico",
+  iconUrl: "https://raw.githubusercontent.com/tronschell/shinbo/main/desktop/assets/shinbo.ico",
   noMsi: true,
-  title: "Emma",
+  title: "Shinbo",
   version,
   ...(windowsSign ? { windowsSign } : {}),
 });
-const setup = path.join(squirrel, `Emma-${version}-win32-${arch}-Setup.exe`);
+const setup = path.join(squirrel, `Shinbo-${version}-win32-${arch}-Setup.exe`);
 assert.ok(existsSync(setup), `Missing Windows installer: ${setup}`);
 if (windowsSign) {
   const signTool = process.env.WINDOWS_SIGNTOOL_PATH?.trim() || "signtool.exe";
@@ -256,5 +256,5 @@ const checksums = nupkgs.concat(path.basename(setup), "RELEASES").map((name) => 
   return `${digest.toLowerCase()} *${name}`;
 });
 writeFileSync(path.join(squirrel, "SHA256SUMS"), `${checksums.join("\n")}\n`);
-publishStagedBuild(staging, out, [`Emma-win32-${arch}`, "squirrel", "notices", "emma.ico"]);
-console.log(`Verified Emma ${version}: ${path.join(out, "squirrel", path.basename(setup))}, ${nupkgs.length} Squirrel package(s), RELEASES`);
+publishStagedBuild(staging, out, [`Shinbo-win32-${arch}`, "squirrel", "notices", "shinbo.ico"]);
+console.log(`Verified Shinbo ${version}: ${path.join(out, "squirrel", path.basename(setup))}, ${nupkgs.length} Squirrel package(s), RELEASES`);

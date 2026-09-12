@@ -377,8 +377,6 @@ fn buildGatewayRequestBodyValidated(
     return try out.toOwnedSlice();
 }
 
-/// Returns a new request body with the provider-visible user agent added.
-/// The caller retains ownership of `body` and owns the returned slice.
 pub fn withRequestUserAgent(
     alloc: std.mem.Allocator,
     body: []const u8,
@@ -526,11 +524,10 @@ fn findToolCallIndex(calls: []const ToolCall, id: []const u8) ?usize {
 }
 
 pub const CacheMarks = struct {
-    /// Last leading system message: the static prefix, cached for an hour.
     stable_prefix_idx: ?usize = null,
-    /// Last durable-history message before the current prompt; stable across a turn's steps.
+
     history_end_idx: ?usize = null,
-    /// Last cacheable message before the volatile tail; moves forward each step.
+
     breakpoint_idx: ?usize = null,
 
     pub fn marks(self: CacheMarks, index: usize) bool {
@@ -540,8 +537,6 @@ pub const CacheMarks = struct {
     }
 };
 
-/// How long a cache mark on a message should live. Anthropic requires the
-/// longer-lived marks to precede the shorter ones, which the prefix layout guarantees.
 pub const CacheTtl = enum { none, short, long };
 
 pub fn cacheTtlForMessage(message: ChatMessage, index: usize, cache_marks: CacheMarks, prompt_caching: bool) CacheTtl {
@@ -708,9 +703,6 @@ pub fn formatGatewayRequestShapeSummary(alloc: std.mem.Allocator, payload: []con
         return try out.toOwnedSlice();
     }
 
-    // Emma's OpenAI transport names the turn `messages` where the AI SDK routes
-    // name it `prompt`, and a shape summary is worthless if it cannot describe
-    // the payload that actually failed.
     const turn_key: []const u8 = if (parsed.value.object.contains("messages")) "messages" else "prompt";
     if (parsed.value.object.get(turn_key)) |prompt| {
         if (prompt == .array) {
@@ -827,9 +819,7 @@ pub fn findCacheMarks(messages: []const ChatMessage) CacheMarks {
         marks.breakpoint_idx = i;
         break;
     }
-    // The message before the last user prompt closes the durable history. Marking it keeps
-    // the whole history cached across every step of the turn and into the next turn, even
-    // when the moving breakpoint lands on a tool result that never recurs.
+
     var last_user: ?usize = null;
     for (messages, 0..) |message, index| {
         if (message.role == .user) last_user = index;

@@ -63,7 +63,7 @@ test("a scoped comparison excludes other models and runs from another trial", ()
 });
 
 test("scoped lessons reach only matching turns and are replaced in the prompt when a thread switches models", () => {
-  const home = mkdtempSync(path.join(tmpdir(), "emma-scoped-prompt-"));
+  const home = mkdtempSync(path.join(tmpdir(), "shinbo-scoped-prompt-"));
   setSystemPrompt("Base.");
   setImprovements({ items: [change("instructions", "GLM lesson", "family:glm"), change("tools", '{"read_file":"GLM hint"}', "model:glm-5.3-flash"), change("prompt", "GLM trial", "family:glm", "trial")] });
   const turn = { threadId: "switch", title: "Task", content: "Do it", mode: "ask" as const, model: "provider:plan-zai" };

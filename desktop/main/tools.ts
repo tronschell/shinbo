@@ -69,12 +69,12 @@ const BROWSER_VERBS: Record<BrowserAction, string> = {
 };
 
 const GOAL_DESCRIPTION =
-  "A durable objective for this thread, pursued across turns instead of inside one. While a goal is active Emma drives another turn at it as soon as you stop talking, and another after that, until it is achieved, out of budget, blocked three turns running, or the user stops it. That is what a goal buys: work that outlives the turn it was asked for.\n" +
+  "A durable objective for this thread, pursued across turns instead of inside one. While a goal is active Shinbo drives another turn at it as soon as you stop talking, and another after that, until it is achieved, out of budget, blocked three turns running, or the user stops it. That is what a goal buys: work that outlives the turn it was asked for.\n" +
   "Set one when the user asks for an end state rather than an answer — a migration finished, a bug hunted to its root, a feature built and verified — or when they say to keep at it until it works. Do not set one for anything you can simply do now.\n" +
   "Actions:\n" +
   "set — start pursuing objective. Write it as the end state, with what \"done\" looks like inside it, because every later turn is judged against those words and nothing else. tokenBudget caps the whole pursuit and defaults to 200000; this replaces whatever the thread was pursuing before.\n" +
   "get — the objective, the status, the turns taken, the seconds spent, and the budget left.\n" +
-  "update — status active, paused, complete or blocked. complete is refused without evidence, and evidence means the end state itself: what you ran, what it printed, what changed. Never send it because the budget is nearly gone or because you are stopping. blocked wants reason, one line naming what is in the way; it only sticks once the same blocker has stopped you on three consecutive goal turns, so report it and keep working — Emma counts the streak, and a goal picked back up counts again from zero.\n" +
+  "update — status active, paused, complete or blocked. complete is refused without evidence, and evidence means the end state itself: what you ran, what it printed, what changed. Never send it because the budget is nearly gone or because you are stopping. blocked wants reason, one line naming what is in the way; it only sticks once the same blocker has stopped you on three consecutive goal turns, so report it and keep working — Shinbo counts the streak, and a goal picked back up counts again from zero.\n" +
   "extend — add extraTokens to the budget and start pursuing again, for a goal that ran out with real work left. Ask the user first: it is their spend.\n" +
   "clear — stop pursuing and take the goal off the thread. That is the user dropping it, not you deciding it is hard.\n" +
   "One goal to a thread. A subagent lives inside a turn and cannot hold one, so tell it the objective in its brief instead; work worth several subagents wants the plan tool underneath this one.";
@@ -91,7 +91,7 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
       `Run another coding CLI on this ${LOCAL_DEVICE} — Claude Code, Codex, Pi, OpenCode, Gemini CLI, Cursor, Antigravity CLI — inside a connected folder, and take turns with it. Its terminal appears pinned at the top of this thread and in its own tab, so the user watches it work.\n` +
       "action \"run\" starts a conversation with a CLI and returns its run id once the first turn finishes; \"send\" gives an existing run the next prompt, continuing the same session with everything it already knows.\n" +
       "Check first with cli_runs {} which CLIs are installed — running one that is not there is the common failure.\n" +
-      "Say everything the CLI needs in prompt: it does not see this conversation, only the folder. Prefer it over doing the work yourself when the user names a CLI, when they want a second agent's answer on the same code, or when that CLI is set up for this project and Emma is not.\n" +
+      "Say everything the CLI needs in prompt: it does not see this conversation, only the folder. Prefer it over doing the work yourself when the user names a CLI, when they want a second agent's answer on the same code, or when that CLI is set up for this project and Shinbo is not.\n" +
       `unattended passes that CLI's own skip-approvals flag, so it edits and runs commands without stopping. It is the difference between a real run and one that stalls on a question nobody sees — but it is the user's ${LOCAL_DEVICE}, so leave it off unless they asked for a hands-off run.`,
     inputSchema: {
       type: "object",
@@ -131,14 +131,14 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
     name: "shortcut",
     needs: "always",
     description:
-      `Create or replace a global shortcut that runs a Quick Action prompt when the user presses it anywhere on this ${LOCAL_DEVICE}. Use it whenever the user asks in natural language to make, bind, or set up a keyboard shortcut. The result appears in Settings → Keybinds and works immediately. Emma has three Quick Action slots; matching the same label or combination updates that slot.\n` +
-      "Write accelerator in Electron form: Command, Control, Alt (the Option key), and Shift joined with +, followed by one key. Examples: Command+Alt+K, Control+Shift+Space. label is the short name shown in Settings; prompt is the complete instruction Emma runs when the shortcut fires.",
+      `Create or replace a global shortcut that runs a Quick Action prompt when the user presses it anywhere on this ${LOCAL_DEVICE}. Use it whenever the user asks in natural language to make, bind, or set up a keyboard shortcut. The result appears in Settings → Keybinds and works immediately. Shinbo has three Quick Action slots; matching the same label or combination updates that slot.\n` +
+      "Write accelerator in Electron form: Command, Control, Alt (the Option key), and Shift joined with +, followed by one key. Examples: Command+Alt+K, Control+Shift+Space. label is the short name shown in Settings; prompt is the complete instruction Shinbo runs when the shortcut fires.",
     inputSchema: {
       type: "object",
       properties: {
         accelerator: { type: "string", description: "The key combination in Electron form, such as Command+Alt+K. Use Alt for the Option key." },
         label: { type: "string", description: "Short name shown for this shortcut in Settings." },
-        prompt: { type: "string", description: "The complete natural-language instruction Emma runs when the shortcut fires." },
+        prompt: { type: "string", description: "The complete natural-language instruction Shinbo runs when the shortcut fires." },
       },
       required: ["accelerator", "label", "prompt"],
     },
@@ -147,7 +147,7 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
     name: "browser",
     needs: "always",
     description:
-      "Drive a real Chrome browser: open pages, read them, click, fill and check your own work. The user watches the same browser in Emma's browser pane and can take the wheel, so what you do here is visible and what they do is yours to read.\n" +
+      "Drive a real Chrome browser: open pages, read them, click, fill and check your own work. The user watches the same browser in Shinbo's browser pane and can take the wheel, so what you do here is visible and what they do is yours to read.\n" +
       "action \"open\" navigates; \"snapshot\" is how you see — it returns the page as an accessibility tree whose elements carry refs like @e1, and every later action takes a ref or a CSS selector. Snapshot first, then act on a ref: guessing a selector is the common failure.\n" +
       "Use it to check a web project you are working on — open the dev server, look at the page, click through the change you just made — and to read a page when web_fetch or web_search could not.\n" +
       "\"get\" reads one thing off the page: text, html, value, attr, title, url or count. \"eval\" runs JavaScript in the page when nothing else will do. \"close\" ends the session; leave it open between turns otherwise, the browser is this thread's and it keeps its cookies and its place.",
@@ -340,7 +340,7 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
     name: "threads",
     needs: "always",
     description:
-      "Emma's threads: the conversations in the user's sidebar. A thread keeps its whole history and outlives every run inside it, so it is what the user comes back to. Actions:\n" +
+      "Shinbo's threads: the conversations in the user's sidebar. A thread keeps its whole history and outlives every run inside it, so it is what the user comes back to. Actions:\n" +
       "spawn — start a thread of its own in this project, owned by this one. With prompt, a main agent of its own starts work in it immediately and in parallel with this turn; nothing comes back here, so say it is running and check on it later. Without prompt the thread is created empty for the user to pick up.\n" +
       "list — every thread with its owner, message count and whether an agent is working in it right now.\n" +
       "read — one thread's most recent messages, by ID. This is how you pick up what another conversation already worked out.\n" +
@@ -408,14 +408,14 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
     needs: "always",
     description:
       "Keep something in the user's knowledge base — their \"kb\" — as a plain Markdown note in the vault folder they chose, next to whatever else they write there. Use it whenever they say save this, keep this, clip this page, note this down, remember this, or add it to their kb.\n" +
-      "With no arguments it keeps the page they are looking at: the one in front in their browser, even while Emma is the window they are typing in.\n" +
+      "With no arguments it keeps the page they are looking at: the one in front in their browser, even while Shinbo is the window they are typing in.\n" +
       'kind "page" keeps a web page, "note" keeps text you or they wrote out, "selection" keeps something they highlighted somewhere else, "screenshot" keeps a picture of their screen.\n' +
       "The note lands immediately; its title and tags are filled in a moment later by a small model, so leave title out unless they named it, do not wait for the result, and do not call again for the same thing.",
     inputSchema: {
       type: "object",
       properties: {
         kind: { type: "string", enum: ["page", "note", "selection"], description: 'What is being kept. Omit to keep the page in front of them, or when "text" is the whole note.' },
-        title: { type: "string", description: "What to call it, only if the user named it. Otherwise Emma names it from the capture and a model retitles it." },
+        title: { type: "string", description: "What to call it, only if the user named it. Otherwise Shinbo names it from the capture and a model retitles it." },
         text: { type: "string", description: 'The note itself, for kind "note", or the words they highlighted, for "selection".' },
         url: { type: "string", description: "The page to keep. Omit to keep the page the user has in front of them." },
       },
@@ -426,7 +426,7 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
     name: "write_plugin",
     needs: "always",
     description:
-      "Package skills into a plugin — the ChatGPT and Codex format, .codex-plugin/plugin.json plus a skills folder — and install it into Emma in the same call. Use it when the user asks you to make, build or package a plugin, or when several skills only make sense together as one installable thing. One skill on its own is write_skill; this is for the bundle. The plugin lands in Emma's own marketplace and is listed on the Plugins page, where the user can uninstall it. Writing a name that already exists replaces it.",
+      "Package skills into a plugin — the ChatGPT and Codex format, .codex-plugin/plugin.json plus a skills folder — and install it into Shinbo in the same call. Use it when the user asks you to make, build or package a plugin, or when several skills only make sense together as one installable thing. One skill on its own is write_skill; this is for the bundle. The plugin lands in Shinbo's own marketplace and is listed on the Plugins page, where the user can uninstall it. Writing a name that already exists replaces it.",
     inputSchema: {
       type: "object",
       properties: {
@@ -454,7 +454,7 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
     name: "install_mcp",
     needs: "always",
     description:
-      `Install an MCP server into Emma's own configuration. The harness connects it when the next turn starts, and its tools are found from then on with mcp_search_tools — not in the turn that installs it. Take the stdio command straight from the server's own README (npx, uvx, a binary on this ${LOCAL_DEVICE}). Installing a name that already exists replaces it, which is how a wrong command gets fixed. Prefer this over telling the user to edit a config file by hand.`,
+      `Install an MCP server into Shinbo's own configuration. The harness connects it when the next turn starts, and its tools are found from then on with mcp_search_tools — not in the turn that installs it. Take the stdio command straight from the server's own README (npx, uvx, a binary on this ${LOCAL_DEVICE}). Installing a name that already exists replaces it, which is how a wrong command gets fixed. Prefer this over telling the user to edit a config file by hand.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -473,8 +473,8 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
     description:
       "Make and look after artifacts: a document, code, page, drawing, diagram or app the user keeps outside this conversation. They sit on the Artifacts page, and any later thread or scheduled task can read and rewrite one by its id. The artifact skill says when one is worth making; err strongly against making one.\n" +
       "Actions: list — id, title, kind and when each last changed. get — one in full, by id. create — title, kind and content; the id comes back and is what you address it by afterwards. update — one replacement, where old_str appears exactly once, verbatim, and new_str takes its place. rewrite — whole new content for an id that exists. No delete: an artifact is the user's to remove, from the Artifacts page.\n" +
-      "An app is a page that keeps its own SQLite: await emma.sql(sql, ...params) returns rows, and it may hold files beside it. Set language on code.\n" +
-      "A write comes back starting with a [artifact:id] token, which is how Emma draws it in the transcript. Leave it there; do not repeat it in your prose.",
+      "An app is a page that keeps its own SQLite: await shinbo.sql(sql, ...params) returns rows, and it may hold files beside it. Set language on code.\n" +
+      "A write comes back starting with a [artifact:id] token, which is how Shinbo draws it in the transcript. Leave it there; do not repeat it in your prose.",
     inputSchema: {
       type: "object",
       properties: {
@@ -489,7 +489,7 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
         surface: {
           type: "string",
           enum: [...ARTIFACT_SURFACES, "none"],
-          description: "Makes this artifact one region of Emma's own interface, replacing the built-in one, live and without a relaunch: navbar (the sidebar), chat (the conversation pane), notch (the island), context (the thread inspector). It must be kind \"code\", language \"js\", and `export default (api) => Component` — api is { h, Fragment, useState, useEffect, useMemo, useRef, useCallback, emma }, h is React.createElement, and the component is handed the same props the built-in region had. One region per artifact; the built-in comes back if it throws. \"none\" hands the region back. Leave it off to keep it where it is. Read the artifact skill first.",
+          description: "Makes this artifact one region of Shinbo's own interface, replacing the built-in one, live and without a relaunch: navbar (the sidebar), chat (the conversation pane), notch (the island), context (the thread inspector). It must be kind \"code\", language \"js\", and `export default (api) => Component` — api is { h, Fragment, useState, useEffect, useMemo, useRef, useCallback, shinbo }, h is React.createElement, and the component is handed the same props the built-in region had. One region per artifact; the built-in comes back if it throws. \"none\" hands the region back. Leave it off to keep it where it is. Read the artifact skill first.",
         },
         old_str: { type: "string", description: "For update: the exact text to replace. It must appear exactly once, verbatim." },
         new_str: { type: "string", description: "For update: what replaces it. Empty deletes old_str." },
@@ -501,14 +501,14 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
     name: "component",
     needs: "always",
     description:
-      "Build a widget into Emma's own interface — a panel, a counter, a tracker, a small tool — and reload it in place every time you rewrite it. This is what \"build yourself an X\" means. It is not an artifact: an artifact is a thing the user keeps outside the conversation, a component is a piece of Emma.\n" +
+      "Build a widget into Shinbo's own interface — a panel, a counter, a tracker, a small tool — and reload it in place every time you rewrite it. This is what \"build yourself an X\" means. It is not an artifact: an artifact is a thing the user keeps outside the conversation, a component is a piece of Shinbo.\n" +
       "There is one place a component goes: the context bar down the right of a thread, under the built-in widgets, in their chrome. Nothing else in the window can be built into — that is what keeps a component from breaking the layout around it. Ask the user whatever the request left open first — what it shows, where its numbers come from, how it behaves — then create.\n" +
       "The column is about 288px wide. Build for that. If what they asked for genuinely needs more room — a table, a board, a chart with axes — set expand true and it gets a ⤢ that opens it over the whole window; the component is handed `expanded` as a prop, so draw the dense reading when it is false and the full one when it is true.\n" +
-      "It can read everything the app knows through `emma`, and reach the outside through `fetch`. Declare API keys and other credentials as variable names; the user fills them in Settings → Built by Emma. Use {{LINEAR_API_KEY}} only in request headers or the body, never in the URL. Main asks the user in a native dialog before the exact request template can use credentials. Approval is for this app session and changes to the template, component or credentials need new approval. Components share the app's renderer and bridge, not isolated identities.\n" +
-      "code is one ES module: export default (api) => Component. api is { h, Fragment, useState, useEffect, useMemo, useRef, useCallback, emma, fetch, variables }; h is React.createElement, so there is no JSX and nothing to import — h(\"div\", { className: \"…\" }, …). emma is the same bridge the app uses. fetch(url, { method, headers, body }) goes out through main and answers { status, ok, body }; use a fixed public HTTPS URL, an at-most-8-KiB request and uncompressed UTF-8 responses of at most 1 MiB. Redirects and local/private destinations are refused. Reuse the app's own class names wherever one fits, so it looks like it belongs there.\n" +
-      "Style it in Emma's design system, from her own tokens — never a colour, radius or face of your own. Ground: var(--bg) for the window, var(--surface-2) for a card, --surface-3 hover, --surface-4 active. Ink: var(--text), var(--text-2) for labels, var(--text-3) for captions. Rules are 1px var(--border), or var(--border-strong) for a region outline, and never both on one edge. var(--accent) is action, state and data only, never emphasis; var(--accent-soft) is the only accent fill over a large area; var(--danger) is destructive. Space on var(--s-1) 4px through var(--s-8) 32px, sizes from var(--fs-2xs) up. A control is 28px tall, 1px bordered, transparent. Every corner is square — no border-radius anywhere. var(--font-mono) is the interface face for anything on the grid: labels, values, buttons, counts, with uppercase labels tracked by var(--ls-caps). var(--font) is for sentences. Density is the point: if it looks cramped, take something out rather than adding padding.\n" +
+      "It can read everything the app knows through `shinbo`, and reach the outside through `fetch`. Declare API keys and other credentials as variable names; the user fills them in Settings → Built by Shinbo. Use {{LINEAR_API_KEY}} only in request headers or the body, never in the URL. Main asks the user in a native dialog before the exact request template can use credentials. Approval is for this app session and changes to the template, component or credentials need new approval. Components share the app's renderer and bridge, not isolated identities.\n" +
+      "code is one ES module: export default (api) => Component. api is { h, Fragment, useState, useEffect, useMemo, useRef, useCallback, shinbo, fetch, variables }; h is React.createElement, so there is no JSX and nothing to import — h(\"div\", { className: \"…\" }, …). shinbo is the same bridge the app uses. fetch(url, { method, headers, body }) goes out through main and answers { status, ok, body }; use a fixed public HTTPS URL, an at-most-8-KiB request and uncompressed UTF-8 responses of at most 1 MiB. Redirects and local/private destinations are refused. Reuse the app's own class names wherever one fits, so it looks like it belongs there.\n" +
+      "Style it in Shinbo's design system, from her own tokens — never a colour, radius or face of your own. Ground: var(--bg) for the window, var(--surface-2) for a card, --surface-3 hover, --surface-4 active. Ink: var(--text), var(--text-2) for labels, var(--text-3) for captions. Rules are 1px var(--border), or var(--border-strong) for a region outline, and never both on one edge. var(--accent) is action, state and data only, never emphasis; var(--accent-soft) is the only accent fill over a large area; var(--danger) is destructive. Space on var(--s-1) 4px through var(--s-8) 32px, sizes from var(--fs-2xs) up. A control is 28px tall, 1px bordered, transparent. Every corner is square — no border-radius anywhere. var(--font-mono) is the interface face for anything on the grid: labels, values, buttons, counts, with uppercase labels tracked by var(--ls-caps). var(--font) is for sentences. Density is the point: if it looks cramped, take something out rather than adding padding.\n" +
       "rewrite replaces the whole module of an id that exists and hot-reloads it, which is how you iterate: the user says what is wrong, you rewrite, they watch it change. Keep going until they are happy.\n" +
-      "No delete. A component is the user's to switch off or remove, from the \u22ef in its header or from Settings \u2192 Built by Emma.",
+      "No delete. A component is the user's to switch off or remove, from the \u22ef in its header or from Settings \u2192 Built by Shinbo.",
     inputSchema: {
       type: "object",
       properties: {
@@ -517,7 +517,7 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
         title: { type: "string", description: "What the user would call it. Required on create, and shown in its \u22ef menu." },
         code: { type: "string", description: "The whole module. Required on create and rewrite." },
         expand: { type: "boolean", description: "Give it a ⤢ that opens it over the whole window, for something that cannot be read in a 288px column. The component is handed `expanded` so it can draw both. Leave it off on a rewrite to keep what it has." },
-        variables: { type: "array", items: { type: "string" }, description: "Environment variable names this component needs. The user fills them in Settings \u2192 Built by Emma and approves each credential-bearing request template. Write {{NAME}} in headers or the body, never the URL. Leave it off on a rewrite to keep what it has." },
+        variables: { type: "array", items: { type: "string" }, description: "Environment variable names this component needs. The user fills them in Settings \u2192 Built by Shinbo and approves each credential-bearing request template. Write {{NAME}} in headers or the body, never the URL. Leave it off on a rewrite to keep what it has." },
       },
       required: ["action"],
     },
@@ -527,7 +527,7 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
     needs: "always",
     description:
       "Build and look after the user's scheduled tasks — the workflows in the Scheduled tasks section. Call it with no arguments to list them, or set action to get, save, delete, run or test.\n" +
-      "A task is a trigger plus a graph of nodes. trigger is a five-field UTC cron expression (\"0 9 * * 1\"), \"manual\", \"after <job-id>\" to run when another task finishes, or an app event: \"on launch\" when Emma starts, or \"on note-kept\" when a note is kept, which arrives with {{title}} and {{tags}}. Those two are the only events there are.\n" +
+      "A task is a trigger plus a graph of nodes. trigger is a five-field UTC cron expression (\"0 9 * * 1\"), \"manual\", \"after <job-id>\" to run when another task finishes, or an app event: \"on launch\" when Shinbo starts, or \"on note-kept\" when a note is kept, which arrives with {{title}} and {{tags}}. Those two are the only events there are.\n" +
       "nodes is a JSON array. Each node has an id, a kind, and text: kind \"agent\" runs text as a full turn; kind \"script\" runs the fixed absolute path in text from a connected folder, with optional templated input sent on stdin; kind \"set\" stores text in saveAs without running anything; kind \"if\" reads text as a condition and goes to next when it holds, otherwise to otherwise. Python, JavaScript, sh and zsh files have built-in runners; other executable scripts use their shebang.\n" +
       "Templates: {{name}} in agent, set and script input becomes that variable. saveAs keeps agent or script output for later nodes. {{last}} is the previous agent step's answer. A task triggered \"after\" another starts with that task's saved variables. Script paths are fixed, never templates.\n" +
       "Conditions: <value> is|is not|contains|does not contain <value>, <value> is empty|is not empty, or a numeric >, <, >= or <=.\n" +
@@ -556,10 +556,10 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
       "Draw a picture inline in this conversation, where you are answering.\n" +
       "Use proactively when a visual makes an explanation, comparison, or scenario clearer, especially when the user asks to see it. For an existing or newly changed interface, capture and attach the real running result instead. Label mockups as proposals, never proof. Code, diffs, and simple facts stay text.\n" +
       "Draw the smallest thing that carries it — a table for mappings and comparisons, a flow or timeline for sequence and change, a tree for hierarchy and branching, a wireframe for layout, a chart for magnitude and trend.\n" +
-      "html is one whole self-contained document, and it can hold as many charts, panels and widgets as the answer needs. Write your own <style> and <script>; draw with inline SVG, canvas or CSS. There is no network: no CDN, no web fonts, no images by URL. The page is dark and Emma's palette arrives as CSS variables — --bg, --text, --text-2, --text-3, --border, --accent, and --rose, --orange, --lime, --teal, --blue, --violet for series. Use those, not your own.\n" +
+      "html is one whole self-contained document, and it can hold as many charts, panels and widgets as the answer needs. Write your own <style> and <script>; draw with inline SVG, canvas or CSS. There is no network: no CDN, no web fonts, no images by URL. The page is dark and Shinbo's palette arrives as CSS variables — --bg, --text, --text-2, --text-3, --border, --accent, and --rose, --pink, --lime, --teal, --blue, --violet for series. Use those, not your own.\n" +
       "title is a short name for what it shows.\n" +
       "Not an artifact: nothing is saved and it dies with this conversation, though the user can export a PNG or keep it from the buttons on it. Use artifact when they should keep what you made.\n" +
-      "The result leads with a [visual:id] token, which is how Emma draws it. Leave it there, and do not repeat in prose what the picture says.",
+      "The result leads with a [visual:id] token, which is how Shinbo draws it. Leave it there, and do not repeat in prose what the picture says.",
     inputSchema: {
       type: "object",
       properties: {
@@ -573,9 +573,9 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
     name: "write_tool",
     needs: "always",
     description:
-      "Write a tool of your own: an executable script kept in Emma's own data folder and callable by name from any thread afterwards, with run_tool. Use it whenever the user asks you to build or write a tool, and whenever you notice yourself repeating the same fiddly sequence of commands — write it once, then call it.\n" +
+      "Write a tool of your own: an executable script kept in Shinbo's own data folder and callable by name from any thread afterwards, with run_tool. Use it whenever the user asks you to build or write a tool, and whenever you notice yourself repeating the same fiddly sequence of commands — write it once, then call it.\n" +
       `code is the whole script and must start with a #! line naming its interpreter (${TOOL_INTERPRETERS}). It is run with one argument — the input string run_tool was called with — and whatever it prints, on stdout or stderr, is the tool's result.\n` +
-      `Writing a name that already exists replaces it, which is how a tool gets fixed. Nothing is installed on this ${LOCAL_DEVICE} and nothing is added to the user's project: it is one file in Emma's own folder. Say what you wrote and check it with a real run_tool call before reporting it works.`,
+      `Writing a name that already exists replaces it, which is how a tool gets fixed. Nothing is installed on this ${LOCAL_DEVICE} and nothing is added to the user's project: it is one file in Shinbo's own folder. Say what you wrote and check it with a real run_tool call before reporting it works.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -689,7 +689,7 @@ export function parseToolArgs(name: string, raw: string): AnyToolArgs {
       } as const;
       if (!parsed.prompt) throw new Error('The "prompt" argument is required — say what the CLI should do.');
       if (action === "run" && !parsed.cli) throw new Error(`The "cli" argument is required for run: one of ${CLI_IDS.join(", ")}.`);
-      if (action === "run" && !CLI_IDS.includes(parsed.cli!)) throw new Error(`Emma does not know a CLI called "${parsed.cli}". It knows ${CLI_IDS.join(", ")}.`);
+      if (action === "run" && !CLI_IDS.includes(parsed.cli!)) throw new Error(`Shinbo does not know a CLI called "${parsed.cli}". It knows ${CLI_IDS.join(", ")}.`);
       if (action === "send" && !parsed.id) throw new Error('The "id" argument is required for send: the run id cli gave you.');
       if (action === "run") validateCliOptions(parsed.cli!, parsed);
       return parsed;
@@ -872,7 +872,7 @@ export function parseToolArgs(name: string, raw: string): AnyToolArgs {
       const url = optionalText(args.url, "url", 2048);
       const kind = isKeepKind(args.kind) ? args.kind : text && !url ? "note" : "page";
       if ((kind === "note" || kind === "selection") && !text) throw new Error(`Keeping a ${kind === "note" ? "note" : "highlight"} needs "text" — the words to keep.`);
-      if (kind === "screenshot") throw new Error("Emma takes the screenshot herself; ask the user to press the capture key, or keep the page instead.");
+      if (kind === "screenshot") throw new Error("Shinbo takes the screenshot herself; ask the user to press the capture key, or keep the page instead.");
       return { name, kind, title: optionalText(args.title, "title", 200), text, url };
     }
     case "web_search":
@@ -939,7 +939,7 @@ export function parseToolArgs(name: string, raw: string): AnyToolArgs {
       };
     }
     default:
-      throw new Error(`Emma has no tool named ${name.slice(0, 64)}.`);
+      throw new Error(`Shinbo has no tool named ${name.slice(0, 64)}.`);
   }
 }
 
