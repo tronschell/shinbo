@@ -40,7 +40,11 @@ export function InfoDot({ children }: { children: ReactNode }) {
   return <details className="info-dot"><summary aria-label="What this is for">i</summary><div>{children}</div></details>;
 }
 
+/** Shinbo's own routes and placeholders (no model, inherit, off) wear the pink bow instead of a maker mark. */
+export const shinboBrand: BrandDefinition = { id: "shinbo", label: "Shinbo", fallback: "" };
+
 export function BrandIcon({ brand, className }: { brand?: BrandDefinition; className: string }) {
+  if (brand === shinboBrand) return <ShinboMark className={className} />;
   const data = brandRenderData(brand);
   return data.src ? <img className={`${className} brand-image`} draggable={false} src={data.src} alt="" aria-hidden="true" /> : <span className={`${className} brand-fallback`} aria-hidden="true">{data.fallback}</span>;
 }

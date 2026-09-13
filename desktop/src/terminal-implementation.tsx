@@ -4,6 +4,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { terminalSelection, type TerminalTab } from "../shared/terminal";
+import { FloatIcon } from "./browser";
 import { reasonText } from "./errors";
 import type { TerminalPanelProps, TerminalSurfaceProps } from "./terminal";
 
@@ -173,7 +174,7 @@ export function TerminalPanelImplementation({ tabs: allTabs, tabGlyph: TabGlyph,
     <header className="terminal-tabs">
       {tabs.map((tab) => <div className="terminal-tab" key={tab.id} data-active={tab.id === activeId} data-ended={!tab.running}>
         <button type="button" onClick={() => setPicked(tab.id)} title={tab.cwd}><TabGlyph /><span>{tab.title}</span></button>
-        <button type="button" className="terminal-tab-pop" aria-label={`Pop ${tab.title} out`} title="Pop this shell out into a floating window" onClick={() => onPop(tab.id)}>⇱</button>
+        <button type="button" className="terminal-tab-pop" aria-label={`Pop ${tab.title} out`} title="Pop this shell out into a floating window" onClick={() => onPop(tab.id)}><FloatIcon /></button>
         <button type="button" className="terminal-tab-close" aria-label={`Close ${tab.title}`} title="Close this shell" onClick={() => void window.shinbo.closeTerminal(tab.id).catch(() => undefined)}>×</button>
       </div>)}
       <button type="button" className="terminal-add" aria-label="New terminal" title="New terminal" onClick={() => void start()}>+</button>

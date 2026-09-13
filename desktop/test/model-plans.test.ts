@@ -144,10 +144,10 @@ const glmEntry = { key: "openrouter:z-ai/glm-5.3-flash" };
 const lunaEntry = { key: "openrouter:openai/gpt-5.6-luna" };
 const planned = withPlanProfile(defaultSettings, planFor("zai")!, "glm-5.3-flash");
 
-const catalogPicker = Function("planFor", "planForModel", "planForProfile", "planProfileFor", "planModelId", "CODEX_PREFIX", "codexModelKey", "brandForModel", "brandForProvider", "providerBrands", "localBrand",
+const catalogPicker = Function("planFor", "planForModel", "planForProfile", "planProfileFor", "planModelId", "CODEX_PREFIX", "codexModelKey", "brandForModel", "brandForProvider", "providerBrands", "localBrand", "shinboBrand",
   ts.transpile(`${["isFreeModel", "modelEntryPlan", "codexEntries", "modelEntries"].map(appSource).join("\n")}\nreturn modelEntries;`, { target: ts.ScriptTarget.ES2022 }))(
   planFor, planForModel, planForProfile, planProfileFor, planModelId, CODEX_PREFIX, codexModelKey,
-  () => undefined, (id: string) => ({ id, label: id }), [{ id: "openai" }, { id: "glm" }], { id: "local" }) as
+  () => undefined, (id: string) => ({ id, label: id }), [{ id: "openai" }, { id: "glm" }], { id: "local" }, { id: "shinbo" }) as
   (providers: ProviderProfile[], models: { id: string; name: string; contextLength: number; free: boolean }[], slugs: string[]) => { key: string; maker: string; name: string }[];
 
 test("a free-only catalog keeps standalone subscription and direct API models visible under their maker", () => {

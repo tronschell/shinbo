@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { blankPage, browserDestination } from "../shared/browser";
+import type { LocalServer } from "../shared/browser";
 import type { PipWindow } from "./pip";
 import type { BrowserStatus, BrowserTab } from "./types";
 
@@ -13,11 +15,56 @@ const FORWARD = "M6 3.5 10.5 8 6 12.5";
 const RELOAD = "M13.2 6.6A5.4 5.4 0 1 0 13.4 9M13.4 2.8v3.8h-3.8";
 const PLUS = "M8 3.4v9.2M3.4 8h9.2";
 const CLOSE = "M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6";
-const WIDEN = "M9.5 2H14v4.5M14 2l-5.5 5.5M6.5 14H2V9.5M2 14l5.5-5.5";
 const HIDE = "M3 8h10";
 const MORE = "M8 3.6h.01M8 8h.01M8 12.4h.01";
 const FLOAT = "M2.5 3.4h11v9.2h-11zM8.2 8h4.2v3.6H8.2z";
 const CLIPS = "M6.3 3.4H4.5v9.1h7V3.4H9.7M6.4 2.2h3.2v2.2H6.4z";
+export function FloatIcon({ size = 12 }: { size?: number }) {
+  return <NavIcon path={FLOAT} size={size} />;
+}
+
+function PopoutIcon({ size = 12 }: { size?: number }) {
+  return <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" aria-hidden="true"><rect x="2.4" y="2.8" width="11.2" height="10.4" rx="2" /><rect x="7.8" y="8" width="4.4" height="3.4" rx="1" fill="currentColor" stroke="none" /></svg>;
+}
+
+function ViewMenu({ wide, floating, onToggleWide, onFloat }: { wide?: boolean; floating?: boolean; onToggleWide?: () => void; onFloat?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => { if (!box.current?.contains(event.target as Node)) setOpen(false); };
+    addEventListener("pointerdown", outside);
+    return () => removeEventListener("pointerdown", outside);
+  }, [open]);
+  const pick = (run?: () => void) => { setOpen(false); run?.(); };
+  return <div className="browser-view-menu" ref={box} onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}>
+    <button type="button" className="browser-icon" aria-label="View options" title="View options" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}><PopoutIcon size={13} /></button>
+    {open && <section className="source-popover pane-menu browser-view-options" role="menu" aria-label="Browser view">
+      {onToggleWide && <button type="button" role="menuitem" autoFocus onClick={() => pick(onToggleWide)}><strong>{wide ? "Narrow" : "Expand"}</strong><small>{wide ? "Shrink the browser column" : "Widen the browser column"}</small></button>}
+      {onFloat && <button type="button" role="menuitem" onClick={() => pick(onFloat)}><strong>{floating ? "Dock" : "Pop out"}</strong><small>{floating ? "Return it to the side panel" : "Float it in a picture-in-picture window"}</small></button>}
+    </section>}
+  </div>;
+}
+
+function BrowserStart({ onOpen }: { onOpen: (url: string) => void }) {
+  const [servers, setServers] = useState<LocalServer[]>();
+  useEffect(() => {
+    let alive = true;
+    void window.shinbo.browserServers().then((found) => { if (alive) setServers(found); }).catch(() => { if (alive) setServers([]); });
+    return () => { alive = false; };
+  }, []);
+  return <div className="browser-start">
+    <p className="browser-start-head">Local servers</p>
+    {servers === undefined
+      ? <p className="browser-start-hint">Looking…</p>
+      : servers.length === 0
+        ? <p className="browser-start-hint">Nothing is listening on this machine. Type an address, or a phrase to search Google.</p>
+        : <ul className="browser-start-servers">{servers.map((server) => <li key={server.port}>
+            <button type="button" onClick={() => onOpen(`http://localhost:${server.port}`)}><strong>localhost:{server.port}</strong><small>{server.process || "server"}</small></button>
+          </li>)}</ul>}
+  </div>;
+}
+
 const GLOBE = "M8 1.6a6.4 6.4 0 1 0 0 12.8A6.4 6.4 0 0 0 8 1.6M1.6 8h12.8M8 1.6c1.7 1.7 2.6 3.9 2.6 6.4S9.7 12.7 8 14.4M8 1.6C6.3 3.3 5.4 5.5 5.4 8s.9 4.7 2.6 6.4";
 
 function host(url: string): string {
@@ -182,12 +229,11 @@ export function BrowserPane({ threadId, onHide, onClose, wide, onToggleWide, onF
     void window.shinbo.browserNav({ threadId, action }).then(apply).catch(() => undefined);
 
   const draft = typed?.threadId === threadId ? typed.url : undefined;
+  const open = (url: string) => void window.shinbo.browserOpen({ threadId, url }).then(apply).catch(() => undefined);
   const go = () => {
-    const wanted = (draft ?? "").trim();
+    const url = browserDestination(draft ?? "");
     setTyped(undefined);
-    if (!wanted) return;
-    const url = /^[a-z][a-z0-9+.-]*:/i.test(wanted) ? wanted : `https://${wanted}`;
-    void window.shinbo.browserOpen({ threadId, url }).then(apply).catch(() => undefined);
+    if (url) open(url);
   };
 
   const showClips = () => {
@@ -215,8 +261,7 @@ export function BrowserPane({ threadId, onHide, onClose, wide, onToggleWide, onF
           onClick={() => void window.shinbo.browserNewTab({ threadId }).then(apply).catch(() => undefined)}><NavIcon path={PLUS} size={13} /></button>
       </div>
       <div className="browser-window-controls">
-        {onFloat && <button type="button" className="browser-icon" aria-label={floating ? "Dock the browser" : "Float the browser"} aria-pressed={floating} title={floating ? "Dock" : "Float"} onClick={onFloat}><NavIcon path={FLOAT} size={12} /></button>}
-        {onToggleWide && <button type="button" className="browser-icon" aria-label={wide ? "Narrow the browser" : "Widen the browser"} aria-pressed={wide} title={wide ? "Narrow" : "Widen"} onClick={onToggleWide}><NavIcon path={WIDEN} size={12} /></button>}
+        {(onToggleWide || onFloat) && <ViewMenu wide={wide} floating={floating} onToggleWide={onToggleWide} onFloat={onFloat} />}
         {onHide && <button type="button" className="browser-icon" aria-label="Hide the browser" title="Hide — keeps the page and its cookies" onClick={onHide}><NavIcon path={HIDE} size={13} /></button>}
         <button type="button" className="browser-icon" aria-label="Close the browser" title="Close — frees what it holds" onClick={onClose}><NavIcon path={CLOSE} size={12} /></button>
       </div>
@@ -251,10 +296,12 @@ export function BrowserPane({ threadId, onHide, onClose, wide, onToggleWide, onF
           </li>)}
     </ul>}
     <div className="browser-stage" ref={stage} data-idle={!status.running}>
-      {!status.running && <div className="browser-empty">
-        <p>Nothing open</p>
-        <button type="button" onClick={() => void window.shinbo.browserNewTab({ threadId }).then(apply).catch(() => undefined)}>New tab</button>
-      </div>}
+      {!status.running
+        ? <div className="browser-empty">
+            <p>Nothing open</p>
+            <button type="button" onClick={() => void window.shinbo.browserNewTab({ threadId }).then(apply).catch(() => undefined)}>New tab</button>
+          </div>
+        : blankPage(status.url) ? <BrowserStart onOpen={open} /> : null}
     </div>
   </section>;
 }
