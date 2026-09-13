@@ -33,7 +33,7 @@ const zigOptimize = process.env.SHINBO_FAST_BUILD === "1" ? "Debug" : "ReleaseSa
 await Promise.all([
   runAsync("cargo", ["build", "--locked", "--release", "-p", "shinbo-host"], root),
   runAsync("zig", ["build", `-Doptimize=${zigOptimize}`, "-Dtarget=aarch64-macos.12.0"], path.join(root, "harness")),
-  ...["build:native", "vendor:ripgrep", "build:main", "build:renderer"].map((script) => runAsync("npm", ["run", script])),
+  ...["build:native", "vendor:ripgrep", "vendor:agent-browser", "build:main", "build:renderer"].map((script) => runAsync("npm", ["run", script])),
 ]);
 
 const notices = path.join(out, "notices");
@@ -61,6 +61,7 @@ const resources = [
   path.join(root, "target/release/shinbo-host"),
   path.join(root, "harness/zig-out/bin/shinbo-cli"),
   path.join(desktop, "vendor/rg"),
+  path.join(desktop, "vendor/agent-browser"),
   ...["shinbo-option-tap", "shinbo-computer", "shinbo-transcribe", "shinbo-pty"].map((name) => path.join(desktop, "dist-native", name)),
   path.join(desktop, "skills"),
   notices,
@@ -81,8 +82,6 @@ try {
     asar: true,
     prune: false,
     download: { checksums: electronChecksums },
-    // Keep the pre-rename bundle id: Squirrel.Mac only installs an update whose code signature satisfies the running app's
-    // designated requirement, which pins `identifier "com.tronschell.emma"`, and macOS permission grants are keyed by it.
     appBundleId: "com.tronschell.emma",
     appVersion: version,
     buildVersion: version,

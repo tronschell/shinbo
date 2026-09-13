@@ -598,7 +598,7 @@ static NSDictionary *mutation_result(AXError error) {
     operation_deadline = [NSDate timeIntervalSinceReferenceDate] + 5;
     if (!validate_action(request)) return failure(@"Invalid app action or unsupported fields.");
     if (![self validApplication]) return failure(@"The approved app has closed or changed. Open it and request approval again.");
-    if (!AXIsProcessTrusted()) return failure(@"Accessibility permission is required. Enable Shinbo in System Settings > Privacy & Security > Accessibility, then relaunch Shinbo.");
+    if (!AXIsProcessTrusted()) return failure(@"Accessibility permission is required. In Shinbo, open Settings > Permissions > Accessibility > Settings, grant access, then relaunch Shinbo. If Shinbo is already listed as enabled, that grant belongs to an earlier build; the Settings button clears it so macOS asks again.");
     if ([request[@"action"] isEqualToString:@"get_app_state"]) return [self state];
     NSString *snapshot = _snapshot;
     _snapshot = nil;

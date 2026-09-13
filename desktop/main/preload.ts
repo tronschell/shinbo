@@ -337,6 +337,7 @@ contextBridge.exposeInMainWorld("shinbo", {
   browserNav: (value: { threadId: string; action: "back" | "forward" | "reload" | "close" }) => ipcRenderer.invoke("shinbo:browser-nav", value),
   browserPlace: (value: { threadId: string; bounds: { x: number; y: number; width: number; height: number } | null }) => ipcRenderer.invoke("shinbo:browser-place", value),
   browserClips: () => ipcRenderer.invoke("shinbo:browser-clips"),
+  browserServers: () => ipcRenderer.invoke("shinbo:browser-servers"),
   browserClipUse: (value: { threadId: string; index: number }) => ipcRenderer.invoke("shinbo:browser-clip-use", value),
   browserNewTab: (value: { threadId: string; url?: string }) => ipcRenderer.invoke("shinbo:browser-tab-new", value),
   browserSelectTab: (value: { threadId: string; tabId: string }) => ipcRenderer.invoke("shinbo:browser-tab-select", value),

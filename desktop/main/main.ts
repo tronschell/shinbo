@@ -242,6 +242,13 @@ let capabilities: ImportedCapabilityRuntime | undefined;
 let computerRuntime: ComputerUseRuntime | undefined;
 let agents: AgentRuntime | undefined;
 let bridge: Bridge | undefined;
+const DEV_BINARIES: Record<string, string> = {
+  "shinbo-host": "target/debug/shinbo-host",
+  "shinbo-cli": "harness/zig-out/bin/shinbo-cli",
+  rg: "desktop/vendor/rg",
+  "agent-browser": "desktop/vendor/agent-browser",
+};
+
 const background = new BackgroundCommands(() => broadcast("shinbo:background"));
 const clis = new CliRuns(() => broadcast("shinbo:cli-runs"));
 const zvecGrep = new ZvecGrepTool(path.join(app.getPath("userData"), "vendor", "zvec-grep"), toolsOrigin(), () => {
@@ -252,7 +259,7 @@ const zvecGrep = new ZvecGrepTool(path.join(app.getPath("userData"), "vendor", "
 });
 const semanticGrep = new SemanticGrep(process.execPath, () => zvecGrep.entry(), proxyPort(app.getPath("userData")), () => broadcast("shinbo:semantic-grep"));
 let cliModels: CliModelCatalog;
-const browsers = new Browsers(() => broadcast("shinbo:browser"), reportBrowserCursor);
+const browsers = new Browsers(() => broadcast("shinbo:browser"), reportBrowserCursor, binary("agent-browser"));
 const terminals = new Terminals(
   () => nativeHelper("shinbo-pty"),
   (id, data, at) => broadcast("shinbo:terminal-data", { id, data, at }),
@@ -491,12 +498,6 @@ let overlayGrow = 0;
 const preload = path.join(__dirname, "preload.js");
 const renderer = path.join(app.getAppPath(), "dist-renderer/index.html");
 const windowsIcon = isWindows && !app.isPackaged ? path.join(app.getAppPath(), "assets", "shinbo.ico") : undefined;
-
-const DEV_BINARIES: Record<string, string> = {
-  "shinbo-host": "target/debug/shinbo-host",
-  "shinbo-cli": "harness/zig-out/bin/shinbo-cli",
-  rg: "desktop/vendor/rg",
-};
 
 function binary(name: string) {
   const file = isWindows && !path.extname(name) ? `${name}.exe` : name;
@@ -1029,6 +1030,18 @@ function setupStatus(): SetupStatus {
     files: vaultReady(vault),
     vault,
   };
+}
+
+function resetStaleAccessibilityGrant() {
+  if (systemPreferences.isTrustedAccessibilityClient(false)) return Promise.resolve();
+  const plist = path.resolve(app.getPath("exe"), "../../Info.plist");
+  const bundleId = /<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/.exec(readFileSync(plist, "utf8"))?.[1];
+  if (!bundleId) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const reset = spawn("tccutil", ["reset", "Accessibility", bundleId], { stdio: "ignore" });
+    reset.once("error", () => resolve());
+    reset.once("exit", () => resolve());
+  });
 }
 
 const LOADER_ENV = /^(PATH|NODE_OPTIONS|NODE_PATH|npm_config_\w+|(DYLD|LD)_\w+|ELECTRON_RUN_AS_NODE|SHELL|IFS)$/i;
@@ -4696,6 +4709,10 @@ if (primaryInstance) app.whenReady().then(() => {
     mainWindowSender(event);
     return browsers.clips();
   });
+  ipcMain.handle("shinbo:browser-servers", (event) => {
+    mainWindowSender(event);
+    return browsers.servers();
+  });
   ipcMain.handle("shinbo:browser-clip-use", (event, value: unknown) => {
     mainWindowSender(event);
     const { threadId, index } = browserClipRequest(value);
@@ -5213,7 +5230,10 @@ if (primaryInstance) app.whenReady().then(() => {
     const url = privacySettingsUrl(value, process.platform);
     const mac = isMac;
     if (value === "microphone" && mac && await systemPreferences.askForMediaAccess("microphone")) return;
-    if (value === "accessibility" && mac) systemPreferences.isTrustedAccessibilityClient(true);
+    if (value === "accessibility" && mac) {
+      await resetStaleAccessibilityGrant();
+      systemPreferences.isTrustedAccessibilityClient(true);
+    }
     void shell.openExternal(url);
   });
   ipcMain.handle("shinbo:pick-vault-folder", async (event): Promise<VaultChoice | null> => {

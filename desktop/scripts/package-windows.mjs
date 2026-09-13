@@ -114,6 +114,7 @@ run("cargo", ["build", "--locked", "--release", "-p", "shinbo-host"], root);
 run("zig", ["build", "-Doptimize=ReleaseSafe"], path.join(root, "harness"));
 run("npm.cmd", ["run", "build:native"]);
 run("npm.cmd", ["run", "vendor:ripgrep"]);
+run("npm.cmd", ["run", "vendor:agent-browser"]);
 run("npm.cmd", ["run", "build"]);
 
 const notices = path.join(staging, "notices");
@@ -146,6 +147,7 @@ const required = [
   path.join(root, "target/release/shinbo-host.exe"),
   path.join(root, "harness/zig-out/bin/shinbo-cli.exe"),
   path.join(desktop, "vendor/rg.exe"),
+  path.join(desktop, "vendor/agent-browser.exe"),
   ...nativeHelpers.map((name) => path.join(desktop, "dist-native", name)),
   path.join(desktop, "skills"),
   notices,
