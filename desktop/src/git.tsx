@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { fileState, gitArgv, layoutHistory, matchesFilter, MAX_DIFF_LINES, parseDiff, type GitCommit, type GitFileState, type GitReady, type GitSnapshot } from "../shared/git";
 import { terminalSelection as trimSelection } from "../shared/terminal";
 import { ChangeCount } from "./agents";
@@ -9,6 +9,7 @@ import { BrandIcon } from "./icons";
 import { reasonText } from "./errors";
 import { ReadMarkdown } from "./preview";
 import { plural } from "./plural";
+import { readHeight, ResizeHandle } from "./resize";
 
 const MARKS = import.meta.glob<string>("../assets/filetypes/*.svg", { eager: true, query: "?url", import: "default" });
 const mark = (name: string): string | undefined => MARKS[`../assets/filetypes/${name}.svg`];
@@ -129,6 +130,11 @@ const LANE_PITCH = 14;
 const LANE_RADIUS = 3.5;
 const LANE_COLOURS = 6;
 const CONSOLE_LIMIT = 20_000;
+const SIDE_HEIGHT_KEY = "shinbo.git.sideHeight.v1";
+const FILES_HEIGHT_KEY = "shinbo.git.filesHeight.v1";
+const MIN_SIDE_HEIGHT = 300;
+const MIN_FILES_HEIGHT = 48;
+const MAX_HEIGHT = 2000;
 
 const laneX = (lane: number) => lane * LANE_PITCH + LANE_PITCH / 2;
 
@@ -158,7 +164,11 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
   const [command, setCommand] = useState("");
   const [filter, setFilter] = useState("");
   const [output, setOutput] = useState("");
+  const [sideHeight, setSideHeight] = useState(() => readHeight(SIDE_HEIGHT_KEY, 480));
+  const [filesHeight, setFilesHeight] = useState(() => readHeight(FILES_HEIGHT_KEY, 200));
   const menu = useRef<HTMLDivElement>(null);
+  useEffect(() => { localStorage.setItem(SIDE_HEIGHT_KEY, String(sideHeight)); }, [sideHeight]);
+  useEffect(() => { localStorage.setItem(FILES_HEIGHT_KEY, String(filesHeight)); }, [filesHeight]);
 
   const reload = useCallback(() => void window.shinbo.gitStatus(folderId)
     .then((value) => { if (value) setLive(value); })
@@ -276,7 +286,7 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
       <span className="git-spacer" />
       <OpenIn folderId={folderId} />
     </header>
-    <div className="git-body">
+    <div className="git-body" style={{ "--git-side-height": `${sideHeight}px`, "--git-files-height": `${filesHeight}px` } as CSSProperties}>
       <aside className="git-side">
         <div className="git-side-head">
           <label><input type="checkbox" checked={!!shownPaths.length && shownPaths.every((path) => !excluded.has(path))}
@@ -310,7 +320,10 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
           </li>)}
         </ul>
         <section className="git-graph-pane">
-          <div className="git-side-head"><span>history</span></div>
+          <div className="git-side-head">
+            <ResizeHandle label="Resize changed files" axis="y" value={filesHeight} min={MIN_FILES_HEIGHT} max={MAX_HEIGHT} onChange={setFilesHeight} />
+            <span>history</span>
+          </div>
           <div className="git-history">
             <ol className="git-graph">
               {!rows.length && <li className="git-commit-row">No commits yet</li>}
@@ -351,6 +364,7 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
       </aside>
       <section className="git-main">
         <nav className="git-tabs">
+          <ResizeHandle label="Resize history" axis="y" value={sideHeight} min={MIN_SIDE_HEIGHT} max={MAX_HEIGHT} onChange={setSideHeight} />
           <button type="button" className={view === "changes" ? "active" : ""} onClick={() => setView("changes")}>Changes</button>
           <button type="button" className={view === "console" ? "active" : ""} onClick={() => setView("console")}>Console</button>
         </nav>

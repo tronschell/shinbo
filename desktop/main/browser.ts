@@ -1,7 +1,9 @@
-import { app, WebContentsView, type BrowserWindow } from "electron";
+import { app, clipboard, Menu, WebContentsView, type BrowserWindow } from "electron";
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
+import { constants } from "node:fs";
 import { join } from "node:path";
+import { blankPage, BLANK_PAGE, type LocalServer } from "../shared/browser";
 import { validComputerProgress, type ComputerRunProgress } from "../shared/computer";
 import { recentClips, rememberClip, restoreClip } from "./clip";
 import { externalUrl } from "./ipc";
@@ -33,7 +35,11 @@ const DRAIN_MS = 100;
 const MAX_STDERR = 4 * 1024;
 const MAX_SESSION_CHARS = 48;
 const MAX_TABS = 12;
-const HOME = "about:blank";
+const HOME = BLANK_PAGE;
+const FAVICON_MS = 5_000;
+const MAX_FAVICON_BYTES = 64 * 1024;
+const SYSTEM_LISTENERS = new Set(["ControlCenter", "rapportd", "sharingd"]);
+const LOCAL_BINDINGS = new Set(["*", "0.0.0.0", "127.0.0.1", "[::]", "[::1]", "::", "::1"]);
 const CLIP_SETTLE_MS = 150;
 const CLIP_KEYS = ["c", "x", "v"];
 const TRUNCATION_NOTICE = "\n[truncated — read less at a time: snapshot with interactive true, or narrow it with a selector]";
@@ -41,7 +47,7 @@ const MAX_CURSOR_ACTIONS = 20;
 const MAX_CURSOR_LABEL = 80;
 
 export type Ran = { text: string; code: number | null; signal: NodeJS.Signals | null };
-type Tab = { id: string; view: WebContentsView; targetId?: string; favicon?: string; point?: { x: number; y: number } };
+type Tab = { id: string; view: WebContentsView; targetId?: string; favicon?: string; iconRequest: number; point?: { x: number; y: number } };
 type Session = { name: string; threadId: string; tabs: Tab[]; activeId?: string; bounds?: BrowserBounds; shown: boolean; connected?: Promise<void>; pinned?: string };
 type Driving = { session: Session; tab: Tab; action: string; actions: number };
 
@@ -57,7 +63,7 @@ export class Browsers {
   private driving: Driving | undefined;
   private drives = 0;
 
-  constructor(private readonly onChange: () => void, private readonly onCursor: (progress: ComputerRunProgress | null) => void) {}
+  constructor(private readonly onChange: () => void, private readonly onCursor: (progress: ComputerRunProgress | null) => void, private readonly bundled?: string) {}
 
   attach(window: BrowserWindow) {
     this.window = window;
@@ -171,6 +177,14 @@ export class Browsers {
     return recentClips();
   }
 
+  async servers(): Promise<LocalServer[]> {
+    const path = process.env.PATH ?? "";
+    const ran = isWindows
+      ? await capture("netstat", ["-ano", "-p", "tcp"], path)
+      : await capture("lsof", ["-nP", "-iTCP", "-sTCP:LISTEN", "-F", "cpn"], path);
+    return ran.code === 0 ? listeners(ran.text, process.pid) : [];
+  }
+
   reuseClip(threadId: string, index: number) {
     const text = restoreClip(index);
     if (text === undefined) throw new Error("That clipboard item is gone.");
@@ -220,7 +234,7 @@ export class Browsers {
   private spawnTab(session: Session): Tab {
     this.counter += 1;
     const view = new WebContentsView({ webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true } });
-    const tab: Tab = { id: `t${this.counter}`, view };
+    const tab: Tab = { id: `t${this.counter}`, view, iconRequest: 0 };
     const contents = view.webContents;
     contents.setWindowOpenHandler(({ url }) => {
       if (externalUrl(url) && session.tabs.length < MAX_TABS) void this.newTab(session.threadId, url);
@@ -238,11 +252,29 @@ export class Browsers {
       const { x, y } = input as Electron.MouseInputEvent;
       this.pointAt(tab, { x, y });
     });
-    contents.on("page-favicon-updated", (_event, icons) => {
-      tab.favicon = icons.find((icon) => icon.startsWith("https://") || icon.startsWith("http://"));
-      this.onChange();
+    contents.on("context-menu", (_event, params) => {
+      const target = this.window;
+      if (!target || target.isDestroyed()) return;
+      contextMenu(contents, params, (url) => { if (session.tabs.length < MAX_TABS) void this.newTab(session.threadId, url); }).popup({ window: target });
     });
-    const changed = () => this.onChange();
+    contents.on("page-favicon-updated", (_event, icons) => {
+      const icon = icons.find((candidate) => candidate.startsWith("https://") || candidate.startsWith("http://"));
+      const request = ++tab.iconRequest;
+      if (!icon) {
+        tab.favicon = undefined;
+        this.onChange();
+        return;
+      }
+      void faviconData(contents.session, icon).then((data) => {
+        if (tab.iconRequest !== request || contents.isDestroyed()) return;
+        tab.favicon = data;
+        this.onChange();
+      });
+    });
+    const changed = () => {
+      this.layout(session);
+      this.onChange();
+    };
     contents.on("did-navigate", changed);
     contents.on("did-navigate-in-page", changed);
     contents.on("page-title-updated", changed);
@@ -291,7 +323,7 @@ export class Browsers {
     const active = this.active(session);
     const zoom = this.window?.webContents.getZoomFactor() ?? 1;
     for (const tab of session.tabs) {
-      const shows = session.shown && !!session.bounds && tab.id === active?.id;
+      const shows = session.shown && !!session.bounds && tab.id === active?.id && !blankPage(tab.view.webContents.getURL());
       tab.view.setVisible(shows);
       if (shows && session.bounds) tab.view.setBounds(whole(session.bounds, zoom));
     }
@@ -342,6 +374,10 @@ export class Browsers {
   }
 
   private async find(): Promise<string | null> {
+    if (this.bundled && await access(this.bundled, constants.X_OK).then(() => true, () => false)) {
+      this.path = this.bundled;
+      return this.path;
+    }
     this.loginPath ??= isWindows ? process.env.PATH || "" : (await shell('printf %s "$PATH"')) || process.env.PATH || "";
     this.path = await findExecutable("agent-browser", this.loginPath);
     return this.path;
@@ -356,6 +392,81 @@ export function browserCursorProgress(bounds: BrowserBounds, point: { x: number;
     cursor: { windowId, bounds, x: bounds.x + Math.round(point.x), y: bounds.y + Math.round(point.y) },
   };
   return validComputerProgress(progress) ? progress : null;
+}
+
+function contextMenu(contents: Electron.WebContents, params: Electron.ContextMenuParams, openTab: (url: string) => void): Electron.Menu {
+  const items: Electron.MenuItemConstructorOptions[] = [];
+  const { editFlags } = params;
+  if (params.linkURL) {
+    items.push({ label: "Open Link in New Tab", click: () => openTab(params.linkURL) });
+    items.push({ label: "Copy Link", click: () => clipboard.writeText(params.linkURL) });
+    items.push({ type: "separator" });
+  }
+  if (params.mediaType === "image" && params.srcURL) {
+    items.push({ label: "Copy Image Address", click: () => clipboard.writeText(params.srcURL) });
+    items.push({ label: "Copy Image", click: () => contents.copyImageAt(params.x, params.y) });
+    items.push({ type: "separator" });
+  }
+  if (params.isEditable) {
+    items.push({ label: "Undo", role: "undo", enabled: editFlags.canUndo });
+    items.push({ label: "Redo", role: "redo", enabled: editFlags.canRedo });
+    items.push({ type: "separator" });
+    items.push({ label: "Cut", role: "cut", enabled: editFlags.canCut });
+    items.push({ label: "Copy", role: "copy", enabled: editFlags.canCopy });
+    items.push({ label: "Paste", role: "paste", enabled: editFlags.canPaste });
+    items.push({ label: "Select All", role: "selectAll" });
+  } else {
+    if (params.selectionText) {
+      items.push({ label: "Copy", role: "copy", enabled: editFlags.canCopy });
+      items.push({ label: "Search Google", click: () => void contents.loadURL(`https://www.google.com/search?q=${encodeURIComponent(params.selectionText.slice(0, 400))}`).catch(() => undefined) });
+      items.push({ type: "separator" });
+    }
+    items.push({ label: "Back", enabled: contents.navigationHistory.canGoBack(), click: () => contents.navigationHistory.goBack() });
+    items.push({ label: "Forward", enabled: contents.navigationHistory.canGoForward(), click: () => contents.navigationHistory.goForward() });
+    items.push({ label: "Reload", click: () => contents.reload() });
+  }
+  return Menu.buildFromTemplate(items);
+}
+
+async function faviconData(session: Electron.Session, url: string): Promise<string | undefined> {
+  try {
+    const response = await session.fetch(url, { signal: AbortSignal.timeout(FAVICON_MS) });
+    const type = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() ?? "";
+    if (!response.ok || !type.startsWith("image/")) return undefined;
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (!bytes.length || bytes.length > MAX_FAVICON_BYTES) return undefined;
+    return `data:${type};base64,${bytes.toString("base64")}`;
+  } catch {
+    return undefined;
+  }
+}
+
+export function listeners(output: string, ownPid: number): LocalServer[] {
+  const found = new Map<number, string>();
+  let pid = 0;
+  let command = "";
+  const keep = (address: string, port: number, who: string) => {
+    if (pid === ownPid || !LOCAL_BINDINGS.has(address) || SYSTEM_LISTENERS.has(who) || !Number.isInteger(port) || port < 1 || port > 65535) return;
+    found.set(port, found.get(port) || who);
+  };
+  for (const raw of output.split("\n")) {
+    const line = raw.trim();
+    const row = /^TCP\s+(\S+):(\d+)\s+\S+\s+LISTENING\s+(\d+)$/i.exec(line);
+    if (row) {
+      pid = Number(row[3]);
+      keep(row[1]!, Number(row[2]), "");
+      continue;
+    }
+    const key = line[0];
+    const rest = line.slice(1);
+    if (key === "p") pid = Number(rest);
+    else if (key === "c") command = rest;
+    else if (key === "n") {
+      const at = rest.lastIndexOf(":");
+      if (at > 0) keep(rest.slice(0, at), Number(rest.slice(at + 1)), command);
+    }
+  }
+  return [...found].map(([port, process]) => ({ port, process })).sort((left, right) => left.port - right.port);
 }
 
 async function targetOf(tab: Tab): Promise<string> {

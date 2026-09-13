@@ -43,12 +43,13 @@ import { atCommands, buildAttachedContext, cachedBlocks, clearedAt, contextComma
 import { AgentPanel, AgentRail, BackgroundRail, ChangeCount, ChangesPanel, ModeMenu, ModePicker, ModeTrigger, PermissionPrompt, usePermissionAsk, SubagentChips, TabStrip, ThreadCard, useAgents, type AgentTab } from "./agents";
 import { ThreadGitStatus, useThreadGit } from "./thread-git";
 import { FileMark, GitPage, GitSetup, useGit } from "./git";
+import { ResizeHandle } from "./resize";
 import { HarnessStatus } from "./harness";
 import { MobileSettings, PhoneMark, usePhone } from "./mobile";
 import { OpenIn } from "./editors";
 import { worktreeName, type GitSnapshot } from "../shared/git";
 import { CouncilPanel } from "./council";
-import { BrandIcon, BranchIcon, CaretIcon, ChevronIcon, ClipIcon, CloseIcon, DockIcon, ShinboMark, GearIcon, GlobeIcon, InfoDot, Mark, PencilIcon, ReviewIcon, SearchProviderMark, SidebarIcon, SparkIcon, StopIcon, TabIcon, TextIcon, ToolIcon, ToolMark, TrashIcon } from "./icons";
+import { BrandIcon, BranchIcon, CaretIcon, ChevronIcon, ClipIcon, CloseIcon, DockIcon, ShinboMark, shinboBrand, GearIcon, GlobeIcon, InfoDot, Mark, PencilIcon, ReviewIcon, SearchProviderMark, SidebarIcon, SparkIcon, StopIcon, TabIcon, TextIcon, ToolIcon, ToolMark, TrashIcon } from "./icons";
 import { BrowserPane, browserPip } from "./browser";
 import { PaneSwitch } from "./pane-switch";
 import { embeddingModelLabel, embeddingModelMode, IndexStatus, indexStateLabel, useSemanticGrepStatus, useZvecGrepStatus } from "./index-status";
@@ -509,19 +510,6 @@ const readLayout = () => {
   try { return validatePaneLayout(JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? "null")); }
   catch { return defaultPaneLayout; }
 };
-
-function ResizeHandle({ label, value, min, max, direction = 1, axis = "x", onChange }: { label: string; value: number; min: number; max: number; direction?: 1 | -1; axis?: "x" | "y"; onChange: (value: number) => void }) {
-  const drag = useRef<{ at: number; value: number } | undefined>(undefined);
-  const clamp = (next: number) => Math.min(max, Math.max(min, Math.round(next)));
-  const along = (event: { clientX: number; clientY: number }) => axis === "x" ? event.clientX : event.clientY;
-  const [less, more] = axis === "x" ? ["ArrowLeft", "ArrowRight"] : ["ArrowUp", "ArrowDown"];
-  const key = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
-    if (event.key !== less && event.key !== more) return;
-    event.preventDefault();
-    onChange(clamp(value + (event.key === more ? 8 : -8) * direction));
-  };
-  return <button type="button" className="resize-handle" role="separator" aria-label={label} aria-orientation={axis === "x" ? "vertical" : "horizontal"} aria-valuemin={min} aria-valuemax={max} aria-valuenow={value} onKeyDown={key} onPointerDown={(event: ReactPointerEvent<HTMLButtonElement>) => { drag.current = { at: along(event), value }; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (drag.current) onChange(clamp(drag.current.value + (along(event) - drag.current.at) * direction)); }} onPointerUp={() => { drag.current = undefined; }} />;
-}
 
 function App() {
   useShortcutRequests();
@@ -1471,7 +1459,7 @@ function TaskModelPicker({ model, onChange, busy, label = "The model this task r
     </button>
     {open && <section className="source-popover model-menu" role="dialog" aria-label={label} onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}>
       <ModelPicker label={label.toLowerCase()} entries={entries} active={model} busy={busy} providers={settings.providers} favorites={settings.favoriteModels} codex={codex}
-        lead={{ key: "", name: "Shinbo's model", detail: inherit }}
+        lead={{ key: "", name: "Shinbo's model", detail: inherit, brand: shinboBrand }}
         onPick={(key, plan) => void pick(key, plan)} />
     </section>}
     {error && <small className="local-model-error" role="alert">{error}</small>}
@@ -2695,6 +2683,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
         {streaming === null && spawned.loose.length > 0 && <SubagentChips spawned={spawned.loose} onOpen={openSubagentTab} />}
         {sending && streaming === null && run.activeAt <= 0 && <p className="waiting" role="status"><Mark /> {agents.find((agent) => agent.threadId === thread.id)?.activity || "getting started"}…</p>}
         {sending && run.activeAt > 0 && <Stalled since={run.activeAt} blocks={run.blocks} recovery={run.recovery} onSwap={() => { setStallSwap(true); setModelsOpen(true); }} />}
+        {!sending && streaming === null && echo === null && thread.messages.at(-1)?.role === "assistant" && <p className="turn-done" aria-label="Shinbo is ready for the next message"><ShinboMark /></p>}
         </RunContext.Provider>
         </SkillNames.Provider>
       </div>
@@ -2887,6 +2876,7 @@ function modelKeyLabel(settings: UserSettings, key: string): string {
 }
 
 function modelKeyBrand(settings: UserSettings, key: string): BrandDefinition | undefined {
+  if (key === "fallback") return shinboBrand;
   if (routerIdFor(key)) return routerBrand;
   if (key.startsWith("openrouter:")) return brandForModel(key.slice("openrouter:".length), "openrouter");
   if (key.startsWith(CODEX_PREFIX)) return brandForProvider("openai");
@@ -3551,7 +3541,7 @@ function modelEntries(providers: ProviderProfile[], models: OpenRouterCatalog["m
     return !plan || !models.some((model) => modelEntryPlan({ key: `openrouter:${model.id}` })?.id === plan.id && planModelId(plan, model.id) === profile.modelId);
   });
   const entries: CatalogEntry[] = [
-    { maker: "other", key: "fallback", name: "No model chosen", detail: "Shinbo sends no model · the agent answers on its own free OpenRouter route", free: true },
+    { maker: "other", key: "fallback", name: "No model chosen", detail: "Shinbo sends no model · the agent answers on its own free OpenRouter route", free: true, brand: shinboBrand },
     ...standalone.map((profile) => {
       const key = `provider:${profile.id}`;
       const context = (routes?.[key]?.contextWindow ?? profile.contextWindow) || undefined;
@@ -3689,7 +3679,7 @@ function ModelRow({ entry, active, providers, busy, onPick, starred, onStar, dra
   return <div className={`model-row ${current ? "current" : ""}`} {...drag}>
     <button type="button" className="model-row-pick" disabled={busy} aria-current={current} title={entry.detail} onClick={() => onPick(route.key, route.plan)}>
       <strong><BrandIcon brand={entry.brand} className="model-brand" /><span>{entry.name}</span>{modalityMarks(entry.modalities)}{entry.free ? priceBadge(true) : null}</strong>
-      <small><span>{entry.brand?.label ?? entry.detail}</span></small>
+      <small><span>{entry.brand && entry.brand !== shinboBrand ? entry.brand.label : entry.detail}</span></small>
     </button>
     <span className="model-context" title={entry.context ? `${entry.context.toLocaleString()}-token context window` : ""}>{entry.context ? contextMark.format(entry.context) : ""}</span>
     {onStar && <button type="button" className="model-star" aria-pressed={starred} aria-label={`${starred ? "Unstar" : "Star"} ${entry.name}`} title={starred ? "Remove from the composer's picker" : "Show in the composer's picker"} onClick={() => onStar()}>{starred ? "★" : "☆"}</button>}
@@ -4240,7 +4230,7 @@ function SecondModelPicker({ label, off, draft, providers, routers, onChange, bu
         <b aria-hidden="true">▾</b>
       </button>
       {open && <section className="source-popover model-menu" role="dialog" aria-label={label} onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}>
-        <ModelPicker label={label} entries={entries} active={picked} busy={busy} providers={pickerProviders} routers={routers} onPick={pick} codex={false} lead={{ key: "", name: off, detail: "Off" }}>
+        <ModelPicker label={label} entries={entries} active={picked} busy={busy} providers={pickerProviders} routers={routers} onPick={pick} codex={false} lead={{ key: "", name: off, detail: "Off", brand: shinboBrand }}>
           <div className="model-menu-foot"><button type="button" className="model-menu-row quiet" aria-current={picked === "custom"} onClick={() => pick("custom")}><span>Custom endpoint…</span><b aria-hidden="true">↗</b></button></div>
         </ModelPicker>
       </section>}
@@ -5114,7 +5104,7 @@ function ModelMenu({ ref, close, act, busy, onSettingsChanged, onManage, pinned 
       favorites={role ? undefined : settings.favoriteModels} onStar={role ? undefined : star} onReorder={role ? undefined : reorder} routers={pinned && !role ? undefined : settings.routers}
       onPick={(key, plan) => { if (role) { void chooseRole(key, plan); return; } void choose(key, plan); }}
       strip={<RoleStrip settings={settings} agent={active} role={roleId} onPick={setRoleId} />}
-      lead={role ? { key: "", name: role.spec.off, detail: "Off" } : pinned ? { key: "", name: "Same as the workspace", detail: pinned.key ? selectedModelLabel(settings) : "Active" } : undefined}>
+      lead={role ? { key: "", name: role.spec.off, detail: "Off", brand: shinboBrand } : pinned ? { key: "", name: "Same as the workspace", detail: pinned.key ? selectedModelLabel(settings) : "Active", brand: shinboBrand } : undefined}>
       {!catalog && !error && <p className="model-menu-note">Loading the OpenRouter catalog…</p>}
       {error && <p className="capability-error" role="alert">{error}</p>}
       <div className="model-menu-foot"><button type="button" className="model-menu-row quiet" onClick={onManage}><span>All models, keys, and local profiles</span><b aria-hidden="true">↗</b></button></div>

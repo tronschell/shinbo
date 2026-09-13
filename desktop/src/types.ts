@@ -401,6 +401,7 @@ declare global {
       browserNav(value: { threadId: string; action: "back" | "forward" | "reload" | "close" }): Promise<BrowserStatus>;
       browserPlace(value: { threadId: string; bounds: { x: number; y: number; width: number; height: number } | null }): Promise<void>;
       browserClips(): Promise<string[]>;
+      browserServers(): Promise<import("../shared/browser").LocalServer[]>;
       browserClipUse(value: { threadId: string; index: number }): Promise<void>;
       browserNewTab(value: { threadId: string; url?: string }): Promise<BrowserStatus>;
       browserSelectTab(value: { threadId: string; tabId: string }): Promise<BrowserStatus>;
