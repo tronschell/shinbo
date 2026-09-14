@@ -1,6 +1,6 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { buildTrigger, describeTrigger, MONTH_NAMES, parseTrigger, triggerProblem, WEEKDAY_NAMES, workflowEdges, workflowRows, type Trigger, type TriggerKind, type WorkflowNode } from "../shared/workflow";
+import { buildTrigger, describeTrigger, EVERY_STEPS, MONTH_NAMES, parseTrigger, triggerProblem, WEEKDAY_NAMES, workflowEdges, workflowRows, type Trigger, type TriggerKind, type WorkflowNode } from "../shared/workflow";
 import { insertCommand, KIND_LABELS as SLASH_KINDS, matchCommands, MENU_MAX, slashQuery, type SlashCommand } from "../shared/slash";
 import { isWorkspaceWindow } from "./boot";
 import { atCommands, toolCommands } from "./context";
@@ -14,7 +14,7 @@ import { zoned } from "./dates";
 const KIND_LABELS: Record<TriggerKind, string> = {
   minutes: "Every N minutes",
   hourly: "Every N hours",
-  daily: "Every N days",
+  daily: "Every day",
   weekly: "Weekly on…",
   monthly: "Monthly on a date",
   yearly: "Yearly on a date",
@@ -97,8 +97,8 @@ export function TriggerPicker({ value, onChange, disabled }: { value: string; on
     }} />
     <small>{localHint(trigger.hour, trigger.minute)} your time</small>
   </label>;
-  const every = (unit: string, max: number) => <label className="trigger-field"><span>Every</span>
-    <input type="number" min={1} max={max} value={trigger.every} disabled={disabled} onChange={(event) => set({ every: Number(event.target.value) })} />
+  const every = (unit: string, steps: readonly number[]) => <label className="trigger-field"><span>Every</span>
+    <Picker label="Every" value={trigger.every} options={steps.map((count) => ({ value: count, label: String(count) }))} disabled={disabled} onChange={(count) => set({ every: count })} />
     <small>{unit}</small>
   </label>;
   return <div className="trigger-picker">
@@ -108,9 +108,9 @@ export function TriggerPicker({ value, onChange, disabled }: { value: string; on
         if (kind !== "cron") onChange(buildTrigger({ ...trigger, kind }));
       }} />
     </label>
-    {trigger.kind === "minutes" && every("minutes", 59)}
-    {trigger.kind === "hourly" && <>{every("hours", 23)}<label className="trigger-field"><span>At minute</span><input type="number" min={0} max={59} value={trigger.minute} disabled={disabled} onChange={(event) => set({ minute: Number(event.target.value) })} /></label></>}
-    {trigger.kind === "daily" && <>{every("days", 31)}{time}</>}
+    {trigger.kind === "minutes" && every("minutes", EVERY_STEPS.minutes ?? [1])}
+    {trigger.kind === "hourly" && <>{every("hours", EVERY_STEPS.hourly ?? [1])}<label className="trigger-field"><span>At minute</span><input type="number" min={0} max={59} value={trigger.minute} disabled={disabled} onChange={(event) => set({ minute: Number(event.target.value) })} /></label></>}
+    {trigger.kind === "daily" && time}
     {trigger.kind === "weekly" && <>
       <div className="trigger-field trigger-days" role="group" aria-label="Days of the week">
         <span>On</span>

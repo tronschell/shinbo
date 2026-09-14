@@ -585,7 +585,7 @@ export function keybindLabel(keybind: Keybind, platform = "darwin"): string {
   return accelLabel(keybind.accelerator, platform);
 }
 
-function keybindKey(keybind: Keybind, platform = "darwin"): string {
+export function keybindKey(keybind: Keybind, platform = "darwin"): string {
   return keybind.hold ? `${keybind.ms === TAP_MS ? "tap" : "hold"}:${keybind.hold}` : normalizeAccelerator(platformAccelerator(keybind.accelerator, platform));
 }
 
@@ -1237,7 +1237,7 @@ export function validateRouters(value: unknown): ModelRouter[] {
 }
 
 export function forgetRouter(settings: UserSettings, id: string): UserSettings {
-  return { ...settings, routers: settings.routers.filter((router) => router.id !== id), favoriteModels: settings.favoriteModels.filter((key) => routerIdFor(key) !== id) };
+  return { ...settings, routers: settings.routers.filter((router) => router.id !== id), favoriteModels: settings.favoriteModels.filter((key) => routerIdFor(key) !== id), selectedModel: routerIdFor(settings.selectedModel) === id ? "fallback" : settings.selectedModel };
 }
 
 export function forgetProvider(settings: UserSettings, profileId: string): UserSettings {

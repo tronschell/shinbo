@@ -257,11 +257,12 @@ export function readablePage(html: string): { title: string; text: string } {
 export const MAX_STATS_SHEETS = 24;
 export const MAX_STATS_BYTES = 64 * 1024 * 1024;
 
-export function statsExportRequest(value: unknown): { folder: string; files: { name: string; text: string }[] } {
+export function statsExportRequest(value: unknown): { folder: string; files: { name: string; text: string }[]; title?: string } {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Stats export is invalid");
-  const candidate = value as { folder?: unknown; files?: unknown };
+  const candidate = value as { folder?: unknown; files?: unknown; title?: unknown };
   const folder = typeof candidate.folder === "string" ? candidate.folder.trim() : "";
   if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(folder)) throw new Error("Stats folder name is invalid");
+  if (candidate.title !== undefined && (typeof candidate.title !== "string" || !/^[^\p{C}]{1,80}$/u.test(candidate.title))) throw new Error("Stats export title is invalid");
   if (!Array.isArray(candidate.files) || !candidate.files.length || candidate.files.length > MAX_STATS_SHEETS) throw new Error("Stats export is invalid");
   const names = new Set<string>();
   let bytes = 0;
@@ -276,7 +277,7 @@ export function statsExportRequest(value: unknown): { folder: string; files: { n
     if (bytes > MAX_STATS_BYTES) throw new Error("Stats export is too large");
     return { name: sheet.name, text: sheet.text };
   });
-  return { folder, files };
+  return { folder, files, ...(candidate.title ? { title: candidate.title } : {}) };
 }
 
 export const MAX_BENCH_SHEETS = 8;

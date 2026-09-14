@@ -312,7 +312,7 @@ declare global {
       resetData(): Promise<void>;
       benchJudge(value: { prompt: string; rubric: string; answer: string; judge?: VerifierSettings }): Promise<{ score: number; note: string }>;
       exportBench(value: { name: string; sheets: { name: string; rows: (string | number)[][] }[] }): Promise<string>;
-      exportThreadStats(value: { folder: string; files: { name: string; text: string }[] }): Promise<string>;
+      exportThreadStats(value: { folder: string; files: { name: string; text: string }[]; title?: string }): Promise<string>;
       listFolders(): Promise<FolderGrant[]>;
       onFoldersChanged(listener: () => void): () => void;
       pluginCatalog(): Promise<PluginCatalog>;

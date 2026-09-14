@@ -10,6 +10,12 @@ const GENERIC: NextStep[] = [
   { title: "Hunt the loose ends", detail: "Dead code, stale flags, half-finished work", prompt: "Look for dead code, unused config and half-finished work in this project, and rank what is safe to delete." },
 ];
 
+const FRESH: NextStep[] = [
+  { title: "Start from a folder", detail: "Point the agent at code before asking it to work", prompt: "Walk me through connecting a folder to this thread, and what you can do once one is connected." },
+  { title: "Plan something new", detail: "Turn an idea into a scoped first step", prompt: "I have an idea I want to build. Ask me what it is, then help me scope the smallest version worth starting." },
+  { title: "Learn how Shinbo works", detail: "Threads, folders, tools and workflows", prompt: "Explain what you can do in this app, how threads and folders work, and how I should set up a project." },
+];
+
 export function defaultSteps(state: WorkState): NextStep[] {
   const steps: NextStep[] = [];
   const where = state.project || "this project";
@@ -49,7 +55,7 @@ export function defaultSteps(state: WorkState): NextStep[] {
       prompt: `Recap where we got to on “${state.threads[0]}” in ${where}, and what is still left to do.`,
     });
   }
-  for (const step of GENERIC) {
+  for (const step of state.project ? GENERIC : FRESH) {
     if (steps.length >= MIN_NEXT_STEPS) break;
     steps.push(step);
   }

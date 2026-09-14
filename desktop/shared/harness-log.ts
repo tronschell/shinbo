@@ -33,16 +33,20 @@ export const HEALTH_ADVICE: Record<HarnessHealth, string> = {
   offline: "shinbo-cli stopped. Restart it; if it dies again, hand the fix prompt to another agent.",
 };
 
+export const MISSING_CREDENTIAL = "no model is signed in. Add a provider key under Settings → Models, then send Continue";
+
+const crashed = (process: HarnessState) => Boolean(process.failure) && process.failure !== CLOSED_BY_SHINBO && process.failure !== MISSING_CREDENTIAL;
+
 export function harnessHealth(processes: readonly HarnessState[]): HarnessHealth {
   if (!processes.length) return "ready";
   if (processes.some((process) => process.running && process.busy && process.silentMs > STALL_MS)) return "stalled";
   if (processes.some((process) => process.running)) return "online";
-  return processes.some((process) => process.failure && process.failure !== CLOSED_BY_SHINBO) ? "offline" : "ready";
+  return processes.some(crashed) ? "offline" : "ready";
 }
 
 export function stoppedReason(processes: readonly HarnessState[]): string {
   if (harnessHealth(processes) !== "offline") return "";
-  return processes.find((process) => process.failure && process.failure !== CLOSED_BY_SHINBO)?.failure ?? "";
+  return processes.find(crashed)?.failure ?? "";
 }
 
 const clock = (at: number) => new Date(at).toISOString().slice(11, 19);

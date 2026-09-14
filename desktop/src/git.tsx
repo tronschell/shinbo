@@ -180,16 +180,19 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
   const reload = useCallback(() => void window.shinbo.gitStatus(folderId)
     .then((value) => { if (value) setLive(value); })
     .catch(() => undefined), [folderId]);
-  useEffect(() => {
-    reload();
-    const listener = window.shinbo.onChanged(reload);
-    return () => window.shinbo.offChanged(listener);
-  }, [reload]);
-
   const loadHistory = useCallback((skip: number) => void window.shinbo.gitHistory({ folderId, skip, limit: HISTORY_PAGE })
     .then((page) => { setCommits((current) => skip ? [...current, ...page.commits] : page.commits); setMore(page.more); })
     .catch(() => { if (!skip) { setCommits([]); setMore(false); } }), [folderId]);
-  useEffect(() => loadHistory(0), [loadHistory]);
+  useEffect(() => {
+    const refresh = () => { reload(); loadHistory(0); };
+    refresh();
+    const listener = window.shinbo.onChanged(refresh);
+    const timer = setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 15_000);
+    const shown = () => { if (document.visibilityState === "visible") refresh(); };
+    addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", shown);
+    return () => { clearInterval(timer); window.shinbo.offChanged(listener); removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", shown); };
+  }, [reload, loadHistory]);
 
   const paths = live.files.map((file) => file.path);
   const selected = paths.filter((path) => !excluded.has(path));
@@ -390,7 +393,7 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
           <button type="button" className={view === "console" ? "active" : ""} onClick={() => setView("console")}>Console</button>
         </nav>
         {view === "changes" && <div className="git-diff">
-          {!diffFiles.length && <p>{filter ? "No file matches that filter." : "Working tree clean."}</p>}
+          {!diffFiles.length && <p>{(filter ? shownFiles : live.files).length ? "No text diff — binary, empty, or mode-only changes." : filter ? "No file matches that filter." : "Working tree clean."}</p>}
           {diffFiles.map((file) => <details className="git-file" data-path={file.path} key={file.path} open>
             <summary>
               <FileMark path={file.path} />

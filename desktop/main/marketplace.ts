@@ -93,7 +93,9 @@ async function readJson(file: string, max = MAX_JSON_BYTES): Promise<unknown> {
   try {
     const information = await handle.stat();
     if (!information.isFile() || information.size > max) throw new Error(`${path.basename(file)} is too large`);
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(await handle.readFile()));
+    const raw = new TextDecoder("utf-8", { fatal: true }).decode(await handle.readFile());
+    try { return JSON.parse(raw); }
+    catch (error) { throw new Error(`${path.basename(file)} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
   } finally {
     await handle.close();
   }
@@ -159,9 +161,10 @@ function execute(command: string, cwd: string, args: string[], timeout: number, 
       if (code === 0 && !overflow && !timedOut) return finish();
       if (overflow) return finish(new Error(`${command} produced more than 8 MB of output.`));
       if (timedOut) return finish(new Error(`${command} timed out after ${Math.ceil(timeout / 1000)} seconds.`));
-      const line = `${stderr}\n${stdout}`.split("\n")
+      const lines = `${stderr}\n${stdout}`.split("\n")
         .map((each) => each.replace(/^npm (?:error|ERR!)\s*/, "").trim())
-        .find((each) => each && !/^(?:code E\w+|\d+)$/.test(each) && !each.startsWith("A complete log of this run"));
+        .filter((each) => each && !/^(?:code E\w+|\d+)$/.test(each) && !each.startsWith("A complete log of this run") && !each.startsWith("Cloning into"));
+      const line = lines.find((each) => /^(?:fatal|error):/.test(each)) ?? lines[0];
       finish(new Error((line ?? "").slice(0, 240) || `${command} failed`));
     });
   });
@@ -579,9 +582,12 @@ export async function addMarketplace(userData: string, request: { source: unknow
 export async function ensureDefaultMarketplace(userData: string, source: string = DEFAULT_MARKETPLACE): Promise<PluginCatalog> {
   const mark = defaultMarketplaceMark(userData);
   if (await exists(mark) || (await readSources(userData)).length) return readCatalog(userData);
+  let catalog: PluginCatalog;
+  try { catalog = await addMarketplace(userData, { source }); }
+  catch { return readCatalog(userData); }
   await mkdir(marketplaceRoot(userData), { recursive: true, mode: 0o700 });
   await writeFile(mark, "", { encoding: "utf8", mode: 0o600 });
-  return addMarketplace(userData, { source });
+  return catalog;
 }
 
 export async function removeMarketplace(userData: string, id: unknown): Promise<PluginCatalog> {

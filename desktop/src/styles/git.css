@@ -46,7 +46,7 @@
 .git-setup-card .git-do, .git-bar .git-do { margin-left: 0; }
 
 .git-body { display: grid; grid-template-columns: 340px minmax(0, 1fr); min-height: 0; min-width: 0; }
-.git-side { display: grid; grid-template-rows: auto auto minmax(0, auto) auto minmax(66px, 1fr) auto; min-height: 0; min-width: 0; border-right: 1px solid var(--border); }
+.git-side { display: grid; grid-template-rows: auto auto minmax(72px, auto) auto minmax(66px, 1fr) auto; min-height: 0; min-width: 0; border-right: 1px solid var(--border); }
 .git-graph-pane { display: contents; }
 .git-graph-pane .git-side-head { position: relative; border-top: 1px solid var(--border); }
 .git-graph-pane .git-side-head > .resize-handle, .git-tabs > .resize-handle { position: absolute; z-index: 8; top: -6px; left: 0; right: 0; width: auto; height: 12px; padding: 0; cursor: row-resize; background: transparent; }

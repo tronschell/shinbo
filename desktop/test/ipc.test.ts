@@ -9,7 +9,7 @@ import { toCsv } from "../shared/csv";
 import { MAX_NOTE_BYTES, MAX_TITLE_BYTES } from "../shared/vault";
 import { discoverImports } from "../main/imports";
 import { loadUiPlugins, validatePluginCss } from "../main/plugins";
-import { accelLabel, comboKeybind, holdBindings, holdKeybind, keybindLabel, keybindProblem, normalizeAccelerator, canRemoveProvider, defaultSettings, fontStack, forgetProvider, isEnvName, localEndpoint, providerEndpoint, providerReach, maskSecret, MAX_CURSOR_ORBS, MAX_FAVORITE_MODELS, normalizeProviderEndpoint, printableSecret, saveShortcut, toggleFavoriteModel, validateOverlayPreferences, validateSettings } from "../shared/settings";
+import { accelLabel, comboKeybind, holdBindings, holdKeybind, keybindKey, keybindLabel, keybindProblem, normalizeAccelerator, canRemoveProvider, defaultSettings, fontStack, forgetProvider, forgetRouter, isEnvName, localEndpoint, providerEndpoint, providerReach, maskSecret, MAX_CURSOR_ORBS, MAX_FAVORITE_MODELS, normalizeProviderEndpoint, printableSecret, saveShortcut, toggleFavoriteModel, validateOverlayPreferences, validateSettings } from "../shared/settings";
 import { DEFAULT_PERMISSION_MODE } from "../shared/permissions";
 import { defaultPaneLayout, fitPaneLayout, validatePaneLayout } from "../src/layout";
 import { hotspotLayout, hotspotPollDelay, nearBounds, overlayGrowth, overlayLayout, parseNotchGeometry, pillLayout, popoutLayout } from "../main/overlay";
@@ -340,6 +340,9 @@ test("starred models cap at six and drop with their local profile", () => {
   assert.deepEqual(forgetProvider(starred, "local-qwen"), { ...base, providers: [] });
   assert.equal(forgetProvider({ ...starred, notchModel: "provider:local-qwen" }, "local-qwen").notchModel, "");
   assert.equal(forgetProvider({ ...starred, notchModel: "provider:other" }, "local-qwen").notchModel, "provider:other");
+  const routed = validateSettings({ ...base, routers: [{ id: "r-1", name: "Mine", models: ["vendor/a:free"] }], selectedModel: "router:r-1", favoriteModels: ["router:r-1"] });
+  assert.deepEqual(forgetRouter(routed, "r-1"), { ...routed, routers: [], favoriteModels: [], selectedModel: "fallback" });
+  assert.equal(forgetRouter({ ...routed, selectedModel: "openrouter:vendor/a:free" }, "r-1").selectedModel, "openrouter:vendor/a:free");
   assert.throws(() => validateSettings({ ...base, favoriteModels: ["fallback", "fallback"] }), /invalid/);
 });
 
@@ -546,6 +549,8 @@ test("holds are modifiers only, and reach the native listener as key codes", () 
   assert.throws(() => validateSettings({ ...defaultSettings, keybinds: { voice: holdKeybind("KeyE", 500) } }), /modifier key/);
   assert.throws(() => validateSettings({ ...defaultSettings, keybinds: { voice: holdKeybind("AltLeft", 5000) } }), /too short or too long/);
   assert.throws(() => validateSettings({ ...defaultSettings, keybinds: { voice: holdKeybind("AltLeft", 500), draw: holdKeybind("AltLeft", 1000) } }), /bound twice/);
+  assert.equal(keybindKey(holdKeybind("AltLeft", 500)), keybindKey(holdKeybind("AltLeft", 1000)));
+  assert.notEqual(keybindKey(holdKeybind("AltLeft", 0)), keybindKey(holdKeybind("AltLeft", 500)));
   assert.throws(() => validateSettings({ ...defaultSettings, keybinds: { voice: { accelerator: "Control+Alt+E", hold: "AltLeft", ms: 500 } } }), /invalid/);
 });
 
@@ -566,6 +571,9 @@ test("a stats export is refused unless every name is a plain csv file in one fla
   assert.throws(() => statsExportRequest({ folder: "ok", files: [files[0], files[0]] }), /repeated/);
   assert.throws(() => statsExportRequest({ folder: "ok", files: [] }), /invalid/);
   assert.throws(() => statsExportRequest({ folder: "ok", files: [{ name: "summary.csv", text: 7 }] }), /invalid/);
+  assert.equal(statsExportRequest({ folder: "ok", files, title: "Export bench sheets" }).title, "Export bench sheets");
+  assert.throws(() => statsExportRequest({ folder: "ok", files, title: "a\nb" }), /title is invalid/);
+  assert.throws(() => statsExportRequest({ folder: "ok", files, title: "x".repeat(81) }), /title is invalid/);
 });
 
 test("csv cells keep commas, quotes and newlines inside one field", () => {
