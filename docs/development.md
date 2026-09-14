@@ -156,7 +156,11 @@ npm run package:mac
 [`package-mac.mjs`](../desktop/scripts/package-mac.mjs) builds release Rust,
 ReleaseSafe Zig targeting macOS 12, the four native helpers, ripgrep, and the
 Electron code. It packages for Apple silicon with the installed Electron
-Packager, then trims unused locales and verifies the result. Full Xcode is
+Packager, then trims unused locales and verifies the result. Local builds get
+the bundle id `com.tronschell.shinbo.dev` so they never stand in for the
+installed app in Spotlight, Launch Services, or privacy prompts; CI sets
+`SHINBO_BUNDLE_ID=com.tronschell.emma` for release candidates, and privacy
+grants for a dev build are kept separately from the shipped app's. Full Xcode is
 required for `actool`; the selected Xcode is used, with `/Applications/Xcode.app`
 as the fallback when only the CLT is selected.
 

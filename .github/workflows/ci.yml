@@ -127,6 +127,7 @@ jobs:
     timeout-minutes: 45
     env:
       MACOSX_DEPLOYMENT_TARGET: '12.0'
+      SHINBO_BUNDLE_ID: com.tronschell.emma
     steps:
       - uses: actions/checkout@v5
         with:

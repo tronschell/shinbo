@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { extractFile } from "@electron/asar";
+import { bundleId } from "./bundle-id.mjs";
 
 const app = path.resolve(process.argv[2] ?? "");
 if (/^Shinbo-win32-(?:x64|arm64)$/.test(path.basename(app))) {
@@ -15,7 +16,7 @@ if (/^Shinbo-win32-(?:x64|arm64)$/.test(path.basename(app))) {
 } else {
   assert.equal(path.basename(app), "Shinbo.app");
   assert.equal(path.basename(path.dirname(app)), "Shinbo-darwin-arm64");
-  assert.equal(execFileSync("plutil", ["-extract", "CFBundleIdentifier", "raw", "-o", "-", path.join(app, "Contents/Info.plist")], { encoding: "utf8" }).trim(), "com.tronschell.emma");
+  assert.equal(execFileSync("plutil", ["-extract", "CFBundleIdentifier", "raw", "-o", "-", path.join(app, "Contents/Info.plist")], { encoding: "utf8" }).trim(), bundleId);
 
   const roots = [
     path.join(app, "Contents/Frameworks/Electron Framework.framework/Versions/A/Resources"),

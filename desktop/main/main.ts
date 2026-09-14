@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, powerMonitor, protocol, screen, session, shell, systemPreferences } from "electron";
-import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { mkdir, open, writeFile } from "node:fs/promises";
@@ -4517,6 +4517,34 @@ function handleSquirrelEvent(): boolean {
   return true;
 }
 
+const INSTALLED_MAC_APP = "/Applications/Shinbo.app";
+
+function handOffToInstalledShinbo(): boolean {
+  if (!isMac || !app.isPackaged) return false;
+  const bundle = path.resolve(process.execPath, "../../..");
+  if (bundle === INSTALLED_MAC_APP || !existsSync(INSTALLED_MAC_APP)) return false;
+  let installed: string;
+  try {
+    installed = newerVersion(app.getVersion(), execFileSync("plutil", ["-extract", "CFBundleShortVersionString", "raw", "-o", "-", path.join(INSTALLED_MAC_APP, "Contents/Info.plist")], { encoding: "utf8" }).trim());
+  } catch {
+    return false;
+  }
+  if (!installed) return false;
+  const choice = dialog.showMessageBoxSync({
+    type: "warning",
+    message: "This is an older copy of Shinbo",
+    detail: `Shinbo ${app.getVersion()} at ${bundle} is older than the Shinbo ${installed} installed in Applications.`,
+    buttons: [`Open Shinbo ${installed}`, `Keep ${app.getVersion()}`],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (choice !== 0) return false;
+  app.releaseSingleInstanceLock();
+  spawn("open", [INSTALLED_MAC_APP], { detached: true, stdio: "ignore" }).unref();
+  app.quit();
+  return true;
+}
+
 const squirrelHandled = handleSquirrelEvent();
 const primaryInstance = squirrelHandled ? false : app.requestSingleInstanceLock({ version: app.getVersion() });
 if (!primaryInstance && !squirrelHandled) {
@@ -4532,6 +4560,7 @@ else app.on("second-instance", (_event, _argv, _cwd, data: unknown) => {
 });
 
 if (primaryInstance) app.whenReady().then(() => {
+  if (handOffToInstalledShinbo()) return;
   if (!app.isPackaged) app.dock?.setIcon(path.join(app.getAppPath(), "assets", "shinbo-dock.png"));
   session.defaultSession.setPermissionCheckHandler((contents, permission, _origin, details) => pageMayAsk(contents, permission, details.mediaType ? [details.mediaType] : []));
   session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => callback(pageMayAsk(contents, permission, (details as { mediaTypes?: string[] }).mediaTypes ?? [])));

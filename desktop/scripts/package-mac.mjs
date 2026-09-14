@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { packager } from "@electron/packager";
 import { extractFile, listPackage } from "@electron/asar";
+import { bundleId } from "./bundle-id.mjs";
 
 assert.equal(process.platform, "darwin", "package:mac requires macOS.");
 assert.equal(process.arch, "arm64", "package:mac currently supports Apple silicon only.");
@@ -17,7 +18,7 @@ execFileSync("xcrun", ["--find", "actool"], { stdio: "ignore" });
 const desktop = fileURLToPath(new URL("../", import.meta.url));
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const out = path.resolve(process.argv[2] ?? path.join(desktop, "release"));
-const env = { ...process.env, MACOSX_DEPLOYMENT_TARGET: "12.0" };
+const env = { ...process.env, MACOSX_DEPLOYMENT_TARGET: "12.0", SHINBO_BUNDLE_ID: bundleId };
 const run = (command, args, cwd = desktop) => execFileSync(command, args, { cwd, env, stdio: "inherit" });
 const runAsync = (command, args, cwd = desktop) => new Promise((resolve, reject) => {
   const child = spawn(command, args, { cwd, env, stdio: "inherit" });
@@ -82,7 +83,7 @@ try {
     asar: true,
     prune: false,
     download: { checksums: electronChecksums },
-    appBundleId: "com.tronschell.emma",
+    appBundleId: bundleId,
     appVersion: version,
     buildVersion: version,
     extendInfo: path.join(desktop, "native/Info.extra.plist"),
@@ -103,7 +104,7 @@ const archive = path.join(app, "Contents/Resources/app.asar");
 const plist = (key) => output("plutil", ["-extract", key, "raw", "-o", "-", path.join(app, "Contents/Info.plist")]).trim();
 assert.equal(plist("CFBundleShortVersionString"), version);
 assert.equal(plist("CFBundleVersion"), version);
-assert.equal(plist("CFBundleIdentifier"), "com.tronschell.emma");
+assert.equal(plist("CFBundleIdentifier"), bundleId);
 assert.equal(plist("LSMinimumSystemVersion"), "12.0");
 assert.equal(JSON.parse(extractFile(archive, "package.json")).version, version);
 const files = listPackage(archive);

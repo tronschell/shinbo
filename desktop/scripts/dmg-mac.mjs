@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, s
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { bundleId } from "./bundle-id.mjs";
 
 assert.equal(process.platform, "darwin", "dmg:mac requires macOS.");
 
@@ -46,7 +47,7 @@ try {
   const mounted = path.join(mount, "Shinbo.app");
   assert.ok(existsSync(mounted), "The disk image is missing Shinbo.app.");
   assert.equal(plist(mounted, "CFBundleShortVersionString"), version);
-  assert.equal(plist(mounted, "CFBundleIdentifier"), "com.tronschell.emma");
+  assert.equal(plist(mounted, "CFBundleIdentifier"), bundleId);
   assert.equal(output("readlink", [path.join(mount, "Applications")]).trim(), "/Applications");
   run(python, [path.join(desktop, "scripts/dmg-layout.py"), mount, "--verify"]);
   run("xcrun", ["swift", path.join(desktop, "scripts/dmg-background.swift"), "--verify", path.join(stage, "background.alias"), path.join(mount, ".background.tiff")]);
