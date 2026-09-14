@@ -4,6 +4,7 @@ const stream_provider = @import("../agent/stream_provider.zig");
 const worker_runtime = @import("../agent/worker_runtime.zig");
 const auth_runtime = @import("../auth/auth_runtime.zig");
 const credentials = @import("../auth/credentials.zig");
+const model_capabilities = @import("../config/model_capabilities.zig");
 const model_provider = @import("../config/model_provider.zig");
 const auto_classifier = @import("../permissions/auto_classifier.zig");
 const command_admission = @import("../permissions/command_admission.zig");
@@ -151,7 +152,6 @@ const Context = struct {
         result.on_web_search_progress = null;
         result.web_fetch_progress_ctx = null;
         result.on_web_fetch_progress = null;
-        result.model_capability_resolver = null;
         result.lifecycle_view = self.config.lifecycle_view;
         result.lifecycle_scope = .{
             .kind = .subagent,
@@ -309,9 +309,42 @@ pub fn run(
     return if (context.turn_outcome == .paused) .paused else .completed;
 }
 
+fn parentModelCapabilities(
+    resolver: ?model_capabilities.Resolver,
+    arena: Allocator,
+    model: []const u8,
+) model_capabilities.ResolveError!model_capabilities.Capabilities {
+    const parent = resolver orelse return model_capabilities.capabilitiesForModel(model);
+    return parent.resolve(arena, model);
+}
+
+fn availableModelCapabilities(raw: *anyopaque, model: []const u8) model_capabilities.Capabilities {
+    const context: *Context = @ptrCast(@alignCast(raw));
+    return parentModelCapabilities(
+        context.config.tool_context.model_capability_resolver,
+        context.turn.alloc,
+        model,
+    ) catch model_capabilities.capabilitiesForModel(model);
+}
+
+fn resolveModelCapabilities(
+    raw: *anyopaque,
+    arena: Allocator,
+    model: []const u8,
+) !model_capabilities.Capabilities {
+    const context: *Context = @ptrCast(@alignCast(raw));
+    return parentModelCapabilities(
+        context.config.tool_context.model_capability_resolver,
+        arena,
+        model,
+    );
+}
+
 fn runtimeDeps(context: *Context) agent_runtime.AgentRuntimeDeps {
     return .{
         .ctx = context,
+        .available_model_capabilities = availableModelCapabilities,
+        .resolve_model_capabilities = resolveModelCapabilities,
         .agent_stream_provider = context.config.tool_context.agent_stream_provider,
         .tool_registry = context.config.tool_context.tool_registry,
         .context_registry = context.config.context_registry,
@@ -792,3 +825,33 @@ fn pushLiveOutputChunk(
     } });
 }
 fn discardBackgroundUrl(_: *anyopaque, _: u64, _: []const u8) void {}
+
+test "subagent capability lookups route through the parent resolver" {
+    const ResolverFixture = struct {
+        fn resolve(
+            raw: *anyopaque,
+            _: Allocator,
+            _: []const u8,
+        ) model_capabilities.ResolveError!model_capabilities.Capabilities {
+            const seen: *bool = @ptrCast(@alignCast(raw));
+            seen.* = true;
+            return .{ .supports_vision = true, .max_output_tokens = 4242 };
+        }
+    };
+    var seen = false;
+    const resolved = try parentModelCapabilities(
+        .{ .ctx = &seen, .resolve_fn = ResolverFixture.resolve },
+        std.testing.allocator,
+        "electron/unlisted-model",
+    );
+    try std.testing.expect(seen);
+    try std.testing.expect(resolved.supports_vision);
+    try std.testing.expectEqual(@as(?u32, 4242), resolved.max_output_tokens);
+
+    const fallback = try parentModelCapabilities(null, std.testing.allocator, "electron/unlisted-model");
+    try std.testing.expect(!fallback.supports_vision);
+    try std.testing.expectEqual(
+        model_capabilities.capabilitiesForModel("electron/unlisted-model").max_output_tokens,
+        fallback.max_output_tokens,
+    );
+}

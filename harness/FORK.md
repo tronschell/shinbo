@@ -8,7 +8,7 @@ a coding agent harness written in Zig.
 | Upstream | https://github.com/vercel-labs/fx |
 | Forked at | [`580a0c5da9386317251968c09c1cee69e763487a`](https://github.com/vercel-labs/fx/tree/580a0c5da9386317251968c09c1cee69e763487a) |
 | Upstream version at fork | 0.0.4 |
-| Upstream commits taken since | 22, individually, surveyed to `c864c67` (past v0.0.6) |
+| Upstream commits taken since | 50, individually, surveyed to `1210c27` (v0.0.10) |
 | Upstream license | Apache License 2.0 |
 
 Copyright Vercel, Inc. and fx contributors. Licensed under the Apache License,
@@ -389,6 +389,68 @@ Unused web-search aliases, tool-label forwarding helpers, legacy catalog-fetch
 entry points, and unused failure-formatting helpers are removed. Catalog HTTP
 coverage calls the active provider directly. The permanently skipped GLM request
 header test is removed; the JavaScript-host request builder remains intact.
+
+## Upstream 0.0.7 to 0.0.10 sync
+
+Surveyed every upstream commit from `c864c67` to v0.0.10 (`1210c27`) against
+the fork. The headline items did not apply: v0.0.10's request-start and
+turn-completion speedups remove an OS keychain read per step and a profile
+usage ledger write per turn, both of which the de-Vercel pass already deleted
+or never wired under ACP; the "stronger MCP secret protection" repairs a
+regression upstream introduced in the same release, and the fork still masks
+the model path that upstream stopped masking. Twenty-eight commits were taken,
+adapted to the fork's transport and tool set:
+
+- **MCP client.** `09ff1684` (PKCE-only servers that omit `none` from their
+  auth methods), `61fdfdeb` + `25c025ae` (one trailing slash in
+  authorization-metadata issuers, response issuer stays exact), `686112ca`
+  (a null `expires_at_ms` no longer invalidates the whole credential store),
+  `cc2bc0be` (discovery error envelopes with string ids reach legacy
+  fallback), `56f34bec` (missing `Mcp-Session-Id` shape negotiates via legacy
+  init; only that arm, since `f0e697a3` was never taken), `53c9758d` +
+  `4bcc362e` (macOS accounts with no default keychain fall back to the profile
+  file store), `776f9c84` (known-length HTTP MCP bodies read through a bounded
+  reader instead of crashing the process).
+- **Model response recovery.** `af214189` (a recovered reply no longer
+  re-sends the prefix the client already has), `be9bc5e9` (admission is
+  validated before duplicate replays are suppressed), `dc8f9f96` (the stream
+  silence watchdog surfaces `StreamSilenceTimeout`, classified as
+  `provider_stream_timeout`, which pauses recovery instead of re-issuing a
+  request whose tool calls may already have run).
+- **Session persistence and replay.** `771d3f8d` (creating a session under
+  `latest_sessions` lock contention defers the cache write instead of deleting
+  the new session; this is the multi-process path every Shinbo thread shares),
+  `1f9cb314` (the read boundary releases the commit lock before scanning the
+  log), `172fabd1` (replayed tool output goes through the same UTF-8 and size
+  guard as live output), `29bf67c5` (replayed tool calls carry the same
+  formatted title, `_shinbo_filePath` and `_shinbo_toolName` as live calls, and
+  a call with no persisted result, including the interrupted call the fork
+  stores on the turn, replays as `pending`).
+- **Terminal execution.** `d3f9d09b` (a timed-out exec is killed with SIGKILL
+  so the login shell cannot run the rest of the command line), `6a114bab` plus
+  the `shutdownSessionsOnly` piece of `d45bbf9a` (the terminal host exits
+  instead of freeing state under detached client threads), `8cb066e3` (an
+  output-read or presentation failure keeps the observed exit status and
+  partial output and marks `output_incomplete`, without upstream's
+  `indeterminate` status), `79921b0a` + `5789a347` (`retry_guidance` on shell
+  parse errors and usage banners, matched on the raw output by argv0 basename,
+  carried in the model-facing failure details as well as the metadata JSON),
+  `86eaab36` (the `write` schema advertises the runtime bounds).
+- **Agent runtime.** `91707a23` (thirty-second review budget), `f648b125`
+  (only the reviewer's decision is authoritative; rationale, risk and
+  authorization are normalized rather than turning a valid allow into a
+  denial), `2eee9068` (any preflight failure surfaces its masked cause instead
+  of `preflight failed`), `4d046487` (children resolve model capabilities
+  through the parent's live catalog resolver, so a child's reasoning effort is
+  no longer dropped for models absent from the static table), `6ee8190f`
+  (a path resolution error on a child's tool call is a tool failure, not the
+  end of the child's turn).
+
+Rejected as not applicable or too entangled: the `terminal` to `shell`
+replacement, the subagent manager rewrite, `capability_search`, the
+clear/caution reviewer policy, fresh-context compaction, session titles
+(Electron names threads), `session/list`, 12-character session ids, project
+`.mcp.json` trust, and every TUI, libfx and Vercel-hosted change.
 
 ## Merging upstream
 

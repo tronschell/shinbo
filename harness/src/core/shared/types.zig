@@ -199,6 +199,7 @@ pub const RouteRecoveryStatusTone = enum {
 pub const ModelRecoveryCause = enum {
     network_interrupted,
     response_interrupted,
+    provider_stream_timeout,
     provider_unavailable,
     rate_limited,
     system_resumed,
@@ -233,6 +234,7 @@ pub const ModelFailureDiagnostic = struct {
         return switch (cause) {
             .network_interrupted => "NetworkInterrupted",
             .response_interrupted => "StreamInterrupted",
+            .provider_stream_timeout => "ProviderStreamTimeout",
             .provider_unavailable => "provider_error",
             .rate_limited => "HTTP 429",
             .system_resumed => "SystemResumed",
@@ -378,6 +380,7 @@ pub const RouteRecoveryStatus = struct {
         const cause = switch (self.cause orelse .provider_unavailable) {
             .network_interrupted => "Network interrupted",
             .response_interrupted => "Response ended early",
+            .provider_stream_timeout => "Provider stream timed out",
             .provider_unavailable => "Provider unavailable",
             .rate_limited => "Rate limited",
             .system_resumed => "Mac woke from sleep",
@@ -476,6 +479,7 @@ pub const RouteRecoveryStatus = struct {
         const name = switch (cause) {
             .network_interrupted => "Network interrupted",
             .response_interrupted => "Response ended early",
+            .provider_stream_timeout => "Provider stream timed out",
             .provider_unavailable => "Provider unavailable",
             .rate_limited => "Rate limited",
             .system_resumed => "Mac woke from sleep",

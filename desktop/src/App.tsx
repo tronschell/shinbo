@@ -367,7 +367,7 @@ const Step = memo(function Step({ step }: { step: ThreadStep }) {
       : step.edit ? <EditStep step={step} edit={step.edit} />
       : <details className="step-review">
         <summary><StepMark step={step} /><StepTitle step={step} /></summary>
-        <pre>{step.title}</pre>
+        <pre>{step.output || step.title}</pre>
       </details>}
     {(step.status === "cancelled" || step.status === "failed") && <span className="step-note">{step.status === "failed" ? "failed" : "interrupted"}</span>}
     {made && <ArtifactCard id={made} onOpen={openArtifactPane} />}

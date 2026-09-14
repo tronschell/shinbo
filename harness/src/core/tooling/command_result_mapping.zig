@@ -45,7 +45,7 @@ pub const Foreground = struct {
             foreground.signal == null and
             !foreground.timed_out) return null;
 
-        var details: [7]tool_result_errors.Detail = undefined;
+        var details: [8]tool_result_errors.Detail = undefined;
         var count: usize = 0;
         details[count] = .{ .name = "command", .value = .{ .string = foreground.command } };
         count += 1;
@@ -67,6 +67,10 @@ pub const Foreground = struct {
         const stderr_text = extractEnvelope(result.output, "<stderr>\n", "\n</stderr>");
         if (stderr_text.len > 0) {
             details[count] = .{ .name = "stderr", .value = .{ .string = stderr_text } };
+            count += 1;
+        }
+        if (foreground.retry_guidance) |guidance| {
+            details[count] = .{ .name = "retry_guidance", .value = .{ .string = guidance } };
             count += 1;
         }
 
@@ -590,4 +594,22 @@ test "background launch preparation failure preserves raw output and adds semant
     );
     try std.testing.expect(launch_failure.system_notice == null);
     try std.testing.expect(launch_failure.interactive_notice == null);
+}
+
+test "non-zero mapping carries retry guidance to the model and the metadata" {
+    const alloc = std.testing.allocator;
+    const result = try Foreground.nonZeroFailure(alloc, .{
+        .output = "<stderr>\nsh: line 1: syntax error: unexpected end of file\n</stderr>",
+        .command_result = .{ .foreground = .{
+            .command = "printf '",
+            .cwd = "/tmp",
+            .exit_code = 2,
+            .retry_guidance = command_contract.shell_parse_retry_guidance,
+        } },
+    }) orelse return error.TestExpectedEqual;
+    defer alloc.free(result.model_output);
+    defer alloc.free(result.command_result_json.?);
+
+    try expectContains(result.model_output, "\"retry_guidance\":\"The shell could not parse");
+    try expectContains(result.command_result_json.?, "\"retry_guidance\":\"The shell could not parse");
 }

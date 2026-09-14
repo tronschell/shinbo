@@ -988,7 +988,7 @@ fn post(call: PostCall) anyerror!PostOutcome {
         },
         .silent => |result| {
             try result;
-            return error.Timeout;
+            return error.StreamSilenceTimeout;
         },
     }
 }
@@ -2134,10 +2134,10 @@ test "a provider that goes quiet mid-stream fails the attempt instead of hanging
     harness.bind(url);
 
     const started_ms = io_mod.milliTimestamp();
-    try std.testing.expectError(error.Timeout, provider.stream(alloc, harness.request));
+    try std.testing.expectError(error.StreamSilenceTimeout, provider.stream(alloc, harness.request));
     try std.testing.expect(io_mod.milliTimestamp() - started_ms < 5_000);
     try std.testing.expectEqual(
-        stream_provider.NetworkFailureCause.response_interrupted,
+        stream_provider.NetworkFailureCause.provider_stream_timeout,
         harness.attempt_evidence.network_failure.?.cause,
     );
 }

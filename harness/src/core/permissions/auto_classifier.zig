@@ -11,6 +11,7 @@ const types = @import("../shared/types.zig");
 
 pub const tool_name = "permission_decision";
 const max_rationale_bytes: usize = 240;
+const fallback_rationale = "No rationale provided.";
 const max_review_packet_bytes: usize = 16 * 1024;
 pub const gateway_reviewer_model = "zai/glm-5.2";
 pub const model_env = "SHINBO_REVIEWER_MODEL";
@@ -307,7 +308,7 @@ pub const Reviewer = struct {
     timeout_ms: u32 = default_timeout_ms,
     model: []const u8 = gateway_reviewer_model,
 
-    pub const default_timeout_ms: u32 = 15_000;
+    pub const default_timeout_ms: u32 = 30_000;
 
     pub fn disabled() Reviewer {
         return .{};
@@ -986,32 +987,39 @@ fn parseArguments(alloc: std.mem.Allocator, arguments_json: []const u8) !ParseOu
 
     if (parsed.value != .object) return .invalid;
     const object = parsed.value.object;
-    if (object.count() != schema_required.len) return .invalid;
-
-    const risk_value = object.get("risk") orelse return .invalid;
-    if (risk_value != .string) return .invalid;
-    const risk = std.meta.stringToEnum(Risk, risk_value.string) orelse return .invalid;
-
-    const authorization_value = object.get("authorization") orelse return .invalid;
-    if (authorization_value != .string) return .invalid;
-    const authorization = std.meta.stringToEnum(Authorization, authorization_value.string) orelse return .invalid;
 
     const decision_value = object.get("decision") orelse return .invalid;
     if (decision_value != .string) return .invalid;
     const decision = std.meta.stringToEnum(Decision, decision_value.string) orelse return .invalid;
 
-    const rationale_value = object.get("rationale") orelse return .invalid;
-    if (rationale_value != .string) return .invalid;
-    if (rationale_value.string.len == 0 or rationale_value.string.len > max_rationale_bytes) {
-        return .invalid;
-    }
-
     return .{ .valid = .{
-        .risk = risk,
-        .authorization = authorization,
+        .risk = enumFieldOrDefault(Risk, object.get("risk"), if (decision == .allow) .low else .high),
+        .authorization = enumFieldOrDefault(Authorization, object.get("authorization"), .unknown),
         .decision = decision,
-        .rationale = try alloc.dupe(u8, rationale_value.string),
+        .rationale = try normalizedRationaleAlloc(alloc, object.get("rationale")),
     } };
+}
+
+fn enumFieldOrDefault(comptime Enum: type, value: ?std.json.Value, fallback: Enum) Enum {
+    const text = switch (value orelse return fallback) {
+        .string => |raw| raw,
+        else => return fallback,
+    };
+    return std.meta.stringToEnum(Enum, text) orelse fallback;
+}
+
+fn normalizedRationaleAlloc(
+    alloc: std.mem.Allocator,
+    value: ?std.json.Value,
+) std.mem.Allocator.Error![]u8 {
+    const rationale = switch (value orelse return alloc.dupe(u8, fallback_rationale)) {
+        .string => |raw| raw,
+        else => return alloc.dupe(u8, fallback_rationale),
+    };
+    if (rationale.len == 0 or !std.unicode.utf8ValidateSlice(rationale)) {
+        return alloc.dupe(u8, fallback_rationale);
+    }
+    return alloc.dupe(u8, text_utils.utf8PrefixByBytes(rationale, max_rationale_bytes));
 }
 
 test "automatic review schema is strict and has no confidence field" {
@@ -1027,8 +1035,8 @@ test "automatic review schema is strict and has no confidence field" {
     try std.testing.expect(std.mem.find(u8, tools_json, "\"additionalProperties\":false") != null);
 }
 
-test "automatic reviewer defaults to the tested ten second budget" {
-    try std.testing.expectEqual(@as(u32, 15_000), Reviewer.default_timeout_ms);
+test "automatic reviewer defaults to the tested thirty second budget" {
+    try std.testing.expectEqual(@as(u32, 30_000), Reviewer.default_timeout_ms);
 }
 
 test "automatic reviewer classifier routes through the registered provider" {
@@ -1147,10 +1155,56 @@ test "automatic review parses allow and ask assessments" {
     }
 }
 
-test "automatic review rejects malformed extra and legacy deny assessments" {
+test "automatic review normalizes non-authoritative metadata" {
+    const cases = [_]struct {
+        arguments_json: []const u8,
+        expected_decision: Decision,
+        expected_risk: Risk,
+        expected_authorization: Authorization,
+        expected_rationale: []const u8,
+    }{
+        .{
+            .arguments_json = "{\"decision\":\"allow\"}",
+            .expected_decision = .allow,
+            .expected_risk = .low,
+            .expected_authorization = .unknown,
+            .expected_rationale = "No rationale provided.",
+        },
+        .{
+            .arguments_json = "{\"decision\":\"ask\",\"risk\":false,\"authorization\":\"bogus\",\"rationale\":\"\",\"extra\":true}",
+            .expected_decision = .ask,
+            .expected_risk = .high,
+            .expected_authorization = .unknown,
+            .expected_rationale = "No rationale provided.",
+        },
+        .{
+            .arguments_json = "{\"decision\":\"allow\",\"risk\":\"critical\",\"authorization\":\"high\",\"rationale\":\"" ++ ("x" ** 239) ++ "\u{00e9}ignored\"}",
+            .expected_decision = .allow,
+            .expected_risk = .critical,
+            .expected_authorization = .high,
+            .expected_rationale = "x" ** 239,
+        },
+    };
+    for (cases) |case| {
+        var outcome = try parseArguments(std.testing.allocator, case.arguments_json);
+        defer outcome.deinit(std.testing.allocator);
+        switch (outcome) {
+            .valid => |result| {
+                try std.testing.expectEqual(case.expected_decision, result.decision);
+                try std.testing.expectEqual(case.expected_risk, result.risk);
+                try std.testing.expectEqual(case.expected_authorization, result.authorization);
+                try std.testing.expectEqualStrings(case.expected_rationale, result.rationale);
+                try std.testing.expect(std.unicode.utf8ValidateSlice(result.rationale));
+                try std.testing.expect(result.rationale.len <= max_rationale_bytes);
+            },
+            .invalid => return error.TestExpectedEqual,
+        }
+    }
+}
+
+test "automatic review rejects missing and legacy decisions" {
     const cases = [_][]const u8{
         "{}",
-        "{\"risk\":\"low\",\"authorization\":\"low\",\"decision\":\"allow\",\"rationale\":\"safe\",\"extra\":true}",
         "{\"risk\":\"low\",\"authorization\":\"low\",\"decision\":\"deny\",\"rationale\":\"legacy deny\"}",
         "{\"risk\":\"low\",\"authorization\":\"low\",\"decision\":\"accept\",\"rationale\":\"old vocabulary\"}",
     };

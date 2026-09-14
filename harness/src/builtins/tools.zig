@@ -188,9 +188,9 @@ const terminal_monitor_operation_schema = gateway_schema.ObjectSchema{
 const terminal_write_schema = gateway_schema.ObjectSchema{
     .properties = &.{
         .{ .name = "kind", .json_type = .string, .shape = &.{ .enum_values = &.{ "text", "keys", "controls", "paste" } } },
-        .{ .name = "text", .json_type = .string, .description = "Required for text or paste." },
-        .{ .name = "keys", .json_type = .array, .shape = &.{ .array_values = .{ .json_type = .string, .enum_values = &.{ "enter", "tab", "escape", "backspace", "delete", "insert", "arrow_up", "arrow_down", "arrow_left", "arrow_right", "home", "end", "page_up", "page_down" } } } },
-        .{ .name = "controls", .json_type = .array, .shape = &.{ .array_values = .{ .json_type = .integer } }, .description = "ASCII code of the printable key designator used with Ctrl; for example, 108 (`l`) for Ctrl+L. Send the printable key code, not the resulting control byte." },
+        .{ .name = "text", .json_type = .string, .min_length = 1, .max_length = terminal_contracts.max_write_bytes, .description = "Required for text or paste." },
+        .{ .name = "keys", .json_type = .array, .min_items = 1, .max_items = terminal_contracts.max_write_items, .shape = &.{ .array_values = .{ .json_type = .string, .enum_values = &.{ "enter", "tab", "escape", "backspace", "delete", "insert", "arrow_up", "arrow_down", "arrow_left", "arrow_right", "home", "end", "page_up", "page_down" } } } },
+        .{ .name = "controls", .json_type = .array, .min_items = 1, .max_items = terminal_contracts.max_write_items, .shape = &.{ .array_values = .{ .json_type = .integer } }, .description = "ASCII code of the printable key designator used with Ctrl; for example, 108 (`l`) for Ctrl+L. Send the printable key code, not the resulting control byte." },
     },
     .required = &.{"kind"},
     .additional_properties = false,
@@ -1734,6 +1734,20 @@ test "terminal gateway advertisement projects a provider-compatible object schem
         "ASCII code of the printable key designator used with Ctrl; for example, 108 (`l`) for Ctrl+L. Send the printable key code, not the resulting control byte.",
         write_payload_properties.get("controls").?.object.get("description").?.string,
     );
+    const write_text_property = write_payload_properties.get("text").?.object;
+    try std.testing.expectEqual(@as(i64, 1), write_text_property.get("minLength").?.integer);
+    try std.testing.expectEqual(
+        @as(i64, terminal_contracts.max_write_bytes),
+        write_text_property.get("maxLength").?.integer,
+    );
+    for ([_][]const u8{ "keys", "controls" }) |field_name| {
+        const array_property = write_payload_properties.get(field_name).?.object;
+        try std.testing.expectEqual(@as(i64, 1), array_property.get("minItems").?.integer);
+        try std.testing.expectEqual(
+            @as(i64, terminal_contracts.max_write_items),
+            array_property.get("maxItems").?.integer,
+        );
+    }
     const start_branch = branches[@intFromEnum(terminal_impl.Action.start)].object;
     const start_branch_properties = start_branch.get("properties").?.object;
     const shell_alternatives = start_branch_properties.get("shell").?.object.get("anyOf").?.array.items;

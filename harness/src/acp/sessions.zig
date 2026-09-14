@@ -945,6 +945,7 @@ fn sendHistoryTurnAsUpdates(state: *server.ServerState, alloc: Allocator, sessio
         },
         .interrupted => |i| {
             try sendExecutionHistory(state, alloc, session_id, i.execution);
+            if (i.tool_call) |call| try sendToolCallHistory(state, alloc, session_id, call, null);
             if (i.assistant) |assistant| {
                 if (assistant.len > 0) try sendAgentHistoryChunk(state, alloc, session_id, assistant);
             }
@@ -980,11 +981,22 @@ fn sendExecutionHistory(
         if (step.assistant) |assistant| {
             if (assistant.len > 0) try sendAgentHistoryChunk(state, alloc, session_id, assistant);
         }
-        for (step.tool_results) |result| {
-            const arguments = for (step.tool_calls) |call| {
-                if (std.mem.eql(u8, call.id, result.tool_call_id)) break call.arguments_json;
+        for (step.tool_calls) |call| {
+            const result = for (step.tool_results) |candidate| {
+                if (std.mem.eql(u8, candidate.tool_call_id, call.id)) break candidate;
             } else null;
-            try sendToolCallHistory(state, alloc, session_id, result, arguments);
+            try sendToolCallHistory(state, alloc, session_id, call, result);
+        }
+        for (step.tool_results) |result| {
+            const replayed = for (step.tool_calls) |call| {
+                if (std.mem.eql(u8, call.id, result.tool_call_id)) break true;
+            } else false;
+            if (replayed) continue;
+            try sendToolCallHistory(state, alloc, session_id, .{
+                .id = result.tool_call_id,
+                .name = result.tool_name,
+                .arguments_json = "{}",
+            }, result);
         }
     }
 }
@@ -993,34 +1005,50 @@ fn sendToolCallHistory(
     state: *server.ServerState,
     alloc: Allocator,
     session_id: []const u8,
-    result: types.PersistedToolResult,
-    arguments_json: ?[]const u8,
+    call: types.ToolCall,
+    result: ?types.PersistedToolResult,
 ) !void {
-    const status: acp_types.ToolCallStatus = switch (result.status) {
+    const status: acp_types.ToolCallStatus = if (result) |value| switch (value.status) {
         .success => .completed,
         .failure => .failed,
-    };
+    } else .pending;
+
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const title = prompt_kinds.describeToolTitle(
+        prompt_kinds.activeToolRegistry(state),
+        arena,
+        call,
+    ) catch call.name;
 
     var open: std.Io.Writer.Allocating = .init(alloc);
     defer open.deinit();
     try open.writer.writeAll("{\"sessionId\":");
     try writeJsonStr(session_id, &open.writer);
     try open.writer.writeAll(",\"update\":");
-    try acp_types.writeToolCall(
+    try acp_types.writeToolCallWithPath(
         &open.writer,
-        result.tool_call_id,
-        result.tool_name,
-        prompt_kinds.mapToolKind(result.tool_name),
+        call.id,
+        title,
+        prompt_kinds.mapToolKind(call.name),
         status,
-        arguments_json,
+        prompt_kinds.boundedArguments(call.arguments_json),
+        prompt_kinds.editFilePath(arena, call),
+        call.name,
     );
     try open.writer.writeAll("}");
     try state.writer.writeNotification(alloc, "session/update", open.writer.buffered());
 
+    const finished = result orelse return;
+
     var body: std.Io.Writer.Allocating = .init(alloc);
     defer body.deinit();
-    try body.writer.writeAll(result.output);
-    for (result.permission_feedback) |feedback| {
+    try body.writer.writeAll(prompt_kinds.toolUpdateContentText(
+        finished.status == .failure,
+        finished.output,
+    ));
+    for (finished.permission_feedback) |feedback| {
         try body.writer.print("\n\nUser permission feedback:\n{s}", .{feedback});
     }
 
@@ -1029,7 +1057,7 @@ fn sendToolCallHistory(
     try out.writer.writeAll("{\"sessionId\":");
     try writeJsonStr(session_id, &out.writer);
     try out.writer.writeAll(",\"update\":");
-    try acp_types.writeToolCallUpdate(&out.writer, result.tool_call_id, status, body.writer.buffered());
+    try acp_types.writeToolCallUpdate(&out.writer, call.id, status, body.writer.buffered());
     try out.writer.writeAll("}");
     try state.writer.writeNotification(alloc, "session/update", out.writer.buffered());
 }
@@ -1363,6 +1391,125 @@ test "ACP interrupted history replay hides model-only abort context" {
     try std.testing.expect(std.mem.find(u8, captured, "cancelled") != null);
     try std.testing.expect(std.mem.find(u8, captured, "Interrupted by user after completing") == null);
     try std.testing.expect(std.mem.find(u8, captured, "<turn_aborted>") == null);
+}
+
+test "ACP history replay titles tool calls and guards persisted output" {
+    const alloc = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    try tmp.dir.createDirPath(io_mod.getIo(), "workspace");
+    const workspace = try io_mod.dirRealpathAlloc(alloc, tmp.dir, "workspace");
+    defer alloc.free(workspace);
+    var capture = try tmp.dir.createFile(
+        io_mod.getIo(),
+        "acp-replay-presentation.jsonl",
+        .{ .read = true },
+    );
+    defer capture.close(io_mod.getIo());
+
+    {
+        var state = try initAcpSessionTestState(arena, workspace, capture);
+        defer state.deinit();
+        var calls = [_]types.ToolCall{
+            .{ .id = "call_read", .name = "read_file", .arguments_json = "{\"path\":\"src/main.zig\"}" },
+            .{ .id = "call_write", .name = "write_file", .arguments_json = "{\"path\":\"out.txt\",\"content\":\"done\"}" },
+        };
+        var results = [_]types.PersistedToolResult{
+            .{
+                .tool_call_id = @constCast("call_read"),
+                .tool_name = @constCast("read_file"),
+                .status = .success,
+                .output = @constCast("readme \xff bytes"),
+                .output_bytes = 13,
+                .stored_output_bytes = 13,
+            },
+            .{
+                .tool_call_id = @constCast("call_write"),
+                .tool_name = @constCast("write_file"),
+                .status = .success,
+                .output = @constCast("y" ** 500),
+                .output_bytes = 500,
+                .stored_output_bytes = 500,
+            },
+        };
+        var steps = [_]types.ToolExecutionStep{.{
+            .tool_calls = calls[0..],
+            .tool_results = results[0..],
+        }};
+        try sendHistoryTurnAsUpdates(&state, arena, "session-1", .{ .assistant = .{
+            .user = .{ .text = @constCast("read and write") },
+            .assistant = @constCast("all done"),
+            .execution = .{ .tool_steps = steps[0..] },
+        } });
+        try capture.sync(io_mod.getIo());
+    }
+
+    var captured_file = try tmp.dir.openFile(
+        io_mod.getIo(),
+        "acp-replay-presentation.jsonl",
+        .{},
+    );
+    defer captured_file.close(io_mod.getIo());
+    const captured = try io_mod.readFileToEnd(alloc, &captured_file, 64 * 1024);
+    defer alloc.free(captured);
+
+    try std.testing.expect(std.mem.find(u8, captured, "\"title\":\"Reading src/main.zig\"") != null);
+    try std.testing.expect(std.mem.find(u8, captured, "\"_shinbo_toolName\":\"read_file\"") != null);
+    try std.testing.expect(std.mem.find(u8, captured, "\"_shinbo_filePath\":\"out.txt\"") != null);
+    try std.testing.expect(std.mem.find(u8, captured, "binary or non-utf8 tool output omitted") != null);
+    try std.testing.expect(std.mem.find(u8, captured, "y" ** 200) != null);
+    try std.testing.expect(std.mem.find(u8, captured, "y" ** 201) == null);
+}
+
+test "ACP history replay leaves resultless tool calls pending" {
+    const alloc = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    try tmp.dir.createDirPath(io_mod.getIo(), "workspace");
+    const workspace = try io_mod.dirRealpathAlloc(alloc, tmp.dir, "workspace");
+    defer alloc.free(workspace);
+    var capture = try tmp.dir.createFile(
+        io_mod.getIo(),
+        "acp-replay-pending.jsonl",
+        .{ .read = true },
+    );
+    defer capture.close(io_mod.getIo());
+
+    {
+        var state = try initAcpSessionTestState(arena, workspace, capture);
+        defer state.deinit();
+        var calls = [_]types.ToolCall{
+            .{ .id = "call_orphan", .name = "read_file", .arguments_json = "{\"path\":\"a.txt\"}" },
+        };
+        var steps = [_]types.ToolExecutionStep{.{ .tool_calls = calls[0..] }};
+        try sendHistoryTurnAsUpdates(&state, arena, "session-1", .{ .interrupted = .{
+            .user = .{ .text = @constCast("inspect") },
+            .tool_call = .{ .id = "call_inflight", .name = "terminal", .arguments_json = "{\"action\":\"exec\",\"command\":\"npm test\"}" },
+            .execution = .{ .tool_steps = steps[0..] },
+        } });
+        try capture.sync(io_mod.getIo());
+    }
+
+    var captured_file = try tmp.dir.openFile(
+        io_mod.getIo(),
+        "acp-replay-pending.jsonl",
+        .{},
+    );
+    defer captured_file.close(io_mod.getIo());
+    const captured = try io_mod.readFileToEnd(alloc, &captured_file, 64 * 1024);
+    defer alloc.free(captured);
+
+    try std.testing.expect(std.mem.find(u8, captured, "\"toolCallId\":\"call_orphan\"") != null);
+    try std.testing.expect(std.mem.find(u8, captured, "\"toolCallId\":\"call_inflight\"") != null);
+    try std.testing.expect(std.mem.find(u8, captured, "\"title\":\"Running npm test\"") != null);
+    try std.testing.expect(std.mem.find(u8, captured, "\"status\":\"pending\"") != null);
+    try std.testing.expect(std.mem.find(u8, captured, "tool_call_update") == null);
 }
 
 test "ACP load distinguishes missing sessions from access and child ownership failures" {

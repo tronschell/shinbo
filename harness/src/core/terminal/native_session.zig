@@ -1346,6 +1346,8 @@ const UnsupportedRegistry = struct {
         return .{ .alloc = alloc };
     }
 
+    pub fn shutdownSessionsOnly(_: *UnsupportedRegistry) void {}
+
     pub fn deinit(self: *UnsupportedRegistry) void {
         self.* = undefined;
     }
@@ -1513,6 +1515,24 @@ const SupportedRegistry = struct {
         self.releaseReference(slot.index, session);
         reserved = false;
         session_owned = false;
+    }
+
+    pub fn shutdownSessionsOnly(self: *SupportedRegistry) void {
+        const zio = io_mod.getIo();
+        var pinned: [max_sessions]?*Session = @splat(null);
+        self.mutex.lockUncancelable(zio);
+        for (&self.sessions, 0..) |*entry, index| {
+            const session = entry.* orelse continue;
+            self.references[index] += 1;
+            pinned[index] = session;
+        }
+        self.mutex.unlock(zio);
+
+        for (&pinned, 0..) |maybe_session, index| {
+            const session = maybe_session orelse continue;
+            session.shutdown();
+            self.releaseReference(index, session);
+        }
     }
 
     pub fn deinit(self: *SupportedRegistry) void {

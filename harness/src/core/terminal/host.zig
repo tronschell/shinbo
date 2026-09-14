@@ -495,7 +495,7 @@ fn runSupported(alloc: Allocator, config: Config) !void {
         if (state.stopping.load(.acquire)) break;
         const stream = endpoint.accept(&server) catch |err| {
             if (err == error.SocketNotListening) break;
-            return err;
+            return exitBeforeUnsafeTeardown(&state, &registry, err);
         };
         if (state.stopping.load(.acquire)) {
             endpoint.closeStream(stream);
@@ -514,7 +514,7 @@ fn runSupported(alloc: Allocator, config: Config) !void {
             endpoint.closeStream(stream);
             _ = state.connected_clients.fetchSub(1, .acq_rel);
             state.noteChanged();
-            return err;
+            return exitBeforeUnsafeTeardown(&state, &registry, err);
         };
         thread.detach();
     }
@@ -526,6 +526,25 @@ fn runSupported(alloc: Allocator, config: Config) !void {
     endpoint_created = false;
     cleanupEndpoint(paths.endpointDir());
     debug_trace.logf("terminal_host", "host exited idle=true", .{});
+}
+
+fn detachedClientsRemain(state: *const HostState) bool {
+    return state.connected_clients.load(.acquire) > 0;
+}
+
+fn exitBeforeUnsafeTeardown(
+    state: *HostState,
+    registry: *native_session.Registry,
+    err: anyerror,
+) anyerror {
+    if (!detachedClientsRemain(state)) return err;
+    debug_trace.logf(
+        "terminal_host",
+        "host exiting immediately err={s} with {d} client thread(s) still running; preserving shared state until process exit",
+        .{ @errorName(err), state.connected_clients.load(.acquire) },
+    );
+    registry.shutdownSessionsOnly();
+    std.process.exit(1);
 }
 
 const HostState = struct {
@@ -1906,4 +1925,13 @@ test "runtime transport directories reject symlinks non-private modes and foreig
         error.RuntimeDirectoryUnsafe,
         openVerifiedPrivateRuntimeDir(tmp.dir, "linked", io_mod.currentUserId()),
     );
+}
+
+test "host exits before unsafe teardown only while client threads remain" {
+    var state = HostState{ .idle_grace_ms = 0 };
+    try std.testing.expect(!detachedClientsRemain(&state));
+    _ = state.connected_clients.fetchAdd(1, .acq_rel);
+    try std.testing.expect(detachedClientsRemain(&state));
+    _ = state.connected_clients.fetchSub(1, .acq_rel);
+    try std.testing.expect(!detachedClientsRemain(&state));
 }
