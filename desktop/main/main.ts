@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, MenuItem, nativeImage, Notification, powerMonitor, protocol, screen, session, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, powerMonitor, protocol, screen, session, shell, systemPreferences } from "electron";
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -32,12 +32,12 @@ import { mergePlan, parsePlanSteps, planProblems, planProgress, readySteps, rend
 import { flattenTaskListTasks, mergeTaskList, parseTaskListTasks, renderTaskList, taskListProgress, taskListState, updateTaskListStatus, type TaskList } from "../shared/task-list";
 import { VISUAL_CSP, VISUAL_SCHEME, visualMarker, visualPage, type Visual } from "../shared/visualize";
 import { captureVisual, keepVisual, readVisual } from "./visuals";
-import { CredentialStore } from "./credentials";
+import { CredentialStore, withoutCredentials } from "./credentials";
 import { initializeProfile } from "./profile";
 import { FolderStore } from "./folders";
-import { AttachmentStore, attachmentImage, attachmentPreview, isImageAttachment, type Attachment } from "./attachments";
+import { AttachmentStore, attachmentImage, attachmentPreview, convertedPng, convertedPngBytes, isImageAttachment, type Attachment } from "./attachments";
 import { defaultVaultRoot, vaultReady } from "./setup";
-import { applyNoteTags, createNoteFolder, detectObsidianVaults, keepNote, listNoteFolders, listNotes, moveNote, noteInVault, notesRoot, obsidianInstallCommand, obsidianInstalled, readVault, renameNoteFolder, saveVault } from "./vault";
+import { applyNoteTags, createNoteFolder, detectObsidianVaults, keepNote, listNoteFolders, listNotes, locateNote, moveNote, noteInVault, notesRoot, obsidianInstallCommand, obsidianInstalled, readVault, renameNoteFolder, saveVault } from "./vault";
 import { tagNote } from "./vault-tags";
 import { DEFAULT_VAULT_FOLDER, keepKindLabel, MAX_NOTE_BYTES, MAX_NOTE_FILE_BYTES, obsidianOpenUrl, type KeepRequest, type KeptNote, type VaultChoice } from "../shared/vault";
 import { privacySettingsUrl, type SetupStatus } from "../shared/setup";
@@ -52,7 +52,7 @@ import { machineFacts, machineSample } from "./machine";
 import { transcribe, validateUtterance, validateVoiceSettings, voiceStatus } from "./voice";
 import { contextBlock, MAX_FILE_BYTES, MAX_TURN_IMAGES, mergeSkillContext } from "../shared/folders";
 import { BUILTIN_COMMANDS, mentions, pathName } from "../shared/slash";
-import { captureDisplay, compressScreenFrame, ComputerUseRuntime } from "./computer";
+import { captureDisplay, compressScreenFrame, ComputerUseRuntime, screenFrame } from "./computer";
 import { CODEX_MODEL_ID, CODEX_PREFIX, cliPlan, codexSlug, isEnvName, MODEL_PLANS, providerCredentials, routerKey, webSearchProvider, FREE_ROUTER_ID, planForModel, planForProfile, MIN_UI_SCALE, MAX_UI_SCALE, defaultHarnessExperiments, defaultReview, defaultSettings, defaultTagger, defaultToolSettings, defaultVerifier, routerChain, routerIdFor, validateRouters, holdBindings, isCursorCommand, isThinkingLevel, isKeybindAction, keybindCommands, normalizeAccelerator, providerChatUrl, validateProviders, validateKeybinds, validateOverlayPreferences, validateHarnessExperiments, validateReview, validateTagger, validateToolSettings, validateVerifier, FREE_ROUTER_MODELS, OPENROUTER_CHAT_ENDPOINT, skippedLinks, type Keybind, type KeybindAction, type Keybinds, type HarnessExperiments, type OverlayPreferences, type ModelRouter, type ProviderProfile, type ReviewSettings, type TaggerSettings, type ThinkingLevel, type ToolSettings, type VerifierSettings } from "../shared/settings";
 import { nameThread } from "./thread-namer";
 import { suggestNextSteps } from "./next-steps";
@@ -70,15 +70,15 @@ import { chatgptAuth, chatgptRoute } from "./chatgpt";
 import { CliModelCatalog } from "./cli-models";
 import { CLI_IDS, cliHarness, describeRuns, cliOptions } from "../shared/cli";
 import { forceArm, harnessPromptFile, resolveHarnessPrompt, setImprovements, setPrompts, setSystemPrompt, withGoal, withTrialArm, writeHarnessPrompt } from "./system-prompt";
-import { Harness, RESTARTED_BY_YOU, escapesRoot, explainFailure, failedTurn, forgetHarnessSession, harnessKey, recoveredSessionTraces, type HarnessMcpServer, type HarnessToolCall, type StoredThreadTrace, type ThinkingRoute, type TurnUsage } from "./harness";
+import { Harness, MISSING_CREDENTIAL, RESTARTED_BY_YOU, escapesRoot, explainFailure, failedTurn, forgetHarnessSession, harnessKey, recoveredSessionTraces, type HarnessMcpServer, type HarnessToolCall, type StoredThreadTrace, type ThinkingRoute, type TurnUsage } from "./harness";
 import { MAX_LOG_LINES, type HarnessLogLine, type HarnessReport } from "../shared/harness-log";
 import { review } from "./verifier";
 import { MAX_REVIEW_ROUNDS, REVIEWABLE_KINDS, reviewPrompt, reviewTitle, reviewVerdict, revisionPrompt } from "./review";
 import { advise } from "./advisor";
 import { describeScreen, look } from "./vision";
-import { readSecret } from "./secret";
+import { readSecret, SECRET_UNSET, secretKey } from "./secret";
 import { listMemories, MAX_MEMORY_FILE_BYTES, resolveMemoryPath, runMemoryCommand } from "./memory";
-import { browserArgv, BROWSER_NAVIGATIONS, describeToolCall, MAX_CLI_PROMPT_CHARS, parseToolArgs, shellQuoted, toolNeeds, type ToolArgs } from "./tools";
+import { browserArgv, BROWSER_NAVIGATIONS, describeToolCall, MAX_CLI_PROMPT_CHARS, parseToolArgs, shellQuoted, toolNeeds, type AnyToolArgs, type ToolArgs } from "./tools";
 import { Browsers, type BrowserStatus } from "./browser";
 import { Terminals } from "./terminal";
 import { MAX_TERMINAL_COLUMNS, MAX_TERMINAL_INPUT } from "../shared/terminal";
@@ -96,6 +96,7 @@ import { canonicalResetPath, findExecutable, isMac, isWindows, pathInside, realP
 const MAX_HOST_RESPONSE_BYTES = 16 * 1024 * 1024;
 const SNAPSHOT_CACHE_MS = 5000;
 const MAX_HOST_CALL_MS = 60 * 1000;
+const MAX_HOST_RESTART_WAIT_MS = 30 * 1000;
 const WINDOWS_SHUTDOWN_TIMEOUT_MS = 8000;
 
 const DEVICE = localDevice(process.platform);
@@ -110,6 +111,8 @@ class Host {
   private nextId = 1;
   private pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
   private failure: Error | null = null;
+  private failedAt = 0;
+  private restarts = 0;
   private closed = false;
   private writes = 0;
   private snapshots = new Map<string, { writes: number; at: number; value: Promise<unknown> }>();
@@ -128,12 +131,18 @@ class Host {
     });
     child.stdout.on("end", () => { if (this.child !== child) return; try { this.lines.end(); this.responses.end(); } catch (error) { this.abort(error as Error); } });
     child.stderr.on("data", (data) => console.error(String(data).trim()));
-    child.once("error", (error) => { if (this.child === child) this.fail(error); });
+    child.once("error", (error) => { if (this.child === child) this.fail(this.spawnError(error)); });
     child.stdin.on("error", (error) => { if (this.child === child) this.fail(error); });
     child.once("exit", () => { if (this.child === child) this.fail(new Error("Shinbo host stopped")); });
   }
 
+  private spawnError(error: Error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") return error;
+    return new Error(`Shinbo could not find its data host at ${this.binaryPath}. The install is incomplete — reinstall Shinbo.`);
+  }
+
   private restart() {
+    this.restarts++;
     this.failure = null;
     this.lines = new BoundedLines(MAX_HOST_RESPONSE_BYTES);
     this.responses = new HostResponses();
@@ -143,8 +152,9 @@ class Host {
 
   request(request: { method: string; params: Record<string, string> }): Promise<unknown> {
     if (this.failure && this.closed) return Promise.reject(this.failure);
+    if (this.failure && this.restarts && Date.now() - this.failedAt < Math.min(MAX_HOST_RESTART_WAIT_MS, 1000 * 2 ** (this.restarts - 1))) return Promise.reject(this.failure);
     if (this.failure) this.restart();
-    if (request.method === "thread" || request.method === "readTrace") return this.send(request);
+    if (request.method === "thread" || request.method === "readTrace" || request.method === "checkTurnCapacity") return this.send(request);
     if (request.method !== "snapshot" && request.method !== "threadSummaries") {
       this.storeChanged();
       const written = this.send(request);
@@ -210,6 +220,7 @@ class Host {
       }
       const request = this.pending.get(response.id);
       if (!request) throw new Error("Unexpected host response ID");
+      this.restarts = 0;
       this.pending.delete(response.id);
       if (response.ok) request.resolve(response.result);
       else request.reject(new Error(response.error));
@@ -224,6 +235,7 @@ class Host {
   }
 
   private fail(error: Error) {
+    if (!this.failure) this.failedAt = Date.now();
     this.failure ??= error;
     this.snapshots.clear();
     for (const request of this.pending.values()) request.reject(this.failure);
@@ -308,7 +320,10 @@ function noteThread(value: unknown): ThreadRecord | undefined {
 
 function primeGoals(snapshot: unknown) {
   const threads = (snapshot as { threads?: unknown[] } | null)?.threads;
-  if (Array.isArray(threads)) for (const thread of threads) noteThread(thread);
+  if (!Array.isArray(threads)) return;
+  const ids = new Set<string>();
+  for (const thread of threads) { const noted = noteThread(thread); if (noted) ids.add(noted.id); }
+  try { pruneThreadContexts(ids); } catch (error) { console.error("Shinbo: thread contexts could not be pruned", error); }
 }
 
 const GOAL_CONTINUATION = "Continue working toward this thread's goal.";
@@ -332,7 +347,8 @@ function loadThreadContexts() {
     if (!stored || typeof stored !== "object" || Array.isArray(stored)) return;
     for (const [threadId, held] of Object.entries(stored as Record<string, unknown>)) {
       if (!threadId || !held || typeof held !== "object" || Array.isArray(held)) continue;
-      const { folderIds, mode, model, effort, subagent, review } = held as Record<string, unknown>;
+      const { folderIds, mode, model, effort, subagent, review, stepLimit } = held as Record<string, unknown>;
+      const steps = Math.round(Number(stepLimit ?? 0));
       threadContexts.set(threadId, {
         folderIds: Array.isArray(folderIds) ? folderIds.filter((id): id is string => typeof id === "string").slice(0, 1) : [],
         mode: asPermissionMode(mode),
@@ -340,13 +356,28 @@ function loadThreadContexts() {
         ...(isThinkingLevel(effort) ? { effort } : {}),
         ...(subagent && typeof subagent === "object" && !Array.isArray(subagent) ? { subagent: subagent as SubagentRoute } : {}),
         ...(typeof review === "boolean" ? { review } : {}),
+        ...(steps > 0 ? { stepLimit: Math.min(steps, MAX_AGENT_STEP_LIMIT) } : {}),
       });
     }
   } catch { return; }
 }
 
 function rememberThreadContext(threadId: string, record: ThreadContextRecord) {
+  const held = threadContexts.get(threadId);
+  if (held && JSON.stringify(held) === JSON.stringify(record)) return;
   const next = new Map(threadContexts).set(threadId, record);
+  writeThreadContexts(next);
+  threadContexts.set(threadId, record);
+}
+
+function pruneThreadContexts(threadIds: Set<string>) {
+  const next = new Map([...threadContexts].filter(([id]) => threadIds.has(id)));
+  if (next.size === threadContexts.size) return;
+  writeThreadContexts(next);
+  for (const id of [...threadContexts.keys()]) if (!threadIds.has(id)) threadContexts.delete(id);
+}
+
+function writeThreadContexts(next: Map<string, ThreadContextRecord>) {
   const file = threadContextsFile();
   const temporary = `${file}.${randomUUID()}.tmp`;
   try {
@@ -356,7 +387,6 @@ function rememberThreadContext(threadId: string, record: ThreadContextRecord) {
     rmSync(temporary, { force: true });
     throw error;
   }
-  threadContexts.set(threadId, record);
 }
 const mobileStatus = (activeAt?: number) => ({ ...bridge!.status(), threads: [...phoneThreads], ...(activeAt ? { activeAt } : {}) });
 function namedPath(value: unknown): string | undefined {
@@ -401,20 +431,25 @@ const harnessThought = new Map<string, string>();
 const harnessRouted = new Map<string, string>();
 const harnessUsage = new Map<string, TurnUsage>();
 const harnessChildren = new Map<string, { childId: string; title: string; startedAt: number; client: Harness }>();
-const workflowRuns = new Map<string, AbortController>();
+const workflowRuns = new Map<string, { jobId: string; controller: AbortController }>();
 let settleRuntimeReady: (error?: string) => void;
 let runtimeReady = new Promise<string | undefined>((resolve) => { settleRuntimeReady = resolve; });
 const runtimeReadyTimeout = setTimeout(() => settleRuntimeReady("Saved settings did not finish loading. Open the workspace and try this task again."), 30_000);
 runtimeReadyTimeout.unref();
+async function deleteScheduledJob(jobId: string): Promise<unknown> {
+  const deleted = await host!.request({ method: "deleteScheduledJob", params: { jobId } });
+  for (const [threadId, run] of workflowRuns) if (run.jobId === jobId) cancelThreadWork(threadId);
+  return deleted;
+}
 function cancelThreadWork(threadId: string) {
   goalStopped.add(threadId);
-  workflowRuns.get(threadId)?.abort();
+  workflowRuns.get(threadId)?.controller.abort();
   if (computerRuntime?.threadId === threadId) computerRuntime.abort();
   const child = harnessChildren.get(threadId);
   if (child) void child.client.cancelChild(child.childId).catch(() => undefined);
   else for (const harness of harnesses.values()) void harness.cancel(threadId);
   if (!benchThread(threadId)) return;
-  void answerRequest("setThreadArchived", { threadId, archived: "true" }).then(() => changed()).catch(() => undefined);
+  void answerRequest("setThreadArchived", { threadId, archived: "true" }).then(() => releaseThreadPanes(threadId)).then(() => changed()).catch(() => undefined);
   for (const id of haltBench(threadId)) if (id !== threadId) stopThread(id);
 }
 const stopThread = (threadId: string) => {
@@ -423,7 +458,7 @@ const stopThread = (threadId: string) => {
 };
 function stopEveryThread() {
   agents!.stopAll();
-  for (const controller of workflowRuns.values()) controller.abort();
+  for (const run of workflowRuns.values()) run.controller.abort();
   for (const threadId of goalDriving) goalStopped.add(threadId);
   for (const threadId of harnessText.keys()) stopThread(threadId);
   for (const threadId of harnessChildren.keys()) stopThread(threadId);
@@ -468,8 +503,11 @@ const turnTouched = new Set<string>();
 
 const toolsChanged = async () => {
   broadcast("shinbo:tools-changed");
-  for (const client of harnesses.values()) client.rebindServers();
-  recycleHarnesses();
+  for (const [key, client] of [...harnesses]) {
+    if (client.busy) { client.rebindServers(); continue; }
+    client.close();
+    harnesses.delete(key);
+  }
   await syncHarnessSkills();
 };
 const artifactsChanged = () => broadcast("shinbo:artifacts-changed");
@@ -488,6 +526,8 @@ let hotspot: BrowserWindow | null = null;
 let hotspotKey = "";
 let hotspotTimer: ReturnType<typeof setTimeout> | undefined;
 const HOTSPOT_WARM = 220;
+const HOTSPOT_IDLE_SECONDS = 5;
+const HOTSPOT_IDLE_POLL_MS = 1000;
 let radial: BrowserWindow | null = null;
 let overlayBaseHeight = 0;
 const RADIAL_SIZE = 260;
@@ -528,10 +568,16 @@ function readNotchGeometry() {
   child.once("error", fail);
 }
 
+const MAX_HOTKEY_RESTARTS = 5;
+const HOTKEY_STABLE_MS = 60_000;
+let hotkeyRestarts = 0;
+
 function startQuickAskHotkey() {
   if (!isMac && !isWindows) return;
   const child = spawn(nativeHelper(), [], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
   const lines = new BoundedLines(64);
+  const startedAt = Date.now();
+  let restart = false;
   hotkeyHelper = child;
   sendHoldKeybinds();
   child.stdout?.on("data", (data: Buffer) => {
@@ -542,13 +588,24 @@ function startQuickAskHotkey() {
       }
     } catch (error) {
       console.error("Shinbo: Quick Ask hotkey listener failed", error);
+      restart = true;
       child.kill();
     }
   });
   child.stdout?.on("end", () => { try { lines.end(); } catch (error) { console.error("Shinbo: Quick Ask hotkey listener failed", error); } });
   child.stderr?.on("data", (data) => console.error(String(data).trim()));
   child.once("error", (error) => console.error("Shinbo: Quick Ask hotkey listener failed", error));
-  child.once("exit", () => { if (hotkeyHelper === child) hotkeyHelper = undefined; });
+  child.once("exit", () => {
+    if (hotkeyHelper !== child) return;
+    hotkeyHelper = undefined;
+    if (child.killed && !restart) return;
+    if (Date.now() - startedAt > HOTKEY_STABLE_MS) hotkeyRestarts = 0;
+    if (hotkeyRestarts >= MAX_HOTKEY_RESTARTS) {
+      console.error("Shinbo: Quick Ask hotkey listener kept stopping; relaunch Shinbo to bring it back");
+      return;
+    }
+    setTimeout(startQuickAskHotkey, 1000 * 2 ** hotkeyRestarts++).unref();
+  });
 }
 
 const registeredKeybinds = new Set<string>();
@@ -609,7 +666,10 @@ function sendHoldKeybinds() {
 
 function runOverlayCommand(command: string) {
   if (overlay && !overlay.isDestroyed()) {
+    if (capturing) return;
     closeRadial();
+    if (!overlay.isVisible()) showOverlay(overlay);
+    if (overlaySurface === "pill") expandPill(overlay);
     overlay.webContents.send("shinbo:quick-command", command);
     overlay.focus();
     return;
@@ -696,6 +756,33 @@ async function load(window: BrowserWindow, mode: "main" | "overlay" | "annotatio
   }
 }
 
+const HEALTHY_RENDERER_MS = 60_000;
+const MAX_CRASH_RELOADS = 3;
+const MAIN_MIN_WIDTH = 1040;
+const MAIN_MIN_HEIGHT = 680;
+const mainWindowFile = () => path.join(app.getPath("userData"), "window.json");
+
+function savedMainBounds(): Partial<Electron.Rectangle> {
+  try {
+    const { x, y, width, height } = JSON.parse(readFileSync(mainWindowFile(), "utf8")) as Record<string, unknown>;
+    if (![x, y, width, height].every((value) => typeof value === "number" && Number.isFinite(value))) return {};
+    const stored = { x: Math.round(x as number), y: Math.round(y as number), width: Math.round(width as number), height: Math.round(height as number) };
+    const area = screen.getDisplayMatching(stored).workArea;
+    const size = { width: Math.min(Math.max(stored.width, MAIN_MIN_WIDTH), area.width), height: Math.min(Math.max(stored.height, MAIN_MIN_HEIGHT), area.height) };
+    return {
+      ...size,
+      x: Math.min(Math.max(stored.x, area.x), area.x + area.width - size.width),
+      y: Math.min(Math.max(stored.y, area.y), area.y + area.height - size.height),
+    };
+  } catch { return {}; }
+}
+
+function rememberMainBounds(window: BrowserWindow) {
+  if (window.isDestroyed() || window.isFullScreen()) return;
+  try { writeFileSync(mainWindowFile(), JSON.stringify(window.getNormalBounds())); }
+  catch (error) { console.error("Shinbo could not remember the window position", error); }
+}
+
 function openMain() {
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -706,15 +793,43 @@ function openMain() {
   mainWindow = secureWindow({
     width: 1380,
     height: 860,
-    minWidth: 1040,
-    minHeight: 680,
+    ...savedMainBounds(),
+    minWidth: MAIN_MIN_WIDTH,
+    minHeight: MAIN_MIN_HEIGHT,
     ...(isMac ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 18, y: 17 } } : {}),
     ...(isWindows ? { titleBarStyle: "hidden" as const, titleBarOverlay: { color: "#131316", symbolColor: "#e8e6df", height: 32 } } : {}),
     ...(process.platform === "darwin" ? { vibrancy: "sidebar" as const, visualEffectState: "active" as const, backgroundColor: "#00000000" } : {}),
   });
-  mainWindow.on("closed", () => (mainWindow = null));
-  browsers.attach(mainWindow);
-  void load(mainWindow);
+  const window = mainWindow;
+  window.on("close", () => rememberMainBounds(window));
+  window.on("closed", () => { if (mainWindow === window) mainWindow = null; });
+  let crashReloads = 0;
+  let loadedAt = Date.now();
+  window.webContents.on("did-finish-load", () => { loadedAt = Date.now(); });
+  window.webContents.on("render-process-gone", (_event, details) => {
+    if (window.isDestroyed() || details.reason === "clean-exit" || details.reason === "killed") return;
+    console.error(`Shinbo window renderer stopped: ${details.reason}`);
+    if (Date.now() - loadedAt > HEALTHY_RENDERER_MS) crashReloads = 0;
+    if (crashReloads++ < MAX_CRASH_RELOADS) window.webContents.reload();
+  });
+  let askedAboutHang = false;
+  window.on("unresponsive", () => {
+    if (askedAboutHang || window.isDestroyed()) return;
+    askedAboutHang = true;
+    void dialog.showMessageBox(window, {
+      type: "warning",
+      message: "Shinbo's window has stopped responding",
+      detail: "Every thread, note and artifact is on disk and untouched. Reloading the window brings it back.",
+      buttons: ["Wait", "Reload"],
+      defaultId: 0,
+      cancelId: 0,
+    }).then(({ response }) => {
+      askedAboutHang = false;
+      if (response === 1 && !window.isDestroyed()) window.webContents.reload();
+    });
+  });
+  browsers.attach(window);
+  void load(window);
 }
 
 function needsYou(title: string, body: string) {
@@ -773,8 +888,17 @@ function expandPill(window: BrowserWindow) {
   const layout = popoutLayout(screen.getDisplayMatching(window.getBounds()), window.getBounds(), overlayGrow);
   overlaySurface = "popout";
   overlayBaseHeight = layout.base;
+  overlayFront = frontContextNote().catch(() => "");
   window.setBounds(layout.bounds);
   window.webContents.send("shinbo:overlay-surface", "popout");
+  window.focus();
+}
+
+function showOverlay(window: BrowserWindow) {
+  closeOverlayWhenIdle = false;
+  newQuickSession(window);
+  if (overlaySurface !== "pill") overlayFront = frontContextNote().catch(() => "");
+  window.show();
   window.focus();
 }
 
@@ -797,16 +921,14 @@ function toggleOverlay(command?: string) {
     return;
   }
   if (overlay) {
-    if (overlaySurface === "pill") { newQuickSession(overlay); expandPill(overlay); return; }
-    if (overlaySurface === "popout") { collapseToPill(overlay); return; }
     if (!overlay.isVisible() && !capturing) {
-      closeOverlayWhenIdle = false;
-      newQuickSession(overlay);
-      overlay.show();
-      overlay.focus();
+      showOverlay(overlay);
+      if (overlaySurface === "pill") expandPill(overlay);
       if (command) overlay.webContents.send("shinbo:quick-command", command);
       return;
     }
+    if (overlaySurface === "pill") { newQuickSession(overlay); expandPill(overlay); return; }
+    if (overlaySurface === "popout") { collapseToPill(overlay); return; }
     closeOverlay(overlay);
     return;
   }
@@ -836,7 +958,7 @@ function toggleOverlay(command?: string) {
   overlay = window;
   overlayBaseHeight = layout.bounds.height;
   pinWindow(window);
-  window.on("blur", () => { if (!annotating && !capturing) leaveOverlay(window); });
+  window.on("blur", () => { if (!annotating && !capturing && window.isVisible()) leaveOverlay(window); });
   window.on("closed", () => {
     if (overlay === window) overlay = null;
     closeRadial();
@@ -945,7 +1067,7 @@ function openHotspot() {
         }
       }
     }
-    hotspotTimer = setTimeout(poll, hotspotPollDelay(warm));
+    hotspotTimer = setTimeout(poll, !warm && powerMonitor.getSystemIdleTime() > HOTSPOT_IDLE_SECONDS ? HOTSPOT_IDLE_POLL_MS : hotspotPollDelay(warm));
   };
   poll();
 }
@@ -1224,12 +1346,14 @@ function threadMode(threadId: string): PermissionMode {
 const threadModel = (threadId: string) => threadContexts.get(threadId)?.model ?? "";
 const threadEffort = (threadId: string) => threadContexts.get(threadId)?.effort ?? "";
 const MAX_AGENT_STEP_LIMIT = 10_000;
+const MAX_STEER_CHARS = 4096;
 const threadStepLimit = (threadId: string) => threadContexts.get(threadId)?.stepLimit;
 const threadContext = (threadId: string) => threadContexts.get(threadId) ?? { folderIds: [], mode: DEFAULT_PERMISSION_MODE, model: "" };
 
 function keepThreadContext(threadId: string, next: { folderIds: string[]; mode: PermissionMode; model: string; effort?: ThinkingLevel; subagent?: SubagentRoute; review?: boolean; stepLimit?: number }) {
   const held = threadContexts.get(threadId);
-  rememberThreadContext(threadId, { ...next, effort: next.effort ?? (held?.model === next.model ? held.effort : ""), review: next.review ?? held?.review, stepLimit: next.stepLimit ?? held?.stepLimit });
+  const effort = next.effort ?? (held?.model === next.model ? held.effort : next.model === selectedModel ? selectedEffort : "");
+  rememberThreadContext(threadId, { ...next, effort, review: next.review ?? held?.review, stepLimit: next.stepLimit ?? held?.stepLimit });
 }
 const threadSubagent = (threadId: string) => threadContexts.get(threadId)?.subagent;
 
@@ -1257,7 +1381,8 @@ function agentMessage(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Agent message is invalid");
   const candidate = value as Record<string, unknown>;
   const threadId = boundedCapabilityId(candidate.threadId, "Agent message thread");
-  if (typeof candidate.text !== "string" || !candidate.text.trim() || candidate.text.length > 4096) throw new Error("Agent message is invalid");
+  if (typeof candidate.text !== "string" || !candidate.text.trim()) throw new Error("Agent message is invalid");
+  if (candidate.text.length > MAX_STEER_CHARS) throw new Error(`A steering message is at most ${MAX_STEER_CHARS.toLocaleString("en-US")} characters; this one is ${candidate.text.length.toLocaleString("en-US")}. Trim it, or wait for the turn to end and send it as its own message.`);
   return { threadId, text: candidate.text };
 }
 
@@ -1311,7 +1436,7 @@ function showComputerCursor() {
     return;
   }
   try {
-    const bounds = isWindows ? screen.screenToDipRect(null, cursor.bounds) : cursor.bounds;
+    const bounds = isWindows && !browsing ? screen.screenToDipRect(null, cursor.bounds) : cursor.bounds;
     window.setBounds({ x: Math.round(bounds.x), y: Math.round(bounds.y), width: Math.round(bounds.width), height: Math.round(bounds.height) });
     window.webContents.send("shinbo:computer-run-progress", { ...progress, cursor });
     window.showInactive();
@@ -1330,6 +1455,7 @@ const BRIDGE_EVENTS: Record<string, (payload: unknown) => BridgeEvent> = {
   "shinbo:notes-changed": () => ({ k: "evt", t: "invalidate", what: "notes" }),
   "shinbo:components-changed": () => ({ k: "evt", t: "invalidate", what: "components" }),
   "shinbo:tools-changed": () => ({ k: "evt", t: "invalidate", what: "tools" }),
+  "shinbo:folders-changed": () => ({ k: "evt", t: "invalidate", what: "folders" }),
   "shinbo:cli-runs": () => ({ k: "evt", t: "invalidate", what: "cliRuns" }),
   "shinbo:background": () => ({ k: "evt", t: "invalidate", what: "background" }),
   "shinbo:scheduled-jobs": () => ({ k: "evt", t: "invalidate", what: "scheduledJobs" }),
@@ -1343,12 +1469,8 @@ const BRIDGE_EVENTS: Record<string, (payload: unknown) => BridgeEvent> = {
 
 function broadcast(channel: string, payload?: unknown) {
   if (bridge?.sending() && Object.hasOwn(BRIDGE_EVENTS, channel)) bridge.event(BRIDGE_EVENTS[channel](payload));
-  if (channel === "shinbo:spans") {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
-    return;
-  }
-  for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed()) window.webContents.send(channel, payload);
+  for (const window of [mainWindow, overlay]) {
+    if (window && !window.isDestroyed()) window.webContents.send(channel, payload);
   }
 }
 
@@ -1401,13 +1523,23 @@ let vaultFolderId: string | undefined;
 let tagger: TaggerSettings = defaultTagger;
 let pickedVaultRoot: string | undefined;
 
-function connectVault(vault: VaultChoice) {
+function connectVault(vault: VaultChoice, stored = false) {
+  const previous = vaultFolderId;
   try {
     const root = realpathSync(vault.root);
-    vaultFolderId = folders!.add(root).find((grant) => samePath(grant.path, root))?.id;
+    vaultFolderId = folders!.add(root, true).find((grant) => samePath(grant.path, root))?.id;
+    if (vaultFolderId) folders!.markVault(vaultFolderId, stored);
   } catch (error) {
     console.error("Shinbo: could not connect the vault folder", error);
+    return;
   }
+  if (previous && previous !== vaultFolderId && folders!.list().some((grant) => grant.id === previous && grant.vault)) folders!.remove(previous);
+  if (previous !== vaultFolderId) broadcast("shinbo:folders-changed");
+}
+
+function reconnectVault(): void {
+  const vault = readVault(app.getPath("userData"));
+  if (vault && !vaultFolderId) connectVault(vault, true);
 }
 
 function visibleFolders() {
@@ -1430,15 +1562,16 @@ async function notesOrNone(vault: VaultChoice | null): Promise<KeptNote[]> {
 async function clipForKeep(url: string | undefined, hideOverlay: boolean) {
   if (url) return await clipPage({ application: "", url });
   if (!hideOverlay || !overlay || overlay.isDestroyed()) return await clipPage(await frontmostPage());
+  const window = overlay;
   closeRadial();
   capturing = true;
-  overlay.hide();
+  window.hide();
   let front;
   try {
     await pause(150);
     front = await frontmostPage();
   } finally {
-    if (!overlay.isDestroyed()) overlay.show();
+    if (!window.isDestroyed()) window.show();
     capturing = false;
   }
   return await clipPage(front);
@@ -1498,15 +1631,19 @@ async function keepTool(args: Extract<ToolArgs, { name: "keep" }>): Promise<stri
     ...(args.text ? { text: args.text } : {}),
     ...(args.url ? { sourceUrl: args.url } : {}),
   }, false);
-  return `Kept “${note.title}” as ${note.relative}. Its title and tags are being written now, in the background, so do not keep this again. Say what it covers rather than repeating the steps.`;
+  const tagging = !!tagger.model?.trim() && !!tagger.endpoint?.trim() && (!tagger.credentialEnv || !!process.env[tagger.credentialEnv]);
+  return tagging
+    ? `Kept “${note.title}” as ${note.relative}. Its title and tags are being written now, in the background, so do not keep this again. Say what it covers rather than repeating the steps.`
+    : `Kept “${note.title}” as ${note.relative}. No tagger model is configured, so it keeps that title and no tags. Do not keep this again. Say what it covers rather than repeating the steps.`;
 }
 
 async function tagKeptNote(note: KeptNote, body: string) {
   try {
-    const original = readFileSync(note.path, "utf8");
+    const original = readFileSync(locateNote(note.path, !!note.folder), "utf8");
     const tagged = await tagNote(note, body, tagger);
-    const applied = readFileSync(note.path, "utf8") === original ? tagged : null;
-    if (applied) applyNoteTags(note.path, applied.title, applied.tags);
+    const current = locateNote(note.path, !!note.folder);
+    const applied = readFileSync(current, "utf8") === original ? tagged : null;
+    if (applied) applyNoteTags(current, applied.title, applied.tags);
     else if (!tagged) console.warn(`The tagger returned no title or tags for ${note.relative}, so it keeps the title it was saved under.`);
     fireEvent("note-kept", { title: applied?.title ?? note.title, tags: (applied?.tags ?? note.tags).join(", ") });
   } catch (error) {
@@ -1605,7 +1742,9 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
       const caveat = harness && !harness.ownsSession && args.action === "run"
         ? ` ${harness.label} resumes by "most recent session in this folder" rather than by id, so keep one ${run.cli} run going at a time here.`
         : "";
-      return `${run.cli} run ${run.id} finished turn ${run.turns} (${run.status === "failed" ? `failed, exit ${run.exitCode ?? "unknown"}` : `exit ${run.exitCode ?? "?"}`}). Send it more with cli {"action":"send","id":"${run.id}","prompt":"…"}.${caveat}\n\n${(run.status === "failed" ? read?.output : read?.result)?.trim() || "(no output)"}`;
+      const text = (run.status === "failed" ? read?.output : read?.result)?.trim() || "(no output)";
+      const cut = run.status === "failed" ? (read?.output.length ?? 0) >= MAX_COMMAND_OUTPUT : read?.resultTruncated === true;
+      return `${run.cli} run ${run.id} finished turn ${run.turns} (${run.status === "failed" ? `failed, exit ${run.exitCode ?? "unknown"}` : `exit ${run.exitCode ?? "?"}`}). Send it more with cli {"action":"send","id":"${run.id}","prompt":"…"}.${caveat}\n\n${cliOutputNotice(cut)}${text}`;
     }
     case "cli_runs": {
       if (args.cli) {
@@ -1628,7 +1767,7 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
       const read = clis.output(args.id, MAX_COMMAND_OUTPUT);
       if (!read) return `There is no CLI run called ${args.id}. ${describeRuns(clis.list())}`;
       const state = read.run.status === "running" ? `still working on turn ${read.run.turns}` : `${read.run.status} after ${read.run.turns} ${read.run.turns === 1 ? "turn" : "turns"} (exit ${read.run.exitCode ?? "?"})`;
-      return `${args.id} is ${state}.\n\n${read.output.trim() || "(no output yet)"}`;
+      return `${args.id} is ${state}.\n\n${cliOutputNotice(read.output.length >= MAX_COMMAND_OUTPUT)}${read.output.trim() || "(no output yet)"}`;
     }
     case "computer": {
       ensureComputerRun(turn.threadId);
@@ -1704,6 +1843,7 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
       return await look(toolSettings.vision, image, args.question, undefined, agents!.signalFor(turn.threadId));
     }
     case "secret": {
+      if (secretKey(toolSettings.secret) === undefined) return SECRET_UNSET;
       const signal = agents!.signalFor(turn.threadId);
       const attached = threadFolder(turn.threadId);
       const output = await runCommand(attached ? folders!.directory(attached) : homedir(), args.command, undefined, signal);
@@ -1886,7 +2026,7 @@ async function planTool(args: Extract<ToolArgs, { name: "plan" }>, turn: TurnReq
     case "write": {
       const { steps, errors } = parsePlanSteps(args.steps!);
       if (errors.length) throw new Error(`Nothing was written. Fix these and send it again:\n${errors.join("\n")}`);
-      const previous = args.id ? await readPlan(userData, args.id).catch(() => undefined) : undefined;
+      const previous = args.id ? await readPlan(userData, args.id).catch(() => { throw new Error(`There is no plan called "${args.id}" to rewrite. Omit id to write a new plan.`); }) : undefined;
       const owner = turn.parentThreadId ?? turn.threadId;
       const merged = mergePlan(previous, { id: args.id ?? "", title: args.title!, goal: args.goal ?? previous?.goal ?? "", steps, updatedAt: "", threadId: owner });
       const saved = await writePlan(userData, { ...merged, id: previous?.id });
@@ -2039,7 +2179,7 @@ async function componentTool(args: Extract<ToolArgs, { name: "component" }>, thr
       const existing = await readComponent(userData, args.id!);
       const saved = await writeComponent(userData, { id: existing.id, title: args.title ?? existing.title, code: args.code!, expands: args.expand, variables: args.variables, sourceThreadId: threadId });
       componentsChanged();
-      return `Reworked "${saved.title}" \u2014 v${saved.version}, reloaded in place.${variableNote(saved.variables)} Ask whether that is what they meant.`;
+      return `Reworked "${saved.title}" \u2014 v${saved.version}, reloaded in place.${saved.disabled ? " It is switched off, so nothing shows until the user enables it in Settings." : ""}${variableNote(saved.variables)} Ask whether that is what they meant.`;
     }
   }
 }
@@ -2047,7 +2187,7 @@ async function componentTool(args: Extract<ToolArgs, { name: "component" }>, thr
 function runCommand(cwd: string, command: string, timeoutMs = MAX_COMMAND_MS, signal?: AbortSignal): Promise<string> {
   signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
-    const child = spawn(shellBinary(), shellArguments(command, false), { cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"], detached: !isWindows, windowsHide: true });
+    const child = spawn(shellBinary(), shellArguments(command, false), { cwd, env: withoutCredentials(process.env), stdio: ["ignore", "pipe", "pipe"], detached: !isWindows, windowsHide: true });
     let output = "";
     const collect = (data: Buffer) => { if (output.length < MAX_COMMAND_OUTPUT) output += String(data); };
     child.stdout.on("data", collect);
@@ -2096,7 +2236,7 @@ async function runWrittenTool(cwd: string, file: string, input: string, signal?:
     : interpreter === "powershell" || interpreter === "pwsh"
       ? ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", file, input]
       : [file, input];
-  return runDirectCommand(cwd, binary, args, MAX_COMMAND_MS, false, process.env, signal);
+  return runDirectCommand(cwd, binary, args, MAX_COMMAND_MS, false, withoutCredentials(process.env), signal);
 }
 
 function runDirectCommand(cwd: string, binary: string, args: string[], timeoutMs = MAX_COMMAND_MS, raw = false, commandEnv: NodeJS.ProcessEnv = process.env, signal?: AbortSignal): Promise<string> {
@@ -2131,6 +2271,7 @@ function runDirectCommand(cwd: string, binary: string, args: string[], timeoutMs
 }
 
 const MAX_COMMAND_OUTPUT = 16 * 1024;
+const cliOutputNotice = (cut: boolean) => cut ? `[earlier output omitted — only the last ${MAX_COMMAND_OUTPUT} characters are shown; the Terminal tab keeps the log, or ask the CLI to write its result to a file]\n\n` : "";
 const MAX_CLI_VIEW_CHARS = 128 * 1024;
 const MAX_COMMAND_MS = 120_000;
 
@@ -2364,7 +2505,7 @@ function recycleHarnesses() {
   }
 }
 
-const harnessBefore = new Map<string, { threadId: string; text: string | null }>();
+const harnessBefore = new Map<string, { threadId: string; text: string | null | undefined }>();
 
 function noteHarnessChange(cwd: string, call: HarnessToolCall): FileChange | undefined {
   if (call.kind !== "edit") return;
@@ -2374,7 +2515,10 @@ function noteHarnessChange(cwd: string, call: HarnessToolCall): FileChange | und
   if (!grant) return;
   const absolute = path.resolve(cwd, relative);
   if (!pathInside(cwd, absolute)) return;
-  const read = () => { try { return readFileSync(absolute, "utf8"); } catch { return null; } };
+  const read = () => {
+    try { return statSync(absolute).size > MAX_FILE_BYTES ? undefined : readFileSync(absolute, "utf8"); }
+    catch { return null; }
+  };
 
   const key = `${call.threadId}:${call.toolCallId}`;
   if (call.status === "failed") {
@@ -2390,7 +2534,7 @@ function noteHarnessChange(cwd: string, call: HarnessToolCall): FileChange | und
   const before = opened.text;
   harnessBefore.delete(key);
   const after = read();
-  if (after === null || after === before) return;
+  if (before === undefined || after === undefined || after === null || after === before) return;
   const change: FileChange = { folderId: grant.id, path: path.relative(cwd, absolute), before, after, at: Date.now() };
   agents!.noteChange(call.threadId, change);
   changed();
@@ -2414,17 +2558,21 @@ async function runShinboTool(threadId: string, wireName: string, args: Record<st
   const mode = agents!.mode(threadId);
   const gate = toolGate(mode, name, toolSettings.disabledTools);
   if (gate === "hidden") {
-    throw new Error(`${wireName} is not available in ${mode} mode, or is switched off in Settings → Tools.`);
+    throw new Error(`${wireName} is switched off in Settings → Tools.`);
   }
   const unavailable = whyUnavailable(threadId, name, wireName);
   if (unavailable) throw new Error(unavailable);
   const parsed = parseToolArgs(name, JSON.stringify(args));
-  if (gate === "ask" && name !== "computer") {
+  const authored = name === "artifact" || name === "component";
+  const mounts = authored && await mountsCode(parsed);
+  if (gate === "ask" && name !== "computer" && (mounts || !authored)) {
+    const full = JSON.stringify(args, null, 2);
+    const code = parsed.name === "component" ? parsed.code : parsed.name === "artifact" ? parsed.content : undefined;
     const allowed = await agents!.question({
       threadId,
       tool: name,
-      summary: describeToolCall(parsed),
-      detail: JSON.stringify(args, null, 2).slice(0, 4096),
+      summary: mounts ? `${describeToolCall(parsed)} — this module runs inside Shinbo with the app's own access: it can open terminals, run git, read your threads and credentials, and open links` : describeToolCall(parsed),
+      detail: mounts ? code || full : full.slice(0, 4096),
     });
     if (!allowed) throw new Error(`The user did not allow ${wireName} to run. Do not try it again this turn; say what you needed it for instead.`);
   }
@@ -2436,11 +2584,21 @@ async function runShinboTool(threadId: string, wireName: string, args: Record<st
   return turn.bench ? await benchReplay.run(true, call) : await call();
 }
 
+async function mountsCode(args: AnyToolArgs): Promise<boolean> {
+  if (args.name === "component") return args.action === "create" || args.action === "rewrite";
+  if (args.name !== "artifact" || args.action === "list" || args.action === "get") return false;
+  if (args.surface) return args.surface !== "none";
+  if (args.action === "create") return false;
+  const existing = await readArtifact(app.getPath("userData"), args.id!).catch(() => undefined);
+  return !!existing?.surface;
+}
+
 function whyUnavailable(threadId: string, name: string, called = name): string | undefined {
   const needs = toolNeeds(name);
   if (needs === "folders" && threadFolderIds(threadId).length === 0) {
     return `${called} needs a connected folder. Ask the user to connect one — the folder button in Shinbo's sidebar opens the picker.`;
   }
+  if (needs === "computer" && !isMac && !isWindows) return "computer use is not available on this platform.";
   return undefined;
 }
 
@@ -2643,6 +2801,8 @@ function answerRequest(method: string, params: Record<string, string> = {}): Pro
         await validateWorkflowScripts(graph.nodes);
         return await host!.request({ method, params });
       });
+    case "deleteScheduledJob":
+      return deleteScheduledJob(params.jobId);
     case "setRouters":
       return Promise.resolve().then(() => {
         routers = validateRouters(JSON.parse(params.routers ?? "[]"));
@@ -2718,7 +2878,9 @@ async function attachedImagePaths(value: unknown, signal: AbortSignal): Promise<
       const file = attachments!.read(id);
       if (file.text === undefined) images.push(await attachments!.forModel(file));
       if (images.length === MAX_TURN_IMAGES) break;
-    } catch { continue; }
+    } catch (error) {
+      throw new Error(`An attached image could not be sent: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
   }
   return images;
 }
@@ -2743,7 +2905,8 @@ const CRASH_CONTINUATION = "The harness process died mid-turn and has been resta
 const RESTART_NOTICE = "Shinbo restarted the agent mid-turn and asked it to carry on";
 
 function noteRestart(threadId: string) {
-  harnessThought.set(threadId, `${RESTART_NOTICE}\n`);
+  const before = (harnessThought.get(threadId) ?? "").trimEnd();
+  harnessThought.set(threadId, `${before}${before ? "\n" : ""}${RESTART_NOTICE}\n`);
   broadcast("shinbo:delta", { threadId, delta: RESTART_NOTICE, thinking: true, recovery: true });
 }
 
@@ -2759,12 +2922,13 @@ async function resumeAfterSleep() {
   for (const client of wedged) client.close();
 }
 
-async function runOnHarness(client: Harness, cwd: string, turn: TurnRequest, key = cwd, resume = "") {
+async function runOnHarness(client: Harness, cwd: string, turn: TurnRequest, key = cwd, resume = "", restarted = false) {
   const spent = turnSpend.get(turn.threadId);
   if (spent) turnSpend.set(turn.threadId, { ...spent, output: 0 });
   else if (goalPursuing(goals.get(turn.threadId))) turnSpend.set(turn.threadId, { output: 0, total: 0 });
   const home = path.join(app.getPath("userData"), "harness");
-  const systemPrompt = writeHarnessPrompt(home, { model: modelName(turn.model), addition: turn.promptAddition, workspace: cwd, mode: turn.mode, disabledTools: toolSettings.disabledTools, advisorConfigured: !!toolSettings.advisor.model.trim() }, harnessPromptFile(home, key));
+  const promptContext = { model: modelName(turn.model), addition: turn.promptAddition, workspace: cwd, mode: turn.mode, disabledTools: toolSettings.disabledTools, advisorConfigured: !!toolSettings.advisor.model.trim() };
+  const systemPrompt = resolveHarnessPrompt(promptContext);
   turn = { ...turn, traceContext: {
     ...turn.traceContext,
     systemPrompt,
@@ -2772,9 +2936,10 @@ async function runOnHarness(client: Harness, cwd: string, turn: TurnRequest, key
     configuration: JSON.stringify({ version: app.getVersion(), model: modelName(turn.model), effort: turn.effort ?? "", workspace: cwd, mode: turn.mode, disabledTools: toolSettings.disabledTools, toolHints: turn.toolHints ?? {}, preselect: turn.preselect ?? [], stepLimit: turn.stepLimit, experiments: { ...harnessExperiments, ...turn.knobs } }),
   } };
   computerRuntime?.end(turn.threadId);
-  harnessText.set(turn.threadId, "");
-  harnessThought.set(turn.threadId, "");
-  if (resume || turn.continueRecovery) noteRestart(turn.threadId);
+  const restarting = !!resume || !!turn.continueRecovery;
+  harnessText.set(turn.threadId, restarting ? harnessText.get(turn.threadId) ?? "" : "");
+  harnessThought.set(turn.threadId, restarting ? harnessThought.get(turn.threadId) ?? "" : "");
+  if (restarting) noteRestart(turn.threadId);
   turnTouched.delete(turn.threadId);
   harnessRouted.delete(turn.threadId);
   harnessUsage.delete(turn.threadId);
@@ -2803,6 +2968,7 @@ async function runOnHarness(client: Harness, cwd: string, turn: TurnRequest, key
       compact: handoff !== undefined,
       handoff: handoff || undefined,
       continueRecovery: turn.continueRecovery,
+      prepare: () => { writeHarnessPrompt(home, promptContext, harnessPromptFile(home, key)); },
     });
     agents!.noteUsage(turn.threadId, usage);
     const cacheUsage = harnessUsage.get(turn.threadId);
@@ -2830,21 +2996,21 @@ async function runOnHarness(client: Harness, cwd: string, turn: TurnRequest, key
     agents!.finish(turn.threadId, detail);
     if (sleepWedged.delete(turn.threadId) && agents!.list().find((agent) => agent.threadId === turn.threadId)?.status !== "stopped") {
       agents!.forget(turn.threadId);
-      return await runOnHarness(harnessClient(cwd, key, await turnRoute(turn.model)), cwd, turn, key, SLEEP_CONTINUATION);
+      return await runOnHarness(harnessClient(cwd, key, await turnRoute(turn.model)), cwd, turn, key, client.delivered(turn.threadId) ? SLEEP_CONTINUATION : resume, restarted);
     }
     const pausedTurn = client.paused.get(turn.threadId);
     if (pausedRecovery.delete(turn.threadId) && pausedTurn?.cause !== "request_limit_reached" && pausedTurn?.cause !== "authentication" && pausedTurn?.requiredAction !== "change_request" && !turn.continueRecovery && agents!.list().find((agent) => agent.threadId === turn.threadId)?.status !== "stopped") {
       agents!.forget(turn.threadId);
       try {
-        return await runOnHarness(harnessClient(cwd, key, await turnRoute(turn.model)), cwd, { ...turn, continueRecovery: true }, key, resume);
+        return await runOnHarness(harnessClient(cwd, key, await turnRoute(turn.model)), cwd, { ...turn, continueRecovery: true }, key, resume, restarted);
       } catch {
         throw error;
       }
     }
-    if (!client.running && resume !== CRASH_CONTINUATION && agents!.list().find((agent) => agent.threadId === turn.threadId)?.status !== "stopped") {
+    if (!client.running && !restarted && explainFailure(detail) !== MISSING_CREDENTIAL && agents!.list().find((agent) => agent.threadId === turn.threadId)?.status !== "stopped") {
       agents!.forget(turn.threadId);
       try {
-        return await runOnHarness(harnessClient(cwd, key, await turnRoute(turn.model)), cwd, turn, key, CRASH_CONTINUATION);
+        return await runOnHarness(harnessClient(cwd, key, await turnRoute(turn.model)), cwd, turn, key, client.delivered(turn.threadId) ? CRASH_CONTINUATION : resume, true);
       } catch {
         throw error;
       }
@@ -2871,6 +3037,7 @@ async function runOnHarness(client: Harness, cwd: string, turn: TurnRequest, key
     }
   } finally {
     computerRuntime?.end(turn.threadId);
+    if (harnessUsage.has(turn.threadId) || harnessRouted.has(turn.threadId)) void recordUse(app.getPath("userData"), modelKey(modelName(turn.model) || "auto"));
     harnessText.delete(turn.threadId);
     harnessThought.delete(turn.threadId);
     harnessRouted.delete(turn.threadId);
@@ -2900,7 +3067,6 @@ async function runTurn(turn: TurnRequest) {
     turn.effort ??= context.model === turn.model ? context.effort ?? "" : turn.model === selectedModel ? selectedEffort : "";
     rememberThreadContext(turn.threadId, { ...context, model: turn.model, effort: turn.effort });
     turn.stepLimit ??= threadStepLimit(turn.threadId);
-    void recordUse(app.getPath("userData"), modelKey(modelName(turn.model) || "auto"));
     turn.objective ??= activeGoal(turn.threadId)?.objective;
     const cwd = harnessCwd(turn.threadId);
     const route = await turnRoute(turn.model);
@@ -2909,7 +3075,7 @@ async function runTurn(turn: TurnRequest) {
     return await runOnHarness(harnessClient(cwd, key, route), cwd, withGoal(withTrialArm(turn, modelName(turn.model)), activeGoal(turn.threadId)), key);
   } finally {
     pendingTurns.delete(turn.threadId);
-    if (turn.nested && key) {
+    if (turn.nested && key && !harnesses.get(key)?.busy) {
       harnesses.get(key)?.close();
       harnesses.delete(key);
     }
@@ -2992,6 +3158,13 @@ async function autoNameThread(threadId: string, asked: string) {
 async function threadSummaryStore(): Promise<StoredThreadSummaries> {
   const stored = await runRequest(validateRequest({ method: "threadSummaries", params: {} })) as Partial<StoredThreadSummaries>;
   return { threads: stored.threads ?? [], warnings: stored.warnings ?? [] };
+}
+
+async function releaseThreadPanes(threadId: string) {
+  if (!threadId) return;
+  if (browsers.status(threadId).running) await browsers.navigate(threadId, "close");
+  for (const tab of terminals.list(threadId)) terminals.close(tab.id);
+  for (const run of clis.list(threadId)) clis.stop(run.id);
 }
 
 function threadSummary(thread: unknown): ThreadSummary {
@@ -3132,8 +3305,12 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
     }
     case "renameThread":
       return threadSummary(await runRequest(validateRequest({ method, params: { threadId: params.threadId, title: params.title } })));
-    case "setThreadArchived":
-      return threadSummary(await runRequest(validateRequest({ method, params: { threadId: params.threadId, archived: flag(params.archived, "Archived") ? "true" : "false" } })));
+    case "setThreadArchived": {
+      const archived = flag(params.archived, "Archived");
+      const summary = threadSummary(await runRequest(validateRequest({ method, params: { threadId: params.threadId, archived: archived ? "true" : "false" } })));
+      if (archived) await releaseThreadPanes(String(params.threadId));
+      return summary;
+    }
     case "sendMessage":
       return await onlyOnce(String(params.threadId), params.clientId, async () => {
         const { content, skillContext } = await resolveMentions(typeof params.content === "string" ? params.content : "");
@@ -3302,8 +3479,10 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
       artifactsChanged();
       return meta;
     }
-    case "gitReady":
-      return await gitReady(cwd());
+    case "gitReady": {
+      const state = await gitReady(cwd());
+      return typeof state === "string" ? state : "no-repo";
+    }
     case "gitStatus":
       return await gitSnapshot(cwd(), false, params.diff === true);
     case "gitFileDiff": {
@@ -3365,7 +3544,7 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
 
       if (slot.secret === undefined) credentials!.remove(slot.env);
       else credentials!.set(slot.env, slot.secret);
-      startHost();
+      credentials!.applyToEnv(process.env);
       recycleHarnesses();
       return credentialSlotsHeld();
     }
@@ -3592,7 +3771,9 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
 
       const asked = params.path;
       if (typeof asked !== "string" || !path.isAbsolute(asked) || asked.length > 1024) throw new Error("Name the folder by its full path.");
-      const directory = realpathSync.native(asked);
+      let directory: string;
+      try { directory = realpathSync.native(asked); }
+      catch { throw new Error("That folder does not exist."); }
       if (!statSync(directory).isDirectory()) throw new Error("That is not a folder.");
       const held = folders!.list().some((grant) => samePath(grant.path, directory));
       if (!held && !pathInside(homedir(), directory)) throw new Error("From a phone, Shinbo only connects folders inside your home folder.");
@@ -3603,12 +3784,14 @@ async function bridgeDispatch(method: BridgeMethod, params: Record<string, unkno
       );
       if (!granted) throw new Error(`Nobody at your ${DEVICE} approved that folder.`);
       folders!.add(directory);
+      broadcast("shinbo:folders-changed");
       return visibleFolders();
     }
     case "forgetFolder": {
       const id = boundedCapabilityId(params.id, "Folder");
       if (id === vaultFolderId) throw new Error("Your vault stays connected; change it from Settings.");
       folders!.remove(id);
+      broadcast("shinbo:folders-changed");
       return visibleFolders();
     }
     case "listCliRuns":
@@ -3688,7 +3871,7 @@ async function runDrivenTurn(turn: TurnRequest) {
   const thread = noteThread(recorded);
   await noteGoalFailure(turn.threadId, agents!.list().find((agent) => agent.threadId === turn.threadId)?.error);
   if (!turn.goalTurn) void continueGoal(turn, thread).catch((error: unknown) => console.error("Shinbo: a goal's continuation failed", error));
-  if (wantsReview(turn, thread)) void reviewWork(turn, recorded).catch((error: unknown) => console.error("Shinbo: a second-model review failed", error));
+  if (wantsReview(turn, thread)) void reviewWork(turn, recorded).catch((error: unknown) => noteReviewFailure(turn, error));
   return recorded;
 }
 
@@ -3734,8 +3917,17 @@ async function reviewWork(turn: TurnRequest, recorded: unknown) {
   }
 }
 
+function noteReviewFailure(turn: TurnRequest, error: unknown) {
+  console.error("Shinbo: a second-model review failed", error);
+  const message = error instanceof Error ? error.message : String(error);
+  void recordTurn({ threadId: turn.threadId, prompt: reviewTitle(turn.title), answer: "", notice: `Review skipped: ${message}`, durationMilliseconds: "0", outputTokens: "0", inputTokens: "0", model: "", goalTurn: "false" })
+    .then((thread) => { noteThread(thread); changed(); })
+    .catch((why: unknown) => console.error("Shinbo: the review failure could not be recorded", why));
+}
+
 async function runReview(turn: TurnRequest, answered: string): Promise<string> {
   const title = reviewTitle(turn.title);
+  await turnRoute(reviewSettings.model);
   const created = await host!.request({ method: "createThread", params: { parentThreadId: turn.threadId, title } });
   const threadId = (created as { id?: unknown }).id;
   if (typeof threadId !== "string") throw new Error("Shinbo host returned an invalid thread");
@@ -3767,7 +3959,7 @@ async function noteGoalFailure(threadId: string, detail: string | undefined) {
 
 const goalHalted = (threadId: string) =>
   goalStopped.has(threadId) || agents!.list().some((agent) => agent.threadId === threadId
-    && (agent.status === "stopped" || agent.status === "running" || agent.status === "waiting"));
+    && (agent.status === "stopped" || agent.status === "failed" || agent.status === "running" || agent.status === "waiting"));
 
 async function continueGoal(turn: TurnRequest, thread: ThreadRecord | undefined) {
   const threadId = turn.threadId;
@@ -3961,7 +4153,7 @@ async function resolveMentions(prompt: string): Promise<{ content: string; skill
   const named = mentions(prompt, "/");
   let skillContext: string | undefined;
   if (named.length) {
-    const skills = await capabilities!.searchSkills("", 64);
+    const skills = (await Promise.all(named.filter((name) => Buffer.byteLength(name, "utf8") <= 256).map((name) => capabilities!.searchSkills(name, MAX_SKILL_RESULTS)))).flat();
     const skill = skills.find((item) => named.includes(item.name) && !toolSettings.disabledSkills.includes(item.id));
     if (skill) {
       skillContext = (await capabilities!.selectSkill(skill.id)).instructions;
@@ -3986,10 +4178,10 @@ async function resolveMentions(prompt: string): Promise<{ content: string; skill
       }
       continue;
     }
-    const note = vault ? (notes ??= await listNotes(vault)).find((item) => pathName(item.title) === mention) : undefined;
+    const note = vault ? (notes ??= await listNotes(vault).catch(() => [])).find((item) => pathName(item.title) === mention) : undefined;
     if (note && vault) {
-      const file = path.join(notesRoot(vault), noteInVault(vault, note.path));
       try {
+        const file = path.join(notesRoot(vault), noteInVault(vault, note.path));
         if (statSync(file).size > MAX_NOTE_FILE_BYTES) throw new Error("it is too large to attach");
         sections.push({ heading: `Note ${note.title}`, body: readFileSync(file, "utf8") });
       } catch (error) {
@@ -3999,7 +4191,9 @@ async function resolveMentions(prompt: string): Promise<{ content: string; skill
     }
     for (const grant of folders!.list()) {
       let listing = listings.get(grant.id);
-      if (!listing) { listing = await folders!.files(grant.id); listings.set(grant.id, listing); }
+      if (!listing) { listing = await folders!.files(grant.id).catch(() => undefined); }
+      if (!listing) continue;
+      listings.set(grant.id, listing);
       const listed = listing.files.find((file) => pathName(file.path) === mention);
       if (!listed) continue;
       try {
@@ -4017,13 +4211,14 @@ async function resolveMentions(prompt: string): Promise<{ content: string; skill
 async function runScheduledWorkflow(job: HostDueJob["dueJob"]) {
   if (workflowRuns.has(job.threadId)) throw new Error("This workflow is already running.");
   const controller = new AbortController();
-  workflowRuns.set(job.threadId, controller);
+  workflowRuns.set(job.threadId, { jobId: job.jobId, controller });
   try {
     const startupError = await runtimeReady;
     if (startupError) throw new Error(startupError);
     controller.signal.throwIfAborted();
     const { nodes, errors } = parseWorkflow(job.nodes, job.prompt);
     if (errors.length) throw new Error(`Its graph will not run as written.\n\n${errors.join("\n")}`);
+    await validateWorkflowScripts(nodes);
     const mode = asPermissionMode(job.permissionMode);
     const model = job.model || selectedModel || "fallback";
     const effort = model === selectedModel ? selectedEffort : "";
@@ -4096,7 +4291,7 @@ async function workflowTool(args: Extract<ToolArgs, { name: "workflow" }>): Prom
       return describeJob(named());
     case "delete": {
       const job = named();
-      await host!.request({ method: "deleteScheduledJob", params: { jobId: job.id } });
+      await deleteScheduledJob(job.id);
       changed();
       scheduledJobsChanged();
       return `Deleted "${job.title}".`;
@@ -4272,23 +4467,34 @@ protocol.registerSchemesAsPrivileged([
   { scheme: COMPONENT_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
 ]);
 
-app.commandLine.appendSwitch("remote-debugging-port", "0");
+if (!app.isPackaged || process.env.SHINBO_REMOTE_DEBUG === "1") app.commandLine.appendSwitch("remote-debugging-port", "0");
 
 if (isWindows) {
   app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
   Menu.setApplicationMenu(null);
 }
 
-function addUpdateMenuItem() {
+function installMenu() {
   if (!isMac) return;
-  const menu = Menu.getApplicationMenu();
-  const submenu = menu?.items[0]?.submenu;
-  if (!submenu) {
-    console.warn("Shinbo: no application menu to add the update check to");
-    return;
-  }
-  submenu.insert(1, new MenuItem({ label: "Check for Updates\u2026", click: () => checkForUpdates() }));
-  Menu.setApplicationMenu(menu);
+  const development: Electron.MenuItemConstructorOptions[] = app.isPackaged ? [] : [
+    { role: "reload" }, { role: "forceReload" }, { role: "toggleDevTools" }, { type: "separator" },
+    { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { type: "separator" },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    {
+      label: app.name,
+      submenu: [
+        { role: "about" },
+        { label: "Check for Updates\u2026", click: () => checkForUpdates() },
+        { type: "separator" }, { role: "services" }, { type: "separator" },
+        { role: "hide" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" }, { role: "quit" },
+      ],
+    },
+    { role: "fileMenu" },
+    { role: "editMenu" },
+    { label: "View", submenu: [...development, { role: "togglefullscreen" }] },
+    { role: "windowMenu" },
+  ]));
 }
 
 function handleSquirrelEvent(): boolean {
@@ -4337,15 +4543,16 @@ if (primaryInstance) app.whenReady().then(() => {
       }
       if (artifact.kind !== "html" && artifact.kind !== "app") return notFound("Not a page.");
       const file = decodeURIComponent(url.pathname).replace(/^\/+/, "");
+      const own = `${ARTIFACT_SCHEME}://${id}`;
+      const appCsp = `default-src 'none'; script-src 'unsafe-inline' ${own}; style-src 'unsafe-inline' ${own}; img-src data: ${own}; font-src data:`;
       if (file) {
         if (artifact.kind !== "app") return notFound("Not a file.");
-        return new Response(await readArtifactFile(userData, id, file), { headers: { "content-type": artifactFileType(file) } });
+        return new Response(await readArtifactFile(userData, id, file), { headers: { "content-type": artifactFileType(file), "content-security-policy": appCsp } });
       }
-      const own = `${ARTIFACT_SCHEME}://${id}`;
       return new Response(artifact.kind === "app" ? appPage(artifact.content) : artifact.content, { headers: {
         "content-type": "text/html; charset=utf-8",
         "content-security-policy": artifact.kind === "app"
-          ? `default-src 'none'; script-src 'unsafe-inline' ${own}; style-src 'unsafe-inline' ${own}; img-src data: ${own}; font-src data:`
+          ? appCsp
           : "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:",
       } });
     } catch {
@@ -4374,7 +4581,7 @@ if (primaryInstance) app.whenReady().then(() => {
   credentials = new CredentialStore(app.getPath("userData"));
   folders = new FolderStore(app.getPath("userData"));
   const storedVault = readVault(app.getPath("userData"));
-  if (storedVault) connectVault(storedVault);
+  if (storedVault) connectVault(storedVault, true);
   attachments = new AttachmentStore(app.getPath("userData"));
   modelCatalog = new CatalogCache(app.getPath("userData"));
   modelMetadata = new ModelMetadataCatalog(app.getPath("userData"));
@@ -4392,8 +4599,9 @@ if (primaryInstance) app.whenReady().then(() => {
 
       const reached = bridge?.ask({ ...request, askedAt, expiresAt: askedAt + MAX_ASK_MS }) === true;
       if (!mainWindow || mainWindow.isDestroyed()) {
-
-        if (!reached) agents!.answer(request.id, false);
+        if (reached || mainWindow) return;
+        openMain();
+        needsYou("Shinbo needs your approval", request.summary);
         return;
       }
       needsYou("Shinbo needs your approval", request.summary);
@@ -4401,18 +4609,22 @@ if (primaryInstance) app.whenReady().then(() => {
     },
     answered: (id, allowed) => {
       bridge?.resolved(id, allowed);
-      mainWindow?.webContents.send("shinbo:permission-resolved", { id, allowed });
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("shinbo:permission-resolved", { id, allowed });
     },
     stopped: cancelThreadWork,
     steer: steerThread,
-    verify: (request) => review(request),
+    verify: (request) => review(verifier, request),
     advise: (transcript, signal) => advise(toolSettings.advisor, transcript, undefined, signal),
     spawnTurn: (turn, owner) => {
       const context = owner ? threadContexts.get(owner) : undefined;
       if (context && !threadContexts.has(turn.threadId)) rememberThreadContext(turn.threadId, { ...context });
       return driveTurn(turn);
     },
-    changed: () => { broadcast("shinbo:agents", agents!.list()); broadcast("shinbo:spans", agents!.spans()); },
+    changed: () => {
+      broadcast("shinbo:agents", agents!.list(false));
+      if (bridge?.sending()) bridge.event(BRIDGE_EVENTS["shinbo:spans"](agents!.spans()));
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("shinbo:spans-changed");
+    },
     step: (step) => broadcast("shinbo:step", step),
   });
   loadPhoneThreads();
@@ -4493,12 +4705,15 @@ if (primaryInstance) app.whenReady().then(() => {
         const attachment = annotationAttachment.claim(screenContextId);
         screenClaimed = true;
         const note = frontApplicationNote(attachment.source);
+        const screen = attachments!.save("screen.jpg", Buffer.from(attachment.image.slice(attachment.image.indexOf(",") + 1), "base64"));
+        let images: unknown = [];
+        try { images = JSON.parse(request.params.attachedImages ?? "[]"); } catch { images = []; }
         request = {
           method: request.method,
           params: {
             threadId: request.params.threadId,
             content: request.params.content,
-            screenContext: attachment.image,
+            attachedImages: JSON.stringify([screen.id, ...(Array.isArray(images) ? images : [])]),
             ...(note ? { attachedContext: mergeSkillContext(note, request.params.attachedContext ?? "") } : {}),
           },
         };
@@ -4512,11 +4727,12 @@ if (primaryInstance) app.whenReady().then(() => {
         skillClaimed = true;
         request = {
           method: request.method,
-          params: { threadId: request.params.threadId, content: request.params.content, ...(request.params.attachedContext ? { attachedContext: request.params.attachedContext } : {}), ...(request.params.attachedImages ? { attachedImages: request.params.attachedImages } : {}), ...(request.params.screenContext ? { screenContext: request.params.screenContext } : {}), skillContext: skill.instructions },
+          params: { threadId: request.params.threadId, content: request.params.content, ...(request.params.attachedContext ? { attachedContext: request.params.attachedContext } : {}), ...(request.params.attachedImages ? { attachedImages: request.params.attachedImages } : {}), skillContext: skill.instructions },
         };
       }
       const result = await runRequest(request);
       delivered = true;
+      if (request.method === "setThreadArchived" && request.params.archived === "true") await releaseThreadPanes(request.params.threadId);
       if (screenClaimed) annotationAttachment.finish(screenContextId!, true);
       if (skillClaimed) {
         skillAttachment.finish(skillAttachmentId!, true);
@@ -4556,7 +4772,7 @@ if (primaryInstance) app.whenReady().then(() => {
   });
   ipcMain.handle("shinbo:install-update", (event) => {
     mainWindowSender(event);
-    installUpdate();
+    return installUpdate();
   });
   ipcMain.handle("shinbo:harness-report", (event) => {
     mainWindowSender(event);
@@ -4846,7 +5062,9 @@ if (primaryInstance) app.whenReady().then(() => {
   });
   ipcMain.handle("shinbo:set-providers", (event, value: unknown) => {
     mainWindowSender(event);
-    providers = validateProviders(value);
+    const next = validateProviders(value);
+    if (JSON.stringify(next) === JSON.stringify(providers)) return providers;
+    providers = next;
     recycleHarnesses();
     return providers;
   });
@@ -4888,7 +5106,9 @@ if (primaryInstance) app.whenReady().then(() => {
   });
   ipcMain.handle("shinbo:set-tool-settings", async (event, value: unknown) => {
     panelSender(event);
-    toolSettings = validateToolSettings(value);
+    const next = validateToolSettings(value);
+    if (JSON.stringify(next) === JSON.stringify(toolSettings)) return toolSettings;
+    toolSettings = next;
     await toolsChanged();
     return toolSettings;
   });
@@ -4959,6 +5179,7 @@ if (primaryInstance) app.whenReady().then(() => {
     }
     const found = namedPath(value);
     if (!found) return null;
+    reconnectVault();
     const { grant, attached } = pathGrant(found);
     if (!grant && !attached) return { path: found, text: null };
     try {
@@ -5003,12 +5224,14 @@ if (primaryInstance) app.whenReady().then(() => {
     const request = value as Record<string, unknown>;
     if (typeof request.title !== "string" || typeof request.kind !== "string" || typeof request.content !== "string") throw new Error("Artifact request is invalid");
     if (request.language !== undefined && typeof request.language !== "string") throw new Error("Artifact request is invalid");
+    if (request.surface !== undefined && request.surface !== "none") throw new Error("Artifact request is invalid");
     const saved = await writeArtifact(app.getPath("userData"), {
       id: request.id === undefined ? undefined : boundedCapabilityId(request.id, "Artifact"),
       title: request.title,
       kind: request.kind,
       language: request.language,
       content: request.content,
+      surface: request.surface,
     });
     artifactsChanged();
     return saved;
@@ -5177,7 +5400,9 @@ if (primaryInstance) app.whenReady().then(() => {
   });
   ipcMain.handle("shinbo:refresh-marketplace", async (event, value: unknown) => {
     mainWindowSender(event);
-    return await refreshMarketplace(app.getPath("userData"), value);
+    const catalog = await refreshMarketplace(app.getPath("userData"), value);
+    await toolsChanged();
+    return catalog;
   });
   ipcMain.handle("shinbo:install-plugin", async (event, value: unknown) => {
     mainWindowSender(event);
@@ -5274,6 +5499,7 @@ if (primaryInstance) app.whenReady().then(() => {
   ipcMain.handle("shinbo:list-notes", (event) => {
     panelSender(event);
     const vault = readVault(app.getPath("userData"));
+    if (vault && !vaultFolderId) connectVault(vault, true);
     return vault ? listNotes(vault) : [];
   });
   ipcMain.handle("shinbo:list-note-folders", (event) => {
@@ -5312,7 +5538,10 @@ if (primaryInstance) app.whenReady().then(() => {
     const vault = readVault(app.getPath("userData"));
     if (!vault) throw new Error("No vault is connected.");
     const file = path.join(notesRoot(vault), noteInVault(vault, value));
-    if (!statSync(file).isFile() || statSync(file).size > MAX_NOTE_FILE_BYTES) throw new Error("That note cannot be read.");
+    let stat: ReturnType<typeof statSync>;
+    try { stat = statSync(file); }
+    catch { throw new Error("That note no longer exists."); }
+    if (!stat.isFile() || stat.size > MAX_NOTE_FILE_BYTES) throw new Error("That note cannot be read.");
     return readFileSync(file, "utf8");
   });
   ipcMain.handle("shinbo:open-in-obsidian", (event, value: unknown) => {
@@ -5332,6 +5561,7 @@ if (primaryInstance) app.whenReady().then(() => {
     const choice = await dialog.showOpenDialog(mainWindow!, { title: "Connect a folder", properties: ["openDirectory", "createDirectory"] });
     if (choice.canceled || !choice.filePaths[0]) return visibleFolders();
     folders!.add(choice.filePaths[0]);
+    broadcast("shinbo:folders-changed");
     return visibleFolders();
   });
   ipcMain.handle("shinbo:forget-folder", (event, value: unknown) => {
@@ -5339,6 +5569,7 @@ if (primaryInstance) app.whenReady().then(() => {
     const id = boundedCapabilityId(value, "Folder");
     if (id === vaultFolderId) throw new Error("Your vault stays connected; change it from Settings.");
     folders!.remove(id);
+    broadcast("shinbo:folders-changed");
     return visibleFolders();
   });
   ipcMain.handle("shinbo:git-status", async (event, value: unknown, includeDiff: unknown = true) => {
@@ -5379,6 +5610,21 @@ if (primaryInstance) app.whenReady().then(() => {
     const request = gitRequest(value, "Git command");
     const cwd = folders!.directory(boundedCapabilityId(request.folderId, "Folder"));
     return await runGit(cwd, validateGitArgs(request.args));
+  });
+  ipcMain.handle("shinbo:git-push", async (event, value: unknown) => {
+    mainWindowSender(event);
+    const request = gitRequest(value, "Push");
+    const cwd = folders!.directory(boundedCapabilityId(request.folderId, "Folder"));
+    if (request.setUpstream !== true) return await runGit(cwd, ["push"]);
+    const remotes = (await runGit(cwd, ["remote"])).output.split("\n").map((line) => line.trim()).filter(Boolean);
+    const remote = remotes.includes("origin") ? "origin" : remotes[0];
+    if (!remote) return { ok: false, output: "This repository has no remote to push to." };
+    return await runGit(cwd, ["push", "--set-upstream", remote, "HEAD"]);
+  });
+  ipcMain.handle("shinbo:git-pull", async (event, value: unknown) => {
+    mainWindowSender(event);
+    const request = gitRequest(value, "Pull");
+    return await runGit(folders!.directory(boundedCapabilityId(request.folderId, "Folder")), ["pull"]);
   });
   ipcMain.handle("shinbo:git-message", async (event, value: unknown) => {
     mainWindowSender(event);
@@ -5462,7 +5708,12 @@ if (primaryInstance) app.whenReady().then(() => {
     if (!Array.isArray(request.paths) || request.paths.some((item) => typeof item !== "string" || !item || item.length > 1024 || item.includes("\0"))) {
       throw new Error("Worktree list is invalid");
     }
-    await removeWorktrees(cwd, request.paths as string[]);
+    const removed = request.paths as string[];
+    await removeWorktrees(cwd, removed);
+    for (const grant of folders!.list()) {
+      if (grant.id !== vaultFolderId && removed.some((target) => pathInside(target, grant.path))) folders!.remove(grant.id);
+    }
+    broadcast("shinbo:folders-changed");
     changed();
   });
   ipcMain.handle("shinbo:worktree-add", async (event, value: unknown) => {
@@ -5474,7 +5725,7 @@ if (primaryInstance) app.whenReady().then(() => {
     const branch = branchPrefixName(prefix, boundedCapabilityId(request.name, "Branch name"));
     const target = realpathSync(await addWorktree(cwd, branch));
     const list = folders!.add(target);
-    const grant = list.find((folder) => folder.path === target);
+    const grant = list.find((folder) => samePath(folder.path, target));
     if (!grant) throw new Error("That folder could not be connected.");
     return { folders: list, folderId: grant.id };
   });
@@ -5491,25 +5742,35 @@ if (primaryInstance) app.whenReady().then(() => {
   ipcMain.handle("shinbo:attach-files", async (event) => {
     mainWindowSender(event);
     const choice = await dialog.showOpenDialog(mainWindow!, { title: "Attach files", properties: ["openFile", "multiSelections"] });
-    if (choice.canceled) return [];
-    const picked = [];
-    for (const file of choice.filePaths) picked.push(await held(attachments!.hold(file)));
-    return picked;
+    const picked: Awaited<ReturnType<typeof held>>[] = [];
+    const failed: string[] = [];
+    for (const file of choice.canceled ? [] : choice.filePaths) {
+      try {
+        const png = await convertedPng(file);
+        picked.push(await held(png ? attachments!.save(png.name, png.data) : attachments!.hold(file)));
+      } catch (error) {
+        failed.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+    return { picked, failed };
   });
-  ipcMain.handle("shinbo:attach-data", (event, value: unknown) => {
+  ipcMain.handle("shinbo:attach-data", async (event, value: unknown) => {
     mainWindowSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Attachment is invalid");
     const request = value as { name?: unknown; data?: unknown };
     if (!(request.data instanceof ArrayBuffer) && !ArrayBuffer.isView(request.data)) throw new Error("Attachment is invalid");
-    return held(attachments!.save(request.name, new Uint8Array(request.data instanceof ArrayBuffer ? request.data : request.data.buffer)));
+    const data = new Uint8Array(request.data instanceof ArrayBuffer ? request.data : request.data.buffer);
+    const png = await convertedPngBytes(request.name, data);
+    return held(png ? attachments!.save(png.name, png.data) : attachments!.save(request.name, data));
   });
   ipcMain.handle("shinbo:read-attachment", (event, value: unknown) => {
     mainWindowSender(event);
     return attachments!.read(value);
   });
-  ipcMain.handle("shinbo:discover-agent-imports", (event) => {
+  ipcMain.handle("shinbo:discover-agent-imports", async (event) => {
     if (event.senderFrame !== event.sender.mainFrame || event.sender !== mainWindow?.webContents) throw new Error("Import discovery sender is not allowed");
-    return discoverImports(homedir());
+    const registered = new Set(await registeredImportIds(app.getPath("userData")));
+    return (await discoverImports(homedir())).map((source) => ({ ...source, registered: registered.has(source.id) }));
   });
   ipcMain.handle("shinbo:import-agent-sources", async (event, value: unknown) => {
     if (event.senderFrame !== event.sender.mainFrame || event.sender !== mainWindow?.webContents || !Array.isArray(value) || value.length > MAX_IMPORT_SOURCES || value.some((id) => typeof id !== "string")) throw new Error("Import selection is invalid");
@@ -5568,7 +5829,7 @@ if (primaryInstance) app.whenReady().then(() => {
     skillAttachment.clear(boundedCapabilityId(value, "Skill attachment"));
   });
   ipcMain.handle("shinbo:list-imported-mcp-servers", async (event) => {
-    mainWindowSender(event);
+    panelSender(event);
     const servers = await capabilities!.listMcpServers();
     return servers.filter((server) => !toolSettings.disabledServers.includes(server.id));
   });
@@ -5597,7 +5858,7 @@ if (primaryInstance) app.whenReady().then(() => {
     const slot = credentialSlot(value);
     if (slot.secret === undefined) credentials!.remove(slot.env);
     else credentials!.set(slot.env, slot.secret);
-    startHost();
+    credentials!.applyToEnv(process.env);
     recycleHarnesses();
     return credentials!.list();
   });
@@ -5641,7 +5902,7 @@ if (primaryInstance) app.whenReady().then(() => {
       await pause(120);
       const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
       const [frame, source] = await Promise.all([captureDisplay(display), frontApplication()]);
-      const compressed = compressScreenFrame(nativeImage.createFromDataURL(frame.image));
+      const compressed = compressScreenFrame(frame);
       const id = randomUUID();
       annotationAttachment.put({ id, image: compressed.image, source });
       return { id, image: compressed.image, source };
@@ -5663,7 +5924,7 @@ if (primaryInstance) app.whenReady().then(() => {
     try {
       await pause(120);
       const [frame, source] = await Promise.all([captureDisplay(annotationDisplay), frontApplication()]);
-      annotationFrame = frame;
+      annotationFrame = screenFrame(frame);
       annotationSource = source;
       return annotationFrame;
     } finally {
@@ -5766,11 +6027,19 @@ if (primaryInstance) app.whenReady().then(() => {
     if (!window || event.senderFrame !== event.sender.mainFrame || event.sender !== window.webContents || overlaySurface !== "pill" || overlayBusy) return;
     window.destroy();
   });
-  ipcMain.on("shinbo:open-workspace", (event, value: unknown) => {
+  ipcMain.on("shinbo:open-workspace", (event, value: unknown, threadId: unknown) => {
     const window = overlay;
     if (!window || event.senderFrame !== event.sender.mainFrame || event.sender !== window.webContents) return;
     if (typeof value === "string" && /^[a-z]{1,16}$/.test(value)) openSettingsPage(value);
-    else openMain();
+    else {
+      const fresh = !mainWindow;
+      openMain();
+      const main = mainWindow!;
+      if (typeof threadId === "string" && threadId.length > 0 && threadId.length <= 256) {
+        if (fresh) main.webContents.once("did-finish-load", () => { if (!main.isDestroyed()) main.webContents.send("shinbo:select-thread", threadId); });
+        else main.webContents.send("shinbo:select-thread", threadId);
+      }
+    }
     closeOverlay(window);
   });
   let resyncing = false;
@@ -5824,7 +6093,7 @@ if (primaryInstance) app.whenReady().then(() => {
   });
   openMain();
   startUpdates((version) => broadcast("shinbo:update-ready", version));
-  addUpdateMenuItem();
+  installMenu();
   readNotchGeometry();
   screen.on("display-added", readNotchGeometry);
   screen.on("display-removed", readNotchGeometry);
@@ -5839,14 +6108,14 @@ app.on("window-all-closed", () => {
 let quitFlushing = false;
 let quitReady = false;
 app.on("before-quit", (event) => {
-  if (quitReady || harnessRuns.size === 0) return;
+  if (quitReady || (harnessRuns.size === 0 && pendingTurns.size === 0)) return;
   event.preventDefault();
   if (quitFlushing) return;
   quitFlushing = true;
   stopEveryThread();
   for (const client of harnesses.values()) client.close();
   const finished = new Promise<void>((resolve) => {
-    const check = () => harnessRuns.size === 0 ? resolve() : setTimeout(check, 25);
+    const check = () => harnessRuns.size === 0 && pendingTurns.size === 0 ? resolve() : setTimeout(check, 25);
     check();
   });
   void Promise.race([finished, pause(10_000)]).finally(() => {
@@ -5855,7 +6124,7 @@ app.on("before-quit", (event) => {
   });
 });
 app.on("will-quit", (event) => {
-  for (const controller of workflowRuns.values()) controller.abort();
+  for (const run of workflowRuns.values()) run.controller.abort();
   bridge?.stop();
   semanticGrep.stop();
   globalShortcut.unregisterAll();

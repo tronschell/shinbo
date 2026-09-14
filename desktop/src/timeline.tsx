@@ -16,6 +16,8 @@ import { ExpandIcon, ToolIcon } from "./icons";
 
 const TICK_MS = 500;
 
+const SPANS_REFRESH_MS = 250;
+
 const OVERALL = "overall";
 
 const LEGEND = [["agent", "Agent"], ["model", "Model"], ["tool", "Tool"], ["failed", "Failed"]] as const;
@@ -46,11 +48,16 @@ export const Timeline = memo(function Timeline({ threadId, sending, carriedToken
   useEffect(() => {
     if (sample) return;
     let alive = true;
-    void window.shinbo.listSpans()
-      .then((trees) => { if (alive) take(trees); })
-      .catch(() => undefined);
-    const stop = window.shinbo.onSpans(take);
-    return () => { alive = false; stop(); };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const pull = () => {
+      timer = undefined;
+      void window.shinbo.listSpans()
+        .then((trees) => { if (alive) take(trees); })
+        .catch(() => undefined);
+    };
+    pull();
+    const stop = window.shinbo.onSpans(() => { timer ??= setTimeout(pull, SPANS_REFRESH_MS); });
+    return () => { alive = false; stop(); if (timer) clearTimeout(timer); };
   }, [sample, take]);
 
 

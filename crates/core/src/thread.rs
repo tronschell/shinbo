@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
     error::Error,
     fmt,
@@ -988,7 +988,10 @@ struct ParsedThread {
     modified: SystemTime,
     length: u64,
     thread: Arc<Thread>,
+    used: u64,
 }
+
+const MAX_CACHED_THREADS: usize = 8;
 
 fn file_stamp(metadata: &Metadata) -> Option<(SystemTime, u64)> {
     Some((metadata.modified().ok()?, metadata.len()))
@@ -998,7 +1001,7 @@ fn file_stamp(metadata: &Metadata) -> Option<(SystemTime, u64)> {
 pub struct ThreadStore {
     root: PathBuf,
     parsed: RefCell<HashMap<ThreadId, ParsedThread>>,
-    last_read: RefCell<Option<ThreadId>>,
+    uses: Cell<u64>,
     summaries: RefCell<HashMap<ThreadId, ParsedSummary>>,
 }
 
@@ -1007,7 +1010,7 @@ impl ThreadStore {
         Self {
             root,
             parsed: RefCell::new(HashMap::new()),
-            last_read: RefCell::new(None),
+            uses: Cell::new(0),
             summaries: RefCell::new(HashMap::new()),
         }
     }
@@ -1026,23 +1029,40 @@ impl ThreadStore {
         self.parsed.borrow_mut().clear();
     }
 
+    fn next_use(&self) -> u64 {
+        let next = self.uses.get() + 1;
+        self.uses.set(next);
+        next
+    }
+
     fn take_parsed(&self, id: &ThreadId, stamp: (SystemTime, u64)) -> Option<Arc<Thread>> {
-        self.parsed
-            .borrow()
-            .get(id)
-            .filter(|entry| (entry.modified, entry.length) == stamp)
-            .map(|entry| Arc::clone(&entry.thread))
+        let mut parsed = self.parsed.borrow_mut();
+        let entry = parsed
+            .get_mut(id)
+            .filter(|entry| (entry.modified, entry.length) == stamp)?;
+        entry.used = self.next_use();
+        Some(Arc::clone(&entry.thread))
     }
 
     fn keep_parsed(&self, stamp: (SystemTime, u64), thread: Arc<Thread>) {
-        self.parsed.borrow_mut().insert(
+        let mut parsed = self.parsed.borrow_mut();
+        parsed.insert(
             thread.id.clone(),
             ParsedThread {
                 modified: stamp.0,
                 length: stamp.1,
                 thread,
+                used: self.next_use(),
             },
         );
+        while parsed.len() > MAX_CACHED_THREADS {
+            let oldest = parsed
+                .iter()
+                .min_by_key(|(_, entry)| entry.used)
+                .map(|(id, _)| id.clone());
+            let Some(oldest) = oldest else { break };
+            parsed.remove(&oldest);
+        }
     }
 
     pub fn save(&self, thread: &Thread) -> Result<PathBuf, ThreadStoreError> {
@@ -1099,10 +1119,7 @@ impl ThreadStore {
     }
 
     pub(crate) fn read(&self, id: &ThreadId) -> Result<Arc<Thread>, ThreadStoreError> {
-        let thread = self.cached(id)?;
-        self.parsed.borrow_mut().retain(|cached, _| cached == id);
-        *self.last_read.borrow_mut() = Some(id.clone());
-        Ok(thread)
+        self.cached(id)
     }
 
     fn cached(&self, id: &ThreadId) -> Result<Arc<Thread>, ThreadStoreError> {
@@ -1152,16 +1169,10 @@ impl ThreadStore {
     }
 
     pub(crate) fn list_uncached(&self) -> Result<ThreadListing, ThreadStoreError> {
-        self.parsed
-            .borrow_mut()
-            .retain(|id, _| self.last_read.borrow().as_ref() == Some(id));
         self.list_with_cache(false)
     }
 
     pub fn list_summaries(&self) -> Result<ThreadListing<Arc<ThreadSummary>>, ThreadStoreError> {
-        self.parsed
-            .borrow_mut()
-            .retain(|id, _| self.last_read.borrow().as_ref() == Some(id));
         self.list_records(|path, id| {
             let stamp = fs::metadata(path)
                 .ok()
@@ -1193,10 +1204,14 @@ impl ThreadStore {
 
     fn list_with_cache(&self, cache_threads: bool) -> Result<ThreadListing, ThreadStoreError> {
         self.list_records(|path, id| {
-            let thread = if cache_threads || self.last_read.borrow().as_ref() == Some(id) {
+            let thread = if cache_threads {
                 self.cached(id)?
             } else {
-                Self::parse_file(path, id)?
+                let stamp = fs::metadata(path).ok().and_then(|it| file_stamp(&it));
+                match stamp.and_then(|stamp| self.take_parsed(id, stamp)) {
+                    Some(thread) => thread,
+                    None => Self::parse_file(path, id)?,
+                }
             };
             Ok((thread.updated_at, thread))
         })
@@ -1249,7 +1264,10 @@ impl ThreadStore {
                     records.push((updated, id, record));
                 }
                 Err(ThreadStoreError::Malformed(thread)) => listing.malformed.push(thread),
-                Err(ThreadStoreError::Io(error)) => return Err(ThreadStoreError::Io(error)),
+                Err(ThreadStoreError::Io(error)) => listing.malformed.push(MalformedThread {
+                    path,
+                    reason: error.to_string(),
+                }),
             }
         }
         self.parsed
@@ -1535,16 +1553,7 @@ impl From<&Thread> for ThreadSummary {
                     .find(|message| message.role == ThreadRole::User)
             })
             .flatten()
-            .map(|message| {
-                normalized_prompt(
-                    &message.content,
-                    if thread.kind == ThreadKind::Subagent {
-                        usize::MAX
-                    } else {
-                        SEARCHABLE_TITLE_UNITS
-                    },
-                )
-            });
+            .map(|message| normalized_prompt(&message.content, SEARCHABLE_TITLE_UNITS));
         let display_title = if default_title {
             first_user_message
                 .as_deref()
@@ -1597,7 +1606,7 @@ mod summary_tests {
     use super::*;
 
     #[test]
-    fn targeted_library_reads_retain_only_the_last_full_record() {
+    fn targeted_library_reads_retain_a_small_lru_of_full_records() {
         let root = std::env::temp_dir().join(format!(
             "shinbo-targeted-library-cache-{}",
             std::process::id()
@@ -1643,14 +1652,15 @@ mod summary_tests {
             .sum();
         drop(retained);
         println!("targeted library cache: {records} records, {bytes} payload bytes");
-        assert_eq!((records, bytes), (1, 24 * 1024));
+        assert_eq!((records, bytes), (8, 8 * 24 * 1024));
         let last = store.read(&summaries.threads.last().unwrap().id).unwrap();
         store.list_summaries().unwrap();
         assert!(Arc::ptr_eq(&last, &store.read(&last.id).unwrap()));
         let first = store.read(&summaries.threads[0].id).unwrap();
         assert_eq!(last.messages[0].content.len(), 16 * 1024);
         assert_eq!(first.messages[0].content.len(), 16 * 1024);
-        assert_eq!(store.parsed.borrow().len(), 1);
+        assert_eq!(store.parsed.borrow().len(), 8);
+        assert!(Arc::ptr_eq(&last, &store.read(&last.id).unwrap()));
         assert!(
             store
                 .read(&ThreadId::parse("missing-fixture-0000").unwrap())
@@ -1740,7 +1750,26 @@ mod summary_tests {
     }
 
     #[test]
-    fn summary_normalization_bounds_main_prompts_and_preserves_subagent_briefs() {
+    fn an_unreadable_thread_file_is_skipped_like_a_malformed_one() {
+        let root =
+            std::env::temp_dir().join(format!("shinbo-unreadable-thread-{}", std::process::id()));
+        let now = Timestamp::now();
+        let store = ThreadStore::new(root.clone());
+        let healthy = Thread::new("Healthy", now).unwrap();
+        store.save(&healthy).unwrap();
+        let unreadable = Thread::new("Unreadable", now).unwrap();
+        fs::create_dir_all(store.path_for(&unreadable.id)).unwrap();
+        let summaries = store.list_summaries().unwrap();
+        assert_eq!(summaries.threads.len(), 1);
+        assert_eq!(summaries.threads[0].id, healthy.id);
+        assert_eq!(summaries.malformed.len(), 1);
+        assert_eq!(summaries.malformed[0].path, store.path_for(&unreadable.id));
+        assert_eq!(store.list().unwrap().threads.len(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn summary_normalization_bounds_main_prompts_and_subagent_briefs() {
         assert_eq!(
             normalized_prompt("  hello\n\t🙂 world  ", 100),
             "hello 🙂 world"
@@ -1769,10 +1798,9 @@ mod summary_tests {
                 && summary.subagent_brief.is_none()
         );
         thread.kind = ThreadKind::Subagent;
-        assert_eq!(
-            ThreadSummary::from(&thread).subagent_brief.unwrap(),
-            prompt.trim()
-        );
+        let brief = ThreadSummary::from(&thread).subagent_brief.unwrap();
+        assert!(prompt.starts_with(&brief));
+        assert_eq!(brief.encode_utf16().count(), SEARCHABLE_TITLE_UNITS);
     }
 
     #[test]

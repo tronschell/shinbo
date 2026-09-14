@@ -36,6 +36,8 @@
 @keyframes browser-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .browser-loading { animation: none; } }
 
+.browser-error { margin: 0 var(--s-2) var(--s-2); }
+
 .browser-stage { position: relative; display: grid; place-items: center; flex: 1 1 auto; min-height: 0; background: var(--bg); }
 .browser-empty { display: grid; justify-items: center; gap: var(--s-3); }
 .browser-empty p { color: var(--text-3); font: var(--fs-sm)/1 var(--font-mono); letter-spacing: var(--ls-caps); text-transform: uppercase; }

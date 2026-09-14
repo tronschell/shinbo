@@ -20,7 +20,7 @@ export const HOOK_EVENTS = [
 
 export type HookEvent = (typeof HOOK_EVENTS)[number];
 
-export const RUNNABLE_HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"] as const;
+export const RUNNABLE_HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "Stop"] as const;
 
 export type RunnableHookEvent = (typeof RUNNABLE_HOOK_EVENTS)[number];
 

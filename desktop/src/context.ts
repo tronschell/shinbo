@@ -34,8 +34,8 @@ export function setThreadFolders(threadId: string, ids: string[]): void {
   dispatchEvent(new Event("shinbo-thread-folders-changed"));
 }
 
-function storeEvicting(prefix: string, threadId: string, text: string): void {
-  const write = () => { try { localStorage.setItem(prefix + threadId, text); return true; } catch { return false; } };
+function storeEvicting(prefix: string, threadId: string, texts: string[]): void {
+  const write = () => texts.some((text) => { try { localStorage.setItem(prefix + threadId, text); return true; } catch { return false; } });
   if (write()) return;
   for (const key of Object.keys(localStorage)) if (key.startsWith(prefix) && key !== prefix + threadId) localStorage.removeItem(key);
   write();
@@ -76,7 +76,7 @@ export function rememberBlocks(threadId: string, turns: Record<string, Block[]>)
     kept = kept.slice(1);
     text = JSON.stringify(Object.fromEntries(kept));
   }
-  storeEvicting(BLOCKS_KEY, threadId, text);
+  storeEvicting(BLOCKS_KEY, threadId, [text]);
 }
 
 const PICK_KINDS = new Set(["file", "note", "artifact", "attachment", "terminal", "diff", "visual", "component"]);
@@ -109,19 +109,16 @@ export function rememberTurnAttachments(threadId: string, after: number, content
   if (!items.length) return;
   let kept = [...storedAttachments(threadId), { after, content, items }].slice(-KEPT_ATTACHED_TURNS);
   let text = JSON.stringify(kept);
+  const stripped = (turns: AttachedTurn[]) => turns.map((turn) => ({ ...turn, items: turn.items.map(({ thumbnail: _picture, ...rest }) => rest) }));
   if (text.length > KEPT_ATTACHED_BYTES) {
-    kept = kept.map((turn) => ({ ...turn, items: turn.items.map(({ thumbnail: _picture, ...rest }) => rest) }));
+    kept = stripped(kept);
     text = JSON.stringify(kept);
   }
   while (text.length > KEPT_ATTACHED_BYTES && kept.length > 1) {
     kept = kept.slice(1);
     text = JSON.stringify(kept);
   }
-  storeEvicting(ATTACHED_KEY, threadId, text);
-}
-
-export function pendingAttachments(threadId: string, after: number, content: string): TurnAttachment[] {
-  return storedAttachments(threadId).find((turn) => turn.after === after && turn.content === content)?.items ?? [];
+  storeEvicting(ATTACHED_KEY, threadId, [text, JSON.stringify(stripped(kept))]);
 }
 
 export function turnAttachments(threadId: string, messages: Message[]): Record<number, TurnAttachment[]> {
@@ -246,12 +243,10 @@ export function recordUses(threadId: string, uses: Omit<ContextUse, "turns">[]):
 
 const CLEARED_KEY = "shinbo.threadCleared.v1";
 
-function allCleared(): Record<string, number> {
-  try {
-    const stored = JSON.parse(localStorage.getItem(CLEARED_KEY) ?? "{}") as Record<string, unknown>;
-    return Object.fromEntries(Object.entries(stored).filter(([, value]) => typeof value === "number" && Number.isInteger(value) && value >= 0)) as Record<string, number>;
-  } catch { return {}; }
-}
+const allCleared = storedMap(CLEARED_KEY, (text) => {
+  const stored = JSON.parse(text) as Record<string, unknown>;
+  return Object.fromEntries(Object.entries(stored).filter(([, value]) => typeof value === "number" && Number.isInteger(value) && value >= 0)) as Record<string, number>;
+});
 
 export function clearedAt(threadId: string): number {
   return allCleared()[threadId] ?? 0;
@@ -321,7 +316,7 @@ const PREFIX_ROWS:{ kind: ContextUse["kind"]; label: string; of: keyof Omit<Cont
   { kind: "tools", label: "System tools", of: "systemToolsBytes", source: "tools" },
   { kind: "mcp", label: "MCP tools", of: "mcpToolsBytes", source: "mcp" },
   { kind: "skills", label: "Skills", of: "skillsBytes", source: "skills" },
-  { kind: "memory", label: "Memory files", of: "memoryBytes", source: "memory" },
+  { kind: "memory", label: "Project context", of: "memoryBytes", source: "memory" },
 ];
 
 const allBreakdowns = storedMap(BREAKDOWN_KEY, (text) => {
@@ -385,7 +380,7 @@ export const SEGMENT_NOTES: Record<SegmentSource, string> = {
   tools: "Shinbo's tools, as switched on in Settings → Tools. The harness adds its own file and terminal tools to this row without naming them.",
   mcp: "MCP servers whose tool catalogue rides every request.",
   skills: "Skills mirrored to the harness. A skill is loaded in full only when it fires; the row is what its description costs every turn.",
-  memory: "Memory files read into every request.",
+  memory: "The AGENTS.md of the thread's folder, sent as one system message on every request. Memory files are not in here; Shinbo reads those with the memory tool when it decides to.",
 };
 
 const MAX_SEGMENT_ITEMS = 200;
@@ -422,10 +417,6 @@ export async function segmentItems(source: SegmentSource, messages: Message[], t
   if (source === "tools") {
     const written = await window.shinbo.listToolTargets().then((targets) => targets.written).catch(() => []);
     return [...toolItems(), ...written.map((tool) => ({ name: tool.name, detail: tool.source }))];
-  }
-  if (source === "memory") {
-    const notes = await window.shinbo.listMemories();
-    return notes.map((note) => ({ name: note.path, chars: note.bytes }));
   }
   return [];
 }
@@ -720,19 +711,18 @@ export interface ModelSwitch {
   effort?: string;
 }
 
-function allModelSwitches(): Record<string, ModelSwitch[]> {
-  try {
-    const stored = JSON.parse(localStorage.getItem(MODEL_SWITCH_KEY) ?? "{}") as Record<string, unknown>;
-    return Object.fromEntries(Object.entries(stored)
-      .map(([id, value]) => [id, Array.isArray(value)
-        ? (value as ModelSwitch[]).filter((mark) => Number.isInteger(mark?.at) && mark.at >= 0 && typeof mark.label === "string")
-        : []])
-      .filter(([, marks]) => (marks as ModelSwitch[]).length)) as Record<string, ModelSwitch[]>;
-  } catch { return {}; }
-}
+const allModelSwitches = storedMap(MODEL_SWITCH_KEY, (text) => {
+  const stored = JSON.parse(text) as Record<string, unknown>;
+  return Object.fromEntries(Object.entries(stored)
+    .map(([id, value]) => [id, Array.isArray(value)
+      ? (value as ModelSwitch[]).filter((mark) => Number.isInteger(mark?.at) && mark.at >= 0 && typeof mark.label === "string")
+      : []])
+    .filter(([, marks]) => (marks as ModelSwitch[]).length)) as Record<string, ModelSwitch[]>;
+});
+const NO_SWITCHES: ModelSwitch[] = [];
 
 export function modelSwitches(threadId: string): ModelSwitch[] {
-  return allModelSwitches()[threadId] ?? [];
+  return allModelSwitches()[threadId] ?? NO_SWITCHES;
 }
 
 export function recordModelSwitch(threadId: string, mark: ModelSwitch): void {

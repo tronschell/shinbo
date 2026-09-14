@@ -77,3 +77,21 @@ test("browser shutdown releases each owned daemon after its views and survives c
   assert.equal(state.sessions.size, 0);
   assert.equal(order.at(-1), "view:shinbo-unused");
 });
+
+test("a reopened main window gets every live browser view back and a torn-down view leaves its session", () => {
+  const added: string[] = [];
+  const browsers = new Browsers(() => undefined, () => undefined);
+  const state = browsers as unknown as { sessions: Map<string, unknown> };
+  const view = (id: string, destroyed = false) => ({
+    id, iconRequest: 0,
+    view: { id, setVisible: () => undefined, setBounds: () => undefined, getBounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), webContents: { isDestroyed: () => destroyed, getURL: () => "https://example.test/", getTitle: () => id, isLoading: () => false, navigationHistory: { canGoBack: () => false, canGoForward: () => false }, close: () => undefined } },
+  });
+  const session = { name: "shinbo-a", threadId: "a", shown: true, bounds: { x: 0, y: 0, width: 10, height: 10 }, activeId: "live", tabs: [view("live"), view("gone", true)] };
+  state.sessions.set(session.name, session);
+  const window = { on: () => undefined, contentView: { addChildView: (child: { id: string }) => added.push(child.id), removeChildView: () => undefined }, webContents: { getZoomFactor: () => 1 }, isDestroyed: () => false };
+  browsers.attach(window as never);
+  assert.deepEqual(added, ["live"]);
+  browsers.closeTab("a", "gone");
+  assert.deepEqual(session.tabs.map((tab) => tab.id), ["live"]);
+  assert.equal(browsers.status("a").activeTab, "live");
+});

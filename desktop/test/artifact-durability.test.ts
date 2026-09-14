@@ -76,6 +76,12 @@ test("artifact queries cannot disable resource limits or return unbounded blobs"
   await assert.rejects(queryArtifact(directory, "app", "select zeroblob(5000000) as data", []), /too much data/);
 }));
 
+test("artifact queries past the concurrency cap wait their turn instead of failing", () => fixture(async (directory) => {
+  await writeArtifact(directory, { id: "app", title: "App", kind: "app", content: "<html></html>" });
+  const rows = await Promise.all(Array.from({ length: 8 }, (_, at) => queryArtifact(directory, "app", "select ? as at", [at])));
+  assert.deepEqual(rows.map(([row]) => row.at), [0, 1, 2, 3, 4, 5, 6, 7]);
+}));
+
 
 test("changing between artifact kinds with the same extension retains the new content", () => fixture(async (directory) => {
   await writeArtifact(directory, { id: "app", title: "App", kind: "app", content: "old entry" });

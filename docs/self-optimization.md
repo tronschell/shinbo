@@ -78,7 +78,7 @@ Per model span, the harness's per-generation usage update sets the open span's
 `tokens` (in + out) rather than only the run total, so a trace shows which
 request ballooned. No new span field: `tokens` already carries it.
 
-`scripts/ledger.mjs` dumps every trace on this machine as JSONL for offline
+`desktop/scripts/ledger.mjs` dumps every trace on this machine as JSONL for offline
 analysis; nothing new is stored.
 
 New metrics, all costs, lower is better: `requests`, `tokens` (in + out),

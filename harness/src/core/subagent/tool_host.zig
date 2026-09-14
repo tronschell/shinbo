@@ -1469,6 +1469,76 @@ pub const Runtime = struct {
         context: manager_mod.Context,
         defaults: Defaults,
     ) !manager_mod.Result {
+        var result = try self.executeAuthorizedCommandOnce(alloc, command, context, defaults);
+        errdefer result.deinit(alloc);
+        if (result == .receipt and command == .lifecycle and
+            (command.lifecycle.action == .cancel or command.lifecycle.action == .close))
+        {
+            try self.cascadeLifecycle(alloc, command.lifecycle, context, defaults);
+        }
+        return result;
+    }
+
+    fn cascadeLifecycle(
+        self: *Runtime,
+        alloc: Allocator,
+        lifecycle: domain.LifecycleCommand,
+        context: manager_mod.Context,
+        defaults: Defaults,
+    ) !void {
+        var descendant_context = context;
+        descendant_context.expected_generation = null;
+        while (true) {
+            var changed: usize = 0;
+            var cursor: ?[]u8 = null;
+            defer if (cursor) |value| alloc.free(value);
+            while (true) {
+                var snapshot = try self.manager.snapshot(alloc, .{
+                    .root_id = lifecycle.id,
+                    .cursor = cursor,
+                    .limit = domain.max_page_limit,
+                    .hide_terminal_one_off = lifecycle.action == .cancel,
+                });
+                defer snapshot.deinit(alloc);
+                const tree = switch (snapshot) {
+                    .snapshot => |tree| tree,
+                    .failure => return,
+                };
+                for (tree.nodes) |node| {
+                    const actionable = switch (lifecycle.action) {
+                        .cancel => switch (node.state) {
+                            .queued, .running, .awaiting_approval, .interrupted => true,
+                            else => false,
+                        },
+                        .close => node.state != .archived,
+                        else => false,
+                    };
+                    if (!actionable) continue;
+                    var result = try self.executeAuthorizedCommandOnce(
+                        alloc,
+                        .{ .lifecycle = .{ .id = node.child_id, .action = lifecycle.action } },
+                        descendant_context,
+                        defaults,
+                    );
+                    defer result.deinit(alloc);
+                    if (result == .receipt) changed += 1;
+                }
+                const next = tree.next_cursor orelse break;
+                const owned = try alloc.dupe(u8, next);
+                if (cursor) |value| alloc.free(value);
+                cursor = owned;
+            }
+            if (changed == 0) return;
+        }
+    }
+
+    fn executeAuthorizedCommandOnce(
+        self: *Runtime,
+        alloc: Allocator,
+        command: domain.Command,
+        context: manager_mod.Context,
+        defaults: Defaults,
+    ) !manager_mod.Result {
         var mutable_context = context;
         if (mutable_context.operation_identity_admitted and
             (command == .configure or command == .lifecycle))
@@ -3902,6 +3972,91 @@ test "accepted tool host cancellation signals live work before cleanup can fail"
     };
     var record = try store.load(alloc);
     defer record.deinit(alloc);
+    try std.testing.expectEqual(domain.QueueStatus.cancelled, record.queue[0].status);
+}
+
+test "cancelling a child cancels its running descendants" {
+    const alloc = std.testing.allocator;
+    const root_id = "01J00000000000000000000000";
+    var env = try TestEnvironment.init(alloc);
+    defer env.deinit(alloc);
+    try env.createSession(alloc, root_id);
+    var runner = ReleasableLiveChild{};
+    var test_authority = TestAuthority{ .root_id = root_id };
+    const host = try Runtime.create(
+        alloc,
+        &env.store,
+        root_id,
+        test_authority.resolver(),
+        .{ .context = &runner, .run_fn = ReleasableLiveChild.run },
+    );
+    defer host.deinit();
+
+    var create_child = try domain.validateCommand(alloc, .{ .create = .{
+        .name = "child",
+        .mode = .persistent,
+        .prompt = "stay active until cancelled",
+    } });
+    defer create_child.deinit(alloc);
+    const child_created = try host.execute(
+        alloc,
+        &create_child,
+        testOptions(root_id, "create-child"),
+    );
+    defer alloc.free(child_created);
+    const child_id = try resultChildIdAlloc(alloc, child_created);
+    defer alloc.free(child_id);
+    try runner.waitFor(&runner.entered, 1);
+
+    var create_grandchild = try domain.validateCommand(alloc, .{ .create = .{
+        .name = "grandchild",
+        .mode = .one_off,
+        .prompt = "stay active until cancelled",
+    } });
+    defer create_grandchild.deinit(alloc);
+    const grandchild_created = try host.execute(
+        alloc,
+        &create_grandchild,
+        testOptions(child_id, "create-grandchild"),
+    );
+    defer alloc.free(grandchild_created);
+    try std.testing.expect(std.mem.find(u8, grandchild_created, "\"ok\":true") != null);
+    const grandchild_id = try resultChildIdAlloc(alloc, grandchild_created);
+    defer alloc.free(grandchild_id);
+    try runner.waitFor(&runner.entered, 2);
+
+    var cancel = try domain.validateCommand(alloc, .{ .lifecycle = .{
+        .id = child_id,
+        .action = .cancel,
+    } });
+    defer cancel.deinit(alloc);
+    const cancelled = try host.execute(alloc, &cancel, testOptions(root_id, "cancel-child"));
+    defer alloc.free(cancelled);
+    try std.testing.expect(std.mem.find(u8, cancelled, "\"ok\":true") != null);
+
+    const deadline = io_mod.milliTimestamp() + 5_000;
+    while (io_mod.milliTimestamp() < deadline) {
+        var live = try host.owner.snapshotLivePresentation(alloc, grandchild_id);
+        if (live == null) break;
+        live.?.deinit(alloc);
+        std.Thread.yield() catch std.atomic.spinLoopHint();
+    }
+    try std.testing.expect(
+        (try host.owner.snapshotLivePresentation(alloc, grandchild_id)) == null,
+    );
+    var capability = try env.store.openSubagentControlCapabilityReadOnly(
+        alloc,
+        grandchild_id,
+        .{},
+    );
+    defer capability.deinit();
+    const store = control_store.Store{
+        .capability = &capability,
+        .expected_child_id = grandchild_id,
+    };
+    var record = try store.load(alloc);
+    defer record.deinit(alloc);
+    try std.testing.expectEqual(domain.State.cancelled, record.state);
     try std.testing.expectEqual(domain.QueueStatus.cancelled, record.queue[0].status);
 }
 

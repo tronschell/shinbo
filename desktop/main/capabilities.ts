@@ -1,9 +1,9 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { installedCapabilitySources } from "./marketplace";
-import { findExecutable, isWindows, pathInside } from "./platform";
+import { findExecutable, isWindows, loginShellPath, pathInside } from "./platform";
 
 const MAX_MANIFEST_BYTES = 128 * 1024;
 const MAX_CONFIG_BYTES = 256 * 1024;
@@ -177,12 +177,12 @@ export async function writeShinboTool(userData: string, name: unknown, descripti
   const temporary = path.join(directory, `.run.${randomUUID()}.tmp`);
   try {
     await writeFile(temporary, body, { encoding: "utf8", mode: 0o700 });
+    await writeFile(path.join(directory, "about.txt"), about, { encoding: "utf8", mode: 0o600 });
     await rename(temporary, path.join(directory, "run"));
   } catch (error) {
     await rm(temporary, { force: true });
     throw error;
   }
-  await writeFile(path.join(directory, "about.txt"), about, { encoding: "utf8", mode: 0o600 });
   return { name: slug, description: about, run: path.join(directory, "run") };
 }
 
@@ -212,6 +212,7 @@ export async function seedBuiltinSkills(builtinRoot: string, userData: string, h
       const directory = path.join(harnessHome, ".fx", "skills", slug);
       await mkdir(directory, { recursive: true, mode: 0o700 });
       await writeFile(path.join(directory, "SKILL.md"), content, { encoding: "utf8", mode: 0o600 });
+      await writeFile(path.join(directory, MIRRORED_SKILL_MARKER), "", { encoding: "utf8", mode: 0o600 });
       seeded.push(slug);
     } catch (error) {
       console.warn(`Shinbo skipped the built-in skill ${name}:`, error instanceof Error ? error.message : error);
@@ -225,7 +226,6 @@ export async function mirrorSkillsToHarness(userData: string, harnessHome: strin
   const skills = await enumerateSkills(await loadManifest(userData), root);
   const blocked = new Set(disabled);
   const mirrored: string[] = [];
-  const managed = new Set(skills.filter((skill) => skill.managed).map((skill) => skill.name));
   for (const skill of skills) {
     if (skill.managed && (blocked.has(skill.id) || blocked.has(skill.name)) || mirrored.includes(skill.name)) continue;
     try {
@@ -233,6 +233,7 @@ export async function mirrorSkillsToHarness(userData: string, harnessHome: strin
       if (!content.trim()) continue;
       if (skill.managed) {
         const directory = path.join(root, skill.name);
+        if (await stat(directory).then((information) => information.isDirectory(), () => false) && !await isMirroredSkill(root, skill.name)) continue;
         await mkdir(directory, { recursive: true, mode: 0o700 });
         const file = path.join(directory, "SKILL.md");
         const next = withFrontmatter(skill.name, content);
@@ -246,13 +247,13 @@ export async function mirrorSkillsToHarness(userData: string, harnessHome: strin
   }
   const kept = new Set(mirrored);
   for (const entry of await readdir(root).catch(() => [])) {
-    if (!kept.has(entry) && (managed.has(entry) || await isMirroredSkill(root, entry))) await rm(path.join(root, entry), { recursive: true, force: true }).catch(() => {});
+    if (!kept.has(entry) && await isMirroredSkill(root, entry)) await rm(path.join(root, entry), { recursive: true, force: true }).catch(() => {});
   }
   return mirrored;
 }
 
 function withFrontmatter(name: string, content: string) {
-  if (content.startsWith("---\n")) return content;
+  if (/^---\r?\n/.test(content)) return content;
   const summary = content.split("\n").map((line) => line.trim()).find((line) => line && !line.startsWith("#")) ?? name;
   const description = summary.replace(/"/g, "'").slice(0, 200);
   return `---\nname: ${name}\ndescription: "${description}"\n---\n\n${content}`;
@@ -326,10 +327,9 @@ export async function searchImportedSkills(userData: string, query: string, limi
 }
 
 async function readLocatedSkill(skill: LocatedSkill) {
-  const root = await realpath(skill.root);
   const directory = await realpath(path.join(skill.root, skill.name));
-  if (!pathInside(root, directory)) throw new Error("Selected skill is outside its imported root");
   const file = path.join(directory, "SKILL.md");
+  if (!pathInside(directory, await realpath(file))) throw new Error("Selected skill is outside its imported root");
   const instructions = await readBounded(file, MAX_SKILL_BYTES);
   if (!instructions.trim()) throw new Error("Selected skill is empty");
   return { file, instructions };
@@ -565,7 +565,10 @@ export async function writeLearnedMcpServer(userData: string, server: McpServerD
   try {
     const existing: unknown = JSON.parse(await readBounded(file, MAX_CONFIG_BYTES));
     if (existing && typeof existing === "object" && !Array.isArray(existing)) servers = { ...configRoots(existing as Record<string, unknown>) };
-  } catch { servers = {}; }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (!await absoluteCommand(server.command)) throw new Error(`\`${server.command}\` is not on the login-shell PATH.`);
   servers[server.name] = { command: server.command, args: server.args, env: server.env };
   const text = `${JSON.stringify({ mcpServers: servers }, null, 2)}\n`;
   const written = parseMcpConfig(text, "mcp.json", "shinbo", 0).find((candidate) => candidate.name === server.name);
@@ -588,7 +591,11 @@ async function enumerateMcpServers(manifest: ImportManifest) {
     for (const [fileIndex, file] of source.mcpFiles.slice(0, MAX_MCP_FILES).entries()) {
       try {
         const parsed = parseMcpConfig(await readBounded(file, MAX_CONFIG_BYTES), path.basename(file), source.id, fileIndex);
-        servers.push(...parsed);
+        for (const server of parsed) {
+          const shadowing = servers.find((existing) => existing.name === server.name);
+          if (shadowing) console.warn(`Shinbo skipped the MCP server ${server.name} from ${server.source}: shadowed by ${shadowing.source}`);
+          else servers.push(server);
+        }
       } catch { continue; }
       if (servers.length > MAX_MCP_SERVERS) return servers.slice(0, MAX_MCP_SERVERS);
     }
@@ -636,8 +643,8 @@ export async function harnessMcpServers(userData: string, disabled: readonly str
     const command = server.command ? await absoluteCommand(server.command) : undefined;
     if (!command) return undefined;
     const env = Object.entries(server.env);
-    const inherited = env.length === 0 ? [] : Object.entries({
-      PATH: process.env.PATH ?? "",
+    const inherited = Object.entries({
+      PATH: await loginShellPath(),
       HOME: process.env.HOME ?? "",
       ...(isWindows ? {
         USERPROFILE: process.env.USERPROFILE ?? "",
@@ -659,7 +666,7 @@ export async function harnessMcpServers(userData: string, disabled: readonly str
 
 async function absoluteCommand(command: string) {
   if (path.isAbsolute(command)) return command;
-  return await findExecutable(command, process.env.PATH ?? "");
+  return await findExecutable(command, await loginShellPath());
 }
 
 export class ImportedCapabilityRuntime {

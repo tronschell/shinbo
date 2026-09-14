@@ -60,19 +60,21 @@ const Parser = struct {
                 try self.appendText(html[index..]);
                 break;
             };
-            try self.handleTag(html[index + 1 .. index + tag_end]);
+            const raw_text_tag = try self.handleTag(html[index + 1 .. index + tag_end]);
             index += tag_end + 1;
+            if (raw_text_tag) |name| index += rawTextLength(html[index..], name);
         }
+        try self.flushLink();
         self.trimTrailingWhitespace();
         try self.prependTitle();
         self.trimTrailingWhitespace();
         if (self.out.items.len > 0) try self.appendByte('\n');
     }
 
-    fn handleTag(self: *Parser, raw_tag: []const u8) !void {
+    fn handleTag(self: *Parser, raw_tag: []const u8) !?[]const u8 {
         var tag = std.mem.trim(u8, raw_tag, " \t\r\n");
-        if (tag.len == 0) return;
-        if (tag[0] == '!' or tag[0] == '?') return;
+        if (tag.len == 0) return null;
+        if (tag[0] == '!' or tag[0] == '?') return null;
 
         const closing = tag[0] == '/';
         if (closing) tag = std.mem.trim(u8, tag[1..], " \t\r\n");
@@ -80,7 +82,7 @@ const Parser = struct {
         if (self_closing) tag = std.mem.trimEnd(u8, tag[0 .. tag.len - 1], " \t\r\n");
 
         const name_end = tagNameEnd(tag);
-        if (name_end == 0) return;
+        if (name_end == 0) return null;
         const raw_name = tag[0..name_end];
         const attrs = tag[name_end..];
         var name_buf: [32]u8 = undefined;
@@ -92,7 +94,7 @@ const Parser = struct {
             } else if (!self_closing and self.title.items.len == 0) {
                 self.title_active = true;
             }
-            return;
+            return null;
         }
 
         if (suppressedTag(name)) {
@@ -100,10 +102,12 @@ const Parser = struct {
                 if (self.suppress_depth > 0) self.suppress_depth -= 1;
             } else if (!self_closing) {
                 self.suppress_depth += 1;
+                if (std.mem.eql(u8, name, "script")) return "script";
+                if (std.mem.eql(u8, name, "style")) return "style";
             }
-            return;
+            return null;
         }
-        if (self.suppress_depth > 0) return;
+        if (self.suppress_depth > 0) return null;
 
         if (headingLevel(name)) |level| {
             if (!closing) {
@@ -114,7 +118,7 @@ const Parser = struct {
             } else {
                 try self.blockBreak();
             }
-            return;
+            return null;
         }
 
         if (std.mem.eql(u8, name, "p") or
@@ -127,15 +131,15 @@ const Parser = struct {
             std.mem.eql(u8, name, "blockquote"))
         {
             try self.blockBreak();
-            return;
+            return null;
         }
         if (std.mem.eql(u8, name, "br")) {
             try self.softBreak();
-            return;
+            return null;
         }
         if (std.mem.eql(u8, name, "ul") or std.mem.eql(u8, name, "ol")) {
             try self.blockBreak();
-            return;
+            return null;
         }
         if (std.mem.eql(u8, name, "li")) {
             if (!closing) {
@@ -144,7 +148,7 @@ const Parser = struct {
             } else {
                 try self.blockBreak();
             }
-            return;
+            return null;
         }
         if (std.mem.eql(u8, name, "a")) {
             if (!closing) {
@@ -155,11 +159,11 @@ const Parser = struct {
             } else {
                 try self.flushLink();
             }
-            return;
+            return null;
         }
         if (std.mem.eql(u8, name, "code")) {
             if (self.pre_depth == 0) try self.appendByte('`');
-            return;
+            return null;
         }
         if (std.mem.eql(u8, name, "pre")) {
             if (!closing) {
@@ -172,7 +176,7 @@ const Parser = struct {
                 try self.appendSlice("\n```");
                 try self.blockBreak();
             }
-            return;
+            return null;
         }
         if (std.mem.eql(u8, name, "tr")) {
             if (!closing) {
@@ -185,7 +189,7 @@ const Parser = struct {
                 try self.appendByte('|');
                 try self.blockBreak();
             }
-            return;
+            return null;
         }
         if (std.mem.eql(u8, name, "th") or std.mem.eql(u8, name, "td")) {
             if (!closing) {
@@ -195,7 +199,7 @@ const Parser = struct {
                 try self.appendByte(' ');
                 self.table_cell_open = false;
             }
-            return;
+            return null;
         }
         if (std.mem.eql(u8, name, "img") and !closing) {
             if (try attributeValue(self.alloc, attrs, "alt")) |alt| {
@@ -203,6 +207,7 @@ const Parser = struct {
                 try self.appendText(alt);
             }
         }
+        return null;
     }
 
     fn appendText(self: *Parser, raw: []const u8) !void {
@@ -416,6 +421,18 @@ fn lowerTagName(buf: []u8, raw: []const u8) []const u8 {
     return buf[0..len];
 }
 
+fn rawTextLength(rest: []const u8, name: []const u8) usize {
+    var index: usize = 0;
+    while (std.ascii.indexOfIgnoreCase(rest[index..], "</")) |offset| {
+        const candidate = index + offset + 2;
+        if (candidate + name.len <= rest.len and std.ascii.eqlIgnoreCase(rest[candidate .. candidate + name.len], name)) {
+            return index + offset;
+        }
+        index = candidate;
+    }
+    return rest.len;
+}
+
 fn suppressedTag(name: []const u8) bool {
     return std.mem.eql(u8, name, "script") or
         std.mem.eql(u8, name, "style") or
@@ -559,6 +576,26 @@ test "web_fetch converts representative html to bounded markdown" {
     try std.testing.expect(std.mem.find(u8, markdown, "© ® &unknown;") != null);
     try std.testing.expect(std.mem.find(u8, markdown, "alert(1)") == null);
     try std.testing.expect(std.mem.find(u8, markdown, ".x{}") == null);
+}
+
+test "web_fetch treats script and style bodies as raw text" {
+    const alloc = std.testing.allocator;
+    const markdown = try convert(
+        alloc,
+        "<html><head><script>if (a < b) { document.write('<script src=x><\\/script>'); }</script><STYLE>a<b{}</Style></head><body><p>Visible</p></body></html>",
+        .{ .max_output_bytes = 4096 },
+    );
+    defer alloc.free(markdown);
+
+    try std.testing.expectEqualStrings("Visible\n", markdown);
+}
+
+test "web_fetch flushes an unclosed link at end of document" {
+    const alloc = std.testing.allocator;
+    const markdown = try convert(alloc, "<p>See <a href=\"/docs\">the docs", .{ .max_output_bytes = 4096 });
+    defer alloc.free(markdown);
+
+    try std.testing.expectEqualStrings("See [the docs](/docs)\n", markdown);
 }
 
 test "web_fetch decodes entities in html titles" {

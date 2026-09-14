@@ -27,7 +27,7 @@ const electron = {
 const electronPath = require.resolve("electron");
 require.cache[electronPath] = { id: electronPath, filename: electronPath, loaded: true, exports: electron } as unknown as NodeModule;
 
-const mac = { host: "shinbo-test.local", addresses: ["127.0.0.1"] };
+const mac = { host: "shinbo-test.local", addresses: ["127.0.0.1"], lookups: new Map<string, string[] | undefined>() };
 const tailnetPath = require.resolve("../main/tailnet");
 require.cache[tailnetPath] = {
   id: tailnetPath,
@@ -35,7 +35,7 @@ require.cache[tailnetPath] = {
   loaded: true,
   exports: {
     pairingHost: () => Promise.resolve(mac.host),
-    addressesFor: (host: string) => Promise.resolve(host === mac.host ? [...mac.addresses] : []),
+    addressesFor: (host: string) => Promise.resolve(mac.lookups.has(host) ? mac.lookups.get(host) : host === mac.host ? [...mac.addresses] : []),
     hosts: () => ({ tailnet: [], lan: [...mac.addresses] }),
   },
 } as unknown as NodeModule;
@@ -77,7 +77,7 @@ function bridgeOn(t: TestContext, live: () => LiveState = idle, dispatch: () => 
   return Object.assign(bridge, { listened });
 }
 
-const dial = (addr: string) => addr.replace(mac.host, "127.0.0.1");
+const dial = (addr: string) => addr.replace(/\/\/[^:]+:/, "//127.0.0.1:");
 
 async function phoneOn(payload: PairingPayload, token?: string) {
   const codec = new FrameCodec(Buffer.from(payload.key, "base64url"), "phone");
@@ -411,6 +411,7 @@ test("a folder a phone names is granted only once someone at the Mac approves it
   const asked: string[] = [];
   const real: Record<string, string> = { [`${home}/Projects/away`]: "/Volumes/Backup/keys" };
   const held: { path: string }[] = [];
+  const told: string[] = [];
   let answer = false;
   const dispatch = dispatchOn({
     path,
@@ -422,6 +423,7 @@ test("a folder a phone names is granted only once someone at the Mac approves it
     confirmOnMac: async (_message: string, detail: string) => { asked.push(detail); return answer; },
     folders: { list: () => held, add: (directory: string) => { granted.push(directory); return []; } },
     visibleFolders: () => granted.map((directory) => ({ id: directory, path: directory, name: "shinbo" })),
+    broadcast: (channel: string) => { told.push(channel); },
   });
 
   await assert.rejects(dispatch("addFolder", { path: "Projects/shinbo" }), /full path/, "a relative path was accepted");
@@ -438,6 +440,7 @@ test("a folder a phone names is granted only once someone at the Mac approves it
   answer = true;
   await dispatch("addFolder", { path: `${home}/Projects/shinbo` });
   assert.deepEqual(granted, [`${home}/Projects/shinbo`], "an approved folder was refused");
+  assert.deepEqual(told, ["shinbo:folders-changed"], "the other phones were not told the folder list changed");
 
   held.push({ path: `${home}/Projects/kept` });
   answer = false;
@@ -663,6 +666,53 @@ test("this Mac moving to another network rebinds the same pairing, and the phone
   const back = await phoneOn(payload);
   const answered = await back.ask("2", "snapshot", {});
   assert.ok(answered && answered.k === "res" && answered.ok === true, "the phone had to pair again after this Mac moved");
+  back.ws.close();
+});
+
+test("a name that stops resolving for a moment keeps every phone connected", async (t) => {
+  t.after(() => mac.lookups.clear());
+  const bridge = bridgeOn(t);
+  const payload = await bridge.pair(PIN);
+  await bridge.listened;
+  const phone = await phoneOn(payload);
+  await phone.ask("1", "unlock", { pin: PIN });
+
+  mac.lookups.set(mac.host, undefined);
+  await bridge.recheck();
+  assert.equal(bridge.status().listening, true, "a failed lookup closed the listener");
+  assert.equal(bridge.status().reason, "");
+  assert.equal(bridge.status().devices[0]?.connected, true, "a failed lookup dropped the phone");
+  const answered = await phone.ask("2", "snapshot", {});
+  assert.ok(answered && answered.k === "res" && answered.ok === true);
+  phone.ws.close();
+});
+
+test("phones paired on different names keep the listener as long as one name still reaches this Mac", async (t) => {
+  t.after(() => { mac.host = "shinbo-test.local"; mac.lookups.clear(); });
+  const bridge = bridgeOn(t);
+  const first = await bridge.pair(PIN);
+  await bridge.listened;
+  const one = await phoneOn(first);
+  await one.ask("1", "unlock", { pin: PIN });
+  one.ws.close();
+
+  mac.host = "shinbo-two.local";
+  mac.lookups.set("shinbo-test.local", [...mac.addresses]);
+  const second = await bridge.pair("9911");
+  assert.notEqual(second.addr, first.addr);
+  const two = await phoneOn(second);
+  await two.ask("1", "unlock", { pin: "9911" });
+  two.ws.close();
+  assert.equal(bridge.status().addr, `${first.addr}, ${second.addr}`);
+
+  mac.lookups.set("shinbo-test.local", []);
+  await bridge.recheck();
+  await serving(bridge);
+  assert.equal(bridge.status().reason, "", "one phone's stale name took the other phone's listener down");
+  assert.equal(bridge.status().devices.length, 2);
+  const back = await phoneOn(second);
+  const answered = await back.ask("2", "snapshot", {});
+  assert.ok(answered && answered.k === "res" && answered.ok === true);
   back.ws.close();
 });
 

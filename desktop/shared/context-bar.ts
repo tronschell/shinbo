@@ -190,7 +190,7 @@ export function validateContextPages(value: unknown): ContextPage[] {
       } as ContextWidget;
     });
     if (new Set(widgets.map((widget) => widget.type)).size !== widgets.length) throw new Error("A component can only appear once on a page");
-    return { id: page.id, name: page.name.trim(), widgets };
+    return { id: page.id, name: page.name, widgets };
   });
   if (new Set(pages.map((page) => page.id)).size !== pages.length) throw new Error("Context bar pages must have distinct ids");
   return pages;

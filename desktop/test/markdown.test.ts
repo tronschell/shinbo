@@ -12,7 +12,7 @@ test("a reply's blocks are read as structure, not printed with their syntax show
 
   assert.equal(blocks[1].kind === "paragraph" && text(blocks[1].spans), "A line\nand its wrapped continuation.");
   assert.equal(blocks[2].kind === "list" && blocks[2].items.length, 2);
-  assert.equal(blocks[2].kind === "list" && text(blocks[2].items[0].sub?.items[0].spans ?? []), "nested");
+  assert.equal(blocks[2].kind === "list" && text(blocks[2].items[0].sub?.[0].items[0].spans ?? []), "nested");
   assert.equal(blocks[3].kind === "list" && blocks[3].ordered, true);
   assert.equal(blocks[4].kind === "quote" && text(blocks[4].spans), "quoted\nstill quoted");
   assert.equal(blocks[6].kind === "code" && blocks[6].language, "bash");
@@ -95,7 +95,7 @@ test("a task list is read as boxes, not as literal brackets", () => {
   assert.deepEqual(list.items.map((item) => item.checked), [true, false, undefined]);
   assert.deepEqual(list.items.map((item) => text(item.spans)), ["Complete the markdown formatting", "Review the rendered layout", "plain"]);
   const [nested] = parseBlocks("- parent\n  - [X] nested and done");
-  assert.equal(nested.kind === "list" && nested.items[0].sub?.items[0].checked, true);
+  assert.equal(nested.kind === "list" && nested.items[0].sub?.[0].items[0].checked, true);
   const [ordered] = parseBlocks("1. [x] a numbered line is not a task box");
   assert.equal(ordered.kind === "list" && ordered.items[0].checked, undefined);
 });

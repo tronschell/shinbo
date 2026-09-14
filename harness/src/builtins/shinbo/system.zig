@@ -17,7 +17,7 @@ else
     "printenv, cat .env, op read op://vault/item/field, vault kv get secret/app.";
 
 const cli_description =
-    "Run another coding CLI on " ++ host_platform ++ " — Claude Code, Codex, Pi, OpenCode, Cursor — inside a connected folder, and take turns with it. Its terminal appears pinned at the top of this thread and in its own tab, so the user watches it work.\n" ++
+    "Run another coding CLI on " ++ host_platform ++ " — Claude Code, Codex, Pi, OpenCode, Gemini CLI, Cursor, Antigravity CLI — inside a connected folder, and take turns with it. Its terminal appears pinned at the top of this thread and in its own tab, so the user watches it work.\n" ++
     "action \"run\" starts a conversation with a CLI and returns its run id once the first turn finishes; \"send\" gives an existing run the next prompt, continuing the same session with everything it already knows.\n" ++
     "Check first with cli_runs {} which CLIs are installed — running one that is not there is the common failure.\n" ++
     "Say everything the CLI needs in prompt: it does not see this conversation, only the folder. Prefer it over doing the work yourself when the user names a CLI, when they want a second agent's answer on the same code, or when that CLI is set up for this project and Shinbo is not.\n" ++
@@ -40,7 +40,7 @@ pub const cli = ToolSpec{
                 .{
                     .name = "cli",
                     .json_type = .string,
-                    .description = "Which CLI to run: claude, codex, pi, opencode or cursor. Required for run.",
+                    .description = "Which CLI to run: claude, codex, pi, opencode, gemini, cursor or antigravity. Required for run.",
                 },
                 .{
                     .name = "id",
@@ -51,6 +51,23 @@ pub const cli = ToolSpec{
                     .name = "prompt",
                     .json_type = .string,
                     .description = "What to ask it. The whole instruction — it cannot see this conversation.",
+                },
+                .{
+                    .name = "model",
+                    .json_type = .string,
+                    .description = "Exact model id or native alias. Read cli_runs with cli first to discover ids; resolve the user's named model without substituting a different one. Empty resets to the harness default; omitted preserves an existing run.",
+                },
+                .{
+                    .name = "effort",
+                    .json_type = .string,
+                    .description = "Native reasoning effort, Pi thinking level, or OpenCode variant. Read cli_runs with cli for supported values. Pass explicitly, never just in the prompt; do not downgrade unsupported choices. Empty resets to the harness default; omitted preserves an existing run.",
+                },
+                .{
+                    .name = "fromRuns",
+                    .json_type = .array,
+                    .description = "Completed run ids from this thread whose latest successful outputs feed this step. Supports chains and combining multiple results. Wait for sources to finish; oversized outputs must be saved to files.",
+                    .max_items = 8,
+                    .shape = &.{ .array_values = .{ .json_type = .string } },
                 },
                 .{
                     .name = "unattended",
@@ -99,6 +116,16 @@ pub const cli_runs = ToolSpec{
                     .name = "stop",
                     .json_type = .boolean,
                     .description = "Kill the turn that run is working on instead of reading it.",
+                },
+                .{
+                    .name = "cli",
+                    .json_type = .string,
+                    .description = "Read this harness's model ids and effort options before selecting a model. Cannot be combined with id or stop.",
+                },
+                .{
+                    .name = "refresh",
+                    .json_type = .boolean,
+                    .description = "Reread the harness model catalog.",
                 },
             },
         },
@@ -413,5 +440,28 @@ pub const secret = ToolSpec{
     .reads_only_fn = bridge.readsAndWrites,
     .irreversible_fn = bridge.isIrreversible,
 };
+
+test "cli and cli_runs schemas offer every CLI and option Shinbo accepts" {
+    const std = @import("std");
+    const gateway_schema = @import("../../core/tooling/gateway_schema.zig");
+    const alloc = std.testing.allocator;
+    const expected = [_]struct { tool: ToolSpec, properties: []const []const u8 }{
+        .{ .tool = cli, .properties = &.{ "action", "cli", "id", "prompt", "model", "effort", "fromRuns", "unattended", "folder" } },
+        .{ .tool = cli_runs, .properties = &.{ "id", "stop", "cli", "refresh" } },
+    };
+    for (expected) |case| {
+        const json = try gateway_schema.builtinFunctionSchemaJsonAlloc(alloc, case.tool.gateway_schema);
+        defer alloc.free(json);
+        const parsed = try std.json.parseFromSlice(std.json.Value, alloc, json, .{});
+        defer parsed.deinit();
+        const properties = parsed.value.object.get("inputSchema").?.object.get("properties").?.object;
+        try std.testing.expectEqual(case.properties.len, properties.count());
+        for (case.properties) |name| try std.testing.expect(properties.get(name) != null);
+    }
+    for ([_][]const u8{ "Gemini CLI", "Antigravity CLI" }) |name| try std.testing.expect(std.mem.find(u8, cli_description, name) != null);
+    for ([_][]const u8{ "claude", "codex", "pi", "opencode", "gemini", "cursor", "antigravity" }) |id| {
+        try std.testing.expect(std.mem.find(u8, cli.gateway_schema.input_schema.properties[1].description, id) != null);
+    }
+}
 
 pub const all = [_]ToolSpec{ cli, cli_runs, computer, advisor, install_mcp, secret };

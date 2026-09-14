@@ -29,7 +29,7 @@ const electronPath = require.resolve("electron");
 require.cache[electronPath] = { id: electronPath, filename: electronPath, loaded: true, exports: electron } as unknown as NodeModule;
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { CredentialStore, secureStoreWorks }: typeof import("../main/credentials") = require("../main/credentials");
+const { CredentialStore, secureStoreWorks, withoutCredentials }: typeof import("../main/credentials") = require("../main/credentials");
 
 const userData = () => mkdtempSync(path.join(tmpdir(), "shinbo-credentials-"));
 const stored = (root: string) => JSON.parse(readFileSync(path.join(root, "credentials.json"), "utf8")) as Record<string, string>;
@@ -113,4 +113,20 @@ for (const operation of ["replace", "remove"] as const) test(`R7-1 a refused cre
   t.diagnostic(`operation=${operation}; currentAccount=${environment.OPENROUTER_API_KEY}; reopenedAccount=${reopened.OPENROUTER_API_KEY}`);
   assert.equal(environment.OPENROUTER_API_KEY, "original-account-key");
   assert.equal(reopened.OPENROUTER_API_KEY, "original-account-key");
+});
+
+test("a child process environment drops every stored key and keeps the rest", (t) => {
+  const root = userData();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = new CredentialStore(root);
+  store.set("OPENROUTER_API_KEY", "router-key");
+  store.set("MY_CUSTOM_KEY", "custom-key");
+  const environment: NodeJS.ProcessEnv = { PATH: "/usr/bin", SHINBO_PROVIDER_API_KEY: "gateway-key" };
+  store.applyToEnv(environment);
+  const child = withoutCredentials(environment);
+  assert.deepEqual(child, { PATH: "/usr/bin", SHINBO_PROVIDER_API_KEY: "gateway-key" });
+  assert.equal(environment.OPENROUTER_API_KEY, "router-key");
+  store.remove("OPENROUTER_API_KEY");
+  store.applyToEnv(environment);
+  assert.deepEqual(withoutCredentials(environment), { PATH: "/usr/bin", SHINBO_PROVIDER_API_KEY: "gateway-key" });
 });

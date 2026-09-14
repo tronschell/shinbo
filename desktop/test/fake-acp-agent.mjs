@@ -47,12 +47,23 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
     return;
   }
   if (method === "session/resume") {
-
+    if (/^broken_/.test(params.sessionId ?? "")) {
+      send({ jsonrpc: "2.0", id, error: { code: -32602, message: "Session is corrupt" } });
+      return;
+    }
+    if (/^flaky_/.test(params.sessionId ?? "")) {
+      send({ jsonrpc: "2.0", id, error: { code: -32603, message: "Session could not be loaded" } });
+      return;
+    }
     if (!/^sess_\d+_/.test(params.sessionId ?? "")) {
       send({ jsonrpc: "2.0", id, error: { code: -32602, message: "Session not found" } });
       return;
     }
     active = params.sessionId;
+    if ((process.env.HOME ?? "").includes("replay")) {
+      notify(active, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "replayed " } });
+      notify(active, { sessionUpdate: "tool_call", toolCallId: "replayed_call", title: "bash", kind: "execute", status: "completed" });
+    }
     send({ jsonrpc: "2.0", id, result: {} });
     return;
   }
@@ -205,7 +216,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           },
         });
       });
-      const text = reply.error ? `error:${reply.error.message}` : `output:${reply.result.output.length}:${reply.result.output.slice(0, 12)}`;
+      const text = reply.error ? `error:${reply.error.message}` : `output:${Buffer.byteLength(reply.result.output)}:${reply.result.output.slice(0, 12)}`;
       notify(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
       send({ jsonrpc: "2.0", id, result: { stopReason: "end_turn", usage: {} } });
       return;

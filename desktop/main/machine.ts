@@ -11,6 +11,7 @@ vm_stat`;
 const WINDOWS_PROBE = "$ErrorActionPreference='SilentlyContinue'; $stats=Get-NetAdapterStatistics; $rx=($stats | Measure-Object -Property ReceivedBytes -Sum).Sum; $tx=($stats | Measure-Object -Property SentBytes -Sum).Sum; $os=Get-CimInstance Win32_OperatingSystem; $total=[int64]$os.TotalVisibleMemorySize*1024; $used=$total-[int64]$os.FreePhysicalMemory*1024; $samples=(Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction SilentlyContinue).CounterSamples; $gpu=if($samples){[math]::Round(($samples | Measure-Object -Property CookedValue -Sum).Sum)}else{-1}; 'win {0} {1} {2} {3} {4}' -f [int64]$rx,[int64]$tx,[int64]$used,$total,[int]$gpu";
 const GPU_PROBE_WINDOWS = "$ErrorActionPreference='SilentlyContinue'; $card=Get-CimInstance Win32_VideoController | Sort-Object AdapterRAM -Descending | Select-Object -First 1; $key=(Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}\\*' -Name 'HardwareInformation.qwMemorySize' | Measure-Object -Property 'HardwareInformation.qwMemorySize' -Maximum).Maximum; 'gpu {0} {1}' -f [int64][math]::Max([int64]$key, [int64]$card.AdapterRAM), $card.Name";
 const TIMEOUT_MS = 4_000;
+const PROBE_EVERY_MS = 5_000;
 const MAX_BUFFER_BYTES = 256 * 1024;
 
 export interface MachineProbe {
@@ -61,7 +62,8 @@ const probe = () => isWindows
     execFile("/bin/sh", ["-c", PROBE], { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER_BYTES }, (error, stdout) => resolve(error && !stdout ? "" : stdout));
   });
 
-let previous: { at: number; idle: number; total: number; rx: number; tx: number } | undefined;
+let previous: { idle: number; total: number } | undefined;
+let probed: { at: number; reading: MachineProbe; rxBytes: number; txBytes: number } | undefined;
 let sampling: Promise<MachineSample> | undefined;
 
 export function machineSample(): Promise<MachineSample> {
@@ -70,13 +72,26 @@ export function machineSample(): Promise<MachineSample> {
   return sampling;
 }
 
-async function readSample(): Promise<MachineSample> {
+async function latestProbe() {
+  if (probed && Date.now() - probed.at < PROBE_EVERY_MS) return probed;
   const reading = parseProbe(await probe());
-  const ticks = cpuTicks();
   const at = Date.now();
-  const before = previous;
-  previous = { at, idle: ticks.idle, total: ticks.total, rx: reading.rx, tx: reading.tx };
+  const before = probed;
   const seconds = before ? Math.max(0.1, (at - before.at) / 1_000) : 0;
+  probed = {
+    at,
+    reading,
+    rxBytes: before ? Math.max(0, (reading.rx - before.reading.rx) / seconds) : 0,
+    txBytes: before ? Math.max(0, (reading.tx - before.reading.tx) / seconds) : 0,
+  };
+  return probed;
+}
+
+async function readSample(): Promise<MachineSample> {
+  const { reading, rxBytes, txBytes } = await latestProbe();
+  const ticks = cpuTicks();
+  const before = previous;
+  previous = ticks;
   const spent = before ? ticks.total - before.total : 0;
   const memoryTotalBytes = totalmem();
   const memoryUsedBytes = reading.memoryUsedBytes || Math.max(0, memoryTotalBytes - freemem());
@@ -86,8 +101,8 @@ async function readSample(): Promise<MachineSample> {
     memoryUsedBytes,
     memoryTotalBytes,
     gpu: reading.gpu,
-    rxBytes: before ? Math.max(0, (reading.rx - before.rx) / seconds) : 0,
-    txBytes: before ? Math.max(0, (reading.tx - before.tx) / seconds) : 0,
+    rxBytes,
+    txBytes,
   };
 }
 

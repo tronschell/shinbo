@@ -106,7 +106,7 @@ pub const memory = ToolSpec{
 
 const look_at_image_description =
     "Look at an image through a vision model and get an answer back in words. Use it whenever the work involves a picture: a screenshot, a photo, a mockup, a chart, a scanned page, a diagram — including when you cannot see images at all, which is most of the time.\n" ++
-    "Name the image with path (a file in a connected folder, or the absolute path of any image on this Mac — an attachment, a screenshot, a file a tool just wrote) or url (a public image URL), and ask one specific question. Specific questions get specific answers: \"what error is in this dialog, quoted exactly\" beats \"what is this\".\n" ++
+    "Name the image with path (a file in a connected folder or an attachment on this thread) or url (a public image URL), and ask one specific question. Specific questions get specific answers: \"what error is in this dialog, quoted exactly\" beats \"what is this\".\n" ++
     "It can identify what is in the image, read the text in it, and locate things — ask for a bounding box and you get [x0, y0, x1, y1] in pixels with the image size, which is what you need before clicking anything.\n" ++
     "Ask again with a narrower question rather than assuming: the model that looked is not you, and it can misread. Never state as fact something it said it could not tell.";
 
@@ -138,7 +138,7 @@ pub const look_at_image = ToolSpec{
                 .{
                     .name = "path",
                     .json_type = .string,
-                    .description = "Image file relative to a connected folder's root, e.g. screenshots/error.png — or any absolute path on this Mac, such as one a tool just wrote.",
+                    .description = "Image file relative to a connected folder's root, e.g. screenshots/error.png — or the path of an attachment on this thread.",
                 },
                 .{
                     .name = "url",

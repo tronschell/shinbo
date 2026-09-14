@@ -6,6 +6,14 @@ import { isEnvName, MAX_SECRET_CHARS, maskSecret, printableSecret, SECURE_STORE_
 
 export type CredentialSummary = { env: string; masked: string; readable: boolean };
 
+const applied = new Set<string>();
+
+export function withoutCredentials(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const copy = { ...env };
+  for (const name of applied) delete copy[name];
+  return copy;
+}
+
 export function secureStoreWorks(): boolean {
   if (!safeStorage.isEncryptionAvailable()) return false;
   try { return safeStorage.decryptString(safeStorage.encryptString("shinbo")) === "shinbo"; }
@@ -16,7 +24,6 @@ export class CredentialStore {
   private readonly file: string;
   private secrets = new Map<string, string>();
   private unreadable = new Map<string, string>();
-  private applied = new Set<string>();
 
   constructor(userData: string) {
     this.file = path.join(userData, "credentials.json");
@@ -50,11 +57,11 @@ export class CredentialStore {
   }
 
   applyToEnv(env: NodeJS.ProcessEnv): void {
-    for (const name of this.applied) if (!this.secrets.has(name)) delete env[name];
-    this.applied.clear();
+    for (const name of applied) if (!this.secrets.has(name)) delete env[name];
+    applied.clear();
     for (const [name, secret] of this.secrets) {
       env[name] = secret;
-      this.applied.add(name);
+      applied.add(name);
     }
   }
 

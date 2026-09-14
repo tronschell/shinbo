@@ -132,7 +132,7 @@ fn kindLabel(kind: std.Io.File.Kind) []const u8 {
 
 fn writeModified(writer: *std.Io.Writer, mtime_ns: i128) tool_dispatch.DispatchError!void {
     const mtime_s = @divTrunc(mtime_ns, std.time.ns_per_s);
-    const epoch_secs: std.time.epoch.EpochSeconds = .{ .secs = @intCast(mtime_s) };
+    const epoch_secs: std.time.epoch.EpochSeconds = .{ .secs = @intCast(@max(mtime_s, 0)) };
     const day_seconds = epoch_secs.getDaySeconds();
     const year_day = epoch_secs.getEpochDay().calculateYearDay();
     const month_day = year_day.calculateMonthDay();

@@ -10,7 +10,7 @@ import { threadMessageCount, threadMessageDates, type Thread } from "./types";
 import { defaultSteps } from "./next-steps";
 import { BrandIcon, InfoDot, Mark } from "./icons";
 import { brandForModel } from "./brands";
-import { FileMark } from "./git";
+import { FileMark, GIT_CHANGED_EVENT } from "./git";
 import { plural } from "./plural";
 import { Bars } from "./bars";
 import { day } from "./dates";
@@ -110,9 +110,9 @@ export function Dashboard({ threads, folders, folderId, seed }: {
   seed: (prompt: string) => void;
 }) {
   const [usage, setUsage] = useState<{ skills: UsageRow[]; models: UsageRow[] }>({ skills: [], models: [] });
-  const [repos, setRepos] = useState<Repo[]>([]);
+  const [repos, setRepos] = useState<Repo[] | null>(null);
   const [steps, setSteps] = useState<{ signature: string; steps: NextStep[] } | null>(null);
-  const [asked, setAsked] = useState("");
+  const [asked, setAsked] = useState<ReadonlySet<string>>(new Set());
   const requested = useRef(new Set<string>());
 
   const project = folders.find((grant) => grant.id === folderId);
@@ -145,16 +145,21 @@ export function Dashboard({ threads, folders, folderId, seed }: {
     return [...folders].sort((left, right) => (order.get(left.name) ?? 99) - (order.get(right.name) ?? 99)).slice(0, STATUS_PROJECTS);
   }, [project, folders, projects]);
 
+  const watchedKey = JSON.stringify(watched.map((grant) => [grant.id, grant.name]));
+
   useEffect(() => {
     let live = true;
-    void Promise.all(watched.map((grant) => window.shinbo.gitStatus(grant.id, false)
-      .then((git) => git ? { id: grant.id, name: grant.name, git } : null)
+    const grants = JSON.parse(watchedKey) as [string, string][];
+    const load = () => void Promise.all(grants.map(([id, name]) => window.shinbo.gitStatus(id, false)
+      .then((git) => git ? { id, name, git } : null)
       .catch(() => null)))
       .then((found) => { if (live) setRepos(found.filter((repo): repo is Repo => !!repo)); });
-    return () => { live = false; };
-  }, [watched]);
+    load();
+    addEventListener(GIT_CHANGED_EVENT, load);
+    return () => { live = false; removeEventListener(GIT_CHANGED_EVENT, load); };
+  }, [watchedKey]);
 
-  const here = repos.find((repo) => repo.id === folderId) ?? (project ? undefined : repos[0]);
+  const here = repos?.find((repo) => repo.id === folderId) ?? (project ? undefined : repos?.[0]);
   const state: WorkState = useMemo(() => here ? {
     project: here.name,
     branch: here.git.branch,
@@ -168,25 +173,24 @@ export function Dashboard({ threads, folders, folderId, seed }: {
 
   const signature = `${state.project}|${state.branch}|${state.ahead}|${state.behind}|${state.files.length}|${state.largest?.path ?? ""}|${state.threads[0] ?? ""}`;
   const cached = useMemo(() => storedSteps(signature), [signature]);
+  const scanned = repos !== null;
 
   useEffect(() => {
-    if (cached || requested.current.has(signature)) return;
+    if (!scanned || cached || requested.current.has(signature)) return;
     requested.current.add(signature);
-    let live = true;
+    const settle = () => setAsked((current) => new Set(current).add(signature));
     void window.shinbo.nextSteps(state)
       .then((found) => {
-        if (!live) return;
-        setAsked(signature);
+        settle();
         if (!found.length) return;
         setSteps({ signature, steps: found });
         keepSteps(signature, found);
       })
-      .catch(() => { if (live) setAsked(signature); });
-    return () => { live = false; };
-  }, [cached, signature, state]);
+      .catch(settle);
+  }, [cached, signature, scanned, state]);
 
   const suggested = cached ?? (steps?.signature === signature ? steps.steps : []);
-  const settled = !!cached || asked === signature;
+  const settled = !!cached || asked.has(signature);
   const tiles = suggested.length ? suggested : defaultSteps(state);
   const modelRows = usageRows(usage.models, sparkDays, (row) => short(row.name), (row) => <BrandIcon brand={brandForModel(row.name)} className="dash-brand" />);
   const skillRows = usageRows(usage.skills, sparkDays, (row) => row.name);
@@ -235,7 +239,7 @@ export function Dashboard({ threads, folders, folderId, seed }: {
             {projects.length
               ? <ol className="dash-projects">
                   {projects.slice(0, RANKED_ROWS).map((row, index) => {
-                    const repo = repos.find((one) => one.name === row.name);
+                    const repo = repos?.find((one) => one.name === row.name);
                     return <li key={row.name} data-hue={HUES[index % HUES.length]}>
                       <strong>{row.name}</strong>
                       <span>{repo ? `${repo.git.branch}${repo.git.files.length ? ` · ${repo.git.files.length} changed` : " · clean"}` : `last ${day(row.lastAt)}`}</span>

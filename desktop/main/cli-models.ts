@@ -25,7 +25,8 @@ function run(binary: string, args: string[], path: string): Promise<string> {
   return new Promise((resolve) => {
     const child = spawnCommand(binary, args, { env: { ...process.env, PATH: path }, stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
     let out = "";
-    child.stdout?.on("data", (data: Buffer) => { if (out.length < MAX_LIST_BYTES) out += String(data); });
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (text: string) => { if (out.length < MAX_LIST_BYTES) out += text; });
     const timer = setTimeout(() => { if (child.pid !== undefined) terminateProcessTree(child.pid, "SIGKILL", false); }, LIST_MS);
     timer.unref();
     child.once("error", () => { clearTimeout(timer); resolve(""); });

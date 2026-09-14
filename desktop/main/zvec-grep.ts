@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import { createReadStream, createWriteStream, existsSync, mkdirSync, renameSync } from "node:fs";
 import { open, readdir, rm } from "node:fs/promises";
 import path from "node:path";
+import { finished } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
 import { updateOrigin } from "../shared/update";
 import { DEFAULT_TOOLS_ORIGIN, ZVEC_GREP_ENTRY, ZVEC_GREP_VERSION, zvecGrepUrl, type ZvecGrepPhase, type ZvecGrepStatus } from "../shared/zvec-grep";
@@ -212,19 +214,24 @@ export class ZvecGrepTool {
     this.total = Number(response.headers.get("content-length") ?? 0);
     const hash = createHash("sha256");
     const file = createWriteStream(tarball);
+    let failure: Error | undefined;
+    file.once("error", (error) => { failure = error; });
     const chunks = response.body.getReader();
     try {
       for (;;) {
+        if (failure) throw failure;
         const { done, value } = await chunks.read();
         if (done) break;
         hash.update(value);
         this.bytes += value.length;
-        if (!file.write(value)) await new Promise<void>((resolve) => file.once("drain", () => resolve()));
+        if (!file.write(value)) await once(file, "drain");
         this.tick();
       }
     } finally {
-      await new Promise<void>((resolve) => file.end(() => resolve()));
+      file.end();
+      await finished(file).catch(() => undefined);
     }
+    if (failure) throw failure;
     return hash.digest("hex");
   }
 

@@ -23,7 +23,7 @@ travels with the thread rather than sitting in a side table. Front matter carrie
 `goal-blocked-streak`, `goal-blocked-at-turn`, `goal-token-budget`,
 `goal-tokens-used`, `goal-time-used-seconds`, `goal-turns`, `goal-created-at` and
 `goal-updated-at`, written only when the thread has a goal.
-`shinbo-thread-format` is **13**. The format number gates nothing on read: a file
+`shinbo-thread-format` is **15**. The format number gates nothing on read: a file
 without the goal keys loads with no goal, and one carrying them loads the goal
 whatever number it claims.
 

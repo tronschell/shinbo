@@ -1,7 +1,8 @@
 # The browser
 
 A real Chromium view inside Shinbo, one session per thread. It keeps its own
-cookies and its place, the agent drives the same session the user is looking at,
+tabs and its place — cookies live in Electron's default session and are shared
+by every thread — the agent drives the same session the user is looking at,
 and it can sit either in the docked column or in a floating PIP window.
 
 | | |
@@ -41,12 +42,15 @@ disappear whenever something should be in front of it. The pane sends
   `0`), because the card in front is DOM and would otherwise be painted over.
 
 A PIP folded into the icon rail is unmounted by `PipLayer`, and unmounting sends
-`bounds: null` on the way out. The session, its tabs, and its cookies survive.
+`bounds: null` on the way out. The session and its tabs survive; cookies were
+never per-thread, so Close does not clear them.
 
-Bounds are read on every animation frame and only sent when they change. A
-moving PIP resizes nothing, so a `ResizeObserver` never fires for it, and the
-settle animation is a CSS transition with no event to listen to — reading the
-rect each frame is the only thing that tracks both. An idle pane sends no IPC.
+Bounds are re-read when something that can move the stage changes — a
+`ResizeObserver` on the stage, `MutationObserver`s on open dialogs, the shell,
+the sidebar and the PIP, plus window and viewport resize/scroll — and only sent
+when they change. The PIP's settle animation is a CSS transition, so between
+`transitionrun` and `transitionend` the rect is polled every animation frame.
+An idle pane sends no IPC.
 
 ## Clipboard history
 
@@ -73,10 +77,9 @@ menu floating over the stage would be behind the page.
 While a `browser` tool call is in flight, the input the agent sends to the page
 is echoed as the same cue the computer tool draws over a native app: a grey
 arrow haloed in the secondary accent that glides to the point, a pulse on
-arrival, and a label naming what Shinbo is doing there. It is the tab's own input events that place it, so a
-click, a hover, a fill or a drag marks the spot it landed on, and a snapshot, a
-`get` or a scroll — none of which move a pointer — show nothing rather than
-guess.
+arrival, and a label naming what Shinbo is doing there. It is the tab's own
+mouse-down events that place it, so a click or a drag marks the spot it landed
+on; hover, fill, snapshot, `get` and scroll show nothing rather than guess.
 
 The overlay is a transparent, click-through window ordered directly above
 Shinbo's own window, so it cannot take focus, cannot swallow a click the user

@@ -45,7 +45,7 @@ test("a phone can only fill a slot this Mac already offers", () => {
   assert.match(body, /throw new Error\(/);
 
   const guard = body.indexOf("credentialSlotsHeld()");
-  for (const after of ["credentials!.set(", "credentials!.remove(", "startHost()", "recycleHarnesses()"]) {
+  for (const after of ["credentials!.set(", "credentials!.remove(", "credentials!.applyToEnv(", "recycleHarnesses()"]) {
     assert.ok(guard < body.indexOf(after), `saveCredential reaches ${after} before checking the slot`);
   }
 });

@@ -3,7 +3,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { terminalSelection, type TerminalTab } from "../shared/terminal";
+import { MAX_TERMINAL_INPUT, terminalSelection, type TerminalTab } from "../shared/terminal";
 import { FloatIcon } from "./browser";
 import { reasonText } from "./errors";
 import type { TerminalPanelProps, TerminalSurfaceProps } from "./terminal";
@@ -89,7 +89,16 @@ export function TerminalSurfaceImplementation({ tab, active, onSelect, onLink }:
       replayedTo = 0;
     });
 
-    const typed = term.onData((data) => void window.shinbo.writeTerminal({ id: tab.id, data }).catch(() => undefined));
+    let writes = Promise.resolve();
+    const typed = term.onData((data) => {
+      for (let at = 0; at < data.length;) {
+        let end = Math.min(at + MAX_TERMINAL_INPUT, data.length);
+        if (end < data.length && /[\uD800-\uDBFF]/.test(data[end - 1]!)) end -= 1;
+        const slice = data.slice(at, end);
+        writes = writes.then(() => window.shinbo.writeTerminal({ id: tab.id, data: slice })).catch(() => undefined);
+        at = end;
+      }
+    });
     const resized = term.onResize(({ cols, rows }) => void window.shinbo.resizeTerminal({ id: tab.id, columns: cols, rows }).catch(() => undefined));
     const picked = () => {
       const selection = terminalSelection(term.getSelection());

@@ -55,8 +55,8 @@ test("thinking uses the thread model without selecting or persisting a workspace
   const calls: unknown[] = [];
   const useThinking = load<(act: unknown, changed: (next: unknown) => void, model: string) => { setLevel(next: string): Promise<void> }>("useThinking", {
     useState: () => [undefined, () => undefined], useEffect: () => undefined,
-    readSettings: () => workspace,
-    reasoningFor: (_settings: unknown, _catalog: unknown, model: string) => { assert.equal(model, "provider:thread"); return {}; },
+    loadSettings: () => workspace,
+    reasoningFor: (_catalog: unknown, model: string) => { assert.equal(model, "provider:thread"); return {}; },
     thinkingStops: () => ["", "high"],
     selectModelKey: () => { throw new Error("Global selection must not change"); },
     persistSettings: () => { throw new Error("Global settings must not change"); },
@@ -74,7 +74,8 @@ test("thread navigation restores model and thread together and ignores stale loa
     selectedId: "a", selectedIdRef, loadSequence: { current: 0 }, parentRequest: { current: "" }, subthreadRequest: { current: "" },
     useCallback: (callback: unknown) => callback,
     setThreadLoadError: () => undefined,
-    setLoadedThread: (value: unknown) => loaded.push(value), setLoadedSubthread: () => undefined,
+    setLoadedThread: (value: unknown) => loaded.push(typeof value === "function" ? value(undefined) : value), setLoadedSubthread: () => undefined,
+    sameMessages: () => false,
     isCurrentThreadLoad: (parent: string, selected: string, request: string, current: string) => parent === selected && request === current,
     window: { shinbo: {
       request: async (_method: string, { threadId }: { threadId: string }) => ({ id: threadId, messages: [] }),

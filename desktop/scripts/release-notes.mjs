@@ -11,7 +11,7 @@ export function generateReleaseNotes(repository, { from, to = "dev" } = {}, requ
   const api = `repos/${repository}`;
   const [{ sha: target }] = request(`${api}/commits/${encodeURIComponent(to)}`);
   const previous = from ?? request(`${api}/releases?per_page=100`)
-    .filter((release) => !release.draft && !release.prerelease && release.published_at)
+    .filter((release) => !release.draft && !release.prerelease && release.published_at && /^v\d+\.\d+\.\d+$/.test(release.tag_name))
     .sort((a, b) => b.published_at.localeCompare(a.published_at))[0]?.tag_name;
   const commits = previous
     ? request(`${api}/compare/${encodeURIComponent(previous)}...${target}?per_page=100`).flatMap((page) => page.commits)

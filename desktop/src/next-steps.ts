@@ -17,7 +17,7 @@ export function defaultSteps(state: WorkState): NextStep[] {
   if (state.files.length) {
     steps.push({
       title: `Commit ${state.files.length} changed ${plural(state.files.length, "file")}`,
-      detail: state.branch ? `Nothing on ${state.branch} is committed yet` : "The working tree has uncommitted work",
+      detail: state.branch ? `Uncommitted work on ${state.branch}` : "The working tree has uncommitted work",
       prompt: "Go through everything uncommitted here, group it into coherent commits, and write the messages.",
     });
   }

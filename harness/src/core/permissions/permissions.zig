@@ -194,6 +194,9 @@ pub fn permissionTargetForCall(
     }
 
     const args = try tool_args.parseToolArgsObject(arena, call.arguments_json);
+    if (target_kind == .none and std.mem.eql(u8, call.name, "terminal")) {
+        if (try terminalActionTarget(arena, workspace_root, args)) |target| return target;
+    }
 
     return switch (target_kind) {
         .command_cwd => blk: {
@@ -225,6 +228,21 @@ pub fn permissionTargetForCall(
         },
         .none => try arena.dupe(u8, call.name),
     };
+}
+
+fn terminalActionTarget(
+    arena: std.mem.Allocator,
+    workspace_root: []const u8,
+    args: std.json.ObjectMap,
+) !?[]const u8 {
+    const action = tool_args.optionalStringArg(args, "action") orelse return null;
+    if (std.mem.eql(u8, action, "start")) {
+        const cwd = try resolveCommandCwdFromArgs(arena, workspace_root, args);
+        const command = tool_args.optionalStringArg(args, "command") orelse "";
+        return try std.fmt.allocPrint(arena, "start::{s}::{s}", .{ cwd, command });
+    }
+    const session_id = tool_args.optionalStringArg(args, "session_id") orelse return null;
+    return try std.fmt.allocPrint(arena, "{s}::{s}", .{ action, session_id });
 }
 
 pub fn resolveCommandCwdForCallInScope(
@@ -1240,12 +1258,47 @@ pub fn sessionGrantAllowed(grants: []const types.PermissionGrant, tool_name: []c
 
     for (grants) |grant| {
         if (!permissionPatternMatchesTool(grant.tool_name, permission, tool_name)) continue;
-        if (std.mem.eql(u8, permission, "bash") or std.mem.eql(u8, permission, "sandbox")) {
+        if (std.mem.eql(u8, permission, "bash") or
+            std.mem.eql(u8, permission, "sandbox") or
+            std.mem.eql(u8, permission, "terminal"))
+        {
             if (!std.mem.eql(u8, grant.target_path, pattern)) continue;
         } else if (!permissionPatternMatchesTarget(grant.target_path, pattern)) continue;
         return true;
     }
     return false;
+}
+
+test "terminal non-exec session grants stay scoped to the action" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const start = try permissionTargetForCall(arena, "/tmp/workspace", .{
+        .id = "start",
+        .name = "terminal",
+        .arguments_json = "{\"action\":\"start\",\"command\":\"ls\"}",
+    }, .none);
+    try std.testing.expectEqualStrings("start::/tmp/workspace::ls", start);
+    const write = try permissionTargetForCall(arena, "/tmp/workspace", .{
+        .id = "write",
+        .name = "terminal",
+        .arguments_json = "{\"action\":\"write\",\"session_id\":\"s1\",\"write\":\"rm -rf /\\n\"}",
+    }, .none);
+    try std.testing.expectEqualStrings("write::s1", write);
+    const list = try permissionTargetForCall(arena, "/tmp/workspace", .{
+        .id = "list",
+        .name = "terminal",
+        .arguments_json = "{\"action\":\"list\"}",
+    }, .none);
+    try std.testing.expectEqualStrings("terminal", list);
+
+    const grants = try suggestedSessionGrants(arena, "/tmp/workspace", "terminal", start, .none);
+    try std.testing.expectEqual(@as(usize, 1), grants.len);
+    try std.testing.expectEqualStrings("start::/tmp/workspace::ls", grants[0].target_path);
+    try std.testing.expect(sessionGrantAllowed(grants, "terminal", start));
+    try std.testing.expect(!sessionGrantAllowed(grants, "terminal", "start::/tmp/workspace::rm -rf /"));
+    try std.testing.expect(!sessionGrantAllowed(grants, "terminal", write));
+    try std.testing.expect(!sessionGrantAllowed(grants, "terminal", list));
 }
 
 const path_always_permissions = [_][]const u8{

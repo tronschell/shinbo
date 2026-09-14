@@ -13,7 +13,7 @@ and renamed over the destination so a half-written thread never exists
 `{ id, title, parent_thread_id, kind, scheduled_job_id, created_at, updated_at,
 archived_at, goal, messages, traces }`; `kind` is `main` or `subagent` and `goal`
 is present only on a thread pursuing one. Front matter is versioned as
-`shinbo-thread-format` — 13 today, and every older version still parses.
+`shinbo-thread-format` — 15 today, and every older version still parses.
 Ceilings: `MAX_THREAD_MESSAGES` 1024, `MAX_THREAD_TRACES` 64,
 `MAX_TRACE_BYTES` 16 KiB. `traces` is `#[serde(skip)]`, so it never rides a
 snapshot.

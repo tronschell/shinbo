@@ -60,7 +60,9 @@ run checks with `TMPDIR=/tmp` after confirming `/tmp` is writable.
 
 Use the isolated workflow in [start-shinbo](../.agents/skills/start-shinbo/SKILL.md).
 Electron chooses a debugging port dynamically: read the owned process's
-`DevTools listening` endpoint and pass that port as `SHINBO_CDP_PORT`.
+`DevTools listening` endpoint and pass that port as `SHINBO_CDP_PORT`. A dev
+build always listens; a packaged build only when launched with
+`SHINBO_REMOTE_DEBUG=1`.
 For Vite, also pass the same `SHINBO_DEV_SERVER_URL` used to launch Electron to
 `desktop/scripts/drive.mjs`; this selects the development renderer. Attach the
 fixture folder through the app before testing its inventory. If required

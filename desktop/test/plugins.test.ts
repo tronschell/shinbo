@@ -107,8 +107,8 @@ test("a hooks file keeps the command handlers Shinbo understands and says which 
   ]);
   assert.deepEqual(parseHooksFile({ SessionStart: [{ hooks: [{ type: "command", command: "a" }] }] }), []);
   assert.deepEqual(parseHooksFile("nonsense"), []);
-  assert.deepEqual((["SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"] as HookEvent[]).map(hookRuns), [true, true, true, true]);
-  assert.deepEqual((["PreToolUse", "PostToolUse", "PreCompact", "SubagentStop"] as HookEvent[]).map(hookRuns), [false, false, false, false]);
+  assert.deepEqual((["SessionStart", "UserPromptSubmit", "Stop"] as HookEvent[]).map(hookRuns), [true, true, true]);
+  assert.deepEqual((["SessionEnd", "PreToolUse", "PostToolUse", "PreCompact", "SubagentStop"] as HookEvent[]).map(hookRuns), [false, false, false, false, false]);
 });
 
 test("an npm plugin source takes a package, a version selector, and an HTTPS registry — and refuses anything argv could read as a flag", () => {
@@ -254,6 +254,11 @@ test("the marketplace Shinbo ships with is added once, and stays gone once it is
 
     await removeMarketplace(userData, "acme");
     assert.deepEqual((await ensureDefaultMarketplace(userData, shared)).marketplaces, []);
+
+    const offline = path.join(home, "offline-user-data");
+    await mkdir(offline, { recursive: true });
+    await assert.rejects(ensureDefaultMarketplace(offline, path.join(home, "missing")), /There is no folder/);
+    assert.deepEqual((await ensureDefaultMarketplace(offline, shared)).marketplaces, [], "a failed seed is not retried on the next open");
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -445,6 +450,7 @@ test("a plugin's hooks stay off until they are reviewed, run once trusted, and l
     assert.equal(existsSync(leaked), false);
 
     await uninstallPlugin(userData, "hooked/watcher");
+    assert.equal(existsSync(path.join(userData, "plugin-data", "hooked", "watcher")), false);
     assert.deepEqual(await runPluginHooks(userData, "SessionStart", input), []);
   } finally {
     await rm(home, { recursive: true, force: true });

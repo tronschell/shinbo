@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import type { BackgroundTask } from "../shared/agents";
+import { withoutCredentials } from "./credentials";
 import { isWindows, shellArguments, shellBinary, terminateProcessTree } from "./platform";
 
 const MAX_OUTPUT = 64 * 1024;
@@ -16,10 +17,12 @@ export class BackgroundCommands {
   constructor(private readonly onChange: () => void) {}
 
   start(cwd: string, command: string, folder: string): BackgroundTask {
-    const child = spawn(shellBinary(), shellArguments(command, false), { cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"], detached: !isWindows, windowsHide: true });
+    const child = spawn(shellBinary(), shellArguments(command, false), { cwd, env: withoutCredentials(process.env), stdio: ["ignore", "pipe", "pipe"], detached: !isWindows, windowsHide: true });
     const id = `bg${++this.counter}`;
     const entry: Entry = { id, command, folder, startedAt: Date.now(), status: "running", exitCode: null, output: "", child };
-    const collect = (data: Buffer) => { entry.output = (entry.output + String(data)).slice(-MAX_OUTPUT); };
+    const collect = (text: string) => { entry.output = (entry.output + text).slice(-MAX_OUTPUT); };
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
     child.stdout?.on("data", collect);
     child.stderr?.on("data", collect);
     const finish = (note: string, code: number | null) => {

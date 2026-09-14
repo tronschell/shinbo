@@ -15,7 +15,7 @@ function imagePaths(attachments) {
   return compile(`${named("attachedImagePaths").getText(source)}; return attachedImagePaths;`, { attachments, MAX_TURN_IMAGES: 8 });
 }
 
-test("image preparation preserves ordering, skips invalid attachments and stops at the turn cap", async () => {
+test("image preparation preserves ordering, refuses the turn on a lost attachment and stops at the turn cap", async () => {
   const prepared = [];
   const controller = new AbortController();
   const paths = imagePaths({
@@ -28,7 +28,9 @@ test("image preparation preserves ordering, skips invalid attachments and stops 
   assert.deepEqual(await paths("invalid", controller.signal), []);
   assert.deepEqual(await paths("{}", controller.signal), []);
   assert.deepEqual(await paths(undefined, controller.signal), []);
-  const ids = ["missing", "text", ...Array.from({ length: 32 }, (_, index) => String(index))];
+  await assert.rejects(paths('["missing","0"]', controller.signal), /could not be sent: gone/);
+  assert.equal(prepared.length, 0);
+  const ids = ["text", ...Array.from({ length: 32 }, (_, index) => String(index))];
   assert.deepEqual(await paths(JSON.stringify(ids), controller.signal), Array.from({ length: 8 }, (_, index) => `${index}.jpg`));
   assert.equal(prepared.length, 8);
 });

@@ -14,12 +14,13 @@ function fixture({ windows = false, delayedKill = false } = {}) {
   const timers = new Set();
   const children = [];
   const kills = [];
-  const timeout = (callback, ms) => { const timer = { callback, ms, unref() {} }; timers.add(timer); return timer; };
+  const timeout = (callback, ms) => { const timer = { callback, ms, unref() {}, refresh() {} }; timers.add(timer); return timer; };
   const platform = { ...require("./platform"), isWindows: windows, windowsShimTarget: async () => undefined,
     spawnCommand: () => {
       const child = new EventEmitter();
       Object.assign(child, { pid: 2000 + children.length, exitCode: null, signalCode: null, stdout: new EventEmitter(), stderr: new EventEmitter() });
       child.stdout.setEncoding = () => {};
+      child.stderr.setEncoding = () => {};
       child.close = () => { child.signalCode = "SIGTERM"; child.emit("close", null, "SIGTERM"); };
       children.push(child);
       return child;

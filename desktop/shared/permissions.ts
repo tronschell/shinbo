@@ -85,8 +85,8 @@ const GATES: Record<AgentToolName, Record<GatedMode, ToolGate>> = {
   agents: { ask: "auto", acceptEdits: "auto", full: "auto" },
   install_mcp: { ask: "ask", acceptEdits: "ask", full: "auto" },
   workflow: { ask: "ask", acceptEdits: "ask", full: "auto" },
-  artifact: { ask: "auto", acceptEdits: "auto", full: "auto" },
-  component: { ask: "auto", acceptEdits: "auto", full: "auto" },
+  artifact: { ask: "ask", acceptEdits: "ask", full: "auto" },
+  component: { ask: "ask", acceptEdits: "ask", full: "auto" },
   visualize: { ask: "auto", acceptEdits: "auto", full: "auto" },
 };
 
@@ -122,8 +122,8 @@ export const TOOL_CATALOG: { name: AgentToolName; label: string; blurb: string; 
   { name: "agents", label: "Live agents", blurb: "Lists what is running right now, and sends a message into a run in flight or stops it.", group: "Threads" },
   { name: "install_mcp", label: "Install MCP server", blurb: "Adds an MCP server to Shinbo's config, for the harness to connect from the next turn.", group: "Extensions" },
   { name: "workflow", label: "Scheduled tasks", blurb: "Builds and runs the workflows in the Scheduled section.", group: "Automation" },
-  { name: "artifact", label: "Artifacts", blurb: "Writes and edits the documents, pages and drawings kept on the Artifacts page.", group: "Thinking" },
-  { name: "component", label: "Build into Shinbo", blurb: "Builds a widget into the context bar, and reworks it while you watch. Switch one off or delete it from the \u22ef in its header.", group: "Thinking" },
+  { name: "artifact", label: "Artifacts", blurb: "Writes and edits the documents, pages and drawings kept on the Artifacts page. Mounting one as a region of the interface runs its code inside Shinbo with the app's own access, so that asks first.", group: "Thinking" },
+  { name: "component", label: "Build into Shinbo", blurb: "Builds a widget into the context bar, and reworks it while you watch. Its code runs inside Shinbo with the app's own access, so building or reworking one asks first. Switch one off or delete it from the \u22ef in its header.", group: "Thinking" },
   { name: "visualize", label: "Visualize", blurb: "Draws a picture inline in the conversation — charts, panels, anything it can draw. Nothing is saved until you keep it.", group: "Thinking" },
 ];
 

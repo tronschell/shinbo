@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { EditorApp } from "../shared/folders";
+import { reasonText } from "./errors";
 
 let asked: Promise<EditorApp[]> | undefined;
 
@@ -33,11 +34,14 @@ export function OpenIn({ folderId, path, label }: { folderId?: string; path?: st
   const [chosenId, choose] = usePreferred();
   const [open, setOpen] = useState(false);
   const [stick, setStick] = useState(false);
+  const [error, setError] = useState("");
   if (!editors.length) return null;
   const named = path ?? "this folder";
   const send = (editor: EditorApp) => {
-    void window.shinbo.openInEditor({ ...(folderId ? { folderId } : {}), path: path ?? ".", editorId: editor.id }).catch(() => undefined);
+    setError("");
+    void window.shinbo.openInEditor({ ...(folderId ? { folderId } : {}), path: path ?? ".", editorId: editor.id }).catch((reason: unknown) => setError(reasonText(reason)));
   };
+  const failed = error && <b role="alert" title={error} aria-label={error}>!</b>;
   const mark = (editor: EditorApp) => editor.icon ? <img src={editor.icon} alt="" /> : <b>{editor.label.slice(0, 1)}</b>;
 
   if (editors.length === 1) {
@@ -47,6 +51,7 @@ export function OpenIn({ folderId, path, label }: { folderId?: string; path?: st
         {label && <small>Open in</small>}
         {mark(only)}
       </button>
+      {failed}
     </span>;
   }
 
@@ -75,5 +80,6 @@ export function OpenIn({ folderId, path, label }: { folderId?: string; path?: st
         }}>{mark(editor)}{editor.label}{editor === chosen && <em>default</em>}</button>)}
       <label><input type="checkbox" checked={stick} onChange={(event) => setStick(event.currentTarget.checked)} />Make this selection the default</label>
     </span>}
+    {failed}
   </span>;
 }

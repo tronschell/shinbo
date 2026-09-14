@@ -21,7 +21,9 @@ export class FolderStore {
       const stored = JSON.parse(readFileSync(this.file, "utf8")) as unknown;
       if (Array.isArray(stored)) {
         this.grants = stored.filter((item): item is FolderGrant =>
-          !!item && typeof item === "object" && typeof (item as FolderGrant).id === "string" && typeof (item as FolderGrant).path === "string" && typeof (item as FolderGrant).name === "string").slice(0, MAX_FOLDERS);
+          !!item && typeof item === "object" && typeof (item as FolderGrant).id === "string" && typeof (item as FolderGrant).path === "string" && typeof (item as FolderGrant).name === "string")
+          .slice(0, MAX_FOLDERS)
+          .map((grant) => ({ id: grant.id, path: grant.path, name: grant.name, ...(typeof grant.vault === "boolean" ? { vault: grant.vault } : {}) }));
       }
     } catch { this.grants = []; }
   }
@@ -30,15 +32,22 @@ export class FolderStore {
     return this.grants.map((grant) => ({ ...grant }));
   }
 
-  add(directory: string): FolderGrant[] {
+  add(directory: string, vault = false): FolderGrant[] {
     const resolved = realpathSync.native(directory);
     if (!statSync(resolved).isDirectory()) throw new Error("That is not a folder.");
     if (!this.grants.some((grant) => samePath(grant.path, resolved))) {
       if (this.grants.length >= MAX_FOLDERS) throw new Error(`Shinbo keeps at most ${MAX_FOLDERS} folders; remove one first.`);
-      this.grants.push({ id: randomUUID(), path: resolved, name: path.basename(resolved) || resolved });
+      this.grants.push({ id: randomUUID(), path: resolved, name: path.basename(resolved) || resolved, ...(vault ? { vault } : {}) });
       this.save();
     }
     return this.list();
+  }
+
+  markVault(id: string, owned: boolean): void {
+    const grant = this.grants.find((item) => item.id === id);
+    if (!grant || grant.vault !== undefined) return;
+    grant.vault = owned;
+    this.save();
   }
 
   remove(id: string): FolderGrant[] {

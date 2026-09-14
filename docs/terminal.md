@@ -155,8 +155,10 @@ at the pointer:
 Every handler goes through `mainWindowSender(event)` first, so a renderer that is
 not Shinbo's own window is refused before any of this runs.
 
-Quitting terminates every shell's process tree and forces it after two seconds if
-one has not gone.
+Quitting sends every shell's `shinbo-pty` helper SIGHUP on macOS and does not wait
+for it; the helper hangs up the pty and the shell's own children follow its lead.
+Only Windows kills each shell's process tree with `taskkill` and forces it after
+two seconds if one has not gone.
 
 ## The agent's durable sessions
 

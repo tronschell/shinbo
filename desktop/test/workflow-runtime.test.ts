@@ -24,10 +24,11 @@ test("T1 a failed permission save reports failure and preserves the last durable
   const full = { folderIds: [], mode: "full", model: "fallback" };
   const threadContexts = new Map([["task", full]]);
   writeFileSync(file, JSON.stringify(Object.fromEntries(threadContexts)));
-  const remember = lifted("rememberThreadContext", {
-    threadContexts, threadContextsFile: () => file, randomUUID, renameSync, rmSync,
+  const writeThreadContexts = lifted("writeThreadContexts", {
+    threadContextsFile: () => file, randomUUID, renameSync, rmSync,
     writeFileSync: () => { throw new Error("ENOSPC: no space left on device"); },
   });
+  const remember = lifted("rememberThreadContext", { threadContexts, writeThreadContexts });
   assert.throws(() => remember("task", { ...full, mode: "ask" }), /ENOSPC/);
   assert.equal(threadContexts.get("task")?.mode, "full");
   assert.equal(JSON.parse(readFileSync(file, "utf8")).task.mode, "full");
@@ -39,7 +40,7 @@ function workflow() {
   const workflowRuns = new Map<string, AbortController>();
   const scope = {
     runtimeReady: Promise.resolve<string | undefined>(undefined),
-    selectedModel: "fallback", selectedEffort: "", asPermissionMode, parseWorkflow, parseVariables, runWorkflow, packVariables,
+    selectedModel: "fallback", selectedEffort: "", asPermissionMode, parseWorkflow, parseVariables, runWorkflow, packVariables, validateWorkflowScripts: async () => undefined,
     workflowRuns, AbortController, goalStopped: new Set<string>(), computerRuntime: undefined,
     harnessChildren: new Map(), harnesses: new Map(), benchThread: () => false,
     threadContext: () => ({ folderIds: [] }), rememberThreadContext: () => undefined,

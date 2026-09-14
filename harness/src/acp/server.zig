@@ -1134,6 +1134,7 @@ fn startPrompt(state: *ServerState, alloc: Allocator, msg: *const jsonrpc.Messag
     errdefer jsonrpc.freeMessage(alloc, &active.msg);
 
     session.cancel_flag.store(false, .seq_cst);
+    dropPendingSteering(state);
     if (comptime host_target.is_wasm) {
         promptWorkerMain(active);
         jsonrpc.freeMessage(active.alloc, &active.msg);
@@ -1186,6 +1187,7 @@ fn reapActivePrompt(state: *ServerState, wait: bool) void {
         jsonrpc.freeMessage(active.alloc, &active.msg);
         active.alloc.destroy(active);
         state.active_prompt = null;
+        dropPendingSteering(state);
     }
 }
 
@@ -1980,6 +1982,15 @@ pub fn clearDeliveredSteering(state: *ServerState) void {
     }
 }
 
+pub fn dropPendingSteering(state: *ServerState) void {
+    state.steer_interject.store(false, .seq_cst);
+    state.steer_mutex.lockUncancelable(io_mod.getIo());
+    defer state.steer_mutex.unlock(io_mod.getIo());
+    state.steers_in_flight = 0;
+    for (state.pending_steers.items) |text| state.alloc.free(text);
+    state.pending_steers.clearRetainingCapacity();
+}
+
 fn handleSteer(state: *ServerState, alloc: Allocator, msg: *jsonrpc.Message) !void {
     const invalid_params = jsonrpc.RpcError{ .code = ErrorCode.invalid_params, .message = "Expected content" };
     const params = msg.params_raw orelse return state.writer.writeError(alloc, msg.id, invalid_params);
@@ -2325,6 +2336,27 @@ test "a steer arms one interjection and a stop disarms it" {
     interruptActiveTurn(&state, true);
     try std.testing.expect(takeSteerInterject(&state));
     try std.testing.expectEqual(types.ToolPermissionDecision.deny, awaitPermissionDecision(&state, parked));
+}
+
+test "a steer left over when the turn ends is dropped instead of leaking into the next prompt" {
+    const alloc = std.testing.allocator;
+    var state = ServerState{
+        .alloc = alloc,
+        .cfg = undefined,
+        .writer = jsonrpc.Writer.init(),
+    };
+    defer state.deinit();
+    try state.pending_steers.append(alloc, try alloc.dupe(u8, "late steer"));
+    state.steers_in_flight = 1;
+    interruptActiveTurn(&state, true);
+
+    dropPendingSteering(&state);
+
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    try std.testing.expect(!takeSteerInterject(&state));
+    try std.testing.expectEqual(@as(usize, 0), state.steers_in_flight);
+    try std.testing.expectEqual(@as(?[]const u8, null), try takePendingSteering(&state, arena_state.allocator()));
 }
 
 test "ACP initialize request validation requires a uint16 protocol version" {

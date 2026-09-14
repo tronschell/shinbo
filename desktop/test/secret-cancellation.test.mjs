@@ -9,7 +9,7 @@ const secretSource = readFileSync(process.env.SHINBO_SECRET_CANCEL_SOURCE || new
 const code = ts.transpileModule(secretSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
 const exports = {};
 new Function("exports", "require", code)(exports, require);
-const { readSecret } = exports;
+const { readSecret, secretKey, SECRET_UNSET } = exports;
 const settings = { model: "fixture/reader", endpoint: "https://unused.invalid", credentialEnv: "", system: "Fixture reader" };
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -18,7 +18,7 @@ function tool(runCommand, signal, read = readSecret) {
   const execute = main.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "executeTool");
   const clause = execute.body.statements.find(ts.isSwitchStatement).caseBlock.clauses.find((node) => ts.isCaseClause(node) && node.expression.text === "secret");
   const body = clause.statements.map((node) => node.getText(main)).join("\n");
-  const bindings = { runCommand, readSecret: read, agents: { signalFor: (id) => { assert.equal(id, "fixture-thread"); return signal; } }, toolSettings: { secret: settings }, args: { command: "fixture-output", question: "Is the fixture set?" }, turn: { threadId: "fixture-thread" }, threadFolder: () => undefined, homedir: () => "/fixture", MAX_COMMAND_MS: 60_000 };
+  const bindings = { runCommand, readSecret: read, secretKey, SECRET_UNSET, agents: { signalFor: (id) => { assert.equal(id, "fixture-thread"); return signal; } }, toolSettings: { secret: settings }, args: { command: "fixture-output", question: "Is the fixture set?" }, turn: { threadId: "fixture-thread" }, threadFolder: () => undefined, homedir: () => "/fixture", MAX_COMMAND_MS: 60_000 };
   return new Function(...Object.keys(bindings), `return (async () => { ${ts.transpileModule(body, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText} })();`)(...Object.values(bindings));
 }
 

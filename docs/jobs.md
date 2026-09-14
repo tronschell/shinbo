@@ -3,7 +3,7 @@
 Work the clock runs instead of you. A job is one trigger plus a graph of steps;
 every run opens its own thread you can read afterwards.
 
-The interface says **tasks**, the code says **jobs** (`workflow` tool,
+The interface says **workflows**, the code says **jobs** (`workflow` tool,
 `ScheduledJob` in the store). Same thing.
 
 The grammar lives in [workflow.ts](../desktop/shared/workflow.ts) and has four
@@ -80,9 +80,9 @@ the cron fields mean anything.
 Five fields in UTC — minute (0–59), hour (0–23), day of month (1–31), month
 (1–12), day of week (0–7, both 0 and 7 Sunday). Each takes `*`, a number, a
 comma list (`1,3,5`), a range (`1-5`) or a step (`*/15`, `1-5/2`); a step of `0`
-is rejected. `next_run` scans 527,040 minutes — one year — and refuses a schedule
-with no occurrence in that window: *"schedule has no occurrence in the next
-year"*.
+is rejected. `next_run` scans 146,097 days — one full Gregorian cycle — and
+refuses a schedule with no occurrence in that window: *"schedule has no
+occurrence in the Gregorian calendar cycle"*.
 
 The Trigger picker ([schedule.tsx](../desktop/src/schedule.tsx)) writes the
 expression for you — Every N minutes / Hourly / Daily / Weekly on… / Monthly /
@@ -120,7 +120,7 @@ it. The run is what stops it: `runWorkflow` walks at most 32 node visits and
 returns whatever it has. (Plans do refuse a cycle outright — see
 [plan.ts](../desktop/shared/plan.ts).)
 
-**Permission mode.** Core accepts three: `ask`, `acceptEdits`, `full`. A job
+**Permission mode.** Core accepts four: `ask`, `acceptEdits`, `auto`, `full`. A job
 stored as `plan` — the mode that no longer exists — loads as `ask`. See
 [permissions.md](permissions.md).
 
@@ -186,8 +186,8 @@ is special about it except the `scheduledJobId` tag.
   [permissions.ts](../desktop/shared/permissions.ts).
 
 If the graph does not parse nothing runs, but the thread is still created and
-gets one message saying why: *"This task did not run: its graph will not run as
-written."*
+gets one message saying why: *"This workflow failed: Its graph will not run as
+written."* followed by the errors.
 
 ## Chaining
 
@@ -215,7 +215,7 @@ trigger comes round.
 
 | Button | Does |
 | --- | --- |
-| **Save** / **Create task** | Writes the job. Disabled until title, prompt, trigger and graph are all valid |
+| **Save** / **Create workflow** | Writes the job. Disabled until title, prompt, trigger and graph are all valid |
 | **Test** | Walks the graph with every agent turn and script stood in for — validates script paths, no model call, no process, no thread |
 | **Run now** | Fires it immediately, at depth 0, with no starting variables. Works on a paused job |
 | **Pause** / **Resume** | Flips `enabled`. A paused job is skipped by the tick and by `after`/`on` |
@@ -230,7 +230,7 @@ An edit keeps created-at, `enabled`, `lastRunAt`, `lastThreadId` and `outputs`.
 Change the trigger and `nextRunAt` is recomputed; edit only the prompt and
 tomorrow's booking stands.
 
-Each job carries the model its runs use, picked in the editor next to the title
+Each job carries the model its runs use, picked in the editor under the trigger
 from the same picker the composer uses. It is stored as the desktop's model key
 (`openrouter:<id>`, or empty for whichever model the app is set to when the job
 fires) and core never interprets it. Local model profiles are not offered: one

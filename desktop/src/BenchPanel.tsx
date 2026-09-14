@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { attemptsOf, benchLine, benchMetricNames, boardFrontier, boardMetricNames, boardValue, cellMetricNames, exampleBench, modelBoard, paired, placeLabels, pairsOf, provenCount, runArms, runExpected, runMetric, runName, scoreboard, MAX_BENCH_CASES, MAX_BENCH_RUBRIC_CHARS, MIN_BENCH_PAIRS, type BenchMetric, type BoardCell, type BoardMetric, type BoardRow, type CellMetric } from "../shared/bench";
 import { formulaSafe, toCsv } from "../shared/csv";
-import { addBenchCase, readBench, saveBench, startBench, sweepBench } from "./bench";
-import { benchBlocker, stopBench, type BenchProgress } from "./bench-run";
+import { addBenchCase, benchProgress, readBench, saveBench, startBench, subscribeBench, sweepBench } from "./bench";
+import { benchBlocker, stopBench } from "./bench-run";
 import { Arm, per } from "./AgentView";
 import { threadFolders } from "./context";
 import { readImprovements } from "./improvements";
@@ -122,7 +122,7 @@ function Scatter({ rows, x, y, hue, front, chart }: {
 const Row = ({ label, value, note, tone }: { label: string; value: string; note?: string; tone?: string }) =>
   <div className="agent-arm"><dt>{label}</dt><dd><b data-delta={tone}>{value}</b>{note && <small>{note}</small>}</dd></div>;
 
-export default function BenchPanel({ snapshot, busy, openThread, mode, model, pickers, trial, onLive, onDecide }: {
+export default function BenchPanel({ snapshot, busy, openThread, mode, model, pickers, trial, onDecide }: {
   snapshot: Snapshot;
   busy: boolean;
   openThread: (id: string) => void;
@@ -130,12 +130,11 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
   model: string;
   pickers: BenchPickers;
   trial: Improvement | undefined;
-  onLive: (live: boolean) => void;
   onDecide: (item: Improvement, state: Improvement["state"], result: string) => void;
 }) {
-  const [store, setStore] = useState(sweepBench);
+  const store = useSyncExternalStore(subscribeBench, readBench);
+  const progress = useSyncExternalStore(subscribeBench, benchProgress);
   const [folders, setFolders] = useState<FolderGrant[] | null>(null);
-  const [progress, setProgress] = useState<BenchProgress | null>(null);
   const [choice, setChoice] = useState<BenchMetric>("failed");
   const [pick, setPick] = useState("");
   const [rubric, setRubric] = useState("");
@@ -156,21 +155,12 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     .slice(0, BENCH_THREADS), [snapshot.threads]);
 
-  useEffect(() => { void window.shinbo.listFolders().then(setFolders).catch(() => setFolders([])); }, []);
+  useEffect(() => { sweepBench(); void window.shinbo.listFolders().then(setFolders).catch(() => setFolders([])); }, []);
 
   const live = store.runs.find((row) => row.state === "running");
   const pending = trial ? attemptsOf(store.runs, [trial.id]).at(-1) : undefined;
   const run = live ?? pending ?? store.runs.at(-1);
-  const liveId = live?.id ?? "";
   const metric = run ? runMetric(run) : choice;
-
-  useEffect(() => {
-    if (!liveId) return;
-    const timer = setInterval(() => setStore(readBench()), 500);
-    return () => { clearInterval(timer); };
-  }, [liveId]);
-
-  useEffect(() => { onLive(!!liveId); return () => onLive(false); }, [liveId, onLive]);
 
   const reading = useMemo(() => run ? paired(run, metric) : undefined, [run, metric]);
   const deltas = useMemo(() => run?.state === "done" && run.improvementId ? pairsOf(run, metric) : [], [run, metric]);
@@ -224,8 +214,6 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
         ...(improvement ? { improvement } : {}),
         describe: pickers.describe(under),
         ...(current.judge ? { judge: current.judge } : {}),
-        onStore: setStore,
-        onProgress: setProgress,
         onJudgeError: setJudgeNote,
       }).finished;
     } catch (reason: unknown) { setError(reasonText(reason)); }
@@ -243,7 +231,7 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
     if (current.cases.some((row) => row.fromThreadId === thread.id)) { setError("That thread is already a case."); return; }
     const solution = thread.messages.filter((message) => message.role === "assistant").at(-1)?.content.trim() ?? "";
     try {
-      setStore(addBenchCase({ title: threadTitle(thread as Thread), prompt, folderId, fromThreadId: thread.id, rubric, ...(solution ? { solution } : {}) }).store);
+      addBenchCase({ title: threadTitle(thread as Thread), prompt, folderId, fromThreadId: thread.id, rubric, ...(solution ? { solution } : {}) });
     } catch (reason: unknown) { setError(reasonText(reason)); return; }
     setRubric("");
     setPick("");
@@ -279,7 +267,7 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
 
   const drop = (id: string) => {
     const current = readBench();
-    setStore(saveBench({ ...current, cases: current.cases.filter((row) => row.id !== id) }));
+    saveBench({ ...current, cases: current.cases.filter((row) => row.id !== id) });
   };
 
   const done = progress?.done ?? live?.results.length ?? 0;
@@ -445,7 +433,7 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
         <div className="bench-col">
           <div className="bench-band bench-band-head"><span>Judge</span></div>
           <div className="bench-band bench-model">
-            <div className="task-model">{pickers.judge(store.judge, (judge) => setStore(saveBench({ ...readBench(), ...(judge ? { judge: { ...judge, system: "" } } : {}) })), busy || !!live)}</div>
+            <div className="task-model">{pickers.judge(store.judge, (judge) => { const { cases, runs } = readBench(); saveBench({ cases, runs, ...(judge ? { judge: { ...judge, system: "" } } : {}) }); }, busy || !!live)}</div>
             <small>Scores each replay against its rubric</small>
           </div>
         </div>

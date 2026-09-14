@@ -5,6 +5,7 @@ import { mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { AttachmentStore } from "../main/attachments";
+import { MAX_ATTACHED_CONTEXT_CHARS } from "../shared/folders";
 
 const userData = () => mkdtempSync(path.join(tmpdir(), "shinbo-attachments-"));
 
@@ -15,8 +16,6 @@ test("a picked text file comes back whole, and only what was attached is readabl
   const store = new AttachmentStore(root);
   const held = store.hold(file);
   assert.equal(store.read(held.id).text, "name,count\nzig,2\n");
-
-
   assert.equal(store.holds(held.path), true);
   assert.equal(store.holds(path.join(root, "elsewhere.csv")), false);
   assert.throws(() => store.read("not-an-attachment"));
@@ -32,14 +31,19 @@ test("a dropped file is written under userData and named by its own basename", (
   assert.equal(store.read(held.id).text, "# notes");
 });
 
-test("a picture carries its path instead of its bytes, and a binary file is refused", () => {
+test("a picture carries its path instead of its bytes, and a binary file is refused when attached", () => {
   const root = userData();
   const store = new AttachmentStore(root);
   const image = store.save("shot.png", new Uint8Array([137, 80, 78, 71, 0, 13]));
   assert.equal(store.read(image.id).text, undefined);
   assert.equal(store.read(image.id).path, image.path);
-  const binary = store.save("blob.bin", new Uint8Array([1, 0, 2]));
-  assert.throws(() => store.read(binary.id), /not a text file/);
+  assert.throws(() => store.save("blob.bin", new Uint8Array([1, 0, 2])), /not a text file/);
+  const picked = path.join(root, "blob.bin");
+  writeFileSync(picked, new Uint8Array([1, 0, 2]));
+  assert.throws(() => store.hold(picked), /not a text file/);
+  assert.equal(store.holds(picked), false);
+  assert.throws(() => store.save("photo.heic", new Uint8Array([0, 0, 0, 24])), /save it as PNG or JPEG/);
+  assert.throws(() => store.save("big.txt", new Uint8Array(MAX_ATTACHED_CONTEXT_CHARS + 1).fill(97)), /attachments stop at 32 KB/);
 });
 
 test("what was attached is still attached after a relaunch, unless the file is gone", () => {
@@ -49,9 +53,6 @@ test("what was attached is still attached after a relaunch, unless the file is g
   const first = new AttachmentStore(root);
   const dropped = first.save("notes.md", new TextEncoder().encode("# notes"));
   const picked = first.hold(moved);
-
-
-
   const relaunched = new AttachmentStore(root);
   assert.equal(relaunched.holds(dropped.path), true);
   assert.equal(relaunched.holds(picked.path), true);
@@ -70,6 +71,27 @@ test("new uploads preserve held attachments older than seven days", () => {
   store.save("new.md", new TextEncoder().encode("another conversation"));
   assert.equal(store.read(first.id).text, "permanent conversation context");
   assert.equal(new AttachmentStore(root).read(first.id).text, "permanent conversation context");
+});
+
+test("a relaunch sweeps copies older than thirty days and files the index no longer names, and leaves picked files alone", () => {
+  const root = userData();
+  const store = new AttachmentStore(root);
+  const stale = store.save("stale.md", new TextEncoder().encode("old"));
+  const fresh = store.save("fresh.md", new TextEncoder().encode("new"));
+  const picked = path.join(root, "picked.md");
+  writeFileSync(picked, "# picked");
+  const held = store.hold(picked);
+  const ancient = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+  utimesSync(stale.path, ancient, ancient);
+  utimesSync(picked, ancient, ancient);
+  writeFileSync(path.join(root, "attachments", `${stale.id}-model.jpg`), "jpg");
+  writeFileSync(path.join(root, "attachments", "orphan-model.jpg"), "jpg");
+  const relaunched = new AttachmentStore(root);
+  assert.equal(relaunched.holds(stale.path), false);
+  assert.equal(relaunched.read(fresh.id).text, "new");
+  assert.equal(relaunched.read(held.id).text, "# picked");
+  assert.deepEqual(readdirSync(path.join(root, "attachments")).sort(), [`${fresh.id}-fresh.md`, "held.json"]);
+  assert.equal(new AttachmentStore(root).holds(stale.path), false);
 });
 
 for (const operation of ["save", "hold"] as const) {

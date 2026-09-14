@@ -8,6 +8,7 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import ts from "typescript";
 import { AgentRuntime } from "../main/agent-loop";
+import { withoutCredentials } from "../main/credentials";
 import * as platform from "../main/platform";
 import { shellQuoted, type ToolArgs } from "../main/tools";
 
@@ -20,7 +21,7 @@ const wait = (ms = 0) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 function load(overrides: Record<string, unknown> = {}) {
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const deps = {
-    ...platform, spawn, path, readFileSync, shellQuoted, MAX_COMMAND_MS: 2000, MAX_COMMAND_OUTPUT: 16384,
+    ...platform, spawn, path, readFileSync, shellQuoted, withoutCredentials, MAX_COMMAND_MS: 2000, MAX_COMMAND_OUTPUT: 16384,
     setTimeout: (callback: () => void, ms: number) => { const timer = setTimeout(callback, ms); timers.add(timer); return timer; },
     clearTimeout: (timer: ReturnType<typeof setTimeout>) => { timers.delete(timer); clearTimeout(timer); },
     ...overrides,
@@ -117,7 +118,7 @@ for (const finish of ["success", "error", "timeout", "abort"] as const) {
     await wait();
     assert.equal(launch[0], "C:\\Program Files\\node.exe");
     assert.deepEqual(launch[1], ["C:\\tools\\saved tool", input]);
-    assert.deepEqual(launch[2], { cwd: "C:\\work", env: process.env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    assert.deepEqual(launch[2], { cwd: "C:\\work", env: withoutCredentials(process.env), stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     child.stdout.write("kept output 日本語\n");
     if (finish === "abort") {
       controller.abort();

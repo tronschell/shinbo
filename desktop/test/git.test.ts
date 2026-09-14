@@ -196,9 +196,8 @@ test("the worktree list reports dirty state and removal is refused for the prima
     await assert.rejects(removeWorktrees(repo, [repo]), /main checkout/);
     await assert.rejects(removeWorktrees(repo, ["/nowhere/else"]), /Refresh and try again/);
     await assert.rejects(removeWorktrees(repo, []), /Pick the worktrees/);
-    await assert.rejects(removeWorktrees(repo, [tree]), /--force/);
-    run("-C", tree, "clean", "-f", "scratch.txt");
     await removeWorktrees(repo, [tree]);
+    assert.equal(existsSync(tree), false);
     const after = await listWorktrees(repo);
     assert.deepEqual(after.map((row) => row.path), [repo]);
   } finally {
@@ -381,6 +380,34 @@ test("committing a subset of the changed files leaves the rest uncommitted", asy
   }
 });
 
+test("a subfolder of a repository commits, discards, and diffs with paths relative to that subfolder", async () => {
+  const { root, repo, run } = makeRepo();
+  try {
+    const sub = path.join(repo, "sub");
+    mkdirSync(sub, { recursive: true });
+    write(sub, "inner.txt", "one\n");
+    write(repo, "top.txt", "top\n");
+    run("add", "-A");
+    run("commit", "-q", "-m", "first");
+    write(sub, "inner.txt", "two\n");
+    write(repo, "top.txt", "changed\n");
+    write(sub, "loose.txt", "new\n");
+
+    const snapshot = await gitSnapshot(sub);
+    assert.deepEqual(snapshot?.files.map((file) => file.path).sort(), ["inner.txt", "loose.txt"]);
+    assert.match(snapshot!.diff, /\+\+\+ b\/inner\.txt/);
+    assert.match(snapshot!.diff, /\+\+\+ b\/loose\.txt/);
+    assert.doesNotMatch(snapshot!.diff, /top\.txt/);
+    await commit(sub, { message: "feat: inner", paths: ["inner.txt"] });
+    assert.equal(run("log", "-1", "--format=%s").trim(), "feat: inner");
+    assert.deepEqual(run("status", "--porcelain").split("\n").filter(Boolean).sort(), [" M top.txt", "?? sub/loose.txt"]);
+    await discard(sub, ["loose.txt"]);
+    assert.equal(existsSync(path.join(sub, "loose.txt")), false);
+    assert.equal(readFileSync(path.join(repo, "top.txt"), "utf8"), "changed\n");
+    assert.deepEqual((await gitSnapshot(sub))?.files, []);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test("discarding restores a tracked file and deletes an untracked one", async () => {
   const { root, repo, run } = makeRepo();
   try {
@@ -504,6 +531,10 @@ test("a plain folder reports no repository, and git init turns it into one", asy
     process.env.PATH = "/nonexistent";
     try { assert.equal(await gitReady(repo), "no-git"); } finally { process.env.PATH = path_; }
     assert.equal((await gitSnapshot(repo))?.files.length, 0);
+    writeFileSync(path.join(repo, ".git", "config"), "[core\n");
+    const broken = await gitReady(repo);
+    assert.equal(typeof broken, "object");
+    assert.match((broken as { error: string }).error, /bad config line/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

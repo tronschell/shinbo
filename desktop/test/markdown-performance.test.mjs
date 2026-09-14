@@ -52,3 +52,12 @@ test("padded table lookahead stays linear and preserves table recognition", () =
   const checked = spawnSync(process.execPath, ["-e", `${compiled(root)}\nconst input = "| Header |\\n" + " ".repeat(60000) + "| ordinary text"; require("node:assert/strict").equal(exports.parseBlocks(input)[0].kind, "paragraph");`], { timeout: 2000, encoding: "utf8" });
   assert.equal(checked.status, 0, checked.error?.message ?? checked.stderr);
 });
+
+test("an unclosed run of backticks stays linear and still yields code spans", () => {
+  const { inlineSpans } = load(root);
+  const start = performance.now();
+  const spans = inlineSpans("a " + "`".repeat(6000) + " tail " + "x".repeat(5000));
+  assert.ok(performance.now() - start < 500);
+  assert.ok(spans.length > 0);
+  assert.equal(inlineSpans("a `b` ``c`d`` ```e```").filter((span) => span.code).map((span) => span.text).join("|"), "b|c`d|e");
+});

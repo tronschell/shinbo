@@ -120,10 +120,11 @@ canvas, composites the drawing over it, and encodes it as JPEG:
 | Compress | Widths min(w, 1440)/1200/960/720 × qualities 68/54/42/32, first fit wins |
 | Ceiling | `MAX_SCREEN_CONTEXT_CHARS` — 96 KiB of data URL |
 
-The result is held in main's `ScreenContextStore` — one attachment, claimed for
-one turn and dropped once it lands. **The frame stays in Shinbo's process**: what
-travels with the turn is a line of text naming the app that was in front. The
-`vision` tool is the only deliberate way an image reaches a model.
+The result is held in main's `ScreenContextStore` — one attachment, claimed by
+the next island message and dropped once it lands. That message saves it as
+`screen.jpg` and sends it to the turn's model as an image, cloud or local, with
+a line of text naming the app that was in front. It leaves this computer
+whenever the selected model is not a local one.
 
 The ▣ orb is the same capture without the pen.
 

@@ -4,6 +4,8 @@ import { networkInterfaces } from "node:os";
 
 const TAILNET = /^100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./;
 const SELF_ASSIGNED = /^169\.254\./;
+const VIRTUAL = /^(utun|vmnet|vnic|bridge|awdl|llw|gif|stf|ap)\d*/;
+const ETHERNET = /^en\d+$/;
 const TAILSCALE = [
   "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
   "/opt/homebrew/bin/tailscale",
@@ -19,15 +21,18 @@ export type Hosts = { tailnet: string[]; lan: string[] };
 
 export function hosts(): Hosts {
   const tailnet: string[] = [];
+  const wired: string[] = [];
   const lan: string[] = [];
-  for (const addresses of Object.values(networkInterfaces())) {
+  for (const [name, addresses] of Object.entries(networkInterfaces())) {
     for (const address of addresses ?? []) {
       if (address.family !== "IPv4" || address.internal) continue;
       if (TAILNET.test(address.address)) tailnet.push(address.address);
-      else if (!SELF_ASSIGNED.test(address.address)) lan.push(address.address);
+      else if (VIRTUAL.test(name) || SELF_ASSIGNED.test(address.address)) continue;
+      else if (ETHERNET.test(name)) wired.push(address.address);
+      else lan.push(address.address);
     }
   }
-  return { tailnet: tailnet.sort(), lan: lan.sort() };
+  return { tailnet: tailnet.sort(), lan: [...wired.sort(), ...lan.sort()] };
 }
 
 const here = (): string[] => {
@@ -35,14 +40,15 @@ const here = (): string[] => {
   return [...found.tailnet, ...found.lan];
 };
 
-export async function addressesFor(host: string): Promise<string[]> {
+export async function addressesFor(host: string): Promise<string[] | undefined> {
   const mine = here();
+  let found: { address: string }[];
   try {
-    const found = await lookup(host, { all: true, family: 4 });
-    return found.map((entry) => entry.address).filter((address) => mine.includes(address)).sort();
+    found = await lookup(host, { all: true, family: 4 });
   } catch {
-    return [];
+    return undefined;
   }
+  return found.map((entry) => entry.address).filter((address) => mine.includes(address)).sort();
 }
 
 const askTailscale = (binary: string) => new Promise<string>((resolve) => {
@@ -70,7 +76,7 @@ export async function pairingHost(): Promise<string | undefined> {
   if (!mine.length) return undefined;
   if (hosts().tailnet.length) {
     const magic = await magicDns();
-    if (magic && (await addressesFor(magic)).length) return magic;
+    if (magic && (await addressesFor(magic))?.length) return magic;
   }
   return mine[0];
 }

@@ -117,7 +117,7 @@ export function ProviderGrid({ busy, onReady, onAddProvider }: { busy: boolean; 
     window.addEventListener("focus", readClis);
     return () => { active = false; window.removeEventListener("focus", readClis); };
   }, [readClis]);
-  const ready = !!balance?.keyed && !balance.error && !checking && !saving;
+  const ready = (stored.some((item) => item.env === OPENROUTER_ENV && item.masked) || !!balance?.keyed) && !balance?.error && !checking && !saving;
   useEffect(() => { onReady(ready); }, [ready, onReady]);
   const connected = (tile: ProviderTile) => tile.cli ? clis.some((item) => item.id === tile.cli?.id && item.signedIn) : stored.some((item) => item.env === tile.plan?.credentialEnv && item.masked);
   const saveKey = async (env: string, secret?: string) => {
@@ -153,7 +153,7 @@ export function ProviderGrid({ busy, onReady, onAddProvider }: { busy: boolean; 
       <a className="setup-button" href={OPENROUTER_KEYS_URL} target="_blank" rel="noreferrer">Create a free API key ↗</a>
       <form className="setup-key" onSubmit={(event) => { event.preventDefault(); void verify(); }}>
         <label htmlFor="setup-router-key">OpenRouter API key</label>
-        <div><input id="setup-router-key" type="password" autoComplete="off" spellCheck={false} maxLength={MAX_SECRET_CHARS} disabled={locked} value={drafts[OPENROUTER_ENV] ?? ""} placeholder={openRouter?.masked ?? "sk-or-v1-…"} onChange={(event) => { setBalance(null); setDrafts((current) => ({ ...current, [OPENROUTER_ENV]: event.target.value })); }} /><button type="submit" className="setup-primary" disabled={locked || (!openRouter && !balance?.keyed && !(drafts[OPENROUTER_ENV] ?? "").trim())}>{checking || saving ? "Checking…" : ready ? "Check again" : "Verify key"}</button></div>
+        <div><input id="setup-router-key" type="password" autoComplete="off" spellCheck={false} maxLength={MAX_SECRET_CHARS} disabled={locked} value={drafts[OPENROUTER_ENV] ?? ""} placeholder={openRouter?.masked ?? "sk-or-v1-…"} onChange={(event) => setDrafts((current) => ({ ...current, [OPENROUTER_ENV]: event.target.value }))} /><button type="submit" className="setup-primary" disabled={locked || (!openRouter && !balance?.keyed && !(drafts[OPENROUTER_ENV] ?? "").trim())}>{checking || saving ? "Checking…" : ready ? "Check again" : "Verify key"}</button></div>
       </form>
       {(ready || checking) && <small className={ready ? "setup-success" : ""} role="status">{ready ? "✓ Key verified. OpenRouter is ready." : "Checking your saved OpenRouter key…"}</small>}
       {openRouterLost && <p className="dialog-error" role="alert">{unreadableKeyNotice("OpenRouter", RUNTIME_PLATFORM)} Shinbo kept the unreadable one on disk and replaces it the moment you save a new one.</p>}
@@ -257,17 +257,26 @@ function SpendLine({ window5h, week, balance }: { window5h?: PlanSpend; week?: P
 
 export function CliPlanRow({ plan, installed, busy, onDone }: { plan: CliPlan; installed?: InstalledCli; busy: boolean; onDone: () => void }) {
   const [tab, setTab] = useState<TerminalTab>();
+  const [ended, setEnded] = useState(false);
   const [error, setError] = useState("");
   const signedIn = installed?.signedIn === true;
   useEffect(() => {
-    if (!tab) return;
+    if (!tab || ended) return;
     const stop = window.shinbo.onTerminals(() => void window.shinbo.listTerminals(tab.threadId)
-      .then((found) => { if (!found.some((item) => item.id === tab.id && item.running)) { setTab(undefined); onDone(); } })
+      .then((found) => { if (!found.some((item) => item.id === tab.id && item.running)) { setEnded(true); onDone(); } })
       .catch(() => undefined));
-    return () => { stop(); void window.shinbo.closeTerminal(tab.id); };
-  }, [onDone, tab]);
-  const signIn = () => void window.shinbo.signInCli({ signIn: plan.id, columns: 80, rows: 16 })
-    .then(setTab).catch((reason: unknown) => setError(reasonText(reason)));
+    return stop;
+  }, [ended, onDone, tab]);
+  const open = ended && signedIn ? undefined : tab;
+  useEffect(() => {
+    if (!open) return;
+    return () => { void window.shinbo.closeTerminal(open.id); };
+  }, [open]);
+  const signIn = () => {
+    setTab(undefined);
+    setEnded(false);
+    void window.shinbo.signInCli({ signIn: plan.id, columns: 80, rows: 16 }).then(setTab).catch((reason: unknown) => setError(reasonText(reason)));
+  };
   return <div className={`provider-key-row cli-plan-row ${signedIn ? "set" : ""}`}>
     <BrandIcon brand={brandForProvider(plan.brand)} className="provider-mark" />
     <div>
@@ -277,12 +286,12 @@ export function CliPlanRow({ plan, installed, busy, onDone }: { plan: CliPlan; i
     </div>
     <span className="provider-key-value">{installed ? "Sign in with " : "Install, then "}<code>{plan.signIn}</code></span>
     {installed
-      ? <button type="button" disabled={busy} onClick={() => (tab ? setTab(undefined) : signIn())}>{tab ? "Close" : signedIn ? "Sign in again" : "Sign in"}</button>
+      ? <button type="button" disabled={busy} onClick={() => (open ? setTab(undefined) : signIn())}>{open ? "Close" : signedIn ? "Sign in again" : "Sign in"}</button>
       : <span className="provider-key-value">Not found</span>}
     <span className={`provider-key-value ${signedIn ? "" : "warn"}`}>{!installed ? "Not installed" : signedIn ? "Signed in" : "Not signed in"}</span>
     {error && <p className="settings-error" role="alert">{error}</p>}
-    {tab && <div className="cli-plan-terminal">
-      <TerminalSurface tab={tab} active onSelect={() => undefined} onLink={() => undefined} />
+    {open && <div className="cli-plan-terminal" data-ended={ended}>
+      <TerminalSurface tab={open} active onSelect={() => undefined} onLink={() => undefined} />
     </div>}
   </div>;
 }

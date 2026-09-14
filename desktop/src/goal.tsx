@@ -140,7 +140,7 @@ export function GoalView({ thread, busy, reload, onOpenThread }: { thread: Threa
         <div className="goal-controls">
           {goal.status === "active" && <button type="button" disabled={busy} onClick={() => run(window.shinbo.updateGoal({ threadId: thread.id, status: "paused" }))}>Pause</button>}
           {resumable.includes(goal.status) && goalTokensLeft(goal) > 0 && goal.turns < MAX_GOAL_TURNS && <button type="button" disabled={busy} onClick={() => run(window.shinbo.updateGoal({ threadId: thread.id, status: "active" }))}>Resume</button>}
-          {(goal.status === "budgetLimited" || goalTokensLeft(goal) === 0 || goal.turns >= MAX_GOAL_TURNS) && <button
+          {goal.status !== "complete" && (goal.status === "budgetLimited" || goalTokensLeft(goal) === 0 || goal.turns >= MAX_GOAL_TURNS) && <button
             type="button"
             className="goal-primary"
             disabled={busy}

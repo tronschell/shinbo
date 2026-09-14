@@ -1,4 +1,4 @@
-.app-shell { --window-controls-end: 117px; position: relative; height: 100%; display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); background: transparent; }
+.app-shell { --window-controls-end: 172px; position: relative; height: 100%; display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); background: transparent; }
 
 .sidebar { --row: 28px; --pad: var(--s-4); position: relative; display: flex; flex-direction: column; min-height: 0; padding: 46px 0 0; border-right: 1px solid var(--border-strong); background: color-mix(in srgb, var(--chrome) 35%, transparent); }
 .sidebar > * { flex: 0 0 auto; }
@@ -16,6 +16,7 @@
 .rail-nav > .rail-toggle::before { position: absolute; inset: -9px 0; content: ""; }
 .rail-nav > .rail-toggle:disabled { color: var(--text-4, var(--text-3)); opacity: 0.45; }
 .app-shell:has(> .sidebar.collapsed) { grid-template-columns: 0 minmax(0, 1fr); }
+.app-shell:not(.win32):has(> .sidebar.collapsed) > .drag-region { width: var(--window-controls-end); }
 .sidebar.collapsed { z-index: 8; width: var(--sidebar-width); opacity: 0; clip-path: inset(0 calc(100% - 8px) 0 0); background: var(--chrome); box-shadow: var(--shadow-md); transition: opacity var(--t), clip-path var(--t); }
 .sidebar.collapsed:hover, .sidebar.collapsed:focus-within { opacity: 1; clip-path: inset(0); }
 .app-shell > .sidebar.collapsed ~ .content > section > :first-child,

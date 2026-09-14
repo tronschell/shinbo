@@ -13,13 +13,16 @@ where while with yield
 
 const HASH = /^(sh|bash|zsh|shell|console|fish|py|python|rb|ruby|pl|perl|r|ya?ml|toml|ini|conf|cfg|env|make(file)?|dockerfile|nix|gitignore)$/i;
 
-const CORE = String.raw`\/\*[\s\S]*?(?:\*\/|$)|<!--[\s\S]*?(?:-->|$)|\/\/[^\n]*)|("(?:\\.|[^"\\])*"?|'(?:\\.|[^'\\])*'?|\x60(?:\\.|[^\x60\\])*\x60?)|(<\/?[A-Za-z][\w.:-]*)|(\b\d[\w.]*)|([A-Za-z_$@#-][\w$-]*)`;
+const PROSE = /^(te?xt|plain(text)?|log|output|diff|md|markdown)$/i;
 
-const PLAIN = new RegExp(`(${CORE}`, "g");
-const HASHED = new RegExp(String.raw`(#[^\n]*|` + CORE, "g");
+const SLASHED = String.raw`\/\*[\s\S]*?(?:\*\/|$)|(?<![:\w])\/\/[^\n]*|`;
+const CORE = String.raw`<!--[\s\S]*?(?:-->|$))|("""[\s\S]*?(?:"""|$)|'''[\s\S]*?(?:'''|$)|"(?:\\.|[^"\\\n])*"?|'(?:\\.|[^'\\\n])*'?|\x60(?:\\.|[^\x60\\])*\x60?)|(<\/?[A-Za-z][\w.:-]*)|(\b\d[\w.]*)|([A-Za-z_$@#-][\w$-]*)`;
+
+const PLAIN = new RegExp(`(${SLASHED}${CORE}`, "g");
+const HASHED = new RegExp(`(#[^\\n]*|${CORE}`, "g");
 
 export function tokenize(text: string, language = ""): Token[] {
-  if (text.length > 32_768) return [{ text }];
+  if (text.length > 32_768 || !language || PROSE.test(language)) return [{ text }];
   const pattern = HASH.test(language) ? HASHED : PLAIN;
   const tokens: Token[] = [];
   let last = 0;

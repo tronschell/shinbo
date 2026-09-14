@@ -42,6 +42,7 @@ export function CodeBlock({ text, language }: { text: string; language?: string 
     <span key={at} className={token.kind && `tok-${token.kind}`}>{token.text}</span>), [text, language]);
   const thread = useContext(RunContext);
   const [id, setId] = useState<string>();
+  const [hidden, setHidden] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const state = useTask(id);
@@ -58,6 +59,7 @@ export function CodeBlock({ text, language }: { text: string; language?: string 
   const start = () => {
     setError("");
     setId(undefined);
+    setHidden(false);
     void window.shinbo.runCommand({ command: text, folderId: thread?.folderId })
       .then((task) => setId(task.id))
       .catch((reason: unknown) => setError(reasonText(reason)));
@@ -73,7 +75,7 @@ export function CodeBlock({ text, language }: { text: string; language?: string 
     <div className="md-code-bar">
       {language && <span className="md-code-lang">{language}</span>}
       {runnable && <button type="button" className="md-code-button" title={running ? "Stop" : "Run this command"} aria-label={running ? "Stop this command" : "Run this command"}
-        onClick={() => running && id ? void window.shinbo.stopBackground(id) : start()}>
+        onClick={() => running && id ? void window.shinbo.stopBackground(id).catch((reason: unknown) => setError(reasonText(reason))) : start()}>
         <Icon path={running ? STOP : PLAY} />
       </button>}
       <button type="button" className="md-code-button" title={copied ? "Copied" : "Copy"} aria-label={copied ? "Copied" : "Copy this block"}
@@ -83,12 +85,12 @@ export function CodeBlock({ text, language }: { text: string; language?: string 
     </div>
     <pre><code>{highlighted}</code></pre>
     {error && <p className="capability-error" role="alert">{error}</p>}
-    {state && <div className="md-run" data-status={state.task.status}>
+    {state && !hidden && <div className="md-run" data-status={state.task.status}>
       <header>
         <span className="md-run-state">{running ? "Running…" : `Exited ${state.task.exitCode ?? "?"}`}</span>
         <span className="md-run-where">{state.task.folder || "home"}</span>
         <button type="button" onClick={addContext}>Add to chat</button>
-        <button type="button" aria-label="Hide this output" onClick={() => setId(undefined)}>×</button>
+        <button type="button" aria-label="Hide this output" onClick={() => setHidden(true)}>×</button>
       </header>
       <pre className="md-run-output" ref={terminal} onScroll={terminalScroll}>{state.output || (running ? "Waiting for output…" : "(no output)")}</pre>
     </div>}

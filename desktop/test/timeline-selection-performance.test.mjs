@@ -54,7 +54,7 @@ function mount(file, shinbo) {
       return [owner.hooks[index].value, owner.hooks[index].set];
     },
   };
-  const { Timeline } = compile(readFileSync(file, "utf8"), { window: { shinbo }, setInterval: () => 0, clearInterval: () => undefined, require: (name) => {
+  const { Timeline } = compile(readFileSync(file, "utf8"), { window: { shinbo }, setInterval: () => 0, clearInterval: () => undefined, setTimeout: (run) => { void Promise.resolve().then(run); return 1; }, clearTimeout: () => undefined, require: (name) => {
     if (name === "react") return react;
     if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
     if (name === "../shared/trace") return { ...trace, formatDuration: (value) => { calls++; return trace.formatDuration(value); } };
@@ -139,11 +139,12 @@ test("foreign span broadcasts preserve an idle saved timeline without rebuilding
     let finalRows;
     for (let trial = 0; trial < 5; trial++) {
       const listeners = new Set();
+      let trees = {};
       const view = mount(file, {
-        listSpans: async () => ({}), threadTraces: async () => saved,
+        listSpans: async () => trees, threadTraces: async () => saved,
         onSpans: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
       });
-      const emit = (trees) => { for (const listener of listeners) listener(trees); };
+      const emit = async (next) => { trees = next; for (const listener of listeners) listener(); await settle(); };
       let props = { threadId: "saved", sending: false, carriedTokens: 80000 };
       view.render(props); await settle();
       let tree = view.render(props);
@@ -152,7 +153,7 @@ test("foreign span broadcasts preserve an idle saved timeline without rebuilding
       const before = view.mappedRows();
       const start = performance.now();
       for (let update = 0; update < 40; update++) {
-        emit(update % 2 ? { foreign: [{ ...spans[0], name: `Foreign ${update}` }], saved: [] } : { foreign: [{ ...spans[0], name: `Foreign ${update}` }] });
+        await emit(update % 2 ? { foreign: [{ ...spans[0], name: `Foreign ${update}` }], saved: [] } : { foreign: [{ ...spans[0], name: `Foreign ${update}` }] });
         tree = view.render(props);
       }
       times.push(performance.now() - start);
@@ -160,13 +161,13 @@ test("foreign span broadcasts preserve an idle saved timeline without rebuilding
       if (!baseline) assert.equal(finalRows, 0);
       assert.equal(rows(tree).length, 8002);
       const live = [{ ...spans[0], id: "live-agent", name: "Live root", endedAt: undefined, status: "running" }];
-      emit({ saved: live }); tree = view.render(props); assert.equal(rows(tree).length, 8003);
-      const own = view.mappedRows(); emit({ saved: live }); view.render(props); assert.equal(view.mappedRows(), own);
-      emit({ saved: live.map((span) => ({ ...span, endedAt: 20, status: "ok" })) }); tree = view.render(props);
+      await emit({ saved: live }); tree = view.render(props); assert.equal(rows(tree).length, 8003);
+      const own = view.mappedRows(); await emit({ saved: live }); view.render(props); assert.equal(view.mappedRows(), own);
+      await emit({ saved: live.map((span) => ({ ...span, endedAt: 20, status: "ok" })) }); tree = view.render(props);
       assert.equal(rows(tree)[1].props["data-status"], "ok"); assert.match(name(rows(tree)[1]).props.title, /20ms$/);
-      emit({ saved: [] }); tree = view.render(props); assert.equal(rows(tree).length, 8002);
-      emit({}); tree = view.render(props); assert.equal(rows(tree).length, 8002);
-      emit({ saved: live }); tree = view.render(props); assert.equal(rows(tree).length, 8003);
+      await emit({ saved: [] }); tree = view.render(props); assert.equal(rows(tree).length, 8002);
+      await emit({}); tree = view.render(props); assert.equal(rows(tree).length, 8002);
+      await emit({ saved: live }); tree = view.render(props); assert.equal(rows(tree).length, 8003);
       props = { ...props, threadId: "other" }; view.render(props); await settle(); tree = view.render(props);
       assert.equal(rows(tree).length, 8002); assert.equal(listeners.size, 1);
       view.unmount(); assert.equal(listeners.size, 0);

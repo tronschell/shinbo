@@ -38,7 +38,7 @@ test("every tool that gates to ask has a door that asks", () => {
   const asked = toolDefinitions("full", everything)
     .map((tool) => tool.name)
     .filter((name) => toolGate("ask", name) === "ask" || toolGate("acceptEdits", name) === "ask");
-  assert.deepEqual(asked.sort(), ["browser", "cli", "computer", "install_mcp", "run_tool", "secret", "workflow"]);
+  assert.deepEqual(asked.sort(), ["artifact", "browser", "cli", "component", "computer", "install_mcp", "run_tool", "secret", "workflow"]);
 });
 
 test("a tool is only offered once the thing it drives is actually connected", () => {

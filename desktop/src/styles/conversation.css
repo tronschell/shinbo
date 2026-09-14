@@ -248,6 +248,7 @@
 .drop-veil span { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-3) var(--s-4); color: var(--text); border: 1px dashed var(--accent); background: var(--surface-3); box-shadow: var(--shadow-lg); font: var(--fs-sm)/1 var(--font-mono); letter-spacing: var(--ls-caps); text-transform: uppercase; }
 
 .composer { position: relative; width: 100%; max-width: var(--composer-column); margin: 0 auto var(--s-4); border: 1px solid var(--border-strong); background: var(--bg); }
+.composer:focus-within { border-color: var(--text-2); }
 .composer-project { position: relative; z-index: 4; pointer-events: none; filter: drop-shadow(0 1px 2px var(--bg)) drop-shadow(0 0 6px var(--bg)); display: flex; align-items: center; gap: var(--s-1); width: 100%; max-width: var(--composer-column); margin: 0 auto var(--s-2); padding: 0 var(--s-1); font-family: var(--font-mono); font-size: var(--fs-sm); }
 .composer-project .project-button, .composer-project .project-branch, .composer-project label {
   display: flex; align-items: center; gap: var(--s-2); flex: 0 1 auto; min-width: 0; height: 20px; padding: 0 var(--s-2);
@@ -437,7 +438,6 @@ button.add-row:hover:not(:disabled) { background: var(--surface-3); }
 .role-tab[aria-selected="true"] small { color: var(--accent); }
 .model-body > * { flex: 0 0 auto; }
 .model-search { min-height: 30px; padding: 0 var(--s-3); color: var(--text); border: 0; border-bottom: 1px solid var(--border); background: transparent; font-family: var(--font-mono); font-size: var(--fs-sm); }
-.model-find .model-search:focus-visible { border-bottom-color: var(--border); }
 .model-find { display: flex; }
 .model-find .model-search { flex: 1 1 auto; min-width: 0; }
 .model-free-only { flex: 0 0 auto; padding: 0 var(--s-3); color: var(--text-3); background: transparent; border-bottom: 1px solid var(--border); font: var(--fs-2xs)/1 var(--font-mono); letter-spacing: var(--ls-caps); text-transform: uppercase; white-space: nowrap; transition: color var(--t), background-color var(--t); }
