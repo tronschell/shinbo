@@ -210,16 +210,39 @@ the machine wakes, and when a window takes focus, with any check inside thirty
 minutes of the last one skipped. Wake and focus matter because a sleeping Mac
 suspends the timer, so a window left open for days would otherwise never check
 again. **Check for Updates…** in the Shinbo menu forces one past that gap and
-reports the result either way. Squirrel downloads a newer eligible version in
-the background, and Shinbo shows **Update ready · X.Y.Z** with **Install and
-relaunch** once the download finishes.
+reports the result in the workspace notice at the bottom right: a spinner while
+it checks, then **Shinbo is up to date**, **Update ready · X.Y.Z** with
+**Install and relaunch**, or the failure text. Squirrel downloads a newer
+eligible version in the background, and the ready notice appears once the
+download finishes.
+
+**Install and relaunch** does not quit at once. The notice turns into an
+installer that names each step with a progress bar and percentage: it stops
+running threads and waits for their harnesses to finish, then relaunches into
+the new version. The main process publishes that state over `shinbo:update`
+([shared/update.ts](../desktop/shared/update.ts)) and the renderer only draws
+it. Squirrel replaces the app bundle and nothing else, so the user data
+directory, the vault, settings, and threads carry over unchanged.
+
+Checks keep running after a download. Once Squirrel has staged a version, the
+periodic check reads the feed JSON directly instead, and a newer release
+replaces the notice, so a user who ignores 0.9.1 sees **Update ready · 0.9.2**
+when it ships rather than the version in between. Squirrel.Windows can stage the
+newer download in the same process. Squirrel.Mac stages one download per
+process, so on macOS the notice names the newest version, **Install and
+relaunch** installs the staged one, and `update-ready.json` records the newest
+version with an install flag. The relaunched app reads that flag, clears it, and
+runs the installer again on its own, so the user reaches the newest version
+with one click and never sits on the in-between one.
 
 The downloaded version is recorded in `update-ready.json` under the user data
 directory, so quitting no longer forgets it and the notice returns on the next
 launch. Squirrel can only install an update this process downloaded, so
-installing from a restored notice re-downloads first and then relaunches. The
-record is deleted once the running version is no longer older than it. The
-unpackaged `SHINBO_UPDATE_FAKE` mode only exercises the notice.
+installing from a restored notice shows **Checking for updates** and
+**Downloading X.Y.Z** first and then relaunches. The record is deleted once the
+running version is no longer older than it. The unpackaged `SHINBO_UPDATE_FAKE`
+mode walks the same notice and installer steps without downloading or
+relaunching, and honours the install flag in the record the same way.
 
 On Windows, the Setup executable is a Squirrel installer. It installs per user
 under `%LOCALAPPDATA%\Shinbo`, needs no administrator prompt, and the same

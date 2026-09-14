@@ -3,13 +3,19 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { readdir, stat } from "node:fs/promises";
-import { MAX_FILE_BYTES, MAX_FOLDER_COUNT, MAX_FOLDER_FILES, MAX_FOLDERS, missingFolderMessage, type FolderFile, type FolderGrant, type FolderListing } from "../shared/folders";
+import { isPreviewImage, MAX_BLOB_BYTES, MAX_FILE_BYTES, MAX_FOLDER_COUNT, MAX_FOLDER_FILES, MAX_FOLDER_PATHS, MAX_FOLDERS, MAX_OPEN_BYTES, missingFolderMessage, type FolderBlob, type FolderEntry, type FolderFile, type FolderGrant, type FolderListing } from "../shared/folders";
 import { pathInside, realPath, realPathInside, samePath } from "./platform";
 import { writeAtomicSync } from "./write-atomic";
 
 const SKIP_DIRECTORIES = new Set(["node_modules", "target", "dist", "dist-main", "dist-native", "dist-renderer", "build", "coverage", "out", "zig-cache", "zig-out", "__pycache__", ".venv", "vendor"]);
 const TEXT_FILE = /\.(md|markdown|txt|rst|org|json|jsonc|ya?ml|toml|ini|csv|tsv|tsx?|jsx?|mjs|cjs|rs|zig|py|go|rb|java|kt|swift|c|h|cc|cpp|hpp|cs|php|sh|zsh|sql|css|scss|html?|xml|tex|env|gitignore)$/i;
 const MAX_DEPTH = 6;
+const MAX_PATH_DEPTH = 12;
+
+function imageMime(name: string): string {
+  const kind = path.extname(name).slice(1).toLowerCase();
+  return kind === "svg" ? "image/svg+xml" : kind === "ico" ? "image/x-icon" : `image/${kind === "jpg" ? "jpeg" : kind}`;
+}
 
 export class FolderStore {
   private readonly file: string;
@@ -90,6 +96,31 @@ export class FolderStore {
     return { files: found.sort((left, right) => left.path.localeCompare(right.path)), total, capped: total >= MAX_FOLDER_COUNT || visited >= maxEntries };
   }
 
+  async paths(id: string): Promise<{ paths: string[]; capped: boolean }> {
+    const root = this.root(id);
+    const found: string[] = [];
+    let level = [root];
+    for (let depth = 0; depth <= MAX_PATH_DEPTH && level.length > 0 && found.length < MAX_FOLDER_PATHS; depth += 1) {
+      const next: string[] = [];
+      for (let offset = 0; offset < level.length; offset += 32) {
+        const listed = await Promise.all(level.slice(offset, offset + 32).map(async (directory) =>
+          [directory, await readdir(directory, { withFileTypes: true }).catch(() => [])] as const));
+        for (const [directory, entries] of listed) {
+          for (const entry of entries) {
+            const full = path.join(directory, entry.name);
+            if (entry.isDirectory()) {
+              if (!SKIP_DIRECTORIES.has(entry.name) && entry.name !== ".git") next.push(full);
+            } else if (entry.isFile() && found.length < MAX_FOLDER_PATHS) {
+              found.push(path.relative(root, full).split(path.sep).join("/"));
+            }
+          }
+        }
+      }
+      level = next;
+    }
+    return { paths: found.sort(), capped: found.length >= MAX_FOLDER_PATHS };
+  }
+
   read(id: string, relative: string): { path: string; text: string; missing?: boolean } {
     const root = this.root(id);
     const target = path.resolve(root, relative);
@@ -97,27 +128,54 @@ export class FolderStore {
     if (!this.exists(target)) return { path: path.relative(root, target), text: "", missing: true };
     const full = realpathSync.native(target);
     if (!pathInside(root, full)) throw new Error("That file is outside the granted folder.");
-    if (!statSync(full).isFile() || statSync(full).size > MAX_FILE_BYTES) throw new Error("That file cannot be attached.");
+    if (!statSync(full).isFile() || statSync(full).size > MAX_OPEN_BYTES) throw new Error("That file cannot be attached.");
     return { path: path.relative(root, full), text: readFileSync(full, "utf8") };
   }
 
-  write(id: string, relative: string, text: string): { path: string; before: string | null } {
+  async entries(id: string, relative: string): Promise<FolderEntry[]> {
     const root = this.root(id);
-    if (Buffer.byteLength(text, "utf8") > MAX_FILE_BYTES) throw new Error(`Shinbo writes at most ${MAX_FILE_BYTES} bytes to one file.`);
+    const directory = relative === "" || relative === "." ? root : this.contain(root, relative);
+    if (!(await stat(directory).catch(() => undefined))?.isDirectory()) throw new Error("That path is not a folder.");
+    const listed = (await readdir(directory, { withFileTypes: true })).slice(0, MAX_FOLDER_COUNT);
+    const found = await Promise.all(listed.map(async (entry) => {
+      const info = await stat(path.join(directory, entry.name)).catch(() => undefined);
+      return { name: entry.name, kind: (info ? info.isDirectory() : entry.isDirectory()) ? "dir" as const : "file" as const, bytes: info?.isFile() ? info.size : 0 };
+    }));
+    return found.sort((left, right) => left.kind === right.kind
+      ? left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
+      : left.kind === "dir" ? -1 : 1);
+  }
+
+  blob(id: string, relative: string): FolderBlob {
+    const root = this.root(id);
+    const full = this.contain(root, relative);
+    if (!isPreviewImage(full)) throw new Error("That file cannot be previewed here.");
+    const stats = statSync(full);
+    if (!stats.isFile()) throw new Error("That file cannot be previewed here.");
+    if (stats.size > MAX_BLOB_BYTES) throw new Error(`Shinbo previews images up to ${Math.round(MAX_BLOB_BYTES / 1024 / 1024)} MB.`);
+    return { path: path.relative(root, full), mime: imageMime(full), dataUrl: `data:${imageMime(full)};base64,${readFileSync(full).toString("base64")}`, bytes: stats.size };
+  }
+
+  write(id: string, relative: string, text: string, previous?: string): { path: string; before: string | null } {
+    const root = this.root(id);
+    if (Buffer.byteLength(text, "utf8") > MAX_OPEN_BYTES) throw new Error(`Shinbo writes at most ${MAX_OPEN_BYTES} bytes to one file.`);
     const full = this.contain(root, relative);
     mkdirSync(path.dirname(full), { recursive: true });
     let before: string | null = null;
     let destination = full;
     let mode = 0o600;
+    let present = false;
     try {
       const stats = statSync(full);
       if (!stats.isFile()) throw new Error("That path is not a file.");
+      present = true;
       destination = realpathSync.native(full);
       mode = stats.mode & 0o777;
-      if (stats.size <= MAX_FILE_BYTES) before = readFileSync(full, "utf8");
+      if (stats.size <= MAX_OPEN_BYTES) before = readFileSync(full, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
+    if (typeof previous === "string" && (present ? before : "") !== previous) throw new Error("That file changed on disk since you opened it — reload it first.");
     writeAtomicSync(destination, text, mode);
     return { path: path.relative(root, full), before };
   }

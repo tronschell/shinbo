@@ -79,7 +79,7 @@ export function rememberBlocks(threadId: string, turns: Record<string, Block[]>)
   storeEvicting(BLOCKS_KEY, threadId, [text]);
 }
 
-const PICK_KINDS = new Set(["file", "note", "artifact", "attachment", "terminal", "diff", "visual", "component"]);
+const PICK_KINDS = new Set(["file", "note", "artifact", "attachment", "terminal", "diff", "visual", "component", "selection"]);
 
 const ATTACHED_KEY = "shinbo.threadAttachments.v1.";
 const KEPT_ATTACHED_TURNS = 60;
@@ -616,6 +616,7 @@ export function pickLabel(pick: ContextPick, folders: FolderGrant[]): string {
   if (pick.kind === "note") return pick.title;
   if (pick.kind === "terminal") return `${pick.lines} ${plural(pick.lines, "line")} of output`;
   if (pick.kind === "diff") return `${pick.path} · ${pick.lines} ${plural(pick.lines, "line")}`;
+  if (pick.kind === "selection") return `${slashName(pick.path)}:${pick.from}-${pick.to}`;
   return `${pick.title} · ${pick.label}`;
 }
 
@@ -668,6 +669,10 @@ export async function buildAttachedContext(folders: FolderGrant[], folderIds: st
     }
     if (pick.kind === "diff") {
       sections.push({ heading: `Uncommitted diff of ${pick.path}, the part the user highlighted`, body: pick.text, label: pickLabel(pick, folders) });
+      continue;
+    }
+    if (pick.kind === "selection") {
+      sections.push({ heading: `${pick.path}:${pick.from}-${pick.to}`, body: pick.text, label: pickLabel(pick, folders) });
       continue;
     }
     if (pick.kind === "component") {

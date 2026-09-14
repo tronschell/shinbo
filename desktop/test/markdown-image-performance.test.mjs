@@ -36,6 +36,7 @@ function picture(file, previewPath, openPreview, available = true) {
   const jsx = (type, props) => ({ type, props });
   const { Picture, PathSpan } = compile(`${declarations}\nexport { Picture, PathSpan };`, {
     require: () => ({ jsx, jsxs: jsx }), FileMark: "file-mark", openPreview,
+    useContext: () => null, OpenPaths: null, pathLink: () => undefined,
     window: { shinbo: { previewPath } },
     setTimeout: (callback, delay) => { const id = ++nextTimer; timers.set(id, { callback, at: elapsed + delay }); return id; },
     clearTimeout: (id) => timers.delete(id),

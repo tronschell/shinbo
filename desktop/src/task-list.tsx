@@ -193,7 +193,6 @@ export function TaskListBar({ threadId, sample }: { threadId: string; sample?: T
   const said = `${list.title} — ${done} of ${tasks.length} ${plural(tasks.length, "task")} done`;
   return <div className="task-bar">
     <button type="button" className="task-bar-head" aria-expanded={open} title={said} aria-label={said} onClick={() => setOpen((was) => !was)}>
-      <span className="task-bar-label">Tasks</span>
       <strong>{list.title}</strong>
       <em>{done}/{tasks.length}</em>
       <span className="task-bar-track">

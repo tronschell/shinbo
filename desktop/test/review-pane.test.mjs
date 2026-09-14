@@ -9,10 +9,10 @@ const compiled = ts.transpileModule(callbacks, { compilerOptions: { target: ts.S
 
 test("review panes replace other right panes and restore the original context visibility", () => {
   for (const collapsed of [false, true]) {
-    const state = { review: "", artifact: "", layout: { inspectorCollapsed: collapsed, browserOpen: false } };
-    const { showReview, showBrowser, showArtifact } = new Function("useCallback", "layout", "pane", "inspectorBefore", "setReviewPane", "setArtifactPaneId", "setView", `${compiled}; return { showReview, showBrowser, showArtifact };`)(
+    const state = { review: "", artifact: "", files: false, layout: { inspectorCollapsed: collapsed, browserOpen: false } };
+    const { showReview, showBrowser, showArtifact, showFiles } = new Function("useCallback", "layout", "pane", "inspectorBefore", "setReviewPane", "setArtifactPaneId", "setFilesPane", "setView", `${compiled}; return { showReview, showBrowser, showArtifact, showFiles };`)(
       (callback) => callback, state.layout, (change) => Object.assign(state.layout, change), { current: null },
-      (next) => { state.review = next; }, (id) => { state.artifact = id; }, () => {},
+      (next) => { state.review = next; }, (id) => { state.artifact = id; }, (update) => { state.files = update({ open: state.files }).open; }, () => {},
     );
     showBrowser(true);
     showReview("git");
@@ -30,6 +30,12 @@ test("review panes replace other right panes and restore the original context vi
     showBrowser(false);
     assert.equal(state.layout.inspectorCollapsed, collapsed);
     showReview("git");
+    showFiles(true);
+    assert.equal(state.files, true);
+    assert.equal(state.review, "");
+    assert.equal(state.layout.browserOpen, false);
+    showReview("git");
+    assert.equal(state.files, false);
     showReview("");
     assert.equal(state.layout.inspectorCollapsed, collapsed);
   }

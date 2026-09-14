@@ -369,6 +369,11 @@ button:where(.composer *) { background: transparent; color: inherit; }
 .pick-toast.funds a { margin-right: auto; color: var(--blue); font: var(--fs-2xs)/1 var(--font-mono); letter-spacing: var(--ls-caps); text-decoration: underline; text-transform: uppercase; text-underline-offset: 2px; }
 .pick-toast.update { display: grid; gap: var(--s-2); max-width: 300px; padding: var(--s-3); color: var(--text); white-space: normal; }
 .pick-toast.update .toast-actions button:last-child { margin-left: auto; font-size: var(--fs-md); }
+.pick-toast.update .update-install, .pick-toast.update .update-install:hover { color: #000; background: #fff; border-color: #fff; }
+.pick-toast.update .update-install:hover { opacity: .85; }
+.pick-toast.update .update-detail { color: var(--danger); font: var(--fs-xs)/1.4 var(--font); letter-spacing: normal; text-transform: none; }
+.pick-toast.update .tool-progress { min-width: 240px; }
+.pick-toast.update .index-bar > b { background: #fff; }
 @keyframes pick-toast-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .message-tray { display: flex; flex-wrap: wrap; gap: var(--s-2); max-height: 188px; margin-bottom: var(--s-3); overflow-y: auto; }
 .message-tray .composer-tile { padding: 0 var(--s-1); cursor: pointer; transition: border-color var(--t); }
@@ -582,13 +587,12 @@ button.capability-row:hover:not(:disabled) { background: var(--surface-2); }
 .quote-menu > button:hover { color: var(--text); background: var(--surface-3); }
 .quote-menu-separator { width: 1px; margin: 4px 0; background: var(--border); }
 
-.steered { width: fit-content; max-width: min(90%, calc(var(--content-column) * .72)); margin: var(--s-4) 0 var(--s-4) auto; padding: var(--s-3) var(--s-4); color: var(--text); background: var(--surface-3); border-left: 2px solid var(--violet); font-size: var(--fs-md); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
-.steered > span { display: block; margin-bottom: var(--s-1); color: var(--violet); font-family: var(--font-mono); font-size: var(--fs-2xs); letter-spacing: var(--ls-caps); text-transform: uppercase; }
+.steered { width: fit-content; max-width: min(90%, calc(var(--content-column) * .72)); margin: var(--s-4) 0 var(--s-4) auto; padding: var(--s-3) var(--s-4); color: var(--text); background: var(--surface-3); font-size: var(--fs-md); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.steered > span { display: block; margin-bottom: var(--s-1); color: var(--text-3); font-family: var(--font-mono); font-size: var(--fs-2xs); letter-spacing: var(--ls-caps); text-transform: uppercase; }
 
 .task-bar { display: flex; flex-direction: column-reverse; width: 100%; max-width: var(--composer-column); margin: 0 auto var(--s-2); border: 1px solid var(--border); background: var(--bg); }
 .task-bar-head { display: flex; align-items: center; gap: var(--s-2); width: 100%; padding: 2px var(--s-2); color: var(--text-2); font-family: var(--font-mono); font-size: var(--fs-2xs); line-height: 1.4; text-align: left; transition: background-color var(--t), color var(--t); }
 .task-bar-head:hover { color: var(--text); background: var(--surface-3); }
-.task-bar-head .task-bar-label { flex: none; color: var(--text-3); text-transform: uppercase; letter-spacing: var(--ls-caps); }
 .task-bar-head strong { flex: 1; min-width: 0; overflow: hidden; color: var(--text); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .task-bar-head em { flex: none; color: var(--text-3); font-style: normal; }
 .task-bar-head .caret { flex: none; color: var(--text-3); transform: rotate(-90deg); transition: transform var(--t); }

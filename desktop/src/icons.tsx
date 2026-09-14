@@ -195,3 +195,7 @@ export function ToolMark({ name = "", kind = "" }: { name?: string; kind?: strin
   const Glyph = TOOL_MARKS[name] ?? KIND_MARKS[kind] ?? ToolIcon;
   return <Glyph />;
 }
+
+export function InspectorIcon() {
+  return <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" aria-hidden="true"><rect x="1.6" y="2.6" width="12.8" height="10.8" /><path d="M10.6 2.6v10.8" /></svg>;
+}

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { ThreadStep } from "../shared/agents";
 import type { KeepRequest, VaultKind } from "../shared/vault";
 import type { GoalStatus } from "../shared/goal";
+import type { UpdateState } from "../shared/update";
 import type { CouncilStart, CouncilState } from "../shared/council";
 import type { ShortcutRequest, VerifierSettings } from "../shared/settings";
 
@@ -66,12 +67,12 @@ contextBridge.exposeInMainWorld("shinbo", {
     ipcRenderer.on("shinbo:notch-hover", wrapped);
     return () => ipcRenderer.removeListener("shinbo:notch-hover", wrapped);
   },
-  updateReady: () => ipcRenderer.invoke("shinbo:update-ready"),
+  updateState: () => ipcRenderer.invoke("shinbo:update-state"),
   installUpdate: () => ipcRenderer.invoke("shinbo:install-update"),
-  onUpdateReady: (listener: (value: string) => void) => {
-    const wrapped = (_event: unknown, value: unknown) => { if (typeof value === "string") listener(value); };
-    ipcRenderer.on("shinbo:update-ready", wrapped);
-    return () => ipcRenderer.removeListener("shinbo:update-ready", wrapped);
+  onUpdate: (listener: (value: UpdateState) => void) => {
+    const wrapped = (_event: unknown, value: unknown) => { if (value && typeof value === "object" && typeof (value as UpdateState).phase === "string") listener(value as UpdateState); };
+    ipcRenderer.on("shinbo:update", wrapped);
+    return () => ipcRenderer.removeListener("shinbo:update", wrapped);
   },
   onActivity: (listener: (value: { threadId: string }) => void) => {
     const wrapped = (_event: unknown, value: unknown) => {
@@ -227,6 +228,7 @@ contextBridge.exposeInMainWorld("shinbo", {
   pickFolder: () => ipcRenderer.invoke("shinbo:pick-folder"),
   forgetFolder: (id: string) => ipcRenderer.invoke("shinbo:forget-folder", id),
   listFolderFiles: (id: string) => ipcRenderer.invoke("shinbo:list-folder-files", id),
+  listFolderPaths: (id: string) => ipcRenderer.invoke("shinbo:list-folder-paths", id),
   gitStatus: (id: string, includeDiff = true) => ipcRenderer.invoke("shinbo:git-status", id, includeDiff),
   gitReady: (id: string) => ipcRenderer.invoke("shinbo:git-ready", id),
   gitInit: (id: string) => ipcRenderer.invoke("shinbo:git-init", id),
@@ -255,6 +257,9 @@ contextBridge.exposeInMainWorld("shinbo", {
   worktreeRemove: (value: { folderId: string; paths: string[] }) => ipcRenderer.invoke("shinbo:worktree-remove", value),
   setBranch: (value: { folderId: string; branch: string; create: boolean; from?: string }) => ipcRenderer.invoke("shinbo:set-branch", value),
   readFolderFile: (value: { folderId: string; path: string }) => ipcRenderer.invoke("shinbo:read-folder-file", value),
+  listFolderEntries: (value: { folderId: string; path: string }) => ipcRenderer.invoke("shinbo:list-folder-entries", value),
+  readFolderBlob: (value: { folderId: string; path: string }) => ipcRenderer.invoke("shinbo:read-folder-blob", value),
+  writeFolderFile: (value: { folderId: string; path: string; text: string; previous?: string; threadId?: string }) => ipcRenderer.invoke("shinbo:write-folder-file", value),
   attachFiles: () => ipcRenderer.invoke("shinbo:attach-files"),
   attachData: (value: { name: string; data: ArrayBuffer }) => ipcRenderer.invoke("shinbo:attach-data", value),
   readAttachment: (id: string) => ipcRenderer.invoke("shinbo:read-attachment", id),

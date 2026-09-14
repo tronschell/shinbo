@@ -219,6 +219,7 @@
 .permission-explanation { display: grid; gap: var(--s-2); margin: var(--s-3) 0 0 calc(12px + var(--s-2)); padding-left: var(--s-3); border-left: 1px solid var(--border-strong); }
 .settings-related { padding-top: var(--s-4); border-top: 1px solid var(--border-strong); }
 .mobile-settings { display: grid; gap: var(--s-5); }
+.mobile-settings .mobile-unreleased { color: var(--red); font: var(--fs-sm)/1.4 var(--font-mono); letter-spacing: var(--ls-caps); text-transform: uppercase; }
 .mobile-settings .settings-intro { padding-bottom: 0; }
 .mobile-devices > header, .mobile-pairing-heading { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); }
 .mobile-device { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--s-4); padding: var(--s-4) 0; border-bottom: 1px solid var(--border); }

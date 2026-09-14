@@ -6,7 +6,7 @@
 
 import type { ContextPick } from "./folders";
 
-export type SlashKind = "tool" | "skill" | "mcp" | "builtin" | "file" | "category" | "artifact" | "page" | "terminal" | "diff" | "visual" | "component";
+export type SlashKind = "tool" | "skill" | "mcp" | "builtin" | "file" | "category" | "artifact" | "page" | "terminal" | "diff" | "visual" | "component" | "selection";
 export interface SlashCommand {
   id: string;
   name: string;
@@ -31,6 +31,7 @@ export const KIND_LABELS: Record<SlashKind, string> = {
   diff: "Diff",
   visual: "Picture",
   component: "Built by Shinbo",
+  selection: "Selection",
 };
 
 

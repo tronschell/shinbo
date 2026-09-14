@@ -1,3 +1,4 @@
+import type { UpdateState } from "../shared/update";
 import type { ThinkingLevel } from "../shared/settings";
 import type { MachineFacts } from "../shared/embedding-recommendation";
 import type { SemanticGrepStatus } from "../shared/semantic-grep";
@@ -7,7 +8,7 @@ import type { Artifact, ArtifactMeta } from "../shared/artifacts";
 import type { BuiltComponent, ComponentMeta, ComponentRequest } from "../shared/components";
 import type { CliModels, CliRun } from "../shared/cli";
 import type { CouncilStart, CouncilState } from "../shared/council";
-import type { EditorApp, FolderGrant, FolderListing } from "../shared/folders";
+import type { EditorApp, FolderBlob, FolderEntry, FolderGrant, FolderListing } from "../shared/folders";
 import type { GitCommandResult, GitHistory, GitReady, GitSnapshot, WorktreeEntry } from "../shared/git";
 import type { MachineSample } from "../shared/machine";
 import type { HarnessLogLine, HarnessReport } from "../shared/harness-log";
@@ -247,9 +248,9 @@ declare global {
       onQuickCommand(listener: (value: string) => void): () => void;
       onNewQuickSession(listener: () => void): () => void;
       onNotchHover(listener: (value: boolean) => void): () => void;
-      updateReady(): Promise<string>;
-      installUpdate(): Promise<string>;
-      onUpdateReady(listener: (value: string) => void): () => void;
+      updateState(): Promise<UpdateState>;
+      installUpdate(): Promise<void>;
+      onUpdate(listener: (value: UpdateState) => void): () => void;
       onActivity(listener: (value: { threadId: string }) => void): () => void;
       onDelta(listener: (value: { threadId: string; delta: string; thinking?: boolean; recovery?: boolean }) => void): () => void;
       onStep(listener: (value: ThreadStep) => void): () => void;
@@ -326,6 +327,7 @@ declare global {
       pickFolder(): Promise<FolderGrant[]>;
       forgetFolder(id: string): Promise<FolderGrant[]>;
       listFolderFiles(id: string): Promise<FolderListing>;
+      listFolderPaths(id: string): Promise<{ paths: string[]; capped: boolean }>;
       gitStatus(id: string, includeDiff?: boolean): Promise<GitSnapshot | null>;
       gitReady(id: string): Promise<GitReady>;
       gitInit(id: string): Promise<void>;
@@ -345,6 +347,9 @@ declare global {
       worktreeRemove(value: { folderId: string; paths: string[] }): Promise<void>;
       setBranch(value: { folderId: string; branch: string; create: boolean; from?: string }): Promise<void>;
       readFolderFile(value: { folderId: string; path: string }): Promise<{ path: string; text: string; missing?: boolean }>;
+      listFolderEntries(value: { folderId: string; path: string }): Promise<FolderEntry[]>;
+      readFolderBlob(value: { folderId: string; path: string }): Promise<FolderBlob>;
+      writeFolderFile(value: { folderId: string; path: string; text: string; previous?: string; threadId?: string }): Promise<{ path: string }>;
       attachFiles(): Promise<{ picked: HeldAttachment[]; failed: string[] }>;
       attachData(value: { name: string; data: ArrayBuffer }): Promise<HeldAttachment>;
       readAttachment(id: string): Promise<HeldAttachment & { text?: string }>;

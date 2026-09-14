@@ -45,11 +45,21 @@ function safeHref(value: string): string | undefined {
 
 
 export function filePath(value: string): string | undefined {
-  const candidate = value.trim().replace(/:\d+(?::\d+)?$/, "");
+  const candidate = value.trim().replace(/:\d+(?:[-:]\d+)?$/, "");
   if (!candidate || /\s/.test(candidate) || candidate.includes("://")) return undefined;
   const rooted = /^(?:~\/|\/|\.{1,2}\/|[A-Za-z]:[\\/])/.test(candidate);
   const slashed = candidate.includes("/") && /\.[A-Za-z0-9]{1,8}$/.test(candidate);
-  return rooted || slashed ? candidate : undefined;
+  const named = /^[\w-]+(?:\.[\w-]+)*\.[A-Za-z][A-Za-z0-9]{0,7}$/.test(candidate);
+  return rooted || slashed || named ? candidate : undefined;
+}
+
+const PATH_LINK = /^([\w./-]+\.\w{1,8})(?::(\d+)(?:-\d+)?)?$/;
+
+export function pathLink(text: string): { path: string; line?: number } | undefined {
+  const found = PATH_LINK.exec(text.trim());
+  if (!found) return undefined;
+  const line = Number(found[2] ?? 0);
+  return line ? { path: found[1], line } : { path: found[1] };
 }
 
 export function inlineSpans(text: string): Span[] {

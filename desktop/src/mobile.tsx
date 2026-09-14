@@ -164,6 +164,7 @@ export function MobileSettings({ busy }: { busy: boolean }) {
   const locked = busy || working;
   const ready = isPin(pin);
   return <div className="mobile-settings">
+    <p className="mobile-unreleased" role="status">Unreleased — Shinbo Mobile is not ready yet.</p>
     <header className="settings-intro">
       <div><h3>Shinbo, from your phone</h3><p>Continue threads, answer approval requests, and work with git from Shinbo Mobile.</p></div>
       <a href="https://github.com/tronschell/shinbo-mobile" target="_blank" rel="noreferrer">Get Shinbo Mobile ↗</a>

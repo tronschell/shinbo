@@ -1,17 +1,26 @@
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { FileMark } from "./git";
 import { GlobeIcon } from "./icons";
-import { parseBlocks, type List, type Row, type Span } from "./markdown-parse";
+import { parseBlocks, pathLink, type List, type Row, type Span } from "./markdown-parse";
 import { openPreview } from "./preview";
 import { CodeBlock } from "./run-block";
 import { highlightSegments } from "../shared/slash";
 
 export const SkillNames = createContext<string[]>([]);
 
+export type PathOpener = { known: (path: string) => boolean; open: (path: string, line?: number) => void };
+
+export const OpenPaths = createContext<PathOpener | null>(null);
+
 function PathSpan({ path, text }: { path: string; text: string }) {
+  const opener = useContext(OpenPaths);
+  const link = pathLink(text);
+  const inPane = link?.path === path && opener?.known(path) ? link : undefined;
+  if (!inPane && !path.includes("/")) return <code>{text || path}</code>;
+  const open = () => inPane && opener ? opener.open(inPane.path, inPane.line) : openPreview(path);
   return <code className="md-path" role="button" tabIndex={0} title={`Open ${path}`}
-    onClick={() => openPreview(path)}
-    onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openPreview(path); } }}
+    onClick={open}
+    onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } }}
   ><FileMark path={path} />{text || path}</code>;
 }
 

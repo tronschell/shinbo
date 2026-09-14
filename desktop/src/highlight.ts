@@ -1,4 +1,3 @@
-
 export type TokenKind = "comment" | "string" | "number" | "keyword" | "tag" | "attr";
 export interface Token { text: string; kind?: TokenKind }
 
@@ -21,8 +20,8 @@ const CORE = String.raw`<!--[\s\S]*?(?:-->|$))|("""[\s\S]*?(?:"""|$)|'''[\s\S]*?
 const PLAIN = new RegExp(`(${SLASHED}${CORE}`, "g");
 const HASHED = new RegExp(`(#[^\\n]*|${CORE}`, "g");
 
-export function tokenize(text: string, language = ""): Token[] {
-  if (text.length > 32_768 || !language || PROSE.test(language)) return [{ text }];
+export function tokenize(text: string, language = "", limit = 32_768): Token[] {
+  if (text.length > limit || !language || PROSE.test(language)) return [{ text }];
   const pattern = HASH.test(language) ? HASHED : PLAIN;
   const tokens: Token[] = [];
   let last = 0;
