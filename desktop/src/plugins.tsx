@@ -296,7 +296,6 @@ function PluginCard({ plugin, marketplace, installed, hooks, busy, pending, inst
       {unavailable
         ? <small className="plugin-blocked">{unavailable}</small>
         : <button type="button" className={installed ? "" : "plugin-install"} disabled={busy} onClick={installed ? uninstall : install}>{pending ? "Working…" : installed ? "Remove" : "Install"}</button>}
-      {plugin.authentication === "ON_INSTALL" && !installed && !unavailable && <small>Signs in on install</small>}
       {untrusted > 0 && <small className="plugin-untrusted">{untrusted} {untrusted === 1 ? "hook" : "hooks"} not trusted</small>}
       {installed && !untrusted && hooks.some((hook) => hookRuns(hook.event)) && <small>Hooks trusted</small>}
     </footer>

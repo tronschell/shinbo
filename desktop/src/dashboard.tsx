@@ -116,7 +116,7 @@ export function Dashboard({ threads, folders, folderId, seed }: {
   const requested = useRef(new Set<string>());
 
   const project = folders.find((grant) => grant.id === folderId);
-  const filed = useMemo(() => threadFolderMap(), []);
+  const filed = threadFolderMap();
   const mine = useMemo(() => {
     const own = threads.filter((thread) => thread.kind !== "subagent" && !thread.archivedAt);
     return project ? own.filter((thread) => filed[thread.id]?.[0] === project.id) : own;
@@ -129,7 +129,7 @@ export function Dashboard({ threads, folders, folderId, seed }: {
   const active = Object.keys(days).length;
   const ridge = useMemo(() => { const values = ridgeDays.map((key) => days[key] ?? 0); return { values, total: values.reduce((sum, value) => sum + value, 0) }; }, [ridgeDays, days]);
   const projects = useMemo(() => projectActivity(mine, (thread) => folders.find((grant) => grant.id === filed[thread.id]?.[0])?.name ?? "Unfiled"), [mine, folders, filed]);
-  const recent = useMemo(() => [...mine].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)), [mine]);
+  const recent = useMemo(() => mine.filter((thread) => threadMessageCount(thread) > 0).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)), [mine]);
 
   useEffect(() => {
     let live = true;
@@ -255,7 +255,7 @@ export function Dashboard({ threads, folders, folderId, seed }: {
     <section className="dash-next">
       <header>
         <h4>What to work on next</h4>
-        <small>{!settled ? "reading the project…" : suggested.length ? "suggested on a free model" : "from your working tree"}</small>
+        <small>{!settled ? "reading the project…" : suggested.length ? "suggested on a free model" : here ? "from your working tree" : project ? "from this folder" : "no folder connected"}</small>
       </header>
       <div className="dash-tiles">
         {tiles.map((step, index) => <button type="button" key={step.title} onClick={() => seed(step.prompt)} data-hue={HUES[index % HUES.length]}>

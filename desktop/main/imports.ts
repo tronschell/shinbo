@@ -1,5 +1,6 @@
 import { mkdir, readdir, readFile, stat, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
+import { MAX_SKILLS_PER_ROOT, SKILL_NAME_PATTERN } from "./capabilities";
 
 export type ImportSource = {
   id: string;
@@ -34,11 +35,11 @@ async function exists(value: string) {
 }
 
 async function skillCount(root: string) {
-  if (!await exists(root)) return 0;
-  const entries = await readdir(root, { withFileTypes: true });
+  let entries;
+  try { entries = (await readdir(root, { withFileTypes: true })).slice(0, MAX_SKILLS_PER_ROOT); } catch { return 0; }
   let count = 0;
   for (const entry of entries) {
-    if ((entry.isDirectory() || entry.isSymbolicLink()) && await exists(path.join(root, entry.name, "SKILL.md"))) count += 1;
+    if ((entry.isDirectory() || entry.isSymbolicLink()) && SKILL_NAME_PATTERN.test(entry.name) && await exists(path.join(root, entry.name, "SKILL.md"))) count += 1;
   }
   return count;
 }

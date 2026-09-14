@@ -9,7 +9,8 @@ const MAX_MANIFEST_BYTES = 128 * 1024;
 const MAX_CONFIG_BYTES = 256 * 1024;
 const MAX_SKILL_BYTES = 64 * 1024;
 const MAX_SKILL_ROOTS = 16;
-const MAX_SKILLS_PER_ROOT = 128;
+export const MAX_SKILLS_PER_ROOT = 128;
+export const SKILL_NAME_PATTERN = /^[a-zA-Z0-9._-]{1,96}$/;
 export const MAX_SKILL_RESULTS = 64;
 const MAX_TOOL_BYTES = 64 * 1024;
 const MAX_TOOL_DESCRIPTION_BYTES = 1024;
@@ -271,7 +272,7 @@ async function skillsAtRoot(source: string, rootIndex: number, root: string, man
   try { entries = (await readdir(root, { withFileTypes: true })).slice(0, MAX_SKILLS_PER_ROOT); } catch { return skills; }
   for (const entry of entries) {
     if (name !== undefined && entry.name !== name) continue;
-    if (!entry.isDirectory() && !entry.isSymbolicLink() || !/^[a-zA-Z0-9._-]{1,96}$/.test(entry.name)) continue;
+    if (!entry.isDirectory() && !entry.isSymbolicLink() || !SKILL_NAME_PATTERN.test(entry.name)) continue;
     try {
       const handle = await open(path.join(root, entry.name, "SKILL.md"), "r");
       try {
@@ -404,7 +405,8 @@ function stripJsonComments(text: string) {
 
 function parseString(value: string) {
   const parsed = JSON.parse(value);
-  return boundedString(parsed, 8192, "MCP value");
+  if (typeof parsed !== "string" || parsed.length > 8192 || Buffer.byteLength(parsed, "utf8") > 8192) throw new Error("MCP value is invalid");
+  return parsed;
 }
 
 function splitTomlList(value: string) {
@@ -465,10 +467,10 @@ function parseToml(text: string) {
   for (const rawLine of text.split(/\r?\n/).slice(0, 4096)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
-    const section = line.match(/^\[mcp_servers\.([^\]]+)\]$/);
+    const section = line.match(/^\[mcp_servers\.("[^"]*"|[^\]."]+)(\.env)?\]$/);
     if (section) {
-      const name = section[1].replace(/^"|"$/g, "");
-      current = servers[name] ??= {};
+      const server = servers[section[1].replace(/^"|"$/g, "")] ??= {};
+      current = section[2] ? (server.env ??= {}) as Record<string, unknown> : server;
       continue;
     }
     if (!current) continue;

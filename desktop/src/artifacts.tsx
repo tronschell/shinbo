@@ -15,13 +15,13 @@ const GRID_PREVIEW_MARGIN = "400px";
 const svgPage = (svg: string) => `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;height:100%}body{display:grid;place-items:center}svg{max-width:100%;max-height:100%}</style>${svg}`;
 
 function useArtifact(id: string) {
-  const [state, setState] = useState<{ id: string; artifact: Artifact | false } | null>(null);
+  const [state, setState] = useState<{ id: string; artifact: Artifact | string } | null>(null);
   useEffect(() => {
     if (!id) return;
     let active = true;
     const read = () => void window.shinbo.readArtifact(id)
       .then((artifact) => { if (active) setState({ id, artifact }); })
-      .catch(() => { if (active) setState({ id, artifact: false }); });
+      .catch((reason: unknown) => { if (active) setState({ id, artifact: /^There is no artifact called/.test(reasonText(reason)) ? GONE : reasonText(reason) }); });
     read();
     const stop = window.shinbo.onArtifactsChanged(read);
     return () => { active = false; stop(); };
@@ -75,7 +75,7 @@ export function ArtifactRender({ artifact, source, loading }: { artifact: Artifa
 
 export function ArtifactCard({ id, onOpen }: { id: string; onOpen: (id: string) => void }) {
   const artifact = useArtifact(id);
-  if (artifact === false) return <p className="artifact-missing">{GONE}</p>;
+  if (typeof artifact === "string") return <p className="artifact-missing">{artifact}</p>;
   if (!artifact) return null;
   return <button type="button" className="artifact-card artifact-card-inline" onClick={() => onOpen(id)}>
     <header><span>{ARTIFACT_LABELS[artifact.kind]}</span><strong>{artifact.title}</strong><small>v{artifact.version}</small></header>
@@ -164,7 +164,7 @@ function GridCard({ meta, busy, open, edit, onEditError, onRevealError, remove }
 
 function GridPreview({ meta }: { meta: ArtifactMeta }) {
   const artifact = useArtifact(meta.id);
-  if (artifact === false) return <p className="artifact-missing">{GONE}</p>;
+  if (typeof artifact === "string") return <p className="artifact-missing">{artifact}</p>;
   return <div className="artifact-clip" inert>{artifact && <ArtifactRender artifact={artifact} loading="lazy" />}</div>;
 }
 
@@ -193,7 +193,8 @@ function FolderIcon() {
 }
 
 function ArtifactPanel({ id, className, busy, close, edit, remove }: { id: string; className: string; busy: boolean; close: () => void; edit: (artifact: Artifact) => void; remove: (meta: ArtifactMeta) => void }) {
-  const artifact = useArtifact(id);
+  const found = useArtifact(id);
+  const artifact = typeof found === "string" ? null : found;
   const [source, setSource] = useState(false);
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -214,7 +215,7 @@ function ArtifactPanel({ id, className, busy, close, edit, remove }: { id: strin
       <button type="button" className="artifact-icon" onClick={close} aria-label="Close artifact" title="Close">×</button>
     </header>
     {artifact && <button type="button" className="artifact-location" title={REVEAL_LABEL} onClick={() => void window.shinbo.revealArtifact(artifact.id).catch(() => undefined)}>{artifact.path}</button>}
-    {artifact === false && <p className="dialog-error">{GONE}</p>}
+    {typeof found === "string" && <p className="dialog-error">{found}</p>}
     {artifact && (source || ["code", "react", "markdown"].includes(artifact.kind)
       ? <Minimap key={id} className="artifact-body"><ArtifactRender artifact={artifact} source={source} /></Minimap>
       : <div className="artifact-body"><ArtifactRender artifact={artifact} source={source} /></div>)}

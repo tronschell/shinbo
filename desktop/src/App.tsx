@@ -7,7 +7,7 @@ import { plural } from "./plural";
 import { ColorPicker } from "./color-picker";
 import { zoned } from "./dates";
 import { latestRate, latestReply, nested, newest, spawnedAgents, spawnedByTurn, subagentRows, threadAt, threadDepth, threadLabel, threadTitle, type Spawned } from "./threads";
-import { comboKeybind, DEFAULT_HOLD_MS, DOUBLE_TAP_WINDOW_MS, holdKeybind, HOLD_DURATIONS, HOLD_KEYS, TAP_MS, keyboardAccelerator, keybindLabel, keybindProblem, KEYBIND_ACTIONS, normalizeAccelerator, saveShortcut, type Keybind, type KeybindAction, type Keybinds } from "../shared/settings";
+import { comboKeybind, DEFAULT_HOLD_MS, DOUBLE_TAP_WINDOW_MS, holdKeybind, HOLD_DURATIONS, HOLD_KEYS, TAP_MS, keyboardAccelerator, keybindKey, keybindLabel, keybindProblem, KEYBIND_ACTIONS, normalizeAccelerator, saveShortcut, type Keybind, type KeybindAction, type Keybinds } from "../shared/settings";
 import { ACCENT_CHOICES, CONVERSATION_WIDTHS, type ConversationWidth, MIN_UI_SCALE, MAX_UI_SCALE, canRemoveProvider, thinkingLabel, thinkingStops, type ThinkingLevel, type NotchConcurrency, CURSOR_COMMANDS, balanceLine, outOfCredit, type KeyBalance, OPENROUTER_CREDITS_URL, FREE_ROUTER_ID, FREE_ROUTER_MODELS, forgetRouter, MAX_ROUTERS, MAX_ROUTER_NAME, routerIdFor, routerKey, type ModelRouter, MAX_EXPERIMENT_STEPS, MAX_COMMAND_TIMEOUT_MINUTES, MIN_COMMAND_TIMEOUT_MINUTES, CHECKPOINT_BAND_PERCENT, MAX_REVIEW_ROUNDS, type HarnessExperiments, LOCAL_EMBEDDING_MODELS, HOSTED_EMBEDDING_MODELS, hostedEmbeddingModel, type EmbeddingModel, type HostedEmbeddingModel, FONT_CHOICES, fontStack, cursorCommandGlyphs, cursorCommandNames, defaultHarnessExperiments, defaultSettings, forgetProvider, isEnvName, MAX_CURSOR_ORBS, MAX_FAVORITE_MODELS, MAX_SECRET_CHARS, MAX_SYSTEM_PROMPT_CHARS, MAX_VERIFIER_SYSTEM_CHARS, defaultAdvisorSystem, defaultVisionSystem, defaultSecretSystem, defaultVerifierSystem, SECOND_MODELS, SECOND_MODEL_IDS, type SecondModelId, verifierFromKey, verifierKey, SETTINGS_KEY, OPENROUTER_CHAT_ENDPOINT, PROVIDER_PRESETS, MODEL_PLANS, CODEX_PREFIX, availableCodexModelKey, codexModelKey, codexSlug, planFor, modelPlanRoute, planForModel, planForProfile, planModelId, planProfileFor, providerChatUrl, providerCredentials, providerReach, toggleFavoriteModel, validateSettings as validateSettingsForPlatform, WEB_SEARCH_PROVIDERS, webSearchCredentials, webSearchProvider, type AccentChoice, type CursorCommand, type FontChoice, type ModelPlan, type ProviderProfile, type ToolSettings, type UserSettings, type VerifierSettings, type WebSearchProvider, type WebSearchSettings } from "../shared/settings";
 import { TOOL_CATALOG } from "../shared/permissions";
 import { validComputerProgress, type ComputerRunProgress } from "../shared/computer";
@@ -23,7 +23,7 @@ import { showsUpdate } from "../shared/update";
 import { brandForImporter, brandForModel, brandForProvider, obsidianBrand, providerBrands, type BrandDefinition } from "./brands";
 import { DEFAULT_SYSTEM_PROMPT, forkPreset, MAX_PROMPTS, MAX_PROMPT_NAME_CHARS, MODEL_FAMILIES, newPresetId, promptApplies, promptSegments, PROMPT_VARIABLES, type PromptPreset } from "../shared/prompts";
 import { validScreenContextId } from "../shared/screen-context";
-import { COUNCIL_SEATS_DEFAULT, COUNCIL_SEATS_MIN } from "../shared/council";
+import { COUNCIL_SEATS_DEFAULT, COUNCIL_SEATS_MIN, councilRunning, type CouncilState } from "../shared/council";
 import { BUILTIN_COMMANDS, highlightSegments, insertCommand, KIND_LABELS, matchCommands, mentions, MENU_MAX, pathName, slashQuery, type SlashCommand } from "../shared/slash";
 import { attachmentLimit, isImageAttachment, MAX_TURN_IMAGES, oversizeMessage, pickKey, type ContextPick, type FolderFile, type FolderGrant } from "../shared/folders";
 import { charLabel, CHARS_PER_TOKEN, type ContextUse } from "../shared/usage";
@@ -67,7 +67,7 @@ import { PipLayer, type PipWindow } from "./pip";
 import { cliHarness } from "../shared/cli";
 import { searchProvider } from "./search-provider";
 import { diffStat, sentByThread, spawnedThread, type AgentStatus, type FileChange, type LiveAgent, type ThreadStep } from "../shared/agents";
-import { DEFAULT_PERMISSION_MODE, type PermissionMode } from "../shared/permissions";
+import { DEFAULT_PERMISSION_MODE, isPermissionMode, type PermissionMode } from "../shared/permissions";
 import { SETUP_PERMISSIONS, type SetupPermission, type SetupStatus } from "../shared/setup";
 import { keepKindLabel, MAX_FOLDER_NAME, noteFolder, tagName, type KeepKind, type KeptNote, type NoteFolder, type VaultChoice } from "../shared/vault";
 import { CLEANUP_INSTALL, HOLD_TO_TALK_MS, LLAMA_INSTALL, LLAMA_SITE_URL, SPEECH_INSTALL, SPEECH_MODEL, SPEECH_MODEL_URL, VOICE_MODEL, VOICE_MODEL_URL, voiceReady, type TranscriptionEngine } from "../shared/voice";
@@ -504,7 +504,6 @@ function useNotes() {
 }
 
 const LAYOUT_KEY = "shinbo.layout.v2";
-const IMPORTS_SEEN_KEY = "shinbo.importsSeen.v1";
 const SETUP_SEEN_KEY = "shinbo.setupSeen.v1";
 const readLayout = () => {
   try { return validatePaneLayout(JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? "null")); }
@@ -725,7 +724,14 @@ function Workspace() {
     setThreadId((current) => live.some((item) => item.id === current) ? current : (live[0]?.id ?? ""));
   }, []);
   const { snapshot, load, error, setError, revision, loading: snapshotLoading } = useSnapshot(pinSelections);
-  const [view, setView] = useState<"threads" | "knowledge" | "artifacts" | "agent" | "scheduled" | "plugins" | "archive" | "settings">("threads");
+  const [view, setViewState] = useState<"threads" | "knowledge" | "artifacts" | "agent" | "scheduled" | "plugins" | "archive" | "settings">("threads");
+  const viewRef = useRef(view);
+  useLayoutEffect(() => { viewRef.current = view; }, [view]);
+  const workflowDirty = useRef(false);
+  const setView = useCallback((next: typeof view) => {
+    if (viewRef.current === "scheduled" && next !== "scheduled" && workflowDirty.current && !confirm("Leave this workflow? What you changed here is not saved.")) return;
+    setViewState(next);
+  }, []);
   const trail = useRef({ stack: [] as { view: typeof view; threadId: string }[], at: -1, jumping: false });
   const [trailAt, setTrailAt] = useState(-1);
   const [trailLen, setTrailLen] = useState(0);
@@ -756,7 +762,8 @@ function Workspace() {
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
   const renameDone = useRef(false);
   const startRename = (id: string, value: string) => { renameDone.current = false; setRenaming({ id, value }); };
-  const [dismissedWarning, setDismissedWarning] = useState("");
+  const [dismissedWarnings, setDismissedWarnings] = useState<string[]>([]);
+  const warning = snapshot.warnings.find((item) => !dismissedWarnings.includes(item)) ?? "";
   const [busy, setBusy] = useState(false);
   const [threadQuery, setThreadQuery] = useState("");
   const [threadLimits, setThreadLimits] = useState<Record<string, number>>({});
@@ -790,7 +797,6 @@ function Workspace() {
     return () => { stop(); removeEventListener("shinbo-thread-folders-changed", reload); removeEventListener("shinbo-thread-tags-changed", reload); removeEventListener("shinbo-thread-pins-changed", reload); removeEventListener("shinbo-thread-unread-changed", reload); };
   }, []);
   const [setupOpen, setSetupOpen] = useState(() => !localStorage.getItem(SETUP_SEEN_KEY));
-  const [importsOpen, setImportsOpen] = useState(() => !localStorage.getItem(IMPORTS_SEEN_KEY));
   const [layout, setLayout] = useState<PaneLayout>(readLayout);
   const [settingsPage, setSettingsPage] = useState<SettingsPage>("keybinds");
   const [settings, setSettings] = useState(readSettings);
@@ -817,7 +823,7 @@ function Workspace() {
     addEventListener(OPEN_SETTINGS_EVENT, fromTranscript);
     const stop = window.shinbo.onOpenSettings(open);
     return () => { removeEventListener(OPEN_SETTINGS_EVENT, fromTranscript); stop(); };
-  }, []);
+  }, [setView]);
   const [tab, setTab] = useState("thread");
   const actionInFlight = useRef(false);
   const restoredModel = useRef(false);
@@ -963,7 +969,7 @@ function Workspace() {
     inspectorBefore.current = null;
     setArtifactPaneId("");
     if (before === false) pane({ inspectorCollapsed: false });
-  }, [layout.inspectorCollapsed, pane]);
+  }, [layout.inspectorCollapsed, pane, setView]);
   const showReview = useCallback((next: "changes" | "git" | "") => {
     setReviewPane(next);
     if (next) {
@@ -1033,7 +1039,7 @@ function Workspace() {
     setThreadId(parentId);
     if (parentId !== id) setTab(id);
     setView("threads");
-  }, [markedUnread, snapshot.threads]);
+  }, [markedUnread, setView, snapshot.threads]);
   useEffect(() => window.shinbo.onSelectThread(openThread), [openThread]);
   const attachComponent = (meta: ComponentMeta) => {
     const pick: ContextPick = { kind: "component", id: meta.id, title: meta.title };
@@ -1098,7 +1104,8 @@ function Workspace() {
     renameDone.current = true;
     setRenaming(null);
     const named = title.trim();
-    if (!named || named === liveThreads.find((item) => item.id === id)?.title) return;
+    const current = liveThreads.find((item) => item.id === id);
+    if (!named || (current && (named === current.title || named === threadName(current)))) return;
     if (await act("renameThread", { threadId: id, title: named }) !== undefined) await load();
   };
   const archiveThreads = async (ids: string[]) => {
@@ -1258,6 +1265,7 @@ function Workspace() {
   };
   const menuThread = threadMenu ? liveThreads.find((item) => item.id === threadMenu.id) : undefined;
   const menuProjectId = menuThread ? projectOf(menuThread) : "";
+  const menuRun = !!menuThread?.scheduledJobId && jobIds.has(menuThread.scheduledJobId);
   const menuTag = menuThread ? tags[menuThread.id]?.tag ?? "" : "";
   const copyThreadValue = (value: string) => {
     setThreadMenu(null);
@@ -1318,7 +1326,7 @@ function Workspace() {
           {selection.length > 0 && <div className="thread-selection"><span className="nav-label">{selection.length} selected</span><button type="button" disabled={uiBusy} onClick={() => void archiveThreads(selection)}>Archive</button><button type="button" onClick={() => setSelection([])} aria-label="Clear selection">×</button></div>}
           {visibleProjects.map((group) => { const limit = threadLimits[group.id] ?? Math.max(THREAD_PAGE, Math.floor((listRows - visibleProjects.length - 1) / visibleProjects.length)); return <Sortable key={group.id} id={group.id} className="project-sort" disabled={virtualGroup(group.id) || group.id === "unfiled"}>{(handle) => <details className={`project-group ${virtualGroup(group.id) ? "flat" : ""}`} open><summary {...handle} onContextMenu={(event) => { event.preventDefault(); setProjectMenu({ id: group.id, x: event.clientX, y: event.clientY }); }}>{!virtualGroup(group.id) && group.id !== "unfiled" && <FolderIcon />}<span className="nav-label">{group.name}</span>{group.id !== "pinned" && <button type="button" className="project-new" disabled={uiBusy} aria-label={group.id === "priority" ? "New thread" : `New thread in ${group.name}`} title={group.id === "priority" ? "New thread" : `New thread in ${group.name}`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setError(""); void createThread(group.id === "priority" ? undefined : group.id === "unfiled" ? "" : group.id); }}>＋</button>}<b>{group.threads.length}</b></summary>{group.threads.slice(0, limit).map((item) => renaming?.id === item.id
             ? <form key={item.id} className="project-thread renaming" onSubmit={(event) => { event.preventDefault(); void renameThread(item.id, renaming.value); }}><input autoFocus value={renaming.value} maxLength={THREAD_NAME_MAX} aria-label="Thread name" onChange={(event) => setRenaming({ id: item.id, value: event.target.value })} onBlur={() => void renameThread(item.id, renaming.value)} onKeyDown={(event) => { if (event.key === "Escape") { renameDone.current = true; setRenaming(null); } }} /><ThreadStatus live={threadStatus.get(item.id)} unseen={unseen(item.id)} /></form>
-            : <div className={`project-row ${threadMenu?.id === item.id ? "menu-open" : ""}`} key={item.id}><button type="button" style={{ "--thread-depth": threadDepth(group.threads, item) } as CSSProperties} className={`project-thread ${item.id === thread?.id && view === "threads" && !selection.length ? "active" : ""} ${selection.includes(item.id) ? "selected" : ""}`} title={threadLabel(item)} disabled={uiBusy} onClick={(event) => clickThread(event, group, item.id)} onDoubleClick={() => startRename(item.id, threadLabel(item))} onContextMenu={(event) => { event.preventDefault(); showThreadMenu(item.id, event.clientX, event.clientY); }}><span className="thread-copy"><span className="nav-label">{threadLabel(item)}</span>{virtualGroup(group.id) && <span className="thread-home"><FolderIcon /><span>{projectName(item) || "Unfiled"}</span></span>}</span><span className="thread-indicators">{phone.threads.includes(item.id) && <Smartphone size={14} strokeWidth={1.6} role="img" aria-label="Started from phone" />}<ThreadGitStatus snapshot={threadRepos[projectOf(item)]} /><ThreadStatus live={threadStatus.get(item.id)} unseen={unseen(item.id)} /></span>{tags[item.id] && <em className={`thread-tag ${tags[item.id].auto ? "auto" : ""}`} title={tags[item.id].auto ? `${tags[item.id].tag} · Shinbo’s guess, right-click to change it` : tags[item.id].tag}>{tags[item.id].tag}</em>}</button><button type="button" className={`thread-pin ${pins.includes(item.id) ? "on" : ""}`} title={pins.includes(item.id) ? "Unpin thread" : "Pin thread"} aria-label={`${pins.includes(item.id) ? "Unpin" : "Pin"} ${threadLabel(item)}`} aria-pressed={pins.includes(item.id)} disabled={uiBusy} onClick={() => setThreadPinned(item.id, !pins.includes(item.id))}><Pin size={14} strokeWidth={1.6} fill={pins.includes(item.id) ? "currentColor" : "none"} aria-hidden="true" /></button><button type="button" className="thread-actions" title="Thread options" aria-label={`Options for ${threadLabel(item)}`} aria-haspopup="menu" aria-expanded={threadMenu?.id === item.id} disabled={uiBusy} onClick={(event) => { const box = event.currentTarget.getBoundingClientRect(); showThreadMenu(item.id, box.left, box.bottom + 2); }}><DotsIcon /></button></div>)}{group.threads.length > limit && <button type="button" className="project-more" onClick={() => setThreadLimits((current) => ({ ...current, [group.id]: limit + Math.max(THREAD_PAGE, listRows, limit) }))}>Load more ({group.threads.length - limit})</button>}{!group.threads.length && <p className="project-empty">No threads yet</p>}</details>}</Sortable>; })}
+            : <div className={`project-row ${threadMenu?.id === item.id ? "menu-open" : ""}`} key={item.id}><button type="button" style={{ "--thread-depth": threadDepth(group.threads, item) } as CSSProperties} className={`project-thread ${item.id === thread?.id && view === "threads" && !selection.length ? "active" : ""} ${selection.includes(item.id) ? "selected" : ""}`} title={threadLabel(item)} disabled={uiBusy} onClick={(event) => clickThread(event, group, item.id)} onDoubleClick={() => startRename(item.id, threadName(item))} onContextMenu={(event) => { event.preventDefault(); showThreadMenu(item.id, event.clientX, event.clientY); }}><span className="thread-copy"><span className="nav-label">{threadLabel(item)}</span>{virtualGroup(group.id) && <span className="thread-home"><FolderIcon /><span>{projectName(item) || "Unfiled"}</span></span>}</span><span className="thread-indicators">{phone.threads.includes(item.id) && <Smartphone size={14} strokeWidth={1.6} role="img" aria-label="Started from phone" />}<ThreadGitStatus snapshot={threadRepos[projectOf(item)]} /><ThreadStatus live={threadStatus.get(item.id)} unseen={unseen(item.id)} /></span>{tags[item.id] && <em className={`thread-tag ${tags[item.id].auto ? "auto" : ""}`} title={tags[item.id].auto ? `${tags[item.id].tag} · Shinbo’s guess, right-click to change it` : tags[item.id].tag}>{tags[item.id].tag}</em>}</button><button type="button" className={`thread-pin ${pins.includes(item.id) ? "on" : ""}`} title={pins.includes(item.id) ? "Unpin thread" : "Pin thread"} aria-label={`${pins.includes(item.id) ? "Unpin" : "Pin"} ${threadLabel(item)}`} aria-pressed={pins.includes(item.id)} disabled={uiBusy} onClick={() => setThreadPinned(item.id, !pins.includes(item.id))}><Pin size={14} strokeWidth={1.6} fill={pins.includes(item.id) ? "currentColor" : "none"} aria-hidden="true" /></button><button type="button" className="thread-actions" title="Thread options" aria-label={`Options for ${threadLabel(item)}`} aria-haspopup="menu" aria-expanded={threadMenu?.id === item.id} disabled={uiBusy} onClick={(event) => { const box = event.currentTarget.getBoundingClientRect(); showThreadMenu(item.id, box.left, box.bottom + 2); }}><DotsIcon /></button></div>)}{group.threads.length > limit && <button type="button" className="project-more" onClick={() => setThreadLimits((current) => ({ ...current, [group.id]: limit + Math.max(THREAD_PAGE, listRows, limit) }))}>Load more ({group.threads.length - limit})</button>}{!group.threads.length && <p className="project-empty">No threads yet</p>}</details>}</Sortable>; })}
           {search && !visibleProjects.length && <p className="project-empty">No threads match that search</p>}
         </div>
         </SortableContext>
@@ -1332,17 +1340,17 @@ function Workspace() {
       </aside>
       </Region>
       <main id="content" className="content">
-        {view === "threads" ? thread ? <ThreadView key={thread.id} thread={thread} loadedSubthread={loadedSubthread} loadThread={loadThread} threadLoadError={threadLoadError} clearThreadLoadError={() => setThreadLoadError(undefined)} snapshot={snapshot} notes={notes} busy={uiBusy} act={act} reload={load} agents={agents} tab={tab} setTab={setTab} newThread={(seed?: string) => { setError(""); void createThread(undefined, seed); }} onSendingChange={setInteractionLocked} onModelChanged={(next) => { if (selectedIdRef.current === thread.id) parentRequest.current = ""; setLoadedThread((current) => current?.id === thread.id ? { ...current, context: { ...current.context, model: next.selectedModel, effort: next.thinkingLevel } } : current); }} onContextChanged={(context) => { if (selectedIdRef.current === thread.id) parentRequest.current = ""; setLoadedThread((current) => current?.id === thread.id ? { ...current, context } : current); }} onManageModels={() => { setView("settings"); setSettingsPage("models"); }} onManageImports={() => { setView("settings"); setSettingsPage("imports"); }} modelKey={threadModelKey} modelLabel={threadModelLabel} modelBrand={threadModelBrand} thinkingLevel={thread.context.effort} reviewOffered={settings.review.enabled && !!settings.review.model.trim()} contextTokens={contextTokens} contextPages={settings.contextPages} onContextPages={(contextPages) => setSettings(persistSettings({ ...settings, contextPages }))} layout={layout} pane={pane} showBrowser={showBrowser} reviewPane={reviewPane} showReview={showReview} artifactPaneId={artifactPaneId} setArtifactPaneId={showArtifact} editArtifact={editArtifact} /> : <ThreadLoading loading={snapshotLoading || !!selectedSummary} error={threadLoadError?.id === selectedId ? threadLoadError.text : ""} busy={uiBusy} retry={() => { setError(""); setThreadLoadError(undefined); void loadThread(selectedId); }} newThread={() => { setError(""); void createThread(); }} /> : view === "knowledge" ? <NotesView notes={notes} notesError={notesError} busy={uiBusy} reload={reloadNotes} hues={settings.folderHues} setHues={(folderHues) => setSettings(persistSettings({ ...settings, folderHues }))} /> : view === "artifacts" ? <ArtifactsView key={artifactPick.at} busy={uiBusy} select={artifactPick.id} openArtifact={(artifact) => void editArtifact(artifact)} /> : view === "agent" ? <Suspense fallback={<AgentLoading />}><AgentView snapshot={snapshot} act={act} busy={uiBusy} openThread={openThread} projectName={projectName} mode={settings.defaultPermissionMode} model={settings.selectedModel} pickers={{ run: (model, effort, onPick, busy) => <BenchRunPicker model={model} effort={effort} onPick={onPick} onSettingsChanged={setSettings} busy={busy} />, judge: (draft, onChange, busy) => <SecondModelPicker label="Judge model" off="Tagger model · scores with your tagger" draft={draft ?? { ...settings.tagger, model: "" }} providers={settings.providers} routers={settings.routers} busy={busy} onChange={(next) => onChange(next.model ? next : undefined)} />, describe: (key) => ({ label: modelKeyLabel(settings, key), brand: modelKeyBrand(settings, key)?.id ?? "" }) }} /></Suspense> : view === "scheduled" ? <ScheduledView snapshot={snapshot} act={act} busy={uiBusy} openThread={openThread} /> : view === "plugins" ? <Suspense fallback={<AgentLoading copy="Loading plugins…" />}><PluginsView busy={uiBusy} tools={settings.tools} onTools={saveToolSettings} /></Suspense> : view === "archive" ? <ArchiveView threads={archivedThreads} projectName={projectName} busy={uiBusy} restore={(id) => void setArchived(id, false)} /> : <SettingsView page={settingsPage} onSelectPage={setSettingsPage} act={act} busy={uiBusy} onModelChanged={setSettings} onAttach={attachComponent} />}
+        {view === "threads" ? thread ? <ThreadView key={thread.id} thread={thread} loadedSubthread={loadedSubthread} loadThread={loadThread} threadLoadError={threadLoadError} clearThreadLoadError={() => setThreadLoadError(undefined)} snapshot={snapshot} notes={notes} busy={uiBusy} act={act} reload={load} agents={agents} tab={tab} setTab={setTab} newThread={(seed?: string) => { setError(""); void createThread(undefined, seed); }} onSendingChange={setInteractionLocked} onModelChanged={(next) => { if (selectedIdRef.current === thread.id) parentRequest.current = ""; setLoadedThread((current) => current?.id === thread.id ? { ...current, context: { ...current.context, model: next.selectedModel, effort: next.thinkingLevel } } : current); }} onContextChanged={(context) => { if (selectedIdRef.current === thread.id) parentRequest.current = ""; setLoadedThread((current) => current?.id === thread.id ? { ...current, context } : current); }} onManageModels={() => { setView("settings"); setSettingsPage("models"); }} onManageImports={() => { setView("settings"); setSettingsPage("imports"); }} modelKey={threadModelKey} modelLabel={threadModelLabel} modelBrand={threadModelBrand} thinkingLevel={thread.context.effort} reviewOffered={settings.review.enabled && !!settings.review.model.trim()} contextTokens={contextTokens} contextPages={settings.contextPages} onContextPages={(contextPages) => setSettings(persistSettings({ ...settings, contextPages }))} layout={layout} pane={pane} showBrowser={showBrowser} reviewPane={reviewPane} showReview={showReview} artifactPaneId={artifactPaneId} setArtifactPaneId={showArtifact} editArtifact={editArtifact} /> : <ThreadLoading loading={snapshotLoading || !!selectedSummary} error={threadLoadError?.id === selectedId ? threadLoadError.text : ""} busy={uiBusy} retry={() => { setError(""); setThreadLoadError(undefined); void loadThread(selectedId); }} newThread={() => { setError(""); void createThread(); }} /> : view === "knowledge" ? <NotesView notes={notes} notesError={notesError} busy={uiBusy} reload={reloadNotes} hues={settings.folderHues} setHues={(folderHues) => setSettings(persistSettings({ ...settings, folderHues }))} /> : view === "artifacts" ? <ArtifactsView key={artifactPick.at} busy={uiBusy} select={artifactPick.id} openArtifact={(artifact) => void editArtifact(artifact)} /> : view === "agent" ? <Suspense fallback={<AgentLoading />}><AgentView snapshot={snapshot} act={act} busy={uiBusy} openThread={openThread} projectName={projectName} mode={settings.defaultPermissionMode} model={settings.selectedModel} pickers={{ run: (model, effort, onPick, busy) => <BenchRunPicker model={model} effort={effort} onPick={onPick} onSettingsChanged={setSettings} busy={busy} />, judge: (draft, onChange, busy) => <SecondModelPicker label="Judge model" off="Tagger model · scores with your tagger" draft={draft ?? { ...settings.tagger, model: "" }} providers={settings.providers} routers={settings.routers} busy={busy} onChange={(next) => onChange(next.model ? next : undefined)} />, describe: (key) => ({ label: modelKeyLabel(settings, key), brand: modelKeyBrand(settings, key)?.id ?? "" }) }} /></Suspense> : view === "scheduled" ? <ScheduledView snapshot={snapshot} act={act} busy={uiBusy} openThread={openThread} dirtyRef={workflowDirty} /> : view === "plugins" ? <Suspense fallback={<AgentLoading copy="Loading plugins…" />}><PluginsView busy={uiBusy} tools={settings.tools} onTools={saveToolSettings} /></Suspense> : view === "archive" ? <ArchiveView threads={archivedThreads} projectName={projectName} busy={uiBusy} restore={(id) => void setArchived(id, false)} /> : <SettingsView page={settingsPage} onSelectPage={setSettingsPage} act={act} busy={uiBusy} onModelChanged={setSettings} onAttach={attachComponent} />}
       </main>
-      {(error || (snapshot.warnings[0] && snapshot.warnings[0] !== dismissedWarning)) && <div className="notice" role="status"><button aria-label="Dismiss notice" onClick={() => { setError(""); setDismissedWarning(snapshot.warnings[0] ?? ""); }}>×</button>{error || snapshot.warnings[0]}</div>}
-      {threadMenu && menuThread && <div className="thread-menu-scrim" onClick={(event) => { if (event.target === event.currentTarget) setThreadMenu(null); }} onContextMenu={(event) => { event.preventDefault(); if (event.target === event.currentTarget) setThreadMenu(null); }}>
-        <menu className="thread-menu thread-context-menu" aria-label={`Actions for ${threadLabel(menuThread)}`} style={{ left: `clamp(8px, ${threadMenu.x}px, calc(100vw - 236px))`, top: `clamp(8px, ${threadMenu.y}px, calc(100vh - 280px))` }} onClick={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()} onKeyDown={(event) => { if (event.key === "Escape") setThreadMenu(null); }}>
+      {(error || warning) && <div className="notice" role="status"><button aria-label="Dismiss notice" onClick={() => { if (error) setError(""); else setDismissedWarnings((current) => [...current, warning]); }}>×</button>{error || warning}</div>}
+      {threadMenu && menuThread && <MenuScrim close={() => setThreadMenu(null)}>
+        <menu className="thread-menu thread-context-menu" aria-label={`Actions for ${threadLabel(menuThread)}`} style={{ left: `clamp(8px, ${threadMenu.x}px, calc(100vw - 236px))`, top: `clamp(8px, ${threadMenu.y}px, calc(100vh - 280px))` }} onClick={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()}>
           <div className="thread-menu-head">Thread</div><hr />
-          <button type="button" role="menuitem" autoFocus disabled={uiBusy} onClick={() => { setThreadPinned(menuThread.id, !pins.includes(menuThread.id)); setThreadMenu(null); }}><span className="thread-menu-icon"><Pin size={14} strokeWidth={1.6} fill={pins.includes(menuThread.id) ? "currentColor" : "none"} aria-hidden="true" /></span><span>{pins.includes(menuThread.id) ? "Unpin" : "Pin"}</span></button>
-          <button type="button" role="menuitem" disabled={uiBusy} onClick={() => { setThreadMenu(null); startRename(menuThread.id, threadLabel(menuThread)); }}><span className="thread-menu-icon"><PencilIcon /></span><span>Rename</span></button>
+          {!menuRun && <button type="button" role="menuitem" autoFocus disabled={uiBusy} onClick={() => { setThreadPinned(menuThread.id, !pins.includes(menuThread.id)); setThreadMenu(null); }}><span className="thread-menu-icon"><Pin size={14} strokeWidth={1.6} fill={pins.includes(menuThread.id) ? "currentColor" : "none"} aria-hidden="true" /></span><span>{pins.includes(menuThread.id) ? "Unpin" : "Pin"}</span></button>}
+          <button type="button" role="menuitem" autoFocus={!!menuRun} disabled={uiBusy} onClick={() => { setThreadMenu(null); startRename(menuThread.id, threadName(menuThread)); }}><span className="thread-menu-icon"><PencilIcon /></span><span>Rename</span></button>
           <button type="button" role="menuitem" onClick={() => markThreadUnread(menuThread.id, !unseen(menuThread.id))}><span className="thread-menu-icon"><UnreadIcon /></span><span>{unseen(menuThread.id) ? "Mark as read" : "Mark as unread"}</span></button>
           <button type="button" role="menuitem" disabled={uiBusy} onClick={() => void archiveThreads(selection.includes(menuThread.id) ? selection : [menuThread.id])}><span className="thread-menu-icon"><ArchiveIcon /></span><span>{selection.includes(menuThread.id) && selection.length > 1 ? `Archive ${selection.length} threads` : "Archive"}</span></button>
-          {!(menuThread.scheduledJobId && jobIds.has(menuThread.scheduledJobId)) && <>
+          {!menuRun && <>
             <hr />
             <div className="thread-menu-branch" onPointerEnter={() => setThreadSubmenu("project")}>
               <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={threadSubmenu === "project"} onClick={() => setThreadSubmenu("project")}><span className="thread-menu-icon"><FolderIcon /></span><span>Project</span><CaretIcon /></button>
@@ -1371,15 +1379,13 @@ function Workspace() {
             </menu>}
           </div>
         </menu>
-      </div>}
-      {sortMenu && <div className="thread-menu-scrim" onClick={() => setSortMenu(null)}><menu className="thread-menu" role="menu" aria-label="Group threads" style={{ left: sortMenu.x, top: sortMenu.y }}>
+      </MenuScrim>}
+      {sortMenu && <MenuScrim close={() => setSortMenu(null)}><menu className="thread-menu" role="menu" aria-label="Group threads" style={{ left: sortMenu.x, top: sortMenu.y }}>
         <div className="thread-menu-head"><FilterIcon />Group threads</div><hr />
         {(["project", "priority"] as const).map((sort) => <button type="button" key={sort} role="menuitemradio" aria-checked={layout.projectSort === sort} onClick={() => { pane({ projectSort: sort }); setSortMenu(null); }}><span className="thread-menu-icon">{sort === "project" ? <FolderIcon /> : <HourglassIcon />}</span><span>By {sort}</span><span className="thread-menu-check"><CheckIcon /></span></button>)}
-      </menu></div>}
-      {projectMenu && <div className="thread-menu-scrim" onClick={() => setProjectMenu(null)} onContextMenu={(event) => { event.preventDefault(); setProjectMenu(null); }}><menu className="thread-menu" aria-label="Project actions" style={{ left: projectMenu.x, top: projectMenu.y }}><div className="thread-menu-head">Project</div><hr /><ProjectSweep threads={visibleProjects.find((group) => group.id === projectMenu.id)?.threads ?? []} busy={uiBusy} archive={archiveThreads} />{projectMenu.id !== "unfiled" && !virtualGroup(projectMenu.id) && <button type="button" disabled={uiBusy} onClick={() => forgetProject(projectMenu.id)}><span className="thread-menu-icon"><TrashIcon /></span><span>Remove from sidebar</span></button>}</menu></div>}
-      {setupOpen
-        ? <SetupDialog close={() => { localStorage.setItem(SETUP_SEEN_KEY, "1"); localStorage.setItem(IMPORTS_SEEN_KEY, "1"); setSetupOpen(false); setImportsOpen(false); setSettings(readSettings()); void createThread(); }} />
-        : importsOpen && <ImportDialog close={() => { localStorage.setItem(IMPORTS_SEEN_KEY, "1"); setImportsOpen(false); }} />}
+      </menu></MenuScrim>}
+      {projectMenu && <MenuScrim close={() => setProjectMenu(null)}><menu className="thread-menu" aria-label="Project actions" style={{ left: projectMenu.x, top: projectMenu.y }}><div className="thread-menu-head">Project</div><hr /><ProjectSweep threads={visibleProjects.find((group) => group.id === projectMenu.id)?.threads ?? []} busy={uiBusy} archive={archiveThreads} />{projectMenu.id !== "unfiled" && !virtualGroup(projectMenu.id) && <button type="button" disabled={uiBusy} onClick={() => forgetProject(projectMenu.id)}><span className="thread-menu-icon"><TrashIcon /></span><span>Remove from sidebar</span></button>}</menu></MenuScrim>}
+      {setupOpen && <SetupDialog close={() => { localStorage.setItem(SETUP_SEEN_KEY, "1"); setSetupOpen(false); setSettings(readSettings()); void createThread(); }} />}
       <div className="rail-nav">
         <button type="button" className="rail-toggle" aria-label={layout.sidebarCollapsed ? "Expand navigation" : "Collapse navigation"} aria-expanded={!layout.sidebarCollapsed} onClick={(event) => { event.currentTarget.focus(); pane({ sidebarCollapsed: !layout.sidebarCollapsed }); }}><SidebarIcon /></button>
         <button type="button" className="rail-toggle" aria-label="Back" title="Back" disabled={trailAt <= 0} onClick={() => jump(-1)}><ChevronIcon back /></button>
@@ -1419,6 +1425,13 @@ const THREAD_ROW = 30;
 const NAV_PINNED = 3;
 
 const SWEEP_DAYS = [7, 30, 90, 180];
+
+function MenuScrim({ close, children }: { close: () => void; children: ReactNode }) {
+  return <div className="thread-menu-scrim" tabIndex={-1} ref={(node) => { if (node && !node.contains(document.activeElement)) node.focus(); }} onClick={close}
+    onContextMenu={(event) => { event.preventDefault(); if (event.target === event.currentTarget) close(); }}
+    onKeyDown={(event) => { if (event.key === "Escape") close(); }}
+    onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) close(); }}>{children}</div>;
+}
 
 function ProjectSweep({ threads, busy, archive }: { threads: Thread[]; busy: boolean; archive: (ids: string[]) => Promise<void> }) {
   const stale = (days: number) => threads.filter((item) => Date.parse(item.updatedAt) < Date.now() - days * 86_400_000).map((item) => item.id);
@@ -1569,6 +1582,8 @@ function BenchRunPicker({ model, effort, onPick, onSettingsChanged, busy }: { mo
   </>;
 }
 
+const WORKFLOW_DRAFT_KEY = "shinbo.workflowDraft.v1";
+
 function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, onDirty, commands, view }: {
   view: "editor" | "graph";
   job?: ScheduledJob;
@@ -1581,14 +1596,21 @@ function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, onDi
   onDirty: (dirty: boolean) => void;
   commands: { skills: SlashCommand[]; tools: SlashCommand[]; atItems: SlashCommand[] };
 }) {
-  const [title, setTitle] = useState(job?.title ?? "");
-  const [trigger, setTrigger] = useState(job?.schedule ?? "0 9 * * 1");
-  const [prompt, setPrompt] = useState(job?.prompt ?? "");
-  const [nodes, setNodes] = useState(job?.nodes ?? "");
-  const [mode, setMode] = useState<PermissionMode>(job?.permissionMode ?? DEFAULT_PERMISSION_MODE);
-  const [model, setModel] = useState(job?.model ?? "");
+  const draftKey = `${WORKFLOW_DRAFT_KEY}.${job?.id ?? "new"}`;
+  const draft = useMemo(() => { try { return JSON.parse(localStorage.getItem(draftKey) ?? "null") as Partial<Record<"title" | "trigger" | "prompt" | "nodes" | "mode" | "model", string>> | null; } catch { return null; } }, [draftKey]);
+  const [title, setTitle] = useState(draft?.title ?? job?.title ?? "");
+  const [trigger, setTrigger] = useState(draft?.trigger ?? job?.schedule ?? "0 9 * * 1");
+  const [prompt, setPrompt] = useState(draft?.prompt ?? job?.prompt ?? "");
+  const [nodes, setNodes] = useState(draft?.nodes ?? job?.nodes ?? "");
+  const [mode, setMode] = useState<PermissionMode>(() => { const mode = draft?.mode; return isPermissionMode(mode) ? mode : job?.permissionMode ?? DEFAULT_PERMISSION_MODE; });
+  const [model, setModel] = useState(draft?.model ?? job?.model ?? "");
   const dirty = title.trim() !== (job?.title ?? "") || trigger.trim() !== (job?.schedule ?? "0 9 * * 1") || prompt.trim() !== (job?.prompt ?? "") || nodes.trim() !== (job?.nodes ?? "") || mode !== (job?.permissionMode ?? DEFAULT_PERMISSION_MODE) || model !== (job?.model ?? "");
   useEffect(() => { onDirty(dirty); return () => onDirty(false); }, [dirty, onDirty]);
+  useEffect(() => {
+    if (dirty) localStorage.setItem(draftKey, JSON.stringify({ title, trigger, prompt, nodes, mode, model }));
+    else localStorage.removeItem(draftKey);
+    return () => localStorage.removeItem(draftKey);
+  }, [dirty, draftKey, title, trigger, prompt, nodes, mode, model]);
   const [dryRun, setDryRun] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [selectedNode, setSelectedNode] = useState("");
@@ -1693,14 +1715,13 @@ function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, onDi
   </div>;
 }
 
-function ScheduledView({ snapshot, act, busy, openThread }: { snapshot: Snapshot; act: (method: string, params?: Record<string, string>) => Promise<unknown>; busy: boolean; openThread: (id: string) => void }) {
+function ScheduledView({ snapshot, act, busy, openThread, dirtyRef }: { snapshot: Snapshot; act: (method: string, params?: Record<string, string>) => Promise<unknown>; busy: boolean; openThread: (id: string) => void; dirtyRef: { current: boolean } }) {
   const jobs = snapshot.scheduledJobs;
   const [picked, setPicked] = useState("");
   const [mode, setMode] = useState<"editor" | "graph">("editor");
-  const dirty = useRef(false);
-  const onDirty = useCallback((value: boolean) => { dirty.current = value; }, []);
+  const onDirty = useCallback((value: boolean) => { dirtyRef.current = value; }, [dirtyRef]);
   const pick = (id: string) => {
-    if (dirty.current && !confirm("Leave this workflow? What you changed here is not saved.")) return;
+    if (dirtyRef.current && !confirm("Leave this workflow? What you changed here is not saved.")) return;
     setPicked(id);
     if (id === "new") setMode("editor");
   };
@@ -1878,9 +1899,10 @@ function NotesView({ notes, notesError, busy, reload, hues, setHues }: { notes: 
   }, [reload]);
   useEffect(() => {
     let active = true;
-    void window.shinbo.listNoteFolders().then((found) => { if (active) setFolders(found); }).catch(() => undefined);
+    void window.shinbo.listNoteFolders().then((found) => { if (active) setFolders(found); }).catch(() => { if (active) setFolders([]); });
     return () => { active = false; };
   }, [notes]);
+  const go = (folder: string) => { setError(""); setInto(folder); };
   const sorted = useMemo(() => [...notes].sort((a, b) => b.savedAt.localeCompare(a.savedAt)), [notes]);
   const filed = useMemo(() => {
     const shelves = folders.map((folder) => {
@@ -1927,7 +1949,7 @@ function NotesView({ notes, notesError, busy, reload, hues, setHues }: { notes: 
     <header>
       <div>
         {into
-          ? <button type="button" className="kb-crumb" onClick={() => setInto("")} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); move(event.dataTransfer.getData("text/plain"), ""); }}>← Knowledge base</button>
+          ? <button type="button" className="kb-crumb" onClick={() => go("")} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); move(event.dataTransfer.getData("text/plain"), ""); }}>← Knowledge base</button>
           : <span>Knowledge base</span>}
         <h2>{into || `${sorted.length} ${plural(sorted.length, "save")}`}</h2>
       </div>
@@ -1936,14 +1958,14 @@ function NotesView({ notes, notesError, busy, reload, hues, setHues }: { notes: 
     {(error || notesError) && <p className="capability-error" role="alert">{error || notesError}</p>}
     {!vault && <div className="content-empty"><Mark /><h2>No vault yet</h2><p>Pick the <span className="inline-brand"><BrandIcon brand={obsidianBrand} className="inline-brand-mark" />Obsidian</span> vault or folder Shinbo saves into.</p><button type="button" disabled={busy} onClick={() => void choose()}>Choose a folder…</button></div>}
     {vault && !into && <div className="kb-shelf">
-      {filed.map((shelf) => <FolderTile key={shelf.folder.name} folder={shelf.folder} notes={shelf.notes} hue={hues[shelf.folder.name]} busy={busy} open={() => setInto(shelf.folder.name)} move={move}
+      {filed.map((shelf) => <FolderTile key={shelf.folder.name} folder={shelf.folder} notes={shelf.notes} hue={hues[shelf.folder.name]} busy={busy} open={() => go(shelf.folder.name)} move={move}
         recolour={(choice) => { const next = { ...hues }; if (choice) next[shelf.folder.name] = choice; else delete next[shelf.folder.name]; setHues(next); }}
         rename={(name) => rename(shelf.folder.name, name)} />)}
       {naming
         ? <article className="kb-folder kb-folder-new"><form className="kb-folder-front kb-naming" onSubmit={make}><input autoFocus value={draft} maxLength={MAX_FOLDER_NAME} spellCheck={false} aria-label="Folder name" placeholder="Name it…" onChange={(event) => setDraft(event.target.value)} onBlur={() => { setNaming(false); setDraft(""); setError(""); }} onKeyDown={(event) => { if (event.key === "Escape") { setNaming(false); setDraft(""); setError(""); } }} /><small>Enter to create</small></form></article>
         : <article className="kb-folder kb-folder-new"><button type="button" className="kb-folder-open" disabled={busy} onClick={() => setNaming(true)}><span className="kb-folder-front"><strong>＋ New folder</strong><small>Drag saves onto it</small></span></button></article>}
     </div>}
-    {vault && !(into ? shown.length : sorted.length) && <div className="content-empty"><Mark /><h2>{into ? "This folder is empty" : "Nothing saved yet"}</h2><p>{into ? "Drag a save onto a folder to file it here." : "Saved pages, screenshots and highlights land in the vault folder above."}</p></div>}
+    {vault && !notesError && !(into ? shown.length : sorted.length) && <div className="content-empty"><Mark /><h2>{into ? "This folder is empty" : "Nothing saved yet"}</h2><p>{into ? "Drag a save onto a folder to file it here." : "Saved pages, screenshots and highlights land in the vault folder above."}</p></div>}
     <div className="kb-board">{shown.map((note) => <NoteCard key={note.path} note={note} busy={busy} open={open} openLabel={vault?.kind === "folder" ? (window.shinbo.platform === "win32" ? "Reveal in File Explorer" : "Reveal in Finder") : "Open in Obsidian"} />)}</div>
   </section>;
 }
@@ -2026,15 +2048,15 @@ function ProjectBar({ folders, ids, setFolders, setIds, git, name, busy }: { fol
     ...folders.map((folder) => ({ pick: folder.id, label: `/${folder.name}`, detail: home(folder.path), current: folder.id === project?.id })),
     { pick: "pick", label: "Connect a folder…", detail: "Native picker", current: false },
   ];
-  return <div className="composer-project" ref={bar}>
+  return <div className="composer-project" ref={bar} onKeyDown={(event) => { if (event.key === "Escape" && open) { event.stopPropagation(); shut(); } }}
+    onBlur={(event) => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) { setOpen(""); setNaming(false); } }}>
     <span className="project-chip">
       <button ref={trigger} type="button" className="project-button" disabled={busy} aria-haspopup="listbox" aria-expanded={open === "project"}
         aria-label={`Project folder, currently ${project?.name ?? "General"}`} title={project?.path ?? "No folder — Shinbo can only chat in this thread"}
         onClick={() => open === "project" ? shut() : setOpen("project")}>
         <span className="project-name">{project ? `/${project.name}` : "General"}</span><span aria-hidden="true">▾</span>
       </button>
-      {open === "project" && <section className="source-popover project-menu" role="listbox" aria-label="Project folder" tabIndex={-1}
-        onKeyDown={(event) => { if (event.key === "Escape") shut(); }}>
+      {open === "project" && <section className="source-popover project-menu" role="listbox" aria-label="Project folder" tabIndex={-1}>
         {options.map((option) => <button type="button" role="option" aria-selected={option.current} key={option.pick || "general"}
           className={`slash-row ${option.current ? "active" : ""}`} onClick={() => { choose(option.pick); shut(); }}>
           <strong>{option.label}</strong><small>{option.detail}</small>
@@ -2045,8 +2067,7 @@ function ProjectBar({ folders, ids, setFolders, setIds, git, name, busy }: { fol
       <button ref={branchTrigger} type="button" className="project-branch" disabled={busy} aria-haspopup="listbox" aria-expanded={open === "branch"}
         aria-label={`Branch, currently ${git.branch}`} title="Check out another branch, or start one here"
         onClick={() => open === "branch" ? shut() : setOpen("branch")}>⑂ {git.branch}</button>
-      {open === "branch" && <section className="source-popover project-menu branch-menu" role="listbox" aria-label="Branch" tabIndex={-1}
-        onKeyDown={(event) => { if (event.key === "Escape") shut(); }}>
+      {open === "branch" && <section className="source-popover project-menu branch-menu" role="listbox" aria-label="Branch" tabIndex={-1}>
         {git.branches.map((branch) => <button type="button" role="option" aria-selected={branch === git.branch} key={branch}
           className={`slash-row ${branch === git.branch ? "active" : ""}`} onClick={() => branchTo(branch, false)}>
           <strong>{branch}</strong>{branch === git.branch && <small>current</small>}
@@ -2281,7 +2302,9 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
     };
     const failed = (event: Event) => {
       const detail = (event as CustomEvent<RunFailure>).detail;
-      if (detail.threadId === (threadId ?? "")) toast(detail.text, "error", usageLimitedFailure(detail.text));
+      if (detail.threadId !== (threadId ?? "")) return;
+      toast(detail.text, "error", usageLimitedFailure(detail.text));
+      if (!draft.current.text) setMessage(threadDraft(threadId ?? "").text);
     };
     addEventListener(PICK_CONTEXT_EVENT, take);
     addEventListener(RUN_ERROR_EVENT, failed);
@@ -2362,7 +2385,19 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
     const stop = window.shinbo.onArtifactsChanged(load);
     return () => { active = false; stop(); };
   }, []);
-  useEffect(() => { void window.shinbo.listFolders().then(setFolders).catch(() => setFolders([])); }, []);
+  const granted = useRef<{ folderIds: string[]; setFolderIds: (ids: string[]) => void }>({ folderIds, setFolderIds: () => undefined });
+  useEffect(() => {
+    let active = true;
+    const load = () => void window.shinbo.listFolders().then((list) => {
+      if (!active) return;
+      setFolders(list);
+      const kept = granted.current.folderIds.filter((id) => list.some((folder) => folder.id === id));
+      if (kept.length !== granted.current.folderIds.length) granted.current.setFolderIds(kept);
+    }).catch(() => { if (active) setFolders([]); });
+    load();
+    const stop = window.shinbo.onFoldersChanged(load);
+    return () => { active = false; stop(); };
+  }, []);
   useEffect(() => {
     if (!threadId) return;
     setThreadFolders(threadId, folderIds);
@@ -2508,6 +2543,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
   };
   const setMode = (mode: PermissionMode) => { void changeContext({ mode }); };
   const setFolderIds = (folderIds: string[]) => { void changeContext({ folderIds }); };
+  useEffect(() => { granted.current = { folderIds, setFolderIds }; });
   const setReview = (review: boolean) => { void changeContext({ review }); };
   const echo = run.pending && !thread.messages.slice(run.pending.after).some((message) => message.role === "user" && message.content === run.pending?.content) ? run.pending.content : null;
   const echoTray = echo !== null ? run.pending?.attachments ?? [] : [];
@@ -2569,6 +2605,13 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
   const past = useMemo(() => thread.messages.filter((item) => item.role === "user").map((item) => sentByThread(item.content).body).reverse(), [thread.messages]);
   const openCapabilities = () => { setModelsOpen(false); setSourcesOpen(true); setCapabilitiesOpen(true); };
   const [councilOpen, setCouncilOpen] = useState(false);
+  useEffect(() => {
+    let live = true;
+    const seated = (state: CouncilState | null) => { if (live && state && (councilRunning(state.phase) || state.phase === "waiting")) setCouncilOpen(true); };
+    void window.shinbo.councilState(thread.id).then(seated).catch(() => undefined);
+    const stop = window.shinbo.onCouncil((next) => { if (next.threadId === thread.id) seated(next); });
+    return () => { live = false; stop(); };
+  }, [thread.id]);
   const pickCommand = (command: SlashCommand) => {
     if (!slash) return;
     const next = command.kind === "builtin" ? { text: `${message.slice(0, slash.start)}${message.slice(slash.start + slash.query.length + 1)}`, caret: slash.start } : insertCommand(message, slash, command.name);
@@ -2850,7 +2893,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
       <TaskListBar threadId={thread.id} />
       <form className={`composer ${ask ? "asking" : ""}`} onSubmit={(event) => void send(event)}><label className="sr-only" htmlFor="message">Message Shinbo</label>
         {!draftSaved && <p className="capability-error" role="alert">This draft could not be saved. Copy it before quitting Shinbo.</p>}
-        <PickTray picks={picks} folders={folders} locked={locked} drop={dropPick} /><div className="composer-input"><div className="composer-highlight" ref={mirror} aria-hidden="true">{composerSegments.map((segment, index) => <span key={index} className={segment.hue === undefined ? undefined : "slash-token"} data-hue={segment.hue}>{segment.text}</span>)}{"\n"}</div><textarea ref={input} autoFocus={!thread.messages.length} id="message" value={message} disabled={capabilityBusy || contextBusy} maxLength={COMPOSER_MAX} role="combobox" aria-expanded={slashOpen} aria-controls="slash-menu" aria-autocomplete="list" onChange={(event) => typing(event.currentTarget)} onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)} onScroll={(event) => { if (mirror.current) mirror.current.scrollTop = event.currentTarget.scrollTop; }} onKeyDown={composerKeys} onPaste={(event) => { const { files } = event.clipboardData; if (!files.length) return; const names = [...files].map((file) => file.name); if (event.clipboardData.getData("text/plain").split(/\r?\n/).every((line) => !line.trim() || names.includes(line.trim()))) event.preventDefault(); attachDropped(files); }} placeholder={sending ? `Shinbo is working — Enter queues, ${MODIFIER_LABEL}Enter steers (empty: oldest queued first), Esc Esc stops…` : thread.messages.length ? "Ask Shinbo to continue…" : "Ask Shinbo anything…"} rows={2} /></div>{message.length >= COMPOSER_MAX && <div className="composer-attachment"><span>Full — the composer holds {COMPOSER_MAX.toLocaleString()} characters, and anything past that was not taken. Attach the rest as a file.</span></div>}{slashOpen && <section className="source-popover slash-menu" id="slash-menu" role="listbox" aria-label={slash?.sigil === "@" ? "Artifacts, saved notes and files" : "Built-in tools, skills and MCP servers"}>{slashMatches.map((item, index) => <button type="button" role="option" aria-selected={index === slashActive} className={`slash-row ${index === slashActive ? "active" : ""}`} key={`${item.kind}-${item.id}`} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setSlashPick(index)} title={item.detail} onClick={() => pickCommand(item)}><strong>{slash?.sigil ?? "/"}{item.name}</strong><em className="slash-kind" data-kind={item.kind}>{KIND_LABELS[item.kind]}</em><small>{item.detail}</small></button>)}{!slashMatches.length && <p className="slash-empty">Nothing matches “{slash?.query}”. {slash?.sigil === "@" ? "Artifacts, saved notes and the files of this thread's folders appear here." : "Built-in tools, imported skills and MCP servers appear here."}</p>}</section>}<div className="composer-row"><div className="composer-tools"><button ref={sourceTrigger} type="button" className="source-trigger" disabled={locked} aria-label="Add context or plugin" aria-haspopup="dialog" aria-expanded={sourcesOpen} onClick={() => sourcesOpen ? closeSources() : setSourcesOpen(true)}>＋</button><ModePicker mode={mode} setMode={setMode} disabled={locked} />{reviewOffered && <button type="button" className="review-toggle" disabled={locked} aria-pressed={review} aria-label={review ? "Second-model review is on for this thread" : "Second-model review is off for this thread"} title={review ? "A second model reviews every turn that changes something here" : "Nothing is reviewed in this thread"} onClick={() => setReview(!review)}><ReviewIcon /></button>}</div><button ref={modelTrigger} type="button" className="model-button" disabled={locked} aria-haspopup="dialog" aria-expanded={modelsOpen} aria-label={`Select model, currently ${modelLabel}`} onClick={() => { if (modelsOpen) { closeModels(); return; } setSourcesOpen(false); setModelsOpen(true); }}><BrandIcon brand={modelBrand} className="model-brand" /><span className="model-label">{modelLabel}</span><span aria-hidden="true">▾</span></button><ThinkingControl level={thinkingLevel} modelKey={modelKey} act={act} busy={locked} onSettingsChanged={(next) => changeThreadModel(next).catch((reason: unknown) => { setRunError(reasonText(reason)); throw reason; })} onPicked={(effort) => { if (thread.messages.length) recordModelSwitch(thread.id, { at: thread.messages.length, label: "", brand: "", effort }); }} />{sending
+        <PickTray picks={picks} folders={folders} locked={locked} drop={dropPick} /><div className="composer-input"><div className="composer-highlight" ref={mirror} aria-hidden="true">{composerSegments.map((segment, index) => <span key={index} className={segment.hue === undefined ? undefined : "slash-token"} data-hue={segment.hue}>{segment.text}</span>)}{"\n"}</div><textarea ref={input} autoFocus={!thread.messages.length} id="message" value={message} disabled={capabilityBusy || contextBusy} maxLength={COMPOSER_MAX} role="combobox" aria-expanded={slashOpen} aria-controls="slash-menu" aria-autocomplete="list" onChange={(event) => typing(event.currentTarget)} onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)} onScroll={(event) => { if (mirror.current) mirror.current.scrollTop = event.currentTarget.scrollTop; }} onKeyDown={composerKeys} onPaste={(event) => { const { files } = event.clipboardData; if (!files.length) return; const names = [...files].map((file) => file.name); if (event.clipboardData.getData("text/plain").split(/\r?\n/).every((line) => !line.trim() || names.includes(line.trim()))) event.preventDefault(); attachDropped(files); }} placeholder={sending ? `Shinbo is working — Enter queues, ${MODIFIER_LABEL}Enter steers (empty: oldest queued first), Esc Esc stops…` : thread.messages.length ? "Ask Shinbo to continue…" : "Ask Shinbo anything…"} rows={2} /></div>{message.length >= COMPOSER_MAX && <div className="composer-attachment"><span>Full — the composer holds {COMPOSER_MAX.toLocaleString()} characters, and anything past that was not taken. Attach the rest as a file.</span></div>}{slashOpen && <section className="source-popover slash-menu" id="slash-menu" role="listbox" aria-label={slash?.sigil === "@" ? "Artifacts, saved notes and files" : "Built-in tools, skills and MCP servers"}>{slashMatches.map((item, index) => <button type="button" role="option" aria-selected={index === slashActive} className={`slash-row ${index === slashActive ? "active" : ""}`} key={`${item.kind}-${item.id}`} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setSlashPick(index)} title={item.detail} onClick={() => pickCommand(item)}><strong>{slash?.sigil ?? "/"}{item.name}</strong><em className="slash-kind" data-kind={item.kind}>{KIND_LABELS[item.kind]}</em><small>{item.detail}</small></button>)}{!slashMatches.length && <p className="slash-empty">{slash?.query ? `Nothing matches “${slash.query}”. ` : slash?.sigil === "@" ? "Nothing to add yet — connect a folder, save a note or make an artifact. " : ""}{slash?.sigil === "@" ? "Artifacts, saved notes and the files of this thread's folders appear here." : "Built-in tools, imported skills and MCP servers appear here."}</p>}</section>}<div className="composer-row"><div className="composer-tools"><button ref={sourceTrigger} type="button" className="source-trigger" disabled={locked} aria-label="Add context or plugin" aria-haspopup="dialog" aria-expanded={sourcesOpen} onClick={() => sourcesOpen ? closeSources() : setSourcesOpen(true)}>＋</button><ModePicker mode={mode} setMode={setMode} disabled={locked} />{reviewOffered && <button type="button" className="review-toggle" disabled={locked} aria-pressed={review} aria-label={review ? "Second-model review is on for this thread" : "Second-model review is off for this thread"} title={review ? "A second model reviews every turn that changes something here" : "Nothing is reviewed in this thread"} onClick={() => setReview(!review)}><ReviewIcon /></button>}</div><button ref={modelTrigger} type="button" className="model-button" disabled={locked} aria-haspopup="dialog" aria-expanded={modelsOpen} aria-label={`Select model, currently ${modelLabel}`} onClick={() => { if (modelsOpen) { closeModels(); return; } setSourcesOpen(false); setModelsOpen(true); }}><BrandIcon brand={modelBrand} className="model-brand" /><span className="model-label">{modelLabel}</span><span aria-hidden="true">▾</span></button><ThinkingControl level={thinkingLevel} modelKey={modelKey} act={act} busy={locked} onSettingsChanged={(next) => changeThreadModel(next).catch((reason: unknown) => { setRunError(reasonText(reason)); throw reason; })} onPicked={(effort) => { if (thread.messages.length) recordModelSwitch(thread.id, { at: thread.messages.length, label: "", brand: "", effort }); }} />{sending
           ? (message.trim()
             ? <button className="composer-send" disabled={locked} aria-label="Queue message" title="Queue — sent when this turn ends. Steer it from the queue to interrupt and send it now">↑</button>
             : <button type="button" className="composer-send stopping" onClick={interrupt} aria-label="Stop this turn" title="Stop this turn — Esc Esc">■</button>)
@@ -2917,6 +2960,7 @@ function ThreadStatsExport({ thread, contextTokens }: { thread: Thread; contextT
     try {
       const sources = await collectStats(thread.id, contextTokens);
       if (!sources) throw new Error("That thread is no longer stored.");
+      setNote("Choose where to save\u2026");
       const saved = await window.shinbo.exportThreadStats({ folder: statsFolderName(sources.thread, sources.exportedAt), files: statsFiles(sources) });
       setNote(saved ? `Saved to ${saved}` : "");
     } catch (error) {
@@ -3219,8 +3263,9 @@ function ThinkingControl({ level, modelKey, act, busy, onSettingsChanged, onPick
 }
 
 async function selectModelKey(settings: UserSettings, key: string, act: (method: string, params?: Record<string, string>) => Promise<unknown>, effort = ""): Promise<UserSettings | undefined> {
-  const router = routerFor(settings, key);
-  if (router) {
+  if (routerIdFor(key)) {
+    const router = routerFor(settings, key);
+    if (!router) throw new Error("The saved router is missing");
     if (await act("selectRouterModel", { routerId: router.id }) === undefined) return undefined;
   } else if (key.startsWith("openrouter:")) {
     if (await act("selectOpenRouterModel", { modelId: key.slice("openrouter:".length), effort }) === undefined) return undefined;
@@ -3319,27 +3364,31 @@ function keybindBuiltin(action: (typeof KEYBIND_ACTIONS)[number]) {
 
 function KeybindSettings({ settings, save }: { settings: UserSettings; save: (keybinds: Keybinds) => Promise<string[]> }) {
   const [recording, setRecording] = useState<KeybindAction | "">("");
-  const [problem, setProblem] = useState("");
+  const [problem, setProblem] = useState<{ action: KeybindAction; text: string } | null>(null);
   const [refused, setRefused] = useState<string[]>([]);
   const holding = useRef("");
   const released = useRef<{ code: string; timer: ReturnType<typeof setTimeout> } | null>(null);
   const forgetRelease = () => { if (released.current) { clearTimeout(released.current.timer); released.current = null; } };
-  const bind = async (keybinds: Keybinds) => setRefused(await save(keybinds));
+  useEffect(() => { void window.shinbo.setKeybinds(loadSettings().keybinds).then(setRefused).catch(() => undefined); }, []);
+  const bind = async (action: KeybindAction, keybinds: Keybinds) => {
+    try { setRefused(await save(keybinds)); setProblem(null); }
+    catch (reason) { setProblem({ action, text: reasonText(reason) }); }
+  };
   const commit = (action: KeybindAction, keybind: Keybind) => {
-    const clash = Object.entries(settings.keybinds).find(([other, value]) => other !== action && keybindLabel(value, RUNTIME_PLATFORM) === keybindLabel(keybind, RUNTIME_PLATFORM));
+    const clash = Object.entries(settings.keybinds).find(([other, value]) => other !== action && keybindKey(value, RUNTIME_PLATFORM) === keybindKey(keybind, RUNTIME_PLATFORM));
     if (clash) {
       const index = /^action([0-2])$/.exec(clash[0]);
       const label = index ? settings.quickActions[Number(index[1])].label : KEYBIND_ACTIONS.find((item) => item.id === clash[0])?.label;
-      setProblem(`${keybindLabel(keybind, RUNTIME_PLATFORM)} already runs “${label}”.`);
+      setProblem({ action, text: `${keybindLabel(keybind, RUNTIME_PLATFORM)} already runs “${label}”.` });
       return;
     }
     if (!keybind.hold) {
       const trouble = keybindProblem(keybind.accelerator, RUNTIME_PLATFORM);
-      if (trouble) { setProblem(trouble); return; }
+      if (trouble) { setProblem({ action, text: trouble }); return; }
     }
-    setProblem("");
+    setProblem(null);
     setRecording("");
-    void bind({ ...settings.keybinds, [action]: keybind });
+    void bind(action, { ...settings.keybinds, [action]: keybind });
   };
   const commitRef = useRef(commit);
   useLayoutEffect(() => { commitRef.current = commit; });
@@ -3351,7 +3400,7 @@ function KeybindSettings({ settings, save }: { settings: UserSettings; save: (ke
       event.stopPropagation();
       const tapped = released.current?.code === event.code;
       forgetRelease();
-      if (event.key === "Escape") { holding.current = ""; setRecording(""); setProblem(""); return; }
+      if (event.key === "Escape") { holding.current = ""; setRecording(""); setProblem(null); return; }
       if (tapped) { holding.current = ""; commitRef.current(recording, holdKeybind(event.code, TAP_MS)); return; }
       const accelerator = keyboardAccelerator(event, RUNTIME_PLATFORM);
       const holdAllowed = !IS_WINDOWS || !event.metaKey || /^Meta(?:Left|Right)$/.test(event.code);
@@ -3386,15 +3435,15 @@ function KeybindSettings({ settings, save }: { settings: UserSettings; save: (ke
       <span className="orb" aria-hidden="true"><kbd>{KEYBIND_GLYPHS[action.id]}</kbd></span>
       <div><h3>{label}</h3>{detail && <p>{detail}</p>}
         {action.builtin && !(action.id === "toggle" && optionTapTaken) && <small className="keybind-builtin">{keybindBuiltin(action)}</small>}
-        {listening && problem && <small className="keybind-problem">{problem}</small>}
+        {problem?.action === action.id && <small className="keybind-problem">{problem.text}</small>}
         {!listening && keybind && refused.includes(action.id) && <small className="keybind-problem">Another app holds {keybindLabel(keybind, RUNTIME_PLATFORM)}. Pick a different one.</small>}
       </div>
       <div className="keybind-controls">
-        <button type="button" className={`keybind-capture ${listening ? "recording" : ""}`} aria-label={`${listening ? "Recording shortcut for" : "Record shortcut for"} ${label}`} onClick={() => { setProblem(""); holding.current = ""; forgetRelease(); setRecording(listening ? "" : action.id); }}>
+        <button type="button" className={`keybind-capture ${listening ? "recording" : ""}`} aria-label={`${listening ? "Recording shortcut for" : "Record shortcut for"} ${label}`} onClick={() => { setProblem(null); holding.current = ""; forgetRelease(); setRecording(listening ? "" : action.id); }}>
           {listening ? "Press keys… Esc cancels" : keybind ? <kbd>{keybindLabel(keybind, RUNTIME_PLATFORM)}</kbd> : "Add a shortcut"}
         </button>
-        {keybind?.hold && <label className="keybind-duration">Trigger<select value={keybind.ms} onChange={(event) => void bind({ ...settings.keybinds, [action.id]: holdKeybind(keybind.hold, Number(event.target.value)) })}><option value={TAP_MS}>Double-tap</option>{HOLD_DURATIONS.map((ms) => <option key={ms} value={ms}>Hold {ms}ms</option>)}</select></label>}
-        {keybind && <button type="button" onClick={() => { setProblem(""); setRecording(""); void bind({ ...settings.keybinds, [action.id]: comboKeybind("") }); }}>Clear</button>}
+        {keybind?.hold && <label className="keybind-duration">Trigger<select value={keybind.ms} onChange={(event) => commit(action.id, holdKeybind(keybind.hold, Number(event.target.value)))}><option value={TAP_MS}>Double-tap</option>{HOLD_DURATIONS.map((ms) => <option key={ms} value={ms}>Hold {ms}ms</option>)}</select></label>}
+        {keybind && <button type="button" onClick={() => { setProblem(null); setRecording(""); void bind(action.id, { ...settings.keybinds, [action.id]: comboKeybind("") }); }}>Clear</button>}
       </div>
     </section>;
   })}</div>)}
@@ -3502,6 +3551,7 @@ function SettingsBody({ page, act, busy, onModelChanged, onAttach }: { page: Set
   const [scale, setScale] = useState<number>();
   const [modelPage, setModelPage] = useState("workspace");
   const [saveError, setSaveError] = useState("");
+  const [resetError, setResetError] = useState("");
   const setOrbs = (cursorOrbs: CursorCommand[]) => { setSaved(false); setSettings((current) => ({ ...current, cursorOrbs })); };
   const resizeOrbs = (count: number) => {
     if (!Number.isFinite(count)) return;
@@ -3579,10 +3629,10 @@ function SettingsBody({ page, act, busy, onModelChanged, onAttach }: { page: Set
     void syncMainPreferences(valid).then(() => selectModelKey(valid, valid.selectedModel, act)).catch(() => undefined);
     onModelChanged(valid);
   };
-  const resetData = () => {
+  const resetData = async () => {
     if (!confirm(`Delete all Shinbo data and start fresh?\n\nEvery thread, artifact, connected folder, saved key, and setting on this ${LOCAL_DEVICE} goes, and Shinbo restarts empty. This cannot be undone.`)) return;
-    localStorage.clear();
-    void window.shinbo.resetData();
+    try { await window.shinbo.resetData(); localStorage.clear(); }
+    catch (reason) { setResetError(reasonText(reason)); }
   };
   if (page === "built") return <section className="settings-view"><header><span>Settings / built by Shinbo</span><div className="settings-head"><h2>Built by Shinbo</h2><InfoDot>Every piece Shinbo has built into her own interface, where you pointed her at it. Send one to a thread to work on it again, switch it off to hide it without losing it, or delete it for good.</InfoDot></div></header><BuiltSettings busy={busy} onAttach={onAttach} /></section>;
   if (page === "contextbar") return <section className="settings-view settings-wide"><header><span>Settings / context bar</span><h2>Context bar</h2></header><ContextBarSettings pages={settings.contextPages} onChange={saveContextPages} busy={busy} /></section>;
@@ -3625,7 +3675,7 @@ function SettingsBody({ page, act, busy, onModelChanged, onAttach }: { page: Set
   if (page === "harness") return <section className="settings-view"><header><span>Settings / harness</span><h2>Harness <b className="tag-experimental">Experimental</b></h2></header><div className="coding-harness"><ReviewPanel settings={settings} onSave={saveReview} busy={busy} /><SemanticGrepPanel settings={settings} onChange={saveHarnessExperiments} busy={busy} /><HarnessExperimentsPanel settings={settings} onChange={saveHarnessExperiments} busy={busy} /></div></section>;
   if (page === "imports") return <section className="settings-view"><header><span>Settings / imports & plugins</span><h2>Imports & plugins</h2></header><AgentImports /></section>;
   if (page === "mobile") return <section className="settings-view"><header><span>Settings / mobile</span><h2>Mobile</h2></header><MobileSettings busy={busy} /></section>;
-  if (page === "privacy") return <section className="settings-view"><header><span>Settings / data &amp; privacy</span><h2>Data &amp; privacy</h2></header><PrivacySettings busy={busy} onReset={resetData} onResetSettings={resetSettings} onModels={() => { setModelPage("routing"); openSettingsPage("models"); }} /></section>;
+  if (page === "privacy") return <section className="settings-view"><header><span>Settings / data &amp; privacy</span><h2>Data &amp; privacy</h2></header><PrivacySettings busy={busy} onReset={() => void resetData()} onResetSettings={resetSettings} onModels={() => { setModelPage("routing"); openSettingsPage("models"); }} />{resetError && <p className="local-model-error" role="alert">{resetError}</p>}</section>;
   if (page === "about") return <section className="settings-view"><header><span>Settings / about Shinbo</span><h2>About Shinbo</h2></header><div className="about-settings"><div className="settings-intro"><div><h3>Built with open source</h3><p>The projects behind Shinbo’s interface, agent and local data. Open a row for details and licenses.</p></div></div>{credits.map((credit) => <SettingsSection key={credit.title} title={credit.title} summary={credit.summary}><p>{credit.body}</p>{credit.href ? <a href={credit.href} target="_blank" rel="noreferrer">{credit.link}</a> : null}</SettingsSection>)}</div></section>;
   if (page === "keybinds") return <section className="settings-view"><header><h2>Keybinds</h2></header>
     <KeybindSettings settings={settings} save={saveKeybinds} />
@@ -3658,7 +3708,7 @@ function SettingsBody({ page, act, busy, onModelChanged, onAttach }: { page: Set
       {(settings.cursorOrbsEnabled || settings.notchCommandsEnabled) && <div className="orb-preview"><OrbRing commands={settings.cursorOrbs} settings={settings} selected={orb} onPick={setOrb} radius={108} /></div>}</section>
     </SettingsSection>
     <SettingsSection title="Placement" summary={IS_WINDOWS ? "Drag the pill where you want it" : `${settings.notchGap} pt fallback gap`}>
-    <section className="notch-settings"><div><div className="settings-head"><h3>{IS_WINDOWS ? "Where Quick Ask appears" : "Where the island hangs"}</h3><InfoDot>{IS_WINDOWS ? "Quick Ask appears as a small pill near the top of the display. Move it if the default position does not suit your taskbar or windows." : "Shinbo measures the real camera housing on each display and wraps the menu bar around it. The gap below is the fallback for Macs and external displays without a housing."}</InfoDot></div><p>{IS_WINDOWS ? "Quick Ask appears near the top of the display." : "Quick Ask hangs off the camera housing."}</p></div>{!IS_WINDOWS && <div className="notch-values"><label>Fallback gap · 120–260 pt<input type="number" min={120} max={260} step={2} value={settings.notchGap} onChange={(event) => setSettings((current) => ({ ...current, notchGap: event.currentTarget.valueAsNumber }))} /></label></div>}</section>
+    <section className="notch-settings"><div><div className="settings-head"><h3>{IS_WINDOWS ? "Where Quick Ask appears" : "Where the island hangs"}</h3><InfoDot>{IS_WINDOWS ? "Quick Ask appears as a small pill near the top of the display. Move it if the default position does not suit your taskbar or windows." : "Shinbo measures the real camera housing on each display and wraps the menu bar around it. The gap below is the fallback for Macs and external displays without a housing."}</InfoDot></div><p>{IS_WINDOWS ? "Quick Ask appears near the top of the display." : "Quick Ask hangs off the camera housing."}</p></div>{!IS_WINDOWS && <div className="notch-values"><label>Fallback gap · 120–260 pt<NumberField value={settings.notchGap} min={120} max={260} disabled={busy} onCommit={(notchGap) => { setSaved(false); setSettings((current) => ({ ...current, notchGap })); }} /></label></div>}</section>
     </SettingsSection>
     <button className="save-settings">{saved ? "Saved ✓" : "Save settings"}</button>{saveError && <p className="local-model-error" role="alert">{saveError}</p>}</form></section>;
 }
@@ -4021,12 +4071,13 @@ function ModelCatalog({ settings, onChange, act, busy, onConfigure }: { settings
     saveRouters([...settings.routers, { id, name: `Router ${settings.routers.length + 1}`, models: [...FREE_ROUTER_MODELS] }]);
     setRouterOpen(id);
   };
-  const dropRouter = (id: string) => {
+  const dropRouter = async (id: string) => {
     setError("");
     try {
       const next = validateSettings(forgetRouter(settings, id));
-      onChange(next);
-      void act("setRouters", { routers: JSON.stringify(next.routers) });
+      await onChange(next);
+      if (await act("setRouters", { routers: JSON.stringify(next.routers) }) === undefined) return;
+      if (next.selectedModel !== settings.selectedModel) await selectModelKey(next, next.selectedModel, act);
     } catch (reason) { setError(reasonText(reason)); }
   };
   const routers = settings.routers.filter((item) => !needle || `${item.name} ${item.models.join(" ")}`.toLowerCase().includes(needle));
@@ -4063,7 +4114,7 @@ function ModelCatalog({ settings, onChange, act, busy, onConfigure }: { settings
               <small>{routerEntry(item).detail}</small>
             </span>
             <button type="button" className="catalog-gear" aria-expanded={open} aria-label={`Edit ${item.name}`} title="Reorder, add or drop the models this router falls through" onClick={() => setRouterOpen(open ? "" : item.id)}><GearIcon /></button>
-            <button type="button" className="catalog-drop" aria-label={`Delete ${item.name}`} title="Delete this router" onClick={() => dropRouter(item.id)}>✕</button>
+            <button type="button" className="catalog-drop" aria-label={`Delete ${item.name}`} title="Delete this router" onClick={() => void dropRouter(item.id)}>✕</button>
             <button type="button" className="catalog-use" disabled={busy || settings.selectedModel === key} onClick={() => void use(key)}>{settings.selectedModel === key ? "Active" : "Use"}</button>
           </div>
           {open && <RouterEditor chain={item.models} catalog={models} onChange={(chain) => editRouter(item.id, { models: chain })} />}
@@ -4979,7 +5030,7 @@ function PrivacySettings({ busy, onReset, onResetSettings, onModels }: { busy: b
   </div>;
 }
 
-function AgentImports({ done }: { done?: () => void }) {
+function AgentImports() {
   const [sources, setSources] = useState<AgentImportSource[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState(true);
@@ -4987,8 +5038,9 @@ function AgentImports({ done }: { done?: () => void }) {
   useEffect(() => {
     void window.shinbo.discoverAgentImports().then((items) => {
       setSources(items);
-      const kept = items.filter((item) => item.registered);
-      setSelected((kept.length ? kept : items.filter((item) => item.skills || item.mcpConfigs)).map((item) => item.id));
+      const present = items.filter((item) => item.skills || item.mcpConfigs);
+      const kept = present.filter((item) => item.registered);
+      setSelected((kept.length ? kept : present).map((item) => item.id));
     }).catch((reason) => setStatus(reasonText(reason))).finally(() => setBusy(false));
   }, []);
   const submit = async () => {
@@ -4997,12 +5049,11 @@ function AgentImports({ done }: { done?: () => void }) {
       const imported = await window.shinbo.importAgentSources(selected);
       setSources((items) => items.map((item) => ({ ...item, registered: imported.includes(item.id) })));
       setStatus(`${imported.length} ${plural(imported.length, "agent source")} registered`);
-      done?.();
     } catch (reason) { setStatus(reasonText(reason)); }
     finally { setBusy(false); }
   };
   const found = sources.filter((source) => source.skills > 0 || source.mcpConfigs > 0);
-  const registered = sources.filter((source) => source.registered).map((source) => source.id);
+  const registered = found.filter((source) => source.registered).map((source) => source.id);
   const changed = selected.length !== registered.length || selected.some((id) => !registered.includes(id));
   const adding = selected.some((id) => !registered.includes(id));
   const missing = sources.filter((source) => !found.includes(source));
@@ -5096,12 +5147,12 @@ function ControlLesson({ done, onDone }: { done: boolean; onDone: () => void }) 
     let timer = 0;
     const forget = () => { window.clearTimeout(timer); timer = window.setTimeout(() => setTaps(0), 900); };
     const down = (event: KeyboardEvent) => {
-      if (event.key !== "Alt" || event.repeat) return;
+      if (event.code !== "AltLeft" || event.repeat) return;
       if (released && event.timeStamp - released <= DOUBLE_TAP_MS) { window.clearTimeout(timer); setTaps(2); onDone(); return; }
       setTaps(1);
       forget();
     };
-    const up = (event: KeyboardEvent) => { if (event.key === "Alt") { released = event.timeStamp; forget(); } };
+    const up = (event: KeyboardEvent) => { if (event.code === "AltLeft") { released = event.timeStamp; forget(); } };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
     return () => { window.clearTimeout(timer); window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
@@ -5198,12 +5249,6 @@ function SetupDialog({ close }: { close: () => void }) {
       </div>
     </section>
   </dialog>;
-}
-
-function ImportDialog({ close }: { close: () => void }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => { if (!dialog.current?.open) dialog.current?.showModal(); }, []);
-  return <dialog ref={dialog} className="modal-backdrop" aria-labelledby="import-title" onCancel={(event) => { event.preventDefault(); close(); }}><section className="import-dialog"><header><div><span>First launch / optional</span><h2 id="import-title">Bring your agent setup</h2><p>Shinbo can find Codex, Claude, Antigravity, Pi, OpenCode, Cursor, Windsurf, and Devin defaults on this {LOCAL_DEVICE}.</p></div><button type="button" onClick={close} aria-label="Skip agent imports">×</button></header><AgentImports done={close} /><button className="import-later" type="button" onClick={close}>Not now</button></section></dialog>;
 }
 
 const sendSecondModel = (id: SecondModelId, settings: UserSettings) => id === "verifier" ? window.shinbo.setVerifier(settings.verifier)
@@ -5458,6 +5503,7 @@ function Overlay() {
   });
   const notch = useMemo(() => readNotchQuery(settings.notchGap), [settings.notchGap]);
   const [grow, setGrow] = useState(0);
+  const [fieldBand, setFieldBand] = useState(0);
   const transcript = useRef<HTMLDivElement>(null);
   const { skills, tools, atItems, folders, files } = useTaskCommands(settings.tools.disabledTools);
   const [servers, setServers] = useState<SlashCommand[]>([]);
@@ -5553,11 +5599,11 @@ function Overlay() {
     startRun();
     setBusy(true); setError("");
     const mine = session.current;
-    setTurns((list) => [...list, { role: "user", content }]);
     let active = thread;
     const previousMessageCount = active?.messages.length ?? 0;
     try {
       if (!active) { active = await window.shinbo.request<Thread>("createThread"); if (session.current !== mine) return; setThread(active); }
+      setTurns((list) => [...list, { role: "user", content }]);
       await applyMode(active.id);
       if (session.current !== mine) return;
       startStream(active.id);
@@ -5633,11 +5679,20 @@ function Overlay() {
   useEffect(() => {
     const node = transcript.current;
     if (!node) return;
-    const height = Math.min(MAX_TRANSCRIPT, node.scrollHeight + menuBand + modeBand + slashBand + thinkBand + (annotationId ? ATTACHMENT_BAND : 0));
+    const height = Math.min(MAX_TRANSCRIPT, node.scrollHeight + menuBand + modeBand + slashBand + thinkBand + fieldBand + (annotationId ? ATTACHMENT_BAND : 0));
     setGrow(height);
     window.shinbo.setOverlayHeight(height);
     node.scrollTop = node.scrollHeight;
-  }, [turns, busy, stream, menuBand, modeBand, slashBand, thinkBand, annotationId, surface]);
+  }, [turns, busy, stream, menuBand, modeBand, slashBand, thinkBand, fieldBand, annotationId, surface]);
+  useEffect(() => {
+    const node = input.current;
+    if (!node) return;
+    const base = node.offsetHeight;
+    const observer = new ResizeObserver(() => setFieldBand(Math.max(0, node.offsetHeight - base)));
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => { if (!busy) input.current?.focus(); }, [busy]);
   useEffect(() => {
     const node = modelMenu.current;
     if (!node) { setMenuBand(0); return; }
@@ -5760,12 +5815,12 @@ function Overlay() {
       <header className="island-bar"><div className="brand"><ShinboMark /><strong>Shinbo</strong></div><span className="island-housing" /><span className="island-status"><i /> {listening ? "Listening" : transcribing ? "Transcribing" : busy ? working : "Quick thread"}</span></header>
       <div className="island-body">
         {annotationId && <div className="annotation-chip">{thumbnail && <img src={thumbnail} alt={attachedApp ? `Screen capture of ${attachedApp}` : "Screen capture"} title={attachedApp} />}<button type="button" onClick={() => void clearDrawing()} aria-label="Discard screen markup">×</button></div>}
-        <form onSubmit={(event) => void send(event)}><label className="sr-only" htmlFor="quick-message">Ask Shinbo</label><textarea ref={input} autoFocus disabled={busy} id="quick-message" value={message} role="combobox" aria-expanded={slashOpen} aria-controls="island-slash-menu" aria-autocomplete="list" onChange={(event) => { setMessage(event.target.value); setCaret(event.target.selectionStart ?? event.target.value.length); setSlashDismissed(false); setSlashPick(0); }} onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)} onKeyDown={composerKeys} placeholder="Ask Shinbo anything…" rows={1} /><div className="overlay-actions"><button type="button" onClick={() => void startDrawing()} disabled={busy} title="Draw yellow highlights over the screen" aria-label="Draw on screen">✎</button><button type="button" className={listening ? "voice-live" : ""} onClick={() => void dictate()} disabled={busy || transcribing} title={dictation.ready ? listening ? "Stop listening" : `Dictate — or hold space for ${settings.voiceHoldMs}ms` : `${dictation.blocker} — set voice up in the workspace`} aria-label={listening ? "Stop listening" : "Dictate"}>●</button><button className="send" disabled={busy || !message.trim()} aria-label="Send">{busy ? "···" : <SendIcon />}</button></div></form>
+        <form onSubmit={(event) => void send(event)}><label className="sr-only" htmlFor="quick-message">Ask Shinbo</label><textarea ref={input} autoFocus disabled={busy} id="quick-message" value={message} maxLength={COMPOSER_MAX} role="combobox" aria-expanded={slashOpen} aria-controls="island-slash-menu" aria-autocomplete="list" onChange={(event) => { setMessage(event.target.value); setCaret(event.target.selectionStart ?? event.target.value.length); setSlashDismissed(false); setSlashPick(0); }} onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)} onKeyDown={composerKeys} placeholder="Ask Shinbo anything…" rows={1} /><div className="overlay-actions"><button type="button" onClick={() => void startDrawing()} disabled={busy} title="Draw yellow highlights over the screen" aria-label="Draw on screen">✎</button><button type="button" className={listening ? "voice-live" : ""} onClick={() => void dictate()} disabled={busy || transcribing} title={dictation.ready ? listening ? "Stop listening" : `Dictate — or hold space for ${settings.voiceHoldMs}ms` : `${dictation.blocker} — set voice up in the workspace`} aria-label={listening ? "Stop listening" : "Dictate"}>●</button><button className="send" disabled={busy || !message.trim()} aria-label="Send">{busy ? "···" : <SendIcon />}</button></div></form>
         {(error || dictation.error) && <button className="overlay-error" onClick={() => { setError(""); dictation.setError(""); }}>{error || dictation.error} ×</button>}
       </div>
       {slashOpen && <section className="source-popover slash-menu" ref={slashMenu} id="island-slash-menu" role="listbox" aria-label={slash?.sigil === "@" ? "Artifacts, saved notes and files" : "Built-in tools, skills and MCP servers"}>
         {slashMatches.map((item, index) => <button type="button" role="option" aria-selected={index === slashActive} className={`slash-row ${index === slashActive ? "active" : ""}`} key={`${item.kind}-${item.id}`} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setSlashPick(index)} title={item.detail} onClick={() => pickCommand(item)}><strong>{slash?.sigil ?? "/"}{item.name}</strong><em className="slash-kind" data-kind={item.kind}>{KIND_LABELS[item.kind]}</em><small>{item.detail}</small></button>)}
-        {!slashMatches.length && <p className="slash-empty">Nothing matches “{slash?.query}”. {slash?.sigil === "@" ? "Artifacts, saved notes and the files of granted folders appear here." : "Built-in tools and MCP servers appear here."}</p>}
+        {!slashMatches.length && <p className="slash-empty">{slash?.query ? `Nothing matches “${slash.query}”.` : slash?.sigil === "@" ? "Nothing to add yet — connect a folder, save a note or make an artifact." : "Nothing to run yet."} {slash?.sigil === "@" ? "Artifacts, saved notes and the files of granted folders appear here." : "Built-in tools and MCP servers appear here."}</p>}
       </section>}
       <div className="island-thread" ref={transcript}>
         {turns.map((turn, index) => <Fragment key={index}>

@@ -37,7 +37,7 @@ export function Mark({ className = "" }: { className?: string }) {
 }
 
 export function InfoDot({ children }: { children: ReactNode }) {
-  return <details className="info-dot"><summary aria-label="What this is for">i</summary><div>{children}</div></details>;
+  return <details className="info-dot" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false; }}><summary aria-label="What this is for">i</summary><div tabIndex={-1}>{children}</div></details>;
 }
 
 /** Shinbo's own routes and placeholders (no model, inherit, off) wear the pink bow instead of a maker mark. */

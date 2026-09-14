@@ -63,7 +63,7 @@
 .command-orbs button:nth-child(5) .orb kbd, .radial button:nth-child(5) .orb kbd { color: var(--rose); }
 
 .overlay form { display: flex; align-items: center; gap: var(--s-3); }
-.overlay form textarea { flex: 1; width: 100%; min-height: 0; padding: 0; resize: none; border: 0; outline: 0; color: var(--text); background: transparent; caret-color: var(--accent); font: var(--fs-md)/1.5 var(--font); }
+.overlay form textarea { flex: 1; width: 100%; min-height: 0; max-height: 6lh; field-sizing: content; padding: 0; resize: none; border: 0; outline: 0; color: var(--text); background: transparent; caret-color: var(--accent); font: var(--fs-md)/1.5 var(--font); }
 .overlay form textarea::placeholder { color: var(--text-3); }
 .overlay-error { padding: var(--s-1) 0; color: var(--danger); background: transparent; font-size: var(--fs-sm); line-height: 1.45; text-align: left; }
 

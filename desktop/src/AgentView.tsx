@@ -82,7 +82,11 @@ const Empty = ({ copy }: { copy: string }) => <div className="empty"><Mark /><p>
 type Act = (method: string, params?: Record<string, string>) => Promise<unknown>;
 type Draft = Proposal & { key: string };
 
-let pending: Draft | null = null;
+type Tab = "activity" | "improvement" | "worktrees" | "bench";
+
+let pending: { draft: Draft | null; proposals: Record<string, Proposal>; tab: Tab; scope: string } = { draft: null, proposals: {}, tab: "activity", scope: "" };
+
+const remember = (patch: Partial<typeof pending>) => { pending = { ...pending, ...patch }; };
 
 function useTurns(snapshot: Snapshot, enabled: boolean) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -122,17 +126,17 @@ function useTurns(snapshot: Snapshot, enabled: boolean) {
 }
 
 export default function AgentView({ snapshot, act, busy, openThread, projectName, mode, model, pickers }: { snapshot: Snapshot; act: Act; busy: boolean; openThread: (id: string) => void; projectName: (thread: Thread) => string; mode: string; model: string; pickers: BenchPickers }) {
-  const [tab, setTab] = useState<"activity" | "improvement" | "worktrees" | "bench">("activity");
+  const [tab, setTab] = useState<Tab>(pending.tab);
   const [memories, setMemories] = useState(false);
   const [evidenceOpened, setEvidenceOpened] = useState(false);
   const [store, setStore] = useState(readImprovements);
-  const [draft, setDraft] = useState<Draft | null>(pending);
-  useEffect(() => { pending = draft; }, [draft]);
+  const [draft, setDraft] = useState<Draft | null>(pending.draft);
   const [error, setError] = useState("");
   const benched = useSyncExternalStore(subscribeBench, () => readBench().runs.some((run) => run.state === "running" && run.id === benchLive()));
   const [days, setDays] = useState(30);
-  const [scope, setScope] = useState("");
-  const [proposals, setProposals] = useState<Record<string, Proposal>>({});
+  const [scope, setScope] = useState(pending.scope);
+  const [proposals, setProposals] = useState(pending.proposals);
+  useEffect(() => { remember({ draft, proposals, tab, scope }); }, [draft, proposals, tab, scope]);
   const [ticked, setTicked] = useState<string[]>([]);
   const [queue, setQueue] = useState(readQueue);
   const { turns, ready, read, clear } = useTurns(snapshot, tab === "improvement");
@@ -191,7 +195,10 @@ export default function AgentView({ snapshot, act, busy, openThread, projectName
     .filter(([, count]) => count > 0), [friction]);
   const proposalKey = (item: Friction) => `${scope}:${item.key}`;
   const proposalOf = (item: Friction) => proposals[proposalKey(item)] ?? draftProposal(item);
-  const editProposal = (item: Friction, proposal: Proposal) => setProposals((current) => ({ ...current, [proposalKey(item)]: proposal }));
+  const editProposal = (item: Friction, proposal: Proposal) => {
+    remember({ proposals: { ...pending.proposals, [proposalKey(item)]: proposal } });
+    setProposals(pending.proposals);
+  };
   const valid = (proposal: Proposal) => additionValid(proposal.lever, proposal.addition, proposal.scope ?? "");
   const picked = friction.filter((item) => ticked.includes(item.key) && lessonShaped(item) && valid(proposalOf(item)));
   const filter = (next: string) => { setScope(next); setTicked([]); };
@@ -358,7 +365,7 @@ export default function AgentView({ snapshot, act, busy, openThread, projectName
           <button type="button" className="repairs-cta" disabled={busy || benched || !picked.length} onClick={queueThem}>
             {picked.length ? `Queue ${picked.length} ${plural(picked.length, "repair")}` : "Nothing ticked"}
           </button>
-          <p className="repairs-note">One trial at a time. Each needs {MIN_ARM_TURNS} paired cases on the bench before it can be kept.</p>
+          <p className="repairs-note">One trial per lever at a time. Each needs {MIN_ARM_TURNS} paired cases on the bench before it can be kept.</p>
           {(trial || queue.length > 0) && <div className="repairs-queue">
             {trial && <div title={scopeLabel(trial.scope ?? "")}><span>▸</span><span>{trial.title}<ScopeMark scope={trial.scope} /></span><small>running</small></div>}
             {queue.map((row, index) => <div key={`${row.title}-${index}`}><span>{index + (trial ? 2 : 1)}</span><span>{row.title}<ScopeMark scope={row.scope} /></span><small>waiting</small></div>)}

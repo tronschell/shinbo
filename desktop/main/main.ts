@@ -70,8 +70,8 @@ import { chatgptAuth, chatgptRoute } from "./chatgpt";
 import { CliModelCatalog } from "./cli-models";
 import { CLI_IDS, cliHarness, describeRuns, cliOptions } from "../shared/cli";
 import { forceArm, harnessPromptFile, resolveHarnessPrompt, setImprovements, setPrompts, setSystemPrompt, withGoal, withTrialArm, writeHarnessPrompt } from "./system-prompt";
-import { Harness, MISSING_CREDENTIAL, RESTARTED_BY_YOU, escapesRoot, explainFailure, failedTurn, forgetHarnessSession, harnessKey, recoveredSessionTraces, type HarnessMcpServer, type HarnessToolCall, type StoredThreadTrace, type ThinkingRoute, type TurnUsage } from "./harness";
-import { MAX_LOG_LINES, type HarnessLogLine, type HarnessReport } from "../shared/harness-log";
+import { Harness, RESTARTED_BY_YOU, escapesRoot, explainFailure, failedTurn, forgetHarnessSession, harnessKey, recoveredSessionTraces, type HarnessMcpServer, type HarnessToolCall, type StoredThreadTrace, type ThinkingRoute, type TurnUsage } from "./harness";
+import { MAX_LOG_LINES, MISSING_CREDENTIAL, type HarnessLogLine, type HarnessReport } from "../shared/harness-log";
 import { review } from "./verifier";
 import { MAX_REVIEW_ROUNDS, REVIEWABLE_KINDS, reviewPrompt, reviewTitle, reviewVerdict, revisionPrompt } from "./review";
 import { advise } from "./advisor";
@@ -1014,8 +1014,9 @@ function closeHotspot() {
 }
 
 function openHotspot() {
-  const display = screen.getPrimaryDisplay();
-  const notch = notches.find((item) => item.id === display.id);
+  const displays = screen.getAllDisplays();
+  const notch = notches.find((item) => displays.some((candidate) => candidate.id === item.id));
+  const display = displays.find((candidate) => candidate.id === notch?.id) ?? screen.getPrimaryDisplay();
   const key = notch ? [display.id, display.bounds.y, notch.x, notch.width, notch.height].join(":") : "";
   if (key === hotspotKey) return;
   hotspotKey = key;
@@ -4212,6 +4213,7 @@ async function runScheduledWorkflow(job: HostDueJob["dueJob"]) {
   if (workflowRuns.has(job.threadId)) throw new Error("This workflow is already running.");
   const controller = new AbortController();
   workflowRuns.set(job.threadId, { jobId: job.jobId, controller });
+  let recorded = false;
   try {
     const startupError = await runtimeReady;
     if (startupError) throw new Error(startupError);
@@ -4242,13 +4244,16 @@ async function runScheduledWorkflow(job: HostDueJob["dueJob"]) {
       const outcome = await driveTurn({ threadId: job.threadId, content, mode, title: job.title, model, effort, ...(skillContext ? { params: { skillContext } } : {}) });
       controller.signal.throwIfAborted();
       const agent = agents!.list().find((candidate) => candidate.threadId === job.threadId);
-      if (agent?.error || agent?.status === "failed" || agent?.status === "stopped") throw new Error(agent.error || "The workflow turn did not complete.");
+      if (agent?.error || agent?.status === "failed" || agent?.status === "stopped") {
+        recorded = true;
+        throw new Error(agent.error || "The workflow turn did not complete.");
+      }
       return lastAssistantMessage(outcome) ?? "";
     });
     controller.signal.throwIfAborted();
     await host!.request({ method: "finishScheduledJob", params: { jobId: job.jobId, outputs: packVariables(run.variables), depth: String(job.depth) } });
   } catch (error) {
-    await recordTurn({ threadId: job.threadId, prompt: job.prompt, answer: "", notice: controller.signal.aborted ? "You stopped this workflow." : `This workflow failed: ${error instanceof Error ? error.message : String(error)}`, durationMilliseconds: "0", outputTokens: "0", inputTokens: "0", model: "" });
+    if (!recorded || controller.signal.aborted) await recordTurn({ threadId: job.threadId, prompt: job.prompt, answer: "", notice: controller.signal.aborted ? "You stopped this workflow." : `This workflow failed: ${error instanceof Error ? error.message : String(error)}`, durationMilliseconds: "0", outputTokens: "0", inputTokens: "0", model: "" });
   } finally {
     workflowRuns.delete(job.threadId);
   }
@@ -5352,7 +5357,7 @@ if (primaryInstance) app.whenReady().then(() => {
     mainWindowSender(event);
     const request = statsExportRequest(value);
     const choice = await dialog.showSaveDialog(mainWindow!, {
-      title: "Export thread stats",
+      title: request.title ?? "Export thread stats",
       buttonLabel: "Export",
       defaultPath: path.join(app.getPath("documents"), request.folder),
     });
@@ -5454,7 +5459,7 @@ if (primaryInstance) app.whenReady().then(() => {
     mainWindowSender(event);
     const url = privacySettingsUrl(value, process.platform);
     const mac = isMac;
-    if (value === "microphone" && mac && await systemPreferences.askForMediaAccess("microphone")) return;
+    if (value === "microphone" && mac && systemPreferences.getMediaAccessStatus("microphone") === "not-determined" && await systemPreferences.askForMediaAccess("microphone")) return;
     if (value === "accessibility" && mac) {
       await resetStaleAccessibilityGrant();
       systemPreferences.isTrustedAccessibilityClient(true);

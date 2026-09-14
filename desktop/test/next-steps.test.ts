@@ -142,3 +142,9 @@ test("the ipc boundary clamps whatever the renderer sends", () => {
   assert.deepEqual(state.threads, ["one", "two"]);
   assert.throws(() => validateWorkState("nope"));
 });
+
+test("the fallback stays folder-neutral with no project", () => {
+  const steps = defaultSteps(emptyWorkState);
+  assert.ok(steps.every((step) => !/repositor|untested|documentation|dead code/i.test(step.title + step.prompt)));
+  assert.equal(defaultSteps({ ...emptyWorkState, project: "shinbo" })[0].title, "Take stock of the repository");
+});

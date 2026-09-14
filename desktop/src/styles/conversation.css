@@ -308,7 +308,7 @@ button:where(.composer *) { background: transparent; color: inherit; }
 .slash-kind[data-kind="artifact"] { color: var(--lime); }
 .slash-kind[data-kind="page"] { color: var(--rose); }
 
-.composer-row { display: flex; align-items: center; flex-wrap: nowrap; gap: var(--s-1); padding: var(--s-2) var(--s-1); border-top: 1px solid var(--border); }
+.composer-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-1); padding: var(--s-2) var(--s-1); border-top: 1px solid var(--border); }
 .composer-tools { display: flex; align-items: center; flex: 1 1 auto; gap: var(--s-1); min-width: 0; }
 
 .composer-row .source-trigger, .composer-row .review-toggle, .composer-row .model-button {

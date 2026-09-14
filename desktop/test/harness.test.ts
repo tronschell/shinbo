@@ -9,7 +9,7 @@ import { withThinking } from "../shared/thinking";
 import { artifactWritten } from "../shared/artifacts";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { defaultHarnessExperiments, validateHarnessExperiments } from "../shared/settings";
-import { CLOSED_BY_SHINBO, fixPrompt, harnessHealth, STALL_MS, stoppedReason, type HarnessLogLine, type HarnessState } from "../shared/harness-log";
+import { CLOSED_BY_SHINBO, fixPrompt, harnessHealth, MISSING_CREDENTIAL, STALL_MS, stoppedReason, type HarnessLogLine, type HarnessState } from "../shared/harness-log";
 import { Harness, HARNESS_MODE_ID, INTERRUPTED_CALL, RESTARTED_BY_YOU, boundedOutput, explainFailure, callEscapesWorkspace, compactionReported, contextBreakdownReported, contextExperimentFired, describePath, effortOption, escapesRoot, experimentOption, failedTurn, harnessKey, recoveredSessionTraces, toolCallText, toolOutput, turnUsageReported, unwrapMcpResult, type HarnessToolCall, type PermissionAsk, type PermissionContext, type PermissionOption } from "../main/harness";
 import { decodeSpans, encodeSpans } from "../shared/trace";
 
@@ -979,6 +979,7 @@ test("health reads the process, and offline is a death Shinbo did not ask for", 
   assert.equal(harnessHealth([state({ running: true, busy: true, silentMs: STALL_MS + 1 })]), "stalled");
   assert.equal(harnessHealth([state({ failure: "shinbo-cli exited with code 1" })]), "offline");
   assert.equal(harnessHealth([state({ failure: CLOSED_BY_SHINBO })]), "ready");
+  assert.equal(harnessHealth([state({ failure: MISSING_CREDENTIAL })]), "ready");
   assert.equal(stoppedReason([state({ failure: '"work" is no longer at /tmp/work — reconnect it from the ＋ menu.' })]), '"work" is no longer at /tmp/work — reconnect it from the ＋ menu.');
   assert.equal(stoppedReason([state({ running: true })]), "");
   assert.equal(stoppedReason([state({ failure: CLOSED_BY_SHINBO })]), "");

@@ -82,7 +82,7 @@ test("adding registers before publishing; immediate Use and shared picker work w
   const profile = view.settings().providers[0];
   await view.invoke("select", profile);
   assert.equal(view.settings().selectedModel, `provider:${profile.id}`);
-  const select = compile(named(source, "selectModelKey").getText(source), { CODEX_PREFIX, codexSlug, routerFor: () => undefined });
+  const select = compile(named(source, "selectModelKey").getText(source), { CODEX_PREFIX, codexSlug, routerFor: () => undefined, routerIdFor: () => "" });
   assert.equal((await select(view.settings(), `provider:${profile.id}`, view.act)).selectedModel, `provider:${profile.id}`);
   assert.equal(view.state.registrations, 1);
   assert.equal(view.state.error, "");

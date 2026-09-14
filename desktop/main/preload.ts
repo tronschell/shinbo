@@ -186,7 +186,7 @@ contextBridge.exposeInMainWorld("shinbo", {
   },
   benchJudge: (value: { prompt: string; rubric: string; answer: string; judge?: VerifierSettings }) => ipcRenderer.invoke("shinbo:bench-judge", value),
   exportBench: (value: { name: string; sheets: { name: string; rows: (string | number)[][] }[] }) => ipcRenderer.invoke("shinbo:export-bench", value),
-  exportThreadStats: (value: { folder: string; files: { name: string; text: string }[] }) => ipcRenderer.invoke("shinbo:export-thread-stats", value),
+  exportThreadStats: (value: { folder: string; files: { name: string; text: string }[]; title?: string }) => ipcRenderer.invoke("shinbo:export-thread-stats", value),
   listFolders: () => ipcRenderer.invoke("shinbo:list-folders"),
   onFoldersChanged: (listener: () => void) => {
     const wrapped = () => listener();

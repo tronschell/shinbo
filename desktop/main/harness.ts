@@ -12,7 +12,7 @@ import type { PermissionAsk, ThreadStep } from "../shared/agents";
 import type { PermissionMode } from "../shared/permissions";
 import type { RunnableHookEvent } from "../shared/plugins";
 import { missingFolderMessage } from "../shared/folders";
-import { CLOSED_BY_SHINBO, MAX_LOG_BODY, type HarnessFlow, type HarnessLogLine, type HarnessState } from "../shared/harness-log";
+import { CLOSED_BY_SHINBO, MAX_LOG_BODY, MISSING_CREDENTIAL, type HarnessFlow, type HarnessLogLine, type HarnessState } from "../shared/harness-log";
 import type { HarnessExperiments } from "../shared/settings";
 import { decodeSpans, encodeSpans, traceHeader, type TraceSpan } from "../shared/trace";
 
@@ -428,8 +428,6 @@ const FAILURE_EXPLANATIONS: Record<string, string> = {
   [RESTARTED_BY_YOU]: "You restarted the agent while this run was in flight. Send Continue to pick it back up",
   RequestTooLarge: "the conversation outgrew what this model accepts, even after older tool results were pruned, so Shinbo compacted it. Send Continue to pick up where it left off",
 };
-
-export const MISSING_CREDENTIAL = "no model is signed in. Add a provider key under Settings → Models, then send Continue";
 
 export function explainFailure(detail: string): string {
   const known = FAILURE_EXPLANATIONS[detail];

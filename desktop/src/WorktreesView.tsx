@@ -9,7 +9,7 @@ const PREFIX_KEY = "shinbo.worktreePrefix.v1";
 
 const readPrefix = (folderId: string) => localStorage.getItem(`${PREFIX_KEY}.${folderId}`) ?? "";
 const writePrefix = (folderId: string, prefix: string) => {
-  try { localStorage.setItem(`${PREFIX_KEY}.${folderId}`, prefix); } catch { /* full */ }
+  try { localStorage.setItem(`${PREFIX_KEY}.${folderId}`, prefix); } catch { return; }
 };
 
 const BADGE_ORDER = { primary: 0, prunable: 1, locked: 2, detached: 3, dirty: 4, clean: 5 } as const;
@@ -50,7 +50,8 @@ export default function WorktreesView() {
     return () => { live = false; stop(); };
   }, []);
 
-  const prefix = readPrefix(folderId);
+  const [prefixes, setPrefixes] = useState<Record<string, string>>({});
+  const prefix = prefixes[folderId] ?? readPrefix(folderId);
 
   const reload = useCallback(() => setReloadAt((at) => at + 1), []);
 
@@ -111,7 +112,7 @@ export default function WorktreesView() {
       </div>
       <input value={prefix} spellCheck={false} maxLength={48} placeholder="shinbo/"
         aria-label="Branch prefix for new worktrees"
-        onChange={(event) => { writePrefix(folderId, event.target.value); reload(); }} />
+        onChange={(event) => { setPrefixes((current) => ({ ...current, [folderId]: event.target.value })); writePrefix(folderId, event.target.value); }} />
     </section>
 
     <section className="worktree-bar">

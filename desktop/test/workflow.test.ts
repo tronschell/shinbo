@@ -105,7 +105,8 @@ test("every preset round-trips through cron", () => {
     ["*/15 * * * *", "minutes"],
     ["30 */6 * * *", "hourly"],
     ["0 9 * * *", "daily"],
-    ["0 9 */3 * *", "daily"],
+    ["0 9 */3 * *", "cron"],
+    ["*/7 * * * *", "cron"],
     ["0 9 * * 1,3,5", "weekly"],
     ["0 9 15 * *", "monthly"],
     ["30 8 1 3 *", "yearly"],
@@ -126,8 +127,8 @@ test("a hand-written trigger stays hand-written, and Sunday is always 0", () => 
   assert.equal(buildTrigger({ ...parseTrigger("0 9 * * 1"), weekdays: [] }), "0 9 * * *");
 });
 
-test("an out-of-range step is clamped so the summary matches the cron", () => {
-  for (const [kind, cron, every] of [["minutes", "*/59 * * * *", 59], ["hourly", "0 */23 * * *", 23], ["daily", "0 9 */31 * *", 31]] as const) {
+test("an out-of-range step is clamped to a divisor so the summary matches the cron", () => {
+  for (const [kind, cron, every] of [["minutes", "*/30 * * * *", 30], ["hourly", "0 */12 * * *", 12], ["daily", "0 9 * * *", 1]] as const) {
     const built = buildTrigger({ ...parseTrigger("0 9 * * *"), kind, every: 90 });
     assert.equal(built, cron);
     assert.equal(parseTrigger(built).every, every);
@@ -138,7 +139,7 @@ test("an out-of-range step is clamped so the summary matches the cron", () => {
 test("triggers read back in words", () => {
   assert.equal(describeTrigger("0 9 * * 1,3"), "Mon, Wed at 09:00 UTC");
   assert.equal(describeTrigger("*/5 * * * *"), "Every 5 minutes");
-  assert.equal(describeTrigger("0 9 */2 * *"), "Every 2 days at 09:00 UTC");
+  assert.equal(describeTrigger("0 9 */2 * *"), "0 9 */2 * *");
   assert.equal(describeTrigger("manual"), "Only when you run it");
 });
 

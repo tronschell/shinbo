@@ -127,7 +127,10 @@ export function ProviderGrid({ busy, onReady, onAddProvider }: { busy: boolean; 
     try {
       setStored(await window.shinbo.saveCredential(secret === undefined ? { env } : { env, secret }));
       setDrafts((current) => ({ ...current, [env]: "" }));
-      if (env === OPENROUTER_ENV) setBalance(await window.shinbo.openRouterBalance());
+      if (env !== OPENROUTER_ENV) return;
+      const next = await window.shinbo.openRouterBalance();
+      if (next.error && secret !== undefined) setStored(await window.shinbo.saveCredential({ env }));
+      setBalance(next);
     } catch (reason) { setError(reasonText(reason)); }
     finally { setSaving(false); }
   };
