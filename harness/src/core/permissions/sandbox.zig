@@ -1400,7 +1400,13 @@ fn stripHarnessSecrets(environment: *std.process.Environ.Map) void {
     for (harness_secret_environment_keys) |key| _ = environment.swapRemove(key);
 }
 
+fn harnessSecretsPresent() bool {
+    for (harness_secret_environment_keys) |key| if (io_mod.getenv(key) != null) return true;
+    return false;
+}
+
 fn shellChildEnvironMap(alloc: Allocator) !?std.process.Environ.Map {
+    if (!harnessSecretsPresent()) return null;
     var environment = io_mod.cloneEnvironMap(alloc) catch |err| switch (err) {
         error.EnvironmentUnavailable => return null,
         else => return err,
@@ -3025,6 +3031,23 @@ test "shell child environment strips harness provider secrets" {
     try std.testing.expect(environment.get("SHINBO_PROVIDER_API_KEY") == null);
     try std.testing.expect(environment.get("SHINBO_VISION_API_KEY") == null);
     try std.testing.expect(environment.get("AI_GATEWAY_API_KEY") == null);
+}
+
+var test_empty_environ: std.process.Environ.Map = std.process.Environ.Map.init(std.heap.c_allocator);
+
+test "shell children inherit the environment untouched unless a harness secret is set" {
+    const previous = io_mod.environMap();
+    defer io_mod.setEnvironMap(previous orelse &test_empty_environ);
+    var environment = std.process.Environ.Map.init(std.testing.allocator);
+    defer environment.deinit();
+    try environment.put("PATH", "/usr/bin");
+    io_mod.setEnvironMap(&environment);
+    try std.testing.expect(try shellChildEnvironMap(std.testing.allocator) == null);
+    try environment.put("SHINBO_PROVIDER_API_KEY", "provider");
+    var child = (try shellChildEnvironMap(std.testing.allocator)).?;
+    defer child.deinit();
+    try std.testing.expectEqualStrings("/usr/bin", child.get("PATH").?);
+    try std.testing.expect(child.get("SHINBO_PROVIDER_API_KEY") == null);
 }
 
 test "config construction carries explicit output cap" {
