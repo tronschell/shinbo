@@ -1,34 +1,46 @@
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { app, autoUpdater, dialog, powerMonitor } from "electron";
-import { CHECK_TICK_MS, DEFAULT_UPDATE_ORIGIN, dueForCheck, newerVersion, savedUpdate, updateFeedUrl, updateOrigin } from "../shared/update";
+import { app, autoUpdater, powerMonitor } from "electron";
+import { CHECK_TICK_MS, DEFAULT_UPDATE_ORIGIN, dueForCheck, IDLE_UPDATE, installPercent, installSteps, newerVersion, savedUpdate, updateFeedUrl, updateOrigin, type UpdateState } from "../shared/update";
 
 const FAKE_ANNOUNCE_MS = 4000;
+const FAKE_STEP_MS = 1500;
 
+let state: UpdateState = IDLE_UPDATE;
 let ready = "";
-let installable = false;
+let staged = "";
+let feedUrl = "";
 let lastCheck = 0;
-let asked = false;
-let announceReady: (version: string) => void = () => {};
+let announce: (state: UpdateState) => void = () => {};
+let prepareQuit: () => Promise<void> = () => Promise.resolve();
 let recheck: (() => void) | undefined;
-let installWhenReady = false;
 let checking = false;
+let download: { resolve: () => void; reject: (error: Error) => void } | undefined;
+let downloading: (version: string) => void = () => {};
 
 const readyFile = () => path.join(app.getPath("userData"), "update-ready.json");
 
-function rememberReady(version: string) {
+function set(next: Partial<UpdateState>) {
+  state = { ...state, ...next };
+  announce(state);
+}
+
+const readyState = (version: string): UpdateState => ({ ...IDLE_UPDATE, phase: "ready", version });
+const currentState = (): UpdateState => ({ ...IDLE_UPDATE, phase: "current", version: app.getVersion() });
+
+function rememberReady(version: string, install = false) {
   try {
-    writeFileSync(readyFile(), JSON.stringify({ version }));
+    writeFileSync(readyFile(), JSON.stringify({ version, install }));
   } catch (error) {
     console.error("Shinbo: could not record the downloaded update", error);
   }
 }
 
-function recallReady(): string {
+function recallReady() {
   try {
     return savedUpdate(JSON.parse(readFileSync(readyFile(), "utf8")), app.getVersion());
   } catch {
-    return "";
+    return { version: "", install: false };
   }
 }
 
@@ -40,68 +52,165 @@ function forgetReady() {
   }
 }
 
-export function readyUpdate() {
-  return ready;
-}
-
-export function installUpdate(): string {
-  if (!ready) {
-    console.warn("Shinbo: no update is downloaded");
-    return "";
-  }
-  if (installable) {
-    asked = true;
-    autoUpdater.quitAndInstall();
-    return "";
-  }
-  if (!installWhenReady) {
-    installWhenReady = true;
-    forceCheck();
-  }
-  return `Downloading ${ready}…`;
-}
-
-function dropStale() {
-  installWhenReady = false;
-  if (!ready || installable) return;
-  ready = "";
-  forgetReady();
-  announceReady("");
+export function updateState() {
+  return state;
 }
 
 function forceCheck() {
-  if (!recheck) {
-    reportUpToDate();
-    return;
-  }
-  asked = true;
-  if (checking) return;
+  if (checking || !recheck) return;
   lastCheck = 0;
   recheck();
 }
 
 export function checkForUpdates() {
-  if (ready && installable) {
-    announceReady(ready);
+  if (state.phase === "checking" || state.phase === "installing") return;
+  if (ready && staged === ready) {
+    set(readyState(ready));
+    return;
+  }
+  set({ ...IDLE_UPDATE, phase: "checking" });
+  if (!recheck) {
+    settleCheck(currentState(), new Error("Update checks are off in this build."));
     return;
   }
   forceCheck();
 }
 
-function reportUpToDate() {
-  void dialog.showMessageBox({ type: "info", message: "Shinbo is up to date.", detail: `You are running version ${app.getVersion()}.`, buttons: ["OK"] });
+function settleCheck(outcome: UpdateState, failure: Error) {
+  checking = false;
+  const stale = !!ready && !staged;
+  if (stale) {
+    ready = "";
+    forgetReady();
+  }
+  if (download) {
+    const pending = download;
+    download = undefined;
+    pending.reject(failure);
+    return;
+  }
+  if (state.phase === "checking") set(outcome);
+  else if (stale) set(IDLE_UPDATE);
+}
+
+function downloaded(version: string) {
+  checking = false;
+  ready = version;
+  staged = version;
+  rememberReady(version);
+  if (download) {
+    const pending = download;
+    download = undefined;
+    pending.resolve();
+    return;
+  }
+  set(readyState(version));
 }
 
 function reportFailure(error: unknown) {
-  void dialog.showMessageBox({ type: "warning", message: "Shinbo could not check for updates.", detail: error instanceof Error ? error.message : String(error), buttons: ["OK"] });
+  const detail = error instanceof Error ? error.message : String(error);
+  console.error("Shinbo: update failed", error);
+  set({ ...IDLE_UPDATE, phase: "error", detail });
 }
 
-export function startUpdates(announce: (version: string) => void) {
-  announceReady = announce;
+function relaunch() {
   if (!app.isPackaged) {
-    const fake = newerVersion(app.getVersion(), process.env.SHINBO_UPDATE_FAKE);
-    if (!fake) return;
-    setTimeout(() => { ready = fake; announce(fake); }, FAKE_ANNOUNCE_MS).unref();
+    setTimeout(() => { ready = ""; set(IDLE_UPDATE); }, FAKE_STEP_MS).unref();
+    return;
+  }
+  if (ready !== staged) rememberReady(ready, true);
+  autoUpdater.quitAndInstall();
+}
+
+export async function installUpdate() {
+  if (!ready || state.phase === "installing") return;
+  const version = ready;
+  const steps = installSteps(version, !!staged);
+  let done = 0;
+  const step = (label: string) => set({ phase: "installing", version, step: label, percent: installPercent(done++, steps.length), detail: "" });
+  try {
+    if (!staged) {
+      step(steps[0]);
+      await new Promise<void>((resolve, reject) => {
+        if (!recheck) {
+          reject(new Error("Update checks are off in this build."));
+          return;
+        }
+        download = { resolve, reject };
+        downloading = () => step(steps[1]);
+        forceCheck();
+      });
+    }
+    step("Saving your work");
+    await prepareQuit();
+    step("Relaunching");
+    set({ percent: 100 });
+    relaunch();
+  } catch (error) {
+    reportFailure(error);
+  }
+}
+
+async function probeFeed() {
+  try {
+    const response = await fetch(feedUrl, { headers: { accept: "application/json" } });
+    if (response.status !== 200) return;
+    const latest = newerVersion(ready, ((await response.json()) as { name?: unknown } | null)?.name);
+    if (!latest) return;
+    if (process.platform === "win32") {
+      checking = true;
+      autoUpdater.checkForUpdates();
+      return;
+    }
+    ready = latest;
+    rememberReady(latest);
+    if (state.phase === "ready" || state.phase === "idle") set(readyState(latest));
+  } catch (error) {
+    console.error("Shinbo: update feed probe failed", error);
+  }
+}
+
+function restore(): boolean {
+  const restored = recallReady();
+  if (!restored.version) {
+    forgetReady();
+    return false;
+  }
+  ready = restored.version;
+  rememberReady(ready);
+  set(readyState(ready));
+  return restored.install;
+}
+
+function startFakeUpdates() {
+  const fake = newerVersion(app.getVersion(), process.env.SHINBO_UPDATE_FAKE);
+  recheck = () => {
+    checking = true;
+    setTimeout(() => {
+      if (!fake) {
+        settleCheck(currentState(), new Error("No update is available."));
+        return;
+      }
+      if (!download) {
+        downloaded(fake);
+        return;
+      }
+      downloading(fake);
+      setTimeout(() => downloaded(fake), FAKE_STEP_MS).unref();
+    }, FAKE_STEP_MS).unref();
+  };
+  if (restore()) {
+    void installUpdate();
+    return;
+  }
+  if (fake) setTimeout(() => { ready = fake; set(readyState(fake)); }, FAKE_ANNOUNCE_MS).unref();
+}
+
+export function startUpdates(announceState: (state: UpdateState) => void, drain: () => Promise<void>) {
+  announce = announceState;
+  prepareQuit = drain;
+  if (!app.isPackaged) {
+    startFakeUpdates();
     return;
   }
   if (process.platform !== "darwin" && process.platform !== "win32") return;
@@ -112,58 +221,47 @@ export function startUpdates(announce: (version: string) => void) {
   }
   autoUpdater.on("error", (error) => {
     console.error("Shinbo: update check failed", error);
-    checking = false;
-    dropStale();
-    if (!asked) return;
-    asked = false;
-    reportFailure(error);
+    settleCheck({ ...IDLE_UPDATE, phase: "error", detail: error.message }, error);
   });
   autoUpdater.on("update-not-available", () => {
-    checking = false;
-    dropStale();
-    if (!asked) return;
-    asked = false;
-    reportUpToDate();
+    settleCheck(currentState(), new Error("The downloaded update is no longer available."));
+  });
+  autoUpdater.on("update-available", () => {
+    if (download) downloading(ready);
   });
   autoUpdater.on("update-downloaded", (_event, _notes, name) => {
-    checking = false;
-    asked = false;
-    const install = installWhenReady;
-    installWhenReady = false;
     const version = newerVersion(app.getVersion(), name);
-    if (!version) return;
-    ready = version;
-    installable = true;
-    rememberReady(version);
-    announce(version);
-    if (install) autoUpdater.quitAndInstall();
+    if (!version) {
+      settleCheck(currentState(), new Error(`The update feed offered an unusable version: ${String(name)}`));
+      return;
+    }
+    downloaded(version);
   });
+  feedUrl = updateFeedUrl(origin, process.platform, process.arch, app.getVersion());
   try {
-    autoUpdater.setFeedURL({ url: updateFeedUrl(origin, process.platform, process.arch, app.getVersion()) });
+    autoUpdater.setFeedURL({ url: feedUrl });
   } catch (error) {
     console.error("Shinbo: update feed unavailable", error);
     return;
   }
-  const restored = recallReady();
-  if (restored) {
-    ready = restored;
-    announce(restored);
-  } else {
-    forgetReady();
-  }
   const check = () => {
-    if (!dueForCheck(Date.now(), lastCheck, installable)) return;
+    if (!dueForCheck(Date.now(), lastCheck)) return;
     lastCheck = Date.now();
+    if (staged) {
+      void probeFeed();
+      return;
+    }
     checking = true;
     try {
       autoUpdater.checkForUpdates();
     } catch (error) {
-      checking = false;
       console.error("Shinbo: update check failed", error);
+      settleCheck({ ...IDLE_UPDATE, phase: "error", detail: error instanceof Error ? error.message : String(error) }, error instanceof Error ? error : new Error(String(error)));
     }
   };
   recheck = check;
-  check();
+  if (restore()) void installUpdate();
+  else check();
   setInterval(check, CHECK_TICK_MS).unref();
   powerMonitor.on("resume", check);
   app.on("browser-window-focus", check);

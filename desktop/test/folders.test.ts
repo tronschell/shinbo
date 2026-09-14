@@ -9,7 +9,7 @@ import ts from "typescript";
 import { FolderStore } from "../main/folders";
 import { isImageAttachment } from "../main/attachments";
 import { pathInside, realPath, realPathInside } from "../main/platform";
-import { contextBlock, MAX_FILE_BYTES, MAX_FOLDER_COUNT, MAX_FOLDER_FILES, mergeSkillContext, slashName } from "../shared/folders";
+import { contextBlock, MAX_BLOB_BYTES, MAX_FILE_BYTES, MAX_FOLDER_COUNT, MAX_FOLDER_FILES, MAX_FOLDER_PATHS, MAX_OPEN_BYTES, mergeSkillContext, slashName } from "../shared/folders";
 import { mentions, pathName } from "../shared/slash";
 import { NO_SYMLINKS, symlinksAllowed } from "./symlinks";
 
@@ -98,6 +98,102 @@ test("a read cannot escape the granted folder, and an unknown grant is refused",
 });
 
 
+
+test("a directory listing sorts folders first, ignores case, and cannot leave the grant", async (context) => {
+  const { root, project, store } = workspace();
+  mkdirSync(path.join(project, "Zed"));
+  writeFileSync(path.join(project, "Alpha.md"), "alpha");
+  const [grant] = store.add(project);
+  const listed = await store.entries(grant.id, "");
+  assert.deepEqual(listed.map((entry) => entry.name), ["dist-main", "dist-renderer", "node_modules", "notes", "Zed", "zig-out", "Alpha.md", "photo.heic", "readme.md"]);
+  assert.deepEqual(listed.map((entry) => entry.kind), ["dir", "dir", "dir", "dir", "dir", "dir", "file", "file", "file"]);
+  assert.deepEqual(await store.entries(grant.id, "."), listed);
+  assert.deepEqual(await store.entries(grant.id, "notes"), [{ name: "plan.txt", kind: "file", bytes: 4 }]);
+  await assert.rejects(store.entries(grant.id, ".."), /outside the granted folder/);
+  await assert.rejects(store.entries(grant.id, path.join("..", "secret.md")), /outside the granted folder/);
+  await assert.rejects(store.entries("not-a-grant", ""), /no longer connected/);
+  if (!symlinksAllowed()) return context.skip(NO_SYMLINKS);
+  symlinkSync(root, path.join(project, "door"));
+  await assert.rejects(store.entries(grant.id, "door"), /outside the granted folder/);
+});
+
+test("a blob preview is limited to images inside the grant", () => {
+  const { root, project, store } = workspace();
+  writeFileSync(path.join(project, "chart.png"), "inside");
+  writeFileSync(path.join(project, "shot.JPG"), "inside");
+  writeFileSync(path.join(root, "private.png"), "outside");
+  const [grant] = store.add(project);
+  assert.deepEqual(store.blob(grant.id, "chart.png"), { path: "chart.png", mime: "image/png", dataUrl: `data:image/png;base64,${Buffer.from("inside").toString("base64")}`, bytes: 6 });
+  assert.equal(store.blob(grant.id, "shot.JPG").mime, "image/jpeg");
+  assert.throws(() => store.blob(grant.id, "readme.md"), /cannot be previewed here/);
+  assert.throws(() => store.blob(grant.id, "notes"), /cannot be previewed here/);
+  assert.throws(() => store.blob(grant.id, path.join("..", "private.png")), /outside the granted folder/);
+  const oversized = path.join(project, "huge.png");
+  writeFileSync(oversized, "");
+  truncateSync(oversized, MAX_BLOB_BYTES + 1);
+  assert.throws(() => store.blob(grant.id, "huge.png"), /previews images up to/);
+});
+
+test("a write round-trips through the grant and reports what it replaced", () => {
+  const { project, store } = workspace();
+  const [grant] = store.add(project);
+  assert.deepEqual(store.write(grant.id, path.join("notes", "plan.txt"), "plan b"), { path: path.join("notes", "plan.txt"), before: "plan" });
+  assert.equal(store.read(grant.id, path.join("notes", "plan.txt")).text, "plan b");
+  assert.deepEqual(store.write(grant.id, path.join("notes", "fresh.md"), "new"), { path: path.join("notes", "fresh.md"), before: null });
+  assert.equal(readFileSync(path.join(project, "notes", "fresh.md"), "utf8"), "new");
+  assert.throws(() => store.write(grant.id, path.join("..", "secret.md"), "nope"), /outside the granted folder/);
+  assert.equal(store.write(grant.id, "readme.md", "x".repeat(MAX_OPEN_BYTES)).before, "# hello");
+  assert.throws(() => store.write(grant.id, "readme.md", "x".repeat(MAX_OPEN_BYTES + 1)), /at most/);
+});
+
+test("a write with the text the editor loaded refuses to clobber an edit made elsewhere", () => {
+  const { project, store } = workspace();
+  const [grant] = store.add(project);
+  assert.deepEqual(store.write(grant.id, "readme.md", "# mine", "# hello"), { path: "readme.md", before: "# hello" });
+  assert.throws(() => store.write(grant.id, "readme.md", "# later", "# hello"), /changed on disk/);
+  assert.equal(readFileSync(path.join(project, "readme.md"), "utf8"), "# mine");
+  assert.deepEqual(store.write(grant.id, path.join("notes", "fresh.md"), "new", ""), { path: path.join("notes", "fresh.md"), before: null });
+  assert.throws(() => store.write(grant.id, path.join("notes", "gone.md"), "new", "was here"), /changed on disk/);
+  assert.equal(existsSync(path.join(project, "notes", "gone.md")), false);
+});
+
+test("listing a path that is not a folder says so without naming the disk location", async () => {
+  const { project, store } = workspace();
+  const [grant] = store.add(project);
+  await assert.rejects(store.entries(grant.id, "readme.md"), (error: Error) => {
+    assert.match(error.message, /not a folder/);
+    assert.equal(error.message.includes(project), false);
+    return true;
+  });
+  await assert.rejects(store.entries(grant.id, "nowhere"), /not a folder/);
+});
+
+test("the path walk reaches every file the listing caps away, and stays inside its budget", async () => {
+  const { project, store } = workspace();
+  mkdirSync(path.join(project, ".config"), { recursive: true });
+  mkdirSync(path.join(project, ".git"), { recursive: true });
+  writeFileSync(path.join(project, ".config", "app.conf"), "deep");
+  writeFileSync(path.join(project, ".git", "HEAD"), "ref");
+  let deep = project;
+  for (let level = 0; level < 14; level += 1) {
+    deep = path.join(deep, `level${level}`);
+    mkdirSync(deep, { recursive: true });
+    writeFileSync(path.join(deep, `file${level}.bin`), "x");
+  }
+  const [grant] = store.add(project);
+  const { paths: listed, capped } = await store.paths(grant.id);
+  assert.deepEqual(listed, [...listed].sort());
+  assert.ok(listed.includes(".config/app.conf"));
+  assert.ok(listed.includes("photo.heic"));
+  assert.ok(listed.includes("notes/plan.txt"));
+  assert.equal(listed.some((file) => file.startsWith(".git/")), false);
+  assert.equal(listed.some((file) => file.startsWith("node_modules/")), false);
+  assert.equal(listed.some((file) => file.includes("level12")), false);
+  assert.ok(listed.includes("level0/level1/level2/level3/level4/level5/level6/level7/level8/level9/level10/level11/file11.bin"));
+  assert.ok(listed.length <= MAX_FOLDER_PATHS);
+  assert.equal(capped, false);
+  await assert.rejects(store.paths("not-a-grant"), /no longer connected/);
+});
 
 test("the folder itself is a path inside the grant, and cannot be climbed out of", () => {
   const { project, store } = workspace();

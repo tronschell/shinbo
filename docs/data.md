@@ -48,7 +48,8 @@ vault is outside both and is never deleted.
 
 `SHINBO_UPDATE_FAKE` is a development-only notice preview: an unpackaged build
 announces a newer version to the workspace without downloading anything. Its
-install button does not install or restart, and a packaged build ignores it.
+install button walks the installer steps on a timer, installs nothing, and does
+not restart; a packaged build ignores it.
 Use two signed disposable bundles and a local `SHINBO_UPDATE_URL` feed for a real
 installation rehearsal; see [releases.md](releases.md).
 

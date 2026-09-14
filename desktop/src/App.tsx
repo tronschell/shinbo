@@ -1,5 +1,5 @@
-import { Accessibility, AppWindow, AudioLines, Bell, Mic, Monitor, Archive, ArrowDownWideNarrow, Check, CircleAlert, CircleHelp, Copy, EllipsisVertical, Eye, Folder, Hourglass, LoaderCircle, Pin, Smartphone, Tag, Wrench } from "lucide-react";
-import { Fragment, lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { Accessibility, AppWindow, AudioLines, Bell, Mic, Monitor, Archive, ArrowDownWideNarrow, Check, CircleAlert, CircleHelp, Copy, EllipsisVertical, Eye, Folder, FolderTree, Hourglass, LoaderCircle, Pin, Smartphone, Tag, Wrench } from "lucide-react";
+import { createContext, Fragment, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import { isCurrentThreadLoad, threadMessageCount, type AgentImportSource, type CompactSnapshot, type CredentialSummary, type HeldAttachment, type ImportedMcpServer, type ImportedSkill, type ToolTarget, type Message, type ModelModality, type OpenRouterCatalog, type OverlaySurface, type ScheduledJob, type Snapshot, type Thread, type ThreadContext } from "./types";
 import { describeRun, describeTrigger, parseVariables, parseWorkflow, runWorkflow, triggerProblem } from "../shared/workflow";
 import { MAX_SCHEDULED_PROMPT_BYTES, PromptField, ScheduleField, useTaskCommands, WorkflowGraph } from "./schedule";
@@ -19,7 +19,7 @@ import { hasPersistedPrompt } from "./drafts";
 import { arrived, canSteer, dropHeld, dropQueued, groupBlocks, MAX_STEER_CHARS, pairBlocks, pairingFrom, settleRun, tracedBlocks, queuedTurns, releaseHeld, RUN_ERROR_EVENT, sendTurn, steerQueued, steerRunning, stopTurn, turnToRetry, thinkingOf, useRun, withoutThinking, wrote, type Block, type RunFailure } from "./runs";
 import { splitThinking } from "../shared/thinking";
 import { latestSteps, runActivity, stepActive } from "./tool-activity";
-import { showsUpdate } from "../shared/update";
+import { IDLE_UPDATE, readUpdateState, type UpdateState } from "../shared/update";
 import { brandForImporter, brandForModel, brandForProvider, obsidianBrand, providerBrands, type BrandDefinition } from "./brands";
 import { DEFAULT_SYSTEM_PROMPT, forkPreset, MAX_PROMPTS, MAX_PROMPT_NAME_CHARS, MODEL_FAMILIES, newPresetId, promptApplies, promptSegments, PROMPT_VARIABLES, type PromptPreset } from "../shared/prompts";
 import { validScreenContextId } from "../shared/screen-context";
@@ -30,7 +30,7 @@ import { charLabel, CHARS_PER_TOKEN, type ContextUse } from "../shared/usage";
 import { formatDuration } from "../shared/trace";
 import { ContextBarSettings, ContextWidgets, readContextPage, useContextLedger, useThreadCalls, writeContextPage } from "./context-bar";
 import { type ContextPage } from "../shared/context-bar";
-import { Markdown, SkillNames } from "./markdown";
+import { Markdown, OpenPaths, SkillNames } from "./markdown";
 import { RunContext } from "./run-block";
 import { openPreview, PreviewHost } from "./preview";
 import { ArtifactCard, ArtifactPane, ArtifactsView } from "./artifacts";
@@ -46,10 +46,10 @@ import { FileMark, GitPage, GitSetup, useGit } from "./git";
 import { ResizeHandle } from "./resize";
 import { HarnessStatus } from "./harness";
 import { MobileSettings, PhoneMark, usePhone } from "./mobile";
-import { OpenIn } from "./editors";
 import { worktreeName, type GitSnapshot } from "../shared/git";
 import { CouncilPanel } from "./council";
-import { BrandIcon, BranchIcon, CaretIcon, ChevronIcon, ClipIcon, CloseIcon, DockIcon, ShinboMark, shinboBrand, GearIcon, GlobeIcon, InfoDot, Mark, PencilIcon, ReviewIcon, SearchProviderMark, SidebarIcon, SparkIcon, StopIcon, TabIcon, TextIcon, ToolIcon, ToolMark, TrashIcon } from "./icons";
+import { BrandIcon, BranchIcon, CaretIcon, ChevronIcon, ClipIcon, CloseIcon, DockIcon, ShinboMark, shinboBrand, GearIcon, GlobeIcon, InfoDot, InspectorIcon, Mark, PencilIcon, ReviewIcon, SearchProviderMark, SidebarIcon, SparkIcon, StopIcon, TabIcon, TextIcon, ToolIcon, ToolMark, TrashIcon } from "./icons";
+import { FilesPane, OPEN_FILE_PANE_EVENT, openFilePane, type OpenFileRequest } from "./files";
 import { BrowserPane, browserPip } from "./browser";
 import { PaneSwitch } from "./pane-switch";
 import { embeddingModelLabel, embeddingModelMode, IndexStatus, indexStateLabel, useSemanticGrepStatus, useZvecGrepStatus } from "./index-status";
@@ -384,11 +384,20 @@ function EditStep({ step, edit }: { step: ThreadStep; edit: NonNullable<ThreadSt
       <span className="step-diff"><b>+{edit.added}</b><i>-{edit.removed}</i></span>
       <CaretIcon />
     </summary>
-    <button type="button" className="step-path" title="Open this file in Changes" onClick={openChangesPanel}>{edit.path}</button>
+    <FilePathButton path={edit.path} />
     {edit.hunks?.length
       ? <pre className="diff">{edit.hunks.map((line, index) => <span key={index} className={line.kind === "+" ? "added" : line.kind === "-" ? "removed" : undefined}><i>{line.line}</i>{line.kind}{line.text}{"\n"}</span>)}</pre>
       : <p className="step-note">Shinbo no longer has the text of this edit.</p>}
   </details>;
+}
+
+const EditTargets = createContext<{ changes: { folderId: string; path: string }[]; folderId: string }>({ changes: [], folderId: "" });
+
+function FilePathButton({ path }: { path: string }) {
+  const targets = useContext(EditTargets);
+  const folderId = targets.changes.find((item) => item.path === path)?.folderId ?? targets.folderId;
+  return <button type="button" className="step-path" title={folderId ? "Open this file" : "Open this file in Changes"}
+    onClick={() => folderId ? openFilePane({ folderId, path }) : openChangesPanel()}>{path}</button>;
 }
 
 function EditCount({ steps }: { steps: ThreadStep[] }) {
@@ -396,10 +405,6 @@ function EditCount({ steps }: { steps: ThreadStep[] }) {
   const removed = steps.reduce((total, step) => total + (step.edit?.removed ?? 0), 0);
   if (!added && !removed) return null;
   return <span className="step-diff"><b>+{added}</b><i>-{removed}</i></span>;
-}
-
-function InspectorIcon() {
-  return <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" aria-hidden="true"><rect x="1.6" y="2.6" width="12.8" height="10.8" /><path d="M10.6 2.6v10.8" /></svg>;
 }
 
 const OPEN_CHANGES_EVENT = "shinbo:open-changes";
@@ -812,6 +817,7 @@ function Workspace() {
   const { notes, notesError, reloadNotes } = useNotes();
   const [artifactPick, setArtifactPick] = useState({ id: "", at: 0 });
   const [artifactPaneId, setArtifactPaneId] = useState("");
+  const [filesPane, setFilesPane] = useState<{ open: boolean; ask?: OpenFileRequest }>({ open: false });
   const [reviewPane, setReviewPane] = useState<"changes" | "git" | "">("");
   useEffect(() => {
     const open = (requested: string) => {
@@ -948,6 +954,7 @@ function Workspace() {
     if (open) {
       setArtifactPaneId("");
       setReviewPane("");
+      setFilesPane((current) => ({ ...current, open: false }));
       inspectorBefore.current ??= layout.inspectorCollapsed;
       pane({ browserOpen: true, inspectorCollapsed: true });
       return;
@@ -959,6 +966,7 @@ function Workspace() {
   const showArtifact = useCallback((id: string) => {
     if (id) {
       setReviewPane("");
+      setFilesPane((current) => ({ ...current, open: false }));
       inspectorBefore.current ??= layout.inspectorCollapsed;
       setArtifactPaneId(id);
       setView("threads");
@@ -975,6 +983,21 @@ function Workspace() {
     if (next) {
       inspectorBefore.current ??= layout.inspectorCollapsed;
       setArtifactPaneId("");
+      setFilesPane((current) => ({ ...current, open: false }));
+      pane({ browserOpen: false, inspectorCollapsed: true });
+      return;
+    }
+    const before = inspectorBefore.current;
+    inspectorBefore.current = null;
+    if (before === false) pane({ inspectorCollapsed: false });
+  }, [layout.inspectorCollapsed, pane]);
+  const clearFileAsk = useCallback(() => setFilesPane((current) => current.ask ? { ...current, ask: undefined } : current), []);
+  const showFiles = useCallback((open: boolean) => {
+    setFilesPane((current) => ({ ...current, open }));
+    if (open) {
+      setArtifactPaneId("");
+      setReviewPane("");
+      inspectorBefore.current ??= layout.inspectorCollapsed;
       pane({ browserOpen: false, inspectorCollapsed: true });
       return;
     }
@@ -987,10 +1010,18 @@ function Workspace() {
     addEventListener(OPEN_ARTIFACT_PANE_EVENT, open);
     return () => removeEventListener(OPEN_ARTIFACT_PANE_EVENT, open);
   }, [showArtifact]);
+  useEffect(() => {
+    const open = (event: Event) => {
+      showFiles(true);
+      setFilesPane((current) => ({ ...current, ask: { ...(event as CustomEvent<OpenFileRequest>).detail } }));
+    };
+    addEventListener(OPEN_FILE_PANE_EVENT, open);
+    return () => removeEventListener(OPEN_FILE_PANE_EVENT, open);
+  }, [showFiles]);
   useEffect(() => window.shinbo.onBrowserShow((shown) => {
     if (shown.threadId === thread?.id) { setArtifactPaneId(""); showBrowser(true); }
   }), [thread?.id, showBrowser]);
-  const fitted = fitPaneLayout(artifactPaneId || reviewPane ? { ...layout, browserOpen: true } : layout, viewportWidth);
+  const fitted = fitPaneLayout(artifactPaneId || reviewPane || filesPane.open ? { ...layout, browserOpen: true } : layout, viewportWidth);
   const shellStyle = {
     "--sidebar-width": `${fitted.sidebarWidth}px`,
     "--inspector-width": `${fitted.inspectorCollapsed ? 0 : fitted.inspectorWidth}px`,
@@ -1340,7 +1371,7 @@ function Workspace() {
       </aside>
       </Region>
       <main id="content" className="content">
-        {view === "threads" ? thread ? <ThreadView key={thread.id} thread={thread} loadedSubthread={loadedSubthread} loadThread={loadThread} threadLoadError={threadLoadError} clearThreadLoadError={() => setThreadLoadError(undefined)} snapshot={snapshot} notes={notes} busy={uiBusy} act={act} reload={load} agents={agents} tab={tab} setTab={setTab} newThread={(seed?: string) => { setError(""); void createThread(undefined, seed); }} onSendingChange={setInteractionLocked} onModelChanged={(next) => { if (selectedIdRef.current === thread.id) parentRequest.current = ""; setLoadedThread((current) => current?.id === thread.id ? { ...current, context: { ...current.context, model: next.selectedModel, effort: next.thinkingLevel } } : current); }} onContextChanged={(context) => { if (selectedIdRef.current === thread.id) parentRequest.current = ""; setLoadedThread((current) => current?.id === thread.id ? { ...current, context } : current); }} onManageModels={() => { setView("settings"); setSettingsPage("models"); }} onManageImports={() => { setView("settings"); setSettingsPage("imports"); }} modelKey={threadModelKey} modelLabel={threadModelLabel} modelBrand={threadModelBrand} thinkingLevel={thread.context.effort} reviewOffered={settings.review.enabled && !!settings.review.model.trim()} contextTokens={contextTokens} contextPages={settings.contextPages} onContextPages={(contextPages) => setSettings(persistSettings({ ...settings, contextPages }))} layout={layout} pane={pane} showBrowser={showBrowser} reviewPane={reviewPane} showReview={showReview} artifactPaneId={artifactPaneId} setArtifactPaneId={showArtifact} editArtifact={editArtifact} /> : <ThreadLoading loading={snapshotLoading || !!selectedSummary} error={threadLoadError?.id === selectedId ? threadLoadError.text : ""} busy={uiBusy} retry={() => { setError(""); setThreadLoadError(undefined); void loadThread(selectedId); }} newThread={() => { setError(""); void createThread(); }} /> : view === "knowledge" ? <NotesView notes={notes} notesError={notesError} busy={uiBusy} reload={reloadNotes} hues={settings.folderHues} setHues={(folderHues) => setSettings(persistSettings({ ...settings, folderHues }))} /> : view === "artifacts" ? <ArtifactsView key={artifactPick.at} busy={uiBusy} select={artifactPick.id} openArtifact={(artifact) => void editArtifact(artifact)} /> : view === "agent" ? <Suspense fallback={<AgentLoading />}><AgentView snapshot={snapshot} act={act} busy={uiBusy} openThread={openThread} projectName={projectName} mode={settings.defaultPermissionMode} model={settings.selectedModel} pickers={{ run: (model, effort, onPick, busy) => <BenchRunPicker model={model} effort={effort} onPick={onPick} onSettingsChanged={setSettings} busy={busy} />, judge: (draft, onChange, busy) => <SecondModelPicker label="Judge model" off="Tagger model · scores with your tagger" draft={draft ?? { ...settings.tagger, model: "" }} providers={settings.providers} routers={settings.routers} busy={busy} onChange={(next) => onChange(next.model ? next : undefined)} />, describe: (key) => ({ label: modelKeyLabel(settings, key), brand: modelKeyBrand(settings, key)?.id ?? "" }) }} /></Suspense> : view === "scheduled" ? <ScheduledView snapshot={snapshot} act={act} busy={uiBusy} openThread={openThread} dirtyRef={workflowDirty} /> : view === "plugins" ? <Suspense fallback={<AgentLoading copy="Loading plugins…" />}><PluginsView busy={uiBusy} tools={settings.tools} onTools={saveToolSettings} /></Suspense> : view === "archive" ? <ArchiveView threads={archivedThreads} projectName={projectName} busy={uiBusy} restore={(id) => void setArchived(id, false)} /> : <SettingsView page={settingsPage} onSelectPage={setSettingsPage} act={act} busy={uiBusy} onModelChanged={setSettings} onAttach={attachComponent} />}
+        {view === "threads" ? thread ? <ThreadView key={thread.id} thread={thread} loadedSubthread={loadedSubthread} loadThread={loadThread} threadLoadError={threadLoadError} clearThreadLoadError={() => setThreadLoadError(undefined)} snapshot={snapshot} notes={notes} busy={uiBusy} act={act} reload={load} agents={agents} tab={tab} setTab={setTab} newThread={(seed?: string) => { setError(""); void createThread(undefined, seed); }} onSendingChange={setInteractionLocked} onModelChanged={(next) => { if (selectedIdRef.current === thread.id) parentRequest.current = ""; setLoadedThread((current) => current?.id === thread.id ? { ...current, context: { ...current.context, model: next.selectedModel, effort: next.thinkingLevel } } : current); }} onContextChanged={(context) => { if (selectedIdRef.current === thread.id) parentRequest.current = ""; setLoadedThread((current) => current?.id === thread.id ? { ...current, context } : current); }} onManageModels={() => { setView("settings"); setSettingsPage("models"); }} onManageImports={() => { setView("settings"); setSettingsPage("imports"); }} modelKey={threadModelKey} modelLabel={threadModelLabel} modelBrand={threadModelBrand} thinkingLevel={thread.context.effort} reviewOffered={settings.review.enabled && !!settings.review.model.trim()} contextTokens={contextTokens} contextPages={settings.contextPages} onContextPages={(contextPages) => setSettings(persistSettings({ ...settings, contextPages }))} layout={layout} pane={pane} showBrowser={showBrowser} reviewPane={reviewPane} showReview={showReview} filesPane={filesPane} showFiles={showFiles} clearFileAsk={clearFileAsk} artifactPaneId={artifactPaneId} setArtifactPaneId={showArtifact} editArtifact={editArtifact} /> : <ThreadLoading loading={snapshotLoading || !!selectedSummary} error={threadLoadError?.id === selectedId ? threadLoadError.text : ""} busy={uiBusy} retry={() => { setError(""); setThreadLoadError(undefined); void loadThread(selectedId); }} newThread={() => { setError(""); void createThread(); }} /> : view === "knowledge" ? <NotesView notes={notes} notesError={notesError} busy={uiBusy} reload={reloadNotes} hues={settings.folderHues} setHues={(folderHues) => setSettings(persistSettings({ ...settings, folderHues }))} /> : view === "artifacts" ? <ArtifactsView key={artifactPick.at} busy={uiBusy} select={artifactPick.id} openArtifact={(artifact) => void editArtifact(artifact)} /> : view === "agent" ? <Suspense fallback={<AgentLoading />}><AgentView snapshot={snapshot} act={act} busy={uiBusy} openThread={openThread} projectName={projectName} mode={settings.defaultPermissionMode} model={settings.selectedModel} pickers={{ run: (model, effort, onPick, busy) => <BenchRunPicker model={model} effort={effort} onPick={onPick} onSettingsChanged={setSettings} busy={busy} />, judge: (draft, onChange, busy) => <SecondModelPicker label="Judge model" off="Tagger model · scores with your tagger" draft={draft ?? { ...settings.tagger, model: "" }} providers={settings.providers} routers={settings.routers} busy={busy} onChange={(next) => onChange(next.model ? next : undefined)} />, describe: (key) => ({ label: modelKeyLabel(settings, key), brand: modelKeyBrand(settings, key)?.id ?? "" }) }} /></Suspense> : view === "scheduled" ? <ScheduledView snapshot={snapshot} act={act} busy={uiBusy} openThread={openThread} dirtyRef={workflowDirty} /> : view === "plugins" ? <Suspense fallback={<AgentLoading copy="Loading plugins…" />}><PluginsView busy={uiBusy} tools={settings.tools} onTools={saveToolSettings} /></Suspense> : view === "archive" ? <ArchiveView threads={archivedThreads} projectName={projectName} busy={uiBusy} restore={(id) => void setArchived(id, false)} /> : <SettingsView page={settingsPage} onSelectPage={setSettingsPage} act={act} busy={uiBusy} onModelChanged={setSettings} onAttach={attachComponent} />}
       </main>
       {(error || warning) && <div className="notice" role="status"><button aria-label="Dismiss notice" onClick={() => { if (error) setError(""); else setDismissedWarnings((current) => [...current, warning]); }}>×</button>{error || warning}</div>}
       {threadMenu && menuThread && <MenuScrim close={() => setThreadMenu(null)}>
@@ -1393,28 +1424,47 @@ function Workspace() {
       </div>
       <PreviewHost />
       <Built />
-      <UpdateReady />
+      <UpdateNotice />
     </div>
   );
 }
 
-function UpdateReady() {
-  const [version, setVersion] = useState("");
-  const [dismissed, setDismissed] = useState("");
-  const [progress, setProgress] = useState("");
+function UpdateNotice() {
+  const [update, setUpdate] = useState<UpdateState>(IDLE_UPDATE);
+  const [hidden, setHidden] = useState(false);
   useEffect(() => {
-    void window.shinbo.updateReady().then(setVersion);
-    return window.shinbo.onUpdateReady((next) => { setVersion(next); setProgress(""); });
+    const show = (next: unknown) => { const state = readUpdateState(next); if (state) { setUpdate(state); setHidden(false); } };
+    void window.shinbo.updateState().then(show).catch(() => undefined);
+    return window.shinbo.onUpdate(show);
   }, []);
-  if (!showsUpdate(version, dismissed)) return null;
+  useEffect(() => {
+    if (update.phase !== "current") return;
+    const timer = setTimeout(() => setHidden(true), UPDATE_CURRENT_MS);
+    return () => clearTimeout(timer);
+  }, [update]);
+  if (hidden || update.phase === "idle") return null;
+  const dismiss = <button type="button" aria-label="Dismiss" onClick={() => setHidden(true)}>×</button>;
+  if (update.phase === "checking") return <div className="pick-toast update" role="status"><span className="toast-actions"><span className="browser-loading" />Checking for updates…</span></div>;
+  if (update.phase === "installing") return <div className="pick-toast update" role="status" aria-live="polite">
+    <span>Installing {update.version}</span>
+    <span className="toast-actions"><span className="browser-loading" />{update.step}…</span>
+    <div className="tool-progress"><span className="index-bar" style={{ "--p": `${update.percent}%` } as CSSProperties}><b /></span><small>{update.percent}%</small></div>
+  </div>;
+  if (update.phase === "error") return <div className="pick-toast update" role="alert">
+    <span className="toast-actions">Update failed{dismiss}</span>
+    <small className="update-detail">{update.detail}</small>
+  </div>;
+  if (update.phase === "current") return <div className="pick-toast update" role="status"><span className="toast-actions">Shinbo is up to date · {update.version}{dismiss}</span></div>;
   return <div className="pick-toast update" role="status">
-    <span>{progress || `Update ready · ${version}`}</span>
+    <span>Update ready · {update.version}</span>
     <span className="toast-actions">
-      <button type="button" disabled={!!progress} onClick={() => void window.shinbo.installUpdate().then(setProgress).catch(() => undefined)}>Install and relaunch</button>
-      <button type="button" aria-label="Dismiss" onClick={() => setDismissed(version)}>×</button>
+      <button type="button" className="update-install" onClick={() => void window.shinbo.installUpdate().catch(() => undefined)}>Install and relaunch</button>
+      {dismiss}
     </span>
   </div>;
 }
+
+const UPDATE_CURRENT_MS = 4000;
 
 const THREAD_PAGE = 6;
 
@@ -1970,9 +2020,9 @@ function NotesView({ notes, notesError, busy, reload, hues, setHues }: { notes: 
   </section>;
 }
 
-type PaneProps = { reviewPane: "changes" | "git" | ""; showReview: (next: "changes" | "git" | "") => void; layout: PaneLayout; pane: (change: Partial<PaneLayout>) => void; showBrowser: (open: boolean) => void; artifactPaneId: string; setArtifactPaneId: (id: string) => void; editArtifact: (artifact: Artifact) => void };
+type PaneProps = { reviewPane: "changes" | "git" | ""; showReview: (next: "changes" | "git" | "") => void; filesPane: { open: boolean; ask?: OpenFileRequest }; showFiles: (open: boolean) => void; clearFileAsk: () => void; layout: PaneLayout; pane: (change: Partial<PaneLayout>) => void; showBrowser: (open: boolean) => void; artifactPaneId: string; setArtifactPaneId: (id: string) => void; editArtifact: (artifact: Artifact) => void };
 
-const kindLabel = (kind: ContextPick["kind"]) => kind === "note" ? KIND_LABELS.page : kind === "attachment" ? KIND_LABELS.file : KIND_LABELS[kind];
+const kindLabel = (kind: ContextPick["kind"]) => kind === "note" ? KIND_LABELS.page : kind === "attachment" ? KIND_LABELS.file : kind === "selection" ? "Selection" : KIND_LABELS[kind];
 
 const pickKindLabel = (pick: ContextPick) => kindLabel(pick.kind);
 
@@ -1980,6 +2030,7 @@ const pickBrief = (pick: ContextPick) => pick.kind === "file" || pick.kind === "
   : pick.kind === "attachment" ? pick.name
   : pick.kind === "artifact" || pick.kind === "note" || pick.kind === "component" ? pick.title
   : pick.kind === "terminal" ? `${pick.lines} ${plural(pick.lines, "line")}`
+  : pick.kind === "selection" ? `${pathName(pick.path)}:${pick.from}-${pick.to}`
   : pick.label;
 
 function PickTray({ picks, folders, locked, drop }: { picks: ContextPick[]; folders: FolderGrant[]; locked: boolean; drop: (pick: ContextPick) => void }) {
@@ -2243,7 +2294,7 @@ const COMPOSER_MAX = 65_536;
 
 const DRAFT_SAVE_MS = 250;
 
-function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clearThreadLoadError, snapshot, notes, busy, act, reload, agents, tab, setTab, newThread, onSendingChange, onModelChanged, onContextChanged, onManageModels, onManageImports, modelKey, modelLabel, modelBrand, thinkingLevel, reviewOffered, contextTokens, contextPages, onContextPages, layout, pane, showBrowser, reviewPane, showReview, artifactPaneId, setArtifactPaneId, editArtifact }: { thread: Thread & { context: ThreadContext }; loadedSubthread?: Thread; loadThread: (id: string) => Promise<void>; threadLoadError?: { id: string; text: string }; clearThreadLoadError: () => void; snapshot: Snapshot; notes: KeptNote[]; busy: boolean; act: (method: string, params?: Record<string, string>) => Promise<unknown>; reload: () => unknown; agents: LiveAgent[]; tab: string; setTab: (tab: string) => void; newThread: (seed?: string) => void; onSendingChange: (busy: boolean) => void; onModelChanged: (settings: UserSettings) => void; onContextChanged: (context: ThreadContext) => void; onManageModels: () => void; onManageImports: () => void; modelKey: string; modelLabel: string; modelBrand?: BrandDefinition; thinkingLevel: ThinkingLevel; reviewOffered: boolean; contextTokens: number; contextPages: ContextPage[]; onContextPages: (pages: ContextPage[]) => void } & PaneProps) {
+function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clearThreadLoadError, snapshot, notes, busy, act, reload, agents, tab, setTab, newThread, onSendingChange, onModelChanged, onContextChanged, onManageModels, onManageImports, modelKey, modelLabel, modelBrand, thinkingLevel, reviewOffered, contextTokens, contextPages, onContextPages, layout, pane, showBrowser, reviewPane, showReview, filesPane, showFiles, clearFileAsk, artifactPaneId, setArtifactPaneId, editArtifact }: { thread: Thread & { context: ThreadContext }; loadedSubthread?: Thread; loadThread: (id: string) => Promise<void>; threadLoadError?: { id: string; text: string }; clearThreadLoadError: () => void; snapshot: Snapshot; notes: KeptNote[]; busy: boolean; act: (method: string, params?: Record<string, string>) => Promise<unknown>; reload: () => unknown; agents: LiveAgent[]; tab: string; setTab: (tab: string) => void; newThread: (seed?: string) => void; onSendingChange: (busy: boolean) => void; onModelChanged: (settings: UserSettings) => void; onContextChanged: (context: ThreadContext) => void; onManageModels: () => void; onManageImports: () => void; modelKey: string; modelLabel: string; modelBrand?: BrandDefinition; thinkingLevel: ThinkingLevel; reviewOffered: boolean; contextTokens: number; contextPages: ContextPage[]; onContextPages: (pages: ContextPage[]) => void } & PaneProps) {
   const [message, setMessage] = useState(() => takeComposerSeed(thread.id) || threadDraft(thread.id).text);
   useEffect(() => { if (composerSeed.threadId === thread.id) composerSeed = { threadId: "", text: "" }; }, [thread.id]);
   const context = thread.context;
@@ -2491,6 +2542,24 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
     const listener = window.shinbo.onChanged(reloadChanges);
     return () => window.shinbo.offChanged(listener);
   }, [reloadChanges]);
+  const editTargets = useMemo(() => ({ changes: changes.map((change) => ({ folderId: change.folderId, path: change.path })), folderId: folderIds[0] ?? "" }), [changes, folderIds]);
+  const [folderPaths, setFolderPaths] = useState<Record<string, Set<string>>>({});
+  useEffect(() => {
+    let live = true;
+    const settle = (id: string, paths: string[]) => { if (live) setFolderPaths((current) => ({ ...current, [id]: new Set(paths) })); };
+    for (const id of folderIds) {
+      if (folderPaths[id]) continue;
+      void window.shinbo.listFolderPaths(id).then((found) => settle(id, found.paths)).catch(() => settle(id, []));
+    }
+    return () => { live = false; };
+  }, [folderIds, folderPaths]);
+  const pathOpener = useMemo(() => ({
+    known: (path: string) => folderIds.some((id) => folderPaths[id]?.has(path)),
+    open: (path: string, line?: number) => {
+      const folderId = folderIds.find((id) => folderPaths[id]?.has(path));
+      if (folderId) openFilePane({ folderId, path, ...(line ? { line } : {}) });
+    },
+  }), [folderIds, folderPaths]);
   useEffect(() => {
     const open = () => showReview("changes");
     addEventListener(OPEN_CHANGES_EVENT, open);
@@ -2835,8 +2904,9 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
           void act("renameThread", { threadId: thread.id, title: named }).then(reload);
         }}
       /><button type="button" className="page-info-button" aria-label="Show thread details" aria-haspopup="dialog" onClick={() => setAgentOpen(true)}>i</button><TagPicker threadId={thread.id} /><div className="thread-actions">
-        {folderIds[0] && (!!git?.files.length || changes.length > 0) && <OpenIn folderId={folderIds[0]} label />}
         {changes.length > 0 && <button type="button" className="changes-open" aria-label="Open changes pane" aria-pressed={reviewPane === "changes"} onClick={() => showReview(reviewPane === "changes" ? "" : "changes")}><ChangeCount stat={changeStat} /></button>}
+        <button type="button" className="pane-toggle" aria-label="Open the files pane" aria-pressed={filesPane.open} title="Files"
+          onClick={() => showFiles(!filesPane.open)}><FolderTree size={14} strokeWidth={1.6} aria-hidden="true" /></button>
         {folderIds[0] && <button type="button" className="pane-toggle" aria-pressed={reviewPane === "git"}
           aria-label={git ? `Open the Git pane, on branch ${git.branch}` : "Open the Git pane"} title={git ? `Git · ${git.branch}` : "Git"}
           onClick={() => showReview(reviewPane === "git" ? "" : "git")}><BranchIcon /></button>}
@@ -2860,6 +2930,8 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
       <TranscriptRail messages={thread.messages} scroller={transcript} />
       <div className="transcript" ref={transcript} onScroll={transcriptScroll}>
         <SkillNames.Provider value={messageSkills}>
+        <OpenPaths.Provider value={pathOpener}>
+        <EditTargets.Provider value={editTargets}>
         <RunContext.Provider value={runFences}>
         {(!thread.messages.length && echo === null && !sending) || <ProjectRules folder={folders.find((grant) => grant.id === folderIds[0])} />}
         {!thread.messages.length && echo === null && !sending && <Dashboard threads={snapshot.threads} folders={folders} folderId={folderIds[0] ?? ""} seed={(prompt) => { setMessage(prompt); setCaret(prompt.length); queueMicrotask(() => { input.current?.focus(); input.current?.setSelectionRange(prompt.length, prompt.length); }); }} />}
@@ -2879,6 +2951,8 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
         {sending && run.activeAt > 0 && <Stalled since={run.activeAt} blocks={run.blocks} recovery={run.recovery} onSwap={() => { setStallSwap(true); setModelsOpen(true); }} />}
         {!sending && streaming === null && echo === null && thread.messages.at(-1)?.role === "assistant" && <p className="turn-done" aria-label="Shinbo is ready for the next message"><ShinboMark /></p>}
         </RunContext.Provider>
+        </EditTargets.Provider>
+        </OpenPaths.Provider>
         </SkillNames.Provider>
       </div>
       <SelectionQuote scroller={transcript} onQuote={addContext} onThread={(quote) => newThread(`${quote}\n\n`)} />
@@ -2927,6 +3001,13 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
         </header>
         {reviewPane === "changes" ? <ChangesPanel changes={changes} busy={locked} onReverted={reloadChanges} /> : folderIds[0] ? (git ? <GitPage key={folderIds[0]} snapshot={git} folderId={folderIds[0]} brand={modelBrand} /> : <GitSetup ready={gitState.ready} folderId={folderIds[0]} />) : <p className="project-empty">Connect a folder to use Git.</p>}
       </section>
+    </div>}
+    {filesPane.open && <div className="browser-column">
+      <ResizeHandle label="Resize files" value={layout.browserWidth} min={MIN_BROWSER_WIDTH} max={720} direction={-1} onChange={(browserWidth) => pane({ browserWidth })} />
+      <FilesPane threadId={thread.id} folders={folders} folderIds={folderIds} ask={filesPane.ask} onConsumed={clearFileAsk}
+        wide={layout.browserWidth >= WIDE_BROWSER_WIDTH}
+        onToggleWide={() => pane({ browserWidth: layout.browserWidth >= WIDE_BROWSER_WIDTH ? MIN_BROWSER_WIDTH : WIDE_BROWSER_WIDTH })}
+        onClose={() => showFiles(false)} />
     </div>}
     {artifactPaneId ? <div className="artifact-column">
       <ResizeHandle label="Resize artifact" value={layout.browserWidth} min={MIN_BROWSER_WIDTH} max={720} direction={-1} onChange={(browserWidth) => pane({ browserWidth })} />
