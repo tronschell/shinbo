@@ -239,7 +239,7 @@ const TimelineRow = memo(function TimelineRow({ row, original, now, format, shut
       {children > 0 && <i className="trace-kids" aria-hidden="true">{children}</i>}
 
       {span.kind !== "agent" && span.kind !== "model" && <ToolIcon />}
-      <button type="button" className="trace-name" aria-pressed={selected} title={`${span.name} — ${span.kind} · ${format(durationMs)}`} onClick={() => select(selected ? undefined : id)}>{span.name}</button>
+      <button type="button" className="trace-name" aria-pressed={selected} title={`${span.name} — ${span.kind} · ${format(durationMs)}${span.status === "failed" ? " · failed" : ""}`} onClick={() => select(selected ? undefined : id)}>{span.name}</button>
       <b>{format(durationMs)}</b>
     </div>
 

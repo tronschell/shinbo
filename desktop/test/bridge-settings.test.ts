@@ -228,6 +228,12 @@ test("a manifest written from a phone is the whole selection, and a source it om
     assert.equal(found.find((source) => source.id === "cursor")?.skills, 1);
     assert.equal(found.find((source) => source.id === "claude")?.mcpConfigs, 1);
     assert.equal(found.find((source) => source.id === "devin")?.locations.length, 0, "a source with nothing to import still reports itself, with nowhere to read");
+    await writeFile(path.join(root, ".devin"), "not a directory");
+    await mkdir(path.join(root, ".cursor", "skills", "bad name"), { recursive: true });
+    await writeFile(path.join(root, ".cursor", "skills", "bad name", "SKILL.md"), "dropped by the loader");
+    const again = await discoverImports(root);
+    assert.equal(again.find((source) => source.id === "devin")?.skills, 0, "an unreadable root counts as empty instead of failing discovery");
+    assert.equal(again.find((source) => source.id === "cursor")?.skills, 1, "the count matches what the skill loader accepts");
 
 
     assert.deepEqual(await registeredImportIds(userData), []);

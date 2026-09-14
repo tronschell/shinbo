@@ -48,15 +48,15 @@ export function ColorPicker({ value, onChange, onPreview, disabled, label, class
   const hueDrag = drag((x) => emit([x * 360, s, v]));
   const hex = hsvHex(h, s, v);
 
-  return <div className="color-well">
+  return <div className="color-well" onKeyDown={(event) => { if (event.key === "Escape" && open) { event.stopPropagation(); setOpen(false); trigger.current?.focus(); } }}
+    onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false); }}>
     <button ref={trigger} type="button" className={className} disabled={disabled} title={label}
       style={{ "--swatch": value } as CSSProperties}
       aria-haspopup="dialog" aria-expanded={open} aria-label={`${label}, currently ${value}`}
       onClick={() => { if (!open) setHsv(hexHsv(value)); setOpen(!open); }}>
       {children}
     </button>
-    {open && !disabled && <div ref={menu} className="source-popover color-menu" role="dialog" aria-label={label}
-      onKeyDown={(event) => { if (event.key === "Escape") { setOpen(false); trigger.current?.focus(); } }}>
+    {open && !disabled && <div ref={menu} className="source-popover color-menu" role="dialog" aria-label={label} tabIndex={-1}>
       <div className="color-field" style={{ "--hue": hsvHex(h, 1, 1) } as CSSProperties} onPointerDown={svDrag} onPointerMove={svDrag} onPointerUp={svDrag}>
         <i style={{ left: `${s * 100}%`, top: `${(1 - v) * 100}%`, background: hex }} />
       </div>

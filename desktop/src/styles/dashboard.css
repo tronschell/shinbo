@@ -61,7 +61,7 @@
 .dash-projects li[data-hue="violet"] .dash-spark i { background: color-mix(in srgb, var(--violet) 60%, transparent); }
 
 .dash-next { margin-top: var(--s-5); }
-.dash-next > header { display: flex; align-items: baseline; gap: var(--s-2); padding-bottom: var(--s-2); border-bottom: 1px solid var(--border-strong); }
+.dash-next > header { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-2); padding-bottom: var(--s-2); border-bottom: 1px solid var(--border-strong); }
 .dash-next > header h4 { flex: 1; color: var(--text-2); font: var(--fs-2xs)/1.4 var(--font-mono); font-weight: 400; letter-spacing: var(--ls-caps); text-transform: uppercase; }
 .dash-next > header small { color: var(--text-3); font: var(--fs-2xs)/1.4 var(--font-mono); }
 

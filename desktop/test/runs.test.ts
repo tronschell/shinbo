@@ -4,7 +4,7 @@ import test from "node:test";
 import { appendText, arrived, dropQueued, fallbackNotice, groupBlocks, joinPartial, mergeStep, pairBlocks, pairingFrom, releaseHeld, restoreBlocks, runOf, sendTurn, turnToRetry, stopTurn, thinkingOf, tracedBlocks, wire, withoutThinking, wrote, type Block } from "../src/runs";
 import type { LiveAgent, ThreadStep } from "../shared/agents";
 import { compactionNotice, decodeSpans, type TraceSpan } from "../shared/trace";
-import { cachedBlocks, rememberBlocks, setThreadFolders, threadFolders, threadBreakdown, recordBreakdown } from "../src/context";
+import { cachedBlocks, rememberBlocks, setThreadFolders, threadDraft, threadFolders, threadBreakdown, recordBreakdown } from "../src/context";
 import type { Message } from "../src/types";
 
 const stored = new Map<string, string>();
@@ -475,6 +475,13 @@ test("a refused turn keeps the reason beside the text it held back", async () =>
   await settle();
   assert.equal(runOf("refused").held[0].content, "lost prompt");
   assert.equal(runOf("refused").held[0].failure, "host is down");
+});
+
+test("a refused turn comes back as the thread draft when nothing else was typed", async () => {
+  request = () => Promise.reject(new Error("host is down"));
+  sendTurn("refused-draft", turn("lost prompt"), () => {});
+  await settle();
+  assert.equal(threadDraft("refused-draft").text, "lost prompt");
 });
 
 const traceOf = (thread: string, startedAt: number, calls: [string, string, number?][], recovered = false) => [

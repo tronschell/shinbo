@@ -257,8 +257,27 @@ test("the marketplace Shinbo ships with is added once, and stays gone once it is
 
     const offline = path.join(home, "offline-user-data");
     await mkdir(offline, { recursive: true });
-    await assert.rejects(ensureDefaultMarketplace(offline, path.join(home, "missing")), /There is no folder/);
-    assert.deepEqual((await ensureDefaultMarketplace(offline, shared)).marketplaces, [], "a failed seed is not retried on the next open");
+    assert.deepEqual((await ensureDefaultMarketplace(offline, path.join(home, "missing"))).marketplaces, [], "a failed seed still opens the view");
+    assert.deepEqual((await ensureDefaultMarketplace(offline, shared)).marketplaces.map((entry) => entry.id), ["acme"], "a failed seed is retried on the next open");
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("a failed clone reports Git's reason, and a broken marketplace file names itself", async () => {
+  const home = await realpath(await mkdtemp(path.join(tmpdir(), "shinbo-plugins-")));
+  try {
+    const userData = path.join(home, "user-data");
+    await mkdir(userData, { recursive: true });
+    await assert.rejects(addMarketplace(userData, { source: "https://127.0.0.1:1/nope.git" }), (error: Error) => {
+      assert.doesNotMatch(error.message, /^Cloning into/);
+      assert.match(error.message, /^fatal:/);
+      return true;
+    });
+    const broken = path.join(home, "broken");
+    await mkdir(path.join(broken, ".agents", "plugins"), { recursive: true });
+    await writeFile(path.join(broken, ".agents", "plugins", "marketplace.json"), "{ nope");
+    await assert.rejects(addMarketplace(userData, { source: broken }), /^Error: marketplace\.json is not valid JSON: /);
   } finally {
     await rm(home, { recursive: true, force: true });
   }

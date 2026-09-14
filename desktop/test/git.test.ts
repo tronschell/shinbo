@@ -284,13 +284,17 @@ test("the snapshot carries head, upstream, ahead and behind, and the changed fil
 });
 
 test("an empty repo answers with a snapshot and an empty history rather than throwing", async () => {
-  const { root, repo } = makeRepo();
+  const { root, repo, run } = makeRepo();
   try {
     const snapshot = await gitSnapshot(repo);
     assert.equal(snapshot?.branch, "main");
     assert.equal(snapshot?.head, "");
     assert.equal(snapshot?.upstream, "");
     assert.deepEqual(await gitHistory(repo, { skip: 0, limit: 10 }), { commits: [], more: false });
+    write(repo, "first.txt", "one\n");
+    run("add", "first.txt");
+    const staged = parseDiff((await gitSnapshot(repo))!.diff);
+    assert.deepEqual(staged.map((file) => [file.path, file.added]), [["first.txt", 1]]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -481,6 +485,12 @@ test("status and selected commits preserve quoted filenames and rename origins",
     run("mv", "--", files[0], "renamed.txt");
     const renamed = (await gitSnapshot(repo))!.files.find((file) => file.path === "renamed.txt");
     assert.equal(renamed?.from, files[0]);
+    await commit(repo, { message: "renamed", paths: ["renamed.txt"] });
+    assert.equal(run("status", "--porcelain", "--", files[0], "renamed.txt"), "");
+    run("mv", "renamed.txt", "moved.txt");
+    await discard(repo, ["moved.txt"]);
+    assert.equal(run("status", "--porcelain", "--", "renamed.txt", "moved.txt"), "");
+    assert.ok(existsSync(path.join(repo, "renamed.txt")));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -512,8 +522,9 @@ test("an arbitrary git command comes back as output, failures included", async (
 });
 
 test("a git refusal is shown without execFile's preamble", () => {
-  const failure = new Error("Command failed: git switch feature\nerror: Your local changes would be overwritten by checkout.\n");
+  const failure = new Error("Command failed: /usr/bin/git --literal-pathspecs switch feature\nerror: Your local changes would be overwritten by checkout.\n");
   assert.equal(gitFailure(failure), "error: Your local changes would be overwritten by checkout.");
+  assert.equal(gitFailure(new Error("Command failed: /usr/bin/git commit"), "nothing to commit, working tree clean\n"), "nothing to commit, working tree clean");
   assert.equal(gitFailure(new Error("Command failed: git status")), "Command failed: git status");
   assert.equal(gitFailure("boom"), "boom");
 });

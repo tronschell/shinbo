@@ -12,10 +12,10 @@ export type BenchProgress = { runId: string; done: number; total: number; caseTi
 
 export type ThreadRead = { id: string; title: string; messages: { role: string; content: string }[] };
 
-export async function finalAnswer(threadId: string): Promise<string> {
+export async function finalAnswer(threadId: string): Promise<{ answer: string; notice: string }> {
   const read = await window.shinbo.request<ThreadRead>("thread", { threadId }).catch(() => undefined);
-  const said = read?.messages.filter((message) => message.role === "assistant").at(-1)?.content ?? "";
-  return said.trim().slice(-MAX_BENCH_ANSWER_CHARS);
+  const last = (role: string) => read?.messages.filter((message) => message.role === role).at(-1)?.content.trim() ?? "";
+  return { answer: last("assistant").slice(-MAX_BENCH_ANSWER_CHARS), notice: last("system") };
 }
 
 const TRACE_RETRY_MS = 250;
@@ -117,8 +117,9 @@ async function driveCase(run: BenchRun, item: BenchCase, arm: Arm, judge: Verifi
     if (!trace || benchLive() !== run.id) return;
     const turn = readTurn(trace, { id: thread.id, title: item.title });
     if (turn.arm !== arm) return;
-    const answer = await finalAnswer(thread.id);
+    const { answer, notice } = await finalAnswer(thread.id);
     if (benchLive() !== run.id) return;
+    if (!answer) onJudgeError(`${item.title}: ${notice || "no reply came back"}`);
     const checked = item.check ? await runShell(item.check, item.folderId) : undefined;
     if (benchLive() !== run.id) return;
     const scored = checked ? { score: checked.code === 0 ? 1 : 0, note: checked.note }

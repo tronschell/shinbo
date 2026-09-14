@@ -5,7 +5,7 @@ import { visualDrawn } from "../shared/visualize";
 import { charLabel } from "../shared/usage";
 import { splitThinking } from "../shared/thinking";
 import type { Message, Thread } from "./types";
-import { cachedBlocks, rememberBlocks, recordBreakdown, recordCompaction, recordExperiment, type TurnAttachment } from "./context";
+import { cachedBlocks, rememberBlocks, recordBreakdown, recordCompaction, recordExperiment, setThreadDraft, threadDraft, type TurnAttachment } from "./context";
 import { reasonText } from "./errors";
 
 export type QueuedTurn = {
@@ -611,6 +611,7 @@ async function drain(threadId: string, reload: () => unknown) {
         const text = reasonText(reason);
         next.failure = text;
         write(threadId, (run) => ({ pending: null, blocks: [], held: [...run.held, next] }));
+        if (!threadDraft(threadId).text) setThreadDraft(threadId, { text: next.content, picks: [] });
         dispatchEvent(new CustomEvent<RunFailure>(RUN_ERROR_EVENT, { detail: { threadId, text } }));
       }
 

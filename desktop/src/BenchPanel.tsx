@@ -192,6 +192,7 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
   const caseTitle = (id: string) => shown.cases.find((row) => row.id === id)?.title ?? "removed case";
   const saved = (id: string) => store.cases.some((row) => row.fromThreadId === id);
   const folderName = (id: string) => folders?.find((row) => row.id === id)?.name ?? "no folder";
+  const noModel = (key: string) => key === "fallback" || !pickers.describe(key).label ? "Pick a model before running." : "";
   const start = async (improvement: Improvement | undefined, under = model, effort = "") => {
     if (starting.current) return;
     starting.current = true;
@@ -200,7 +201,7 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
     const cases = store.cases;
     const grants = await window.shinbo.listFolders().catch(() => []);
     setFolders(grants);
-    const refusal = benchBlocker(cases, mode, grants);
+    const refusal = benchBlocker(cases, mode, grants) || noModel(under);
     if (refusal || readBench().runs.some((row) => row.state === "running")) { starting.current = false; setError(refusal || "A bench is already running."); return; }
     const current = readBench();
     starting.current = false;
@@ -252,17 +253,20 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
 
   const stamp = () => `bench-${new Date().toISOString().slice(0, 10)}`;
 
+  const exported = (saved: string) => { if (saved) setJudgeNote(`Exported to ${saved}`); };
+
   const exportCsv = async () => {
     setError("");
     await window.shinbo.exportThreadStats({
       folder: stamp(),
+      title: "Export bench sheets",
       files: sheets().map((sheet) => ({ name: `${sheet.name.toLowerCase()}.csv`, text: toCsv(sheet.rows.map((row) => row.map(formulaSafe))) })),
-    }).catch((reason: unknown) => { setError(reasonText(reason)); });
+    }).then(exported).catch((reason: unknown) => { setError(reasonText(reason)); });
   };
 
   const exportXlsx = async () => {
     setError("");
-    await window.shinbo.exportBench({ name: stamp(), sheets: sheets() }).catch((reason: unknown) => { setError(reasonText(reason)); });
+    await window.shinbo.exportBench({ name: stamp(), sheets: sheets() }).then(exported).catch((reason: unknown) => { setError(reasonText(reason)); });
   };
 
   const drop = (id: string) => {
@@ -283,6 +287,8 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
   const ready = store.cases.length >= MIN_BENCH_PAIRS;
   const full = store.cases.length >= MAX_BENCH_CASES;
   const blocker = folders ? benchBlocker(store.cases, mode, folders) : "Reading your folders.";
+  const pairedBlock = blocker || noModel(model);
+  const runBlock = blocker || noModel(runModel);
 
   return <>
     {!board.rows.length && !!board.skipped && <p className="bench-note">{board.skipped} {plural(board.skipped, "case")} dropped — not every model ran {board.skipped === 1 ? "it" : "them"}.</p>}
@@ -412,7 +418,9 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
             <div><strong>{folderName(item.folderId)}</strong><button type="button" className="bench-x" aria-label={`Remove ${item.title}`} disabled={busy || !!live} onClick={() => drop(item.id)}>×</button></div>
             <details><summary title={item.title}>{item.title}</summary><p>{item.prompt}</p></details>
             <div className="bench-kv"><span>Rubric</span><small title={item.rubric}>{item.rubric || "none · the judge scores on the prompt alone"}</small></div>
-            <button type="button" className="agent-receipt" onClick={() => openThread(item.fromThreadId)}>{day(item.createdAt)} · source thread</button>
+            {snapshot.threads.some((thread) => thread.id === item.fromThreadId)
+              ? <button type="button" className="agent-receipt" onClick={() => openThread(item.fromThreadId)}>{day(item.createdAt)} · source thread</button>
+              : <small className="bench-empty">{day(item.createdAt)} · source thread gone</small>}
           </div>)}
           {!store.cases.length && <div className="bench-band bench-empty">No cases yet. Save one from a thread below.</div>}
           <div className="bench-band bench-add">
@@ -444,11 +452,11 @@ export default function BenchPanel({ snapshot, busy, openThread, mode, model, pi
         <select aria-label="Metric the next baseline run is stamped with" value={choice} disabled={busy || !!live} onChange={(event) => setChoice(event.target.value as BenchMetric)}>
           {Object.entries(benchMetricNames).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </select>
-        {blocker && <small>{blocker}</small>}
+        {(pairedBlock || runBlock) && <small>{pairedBlock || runBlock}</small>}
         <span className="bench-gap" />
-        <button type="button" disabled={busy || !!live || !ready || !!blocker} onClick={() => void start(undefined)}>Baseline · {store.cases.length}</button>
-        <button type="button" disabled={busy || !!live || !ready || !!blocker || !trial} onClick={() => void start(trial)}>Trial{look > 1 ? ` · attempt ${look}` : ""} · {store.cases.length * 2}</button>
-        <button type="button" className="bench-primary" disabled={busy || !!live || !store.cases.length || !runModel.trim() || !!blocker} onClick={() => void start(undefined, runModel.trim(), runEffort)}>Run · {store.cases.length} {plural(store.cases.length, "turn")}</button>
+        <button type="button" disabled={busy || !!live || !ready || !!pairedBlock} onClick={() => void start(undefined)}>Baseline · {store.cases.length}</button>
+        <button type="button" disabled={busy || !!live || !ready || !!pairedBlock || !trial} onClick={() => void start(trial)}>Trial{look > 1 ? ` · attempt ${look}` : ""} · {store.cases.length * 2}</button>
+        <button type="button" className="bench-primary" disabled={busy || !!live || !store.cases.length || !!runBlock} onClick={() => void start(undefined, runModel.trim(), runEffort)}>Run · {store.cases.length} {plural(store.cases.length, "turn")}</button>
       </div>
     </section>
 

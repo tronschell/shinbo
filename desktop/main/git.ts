@@ -12,6 +12,7 @@ const MAX_UNTRACKED = 20;
 const MAX_BRANCHES = 200;
 const TIMEOUT_MS = 10_000;
 const SNAPSHOT_GAP_MS = 1_500;
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 export const MAX_HISTORY = 200;
 export const DEFAULT_HISTORY = 60;
@@ -27,11 +28,11 @@ const MESSAGE_MAX_TOKENS = 1_200;
 
 export const NO_GIT = isWindows ? "git is not installed on this PC. Install Git for Windows and try again." : "git is not installed on this Mac. Install the Xcode command line tools with xcode-select --install.";
 
-export function gitFailure(error: unknown): string {
+export function gitFailure(error: unknown, stdout = ""): string {
   const raw = (error instanceof Error ? error.message : String(error)).trim();
   if (/spawn git ENOENT/.test(raw)) return NO_GIT;
-  const body = raw.replace(/^Command failed: git\b.*\n?/, "").trim();
-  return body || raw || "git failed";
+  const body = raw.replace(/^Command failed:.*\n?/, "").trim();
+  return body || stdout.trim() || raw || "git failed";
 }
 
 type Attempt = { error: unknown; stdout: string; stderr: string };
@@ -66,7 +67,7 @@ async function exec(cwd: string, args: string[], timeout = TIMEOUT_MS, maxBuffer
 
 async function git(cwd: string, args: string[]): Promise<string> {
   const { error, stdout } = await exec(cwd, ["--literal-pathspecs", ...args]);
-  if (error) throw new Error(gitFailure(error));
+  if (error) throw new Error(gitFailure(error, stdout));
   return stdout;
 }
 
@@ -129,7 +130,7 @@ async function readGitDiff(cwd: string): Promise<{ diff: string; truncated: bool
   const limited = (args: string[]) => exec(cwd, args, TIMEOUT_MS, MAX_DIFF_BYTES + 1);
   const outputLimit = (error: unknown) => (error as NodeJS.ErrnoException | null)?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
   const [tracked, untracked] = await Promise.all([
-    limited(["diff", "--no-color", "--relative", "HEAD"]).then((result) => result.error && !outputLimit(result.error) ? limited(["diff", "--no-color", "--relative"]) : result),
+    limited(["diff", "--no-color", "--relative", "HEAD"]).then((result) => result.error && !outputLimit(result.error) ? limited(["diff", "--no-color", "--relative", EMPTY_TREE]) : result),
     git(cwd, ["ls-files", "-z", "--others", "--exclude-standard"]).catch(() => ""),
   ]);
   let whole = tracked.stdout;
@@ -225,6 +226,11 @@ export function commitPaths(value: unknown): string[] {
   });
 }
 
+async function renameSources(cwd: string, files: string[]): Promise<string[]> {
+  const entries = folderRelative(cwd, await topLevel(cwd), parseStatus(await git(cwd, ["status", "--porcelain", "-z"])));
+  return entries.flatMap((entry) => entry.from !== undefined && files.includes(entry.path) && !files.includes(entry.from) ? [entry.from] : []);
+}
+
 export async function commit(folder: string, { message, paths, amend = false }: { message?: unknown; paths?: unknown; amend?: boolean }): Promise<string> {
   const files = commitPaths(paths);
   const text = typeof message === "string" ? message.trim().slice(0, MAX_COMMIT_MESSAGE_BYTES) : "";
@@ -236,6 +242,7 @@ export async function commit(folder: string, { message, paths, amend = false }: 
       .filter((entry) => entry.work !== " ")
       .map((entry) => entry.path);
     if (pending.length) await git(cwd, ["add", "-A", "--", ...pending]);
+    files.push(...await renameSources(cwd, files));
   }
   const args = ["commit", ...(amend ? ["--amend"] : []), ...(text ? ["-m", text] : ["--no-edit"])];
   if (files.length) args.push("--", ...files);
@@ -251,6 +258,7 @@ export async function discard(folder: string, paths: unknown): Promise<void> {
   const known = (await git(cwd, ["ls-files", "-z", "--", ...files])).split("\0").filter(Boolean);
   const tracked = files.filter((file) => known.some((entry) => entry === file || entry.startsWith(`${file}/`)));
   const loose = files.filter((file) => !tracked.includes(file));
+  tracked.push(...await renameSources(cwd, files));
   if (tracked.length) await git(cwd, ["restore", "--staged", "--worktree", "--", ...tracked]);
   if (loose.length) await git(cwd, ["clean", "-f", "-d", "--", ...loose]);
   snapshots.clear();

@@ -265,6 +265,12 @@ test("Codex-style MCP TOML stays main-side and supports stdio metadata", () => {
   assert.equal(server.env.API_KEY, "secret");
 });
 
+test("Codex TOML env sub-tables and empty strings stay on the server", () => {
+  const servers = parseMcpConfig('[mcp_servers.node_repl]\ncommand = "npx"\nargs = ["-y", "node-repl-mcp"]\n\n[mcp_servers.node_repl.env]\nNODE_REPL_INSTRUCTIONS_USE_CASE_BROWSER = ""\nTOKEN = "keep"\n', "config.toml", "codex", 0);
+  assert.deepEqual(servers.map((server) => server.name), ["node_repl"]);
+  assert.deepEqual(servers[0].env, { NODE_REPL_INSTRUCTIONS_USE_CASE_BROWSER: "", TOKEN: "keep" });
+});
+
 test("JSONC parsing removes trailing commas without changing string values", () => {
   const [server] = parseMcpConfig('{"mcpServers":{"fixture":{"command":"node","args":[],"env":{"TOKEN":"keep,}"},},},}', "config.jsonc");
   assert.equal(server.env.TOKEN, "keep,}");

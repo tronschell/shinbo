@@ -628,7 +628,7 @@
 .kb-face { display: grid; gap: var(--s-2); width: 100%; padding: var(--s-3); border: 0; background: transparent; text-align: left; }
 .kb-face em { color: var(--kind); font: var(--fs-2xs)/1 var(--font-mono); font-style: normal; letter-spacing: var(--ls-caps); text-transform: uppercase; }
 .kb-face h3 { margin: 0; color: var(--text); font: var(--fs-sm)/1.35 var(--font-mono); font-weight: 400; overflow-wrap: anywhere; }
-.kb-face p { display: -webkit-box; overflow: hidden; margin: 0; color: var(--text-2); font: var(--fs-sm)/1.55 var(--font); -webkit-box-orient: vertical; -webkit-line-clamp: 7; }
+.kb-face p { display: -webkit-box; overflow: hidden; margin: 0; color: var(--text-2); font: var(--fs-sm)/1.55 var(--font); -webkit-box-orient: vertical; -webkit-line-clamp: 7; overflow-wrap: anywhere; }
 
 .kb-thumb { margin: calc(var(--s-3) * -1) calc(var(--s-3) * -1) var(--s-1); background: var(--surface-4); }
 .kb-thumb img { display: block; width: 100%; height: auto; }

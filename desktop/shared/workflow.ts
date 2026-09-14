@@ -230,14 +230,18 @@ const whole = (value: string, min: number, max: number): number | null => {
   const parsed = Number(value);
   return /^\d+$/.test(value) && parsed >= min && parsed <= max ? parsed : null;
 };
-const stepOf = (field: string): number | null => field === "*" ? 1 : /^\*\/\d+$/.test(field) ? Number(field.slice(2)) || null : null;
+export const EVERY_STEPS: Partial<Record<TriggerKind, readonly number[]>> = { minutes: [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30], hourly: [1, 2, 3, 4, 6, 8, 12] };
+
+const stepOf = (field: string, steps: readonly number[] = [1]): number | null => {
+  const count = field === "*" ? 1 : /^\*\/\d+$/.test(field) ? Number(field.slice(2)) : 0;
+  return steps.includes(count) ? count : null;
+};
 const step = (count: number) => count > 1 ? `*/${count}` : "*";
 const two = (value: number) => String(value).padStart(2, "0");
 
-const EVERY_MAX: Partial<Record<TriggerKind, number>> = { minutes: 59, hourly: 23, daily: 31 };
-
 export function buildTrigger(trigger: Trigger): string {
-  const every = Math.min(EVERY_MAX[trigger.kind] ?? 1, Math.max(1, Math.round(trigger.every) || 1));
+  const wanted = Math.max(1, Math.round(trigger.every) || 1);
+  const every = (EVERY_STEPS[trigger.kind] ?? [1]).filter((count) => count <= wanted).at(-1) ?? 1;
   const minute = Math.min(59, Math.max(0, Math.round(trigger.minute) || 0));
   const hour = Math.min(23, Math.max(0, Math.round(trigger.hour) || 0));
   const day = Math.min(31, Math.max(1, Math.round(trigger.day) || 1));
@@ -265,10 +269,10 @@ export function parseTrigger(value: string): Trigger {
   const day = whole(dayField, 1, 31);
   const month = whole(monthField, 1, 12);
   const anyDay = dayField === "*" && monthField === "*" && weekdayField === "*";
-  const minuteStep = stepOf(minuteField);
+  const minuteStep = stepOf(minuteField, EVERY_STEPS.minutes);
   if (minuteStep !== null && hourField === "*" && anyDay) return { ...raw, kind: "minutes", every: minuteStep };
   if (minute === null) return { ...raw, kind: "cron" };
-  const hourStep = stepOf(hourField);
+  const hourStep = stepOf(hourField, EVERY_STEPS.hourly);
   if (hourStep !== null && anyDay) return { ...raw, kind: "hourly", every: hourStep, minute };
   if (hour === null) return { ...raw, kind: "cron" };
   const dayStep = stepOf(dayField);
@@ -293,7 +297,7 @@ export function describeTrigger(value: string): string {
   switch (trigger.kind) {
     case "minutes": return `Every ${plural(trigger.every, "minute")}`;
     case "hourly": return `Every ${plural(trigger.every, "hour")} at :${two(trigger.minute)}`;
-    case "daily": return trigger.every === 1 ? `Every day at ${at}` : `Every ${trigger.every} days at ${at}`;
+    case "daily": return `Every day at ${at}`;
     case "weekly": return `${trigger.weekdays.length ? trigger.weekdays.map((day) => WEEKDAY_NAMES[day]).join(", ") : "Every day"} at ${at}`;
     case "monthly": return `Day ${trigger.day} of every month at ${at}`;
     case "yearly": return `Every ${trigger.day} ${MONTH_NAMES[trigger.month - 1]} at ${at}`;
