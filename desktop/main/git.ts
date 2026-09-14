@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { chatCompletion, type ChatMessage } from "./verifier";
 import { defaultTagger, type TaggerSettings } from "../shared/settings";
 import { fileState, parsePullRequest, parseHistory, parseStatus, parseWorktrees, validateGitArgs, type GitPullRequest, type GitCommandResult, type GitFileEntry, type GitHistory, type GitReady, type GitSnapshot, type WorktreeEntry } from "../shared/git";
-import { findExecutable, isWindows, samePath, shellArguments, shellBinary } from "./platform";
+import { findExecutable, isWindows, realPath, samePath, shellArguments, shellBinary } from "./platform";
 
 const MAX_DIFF_BYTES = 512 * 1024;
 const MAX_BUFFER_BYTES = 16 * 1024 * 1024;
@@ -154,10 +154,10 @@ async function topLevel(cwd: string): Promise<string> {
 }
 
 function folderRelative(cwd: string, top: string, entries: GitFileEntry[]): GitFileEntry[] {
-  let here = cwd;
-  try { here = realpathSync(cwd); } catch { here = cwd; }
+  const here = realPath(cwd) ?? cwd;
+  const base = realPath(top) ?? top;
   const rebase = (value: string) => {
-    const relative = path.relative(here, path.join(top, value)).split(path.sep).join("/");
+    const relative = path.relative(here, path.join(base, value)).split(path.sep).join("/");
     return relative && !relative.startsWith("../") && relative !== ".." ? relative : undefined;
   };
   return entries.flatMap((entry) => {

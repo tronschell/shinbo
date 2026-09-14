@@ -149,7 +149,7 @@ test("a note is named relative to the guarded folder, and nothing outside it is 
   const vault = workspace();
   const note = await keepNote(vault, { kind: "note", title: "Kept", text: "body" });
   assert.equal(noteInVault(vault, note.relative), note.relative);
-  for (const value of ["../../etc/passwd", "/etc/passwd", "", 7, undefined, "x".repeat(300)]) {
+  for (const value of ["../../etc/passwd", "/etc/passwd", "", 7, undefined, "x".repeat(5000)]) {
     assert.throws(() => noteInVault(vault, value), /not in your vault/, `accepted ${JSON.stringify(value)}`);
   }
 });
