@@ -1110,7 +1110,11 @@ export function validateSettings(value: unknown, platform = "darwin"): UserSetti
     if (!item || typeof item !== "object") throw new Error("Quick action is invalid");
     const entry = item as Partial<QuickAction>;
     for (const key of ["label", "prompt", "category"] as const) if (typeof entry[key] !== "string") throw new Error("Quick action is invalid");
-    if (!entry.label!.trim() || entry.label!.length > MAX_QUICK_ACTION_LABEL_CHARS || !entry.prompt!.trim() || entry.prompt!.length > MAX_QUICK_ACTION_PROMPT_CHARS || entry.category!.length > 64 || (entry.category && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.category))) throw new Error("Quick action is invalid");
+    if (!entry.label!.trim()) throw new Error("Give each quick action a label");
+    if (entry.label!.length > MAX_QUICK_ACTION_LABEL_CHARS) throw new Error(`Quick action labels are at most ${MAX_QUICK_ACTION_LABEL_CHARS} characters`);
+    if (!entry.prompt!.trim()) throw new Error("Give each quick action a prompt");
+    if (entry.prompt!.length > MAX_QUICK_ACTION_PROMPT_CHARS) throw new Error(`Quick action prompts are at most ${MAX_QUICK_ACTION_PROMPT_CHARS.toLocaleString("en-US")} characters`);
+    if (entry.category!.length > 64 || (entry.category && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.category))) throw new Error("Quick action is invalid");
     return { label: entry.label!, prompt: entry.prompt!, category: entry.category! };
   }) as UserSettings["quickActions"];
   const cursorOrbs = settings.cursorOrbs ?? defaultSettings.cursorOrbs;

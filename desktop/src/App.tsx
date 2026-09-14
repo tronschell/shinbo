@@ -1569,7 +1569,7 @@ function BenchRunPicker({ model, effort, onPick, onSettingsChanged, busy }: { mo
   </>;
 }
 
-function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, commands, view }: {
+function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, onDirty, commands, view }: {
   view: "editor" | "graph";
   job?: ScheduledJob;
   runs: Thread[];
@@ -1578,6 +1578,7 @@ function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, comm
   openThread: (id: string) => void;
   onSaved: (id: string) => void;
   onDeleted: () => void;
+  onDirty: (dirty: boolean) => void;
   commands: { skills: SlashCommand[]; tools: SlashCommand[]; atItems: SlashCommand[] };
 }) {
   const [title, setTitle] = useState(job?.title ?? "");
@@ -1586,6 +1587,8 @@ function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, comm
   const [nodes, setNodes] = useState(job?.nodes ?? "");
   const [mode, setMode] = useState<PermissionMode>(job?.permissionMode ?? DEFAULT_PERMISSION_MODE);
   const [model, setModel] = useState(job?.model ?? "");
+  const dirty = title !== (job?.title ?? "") || trigger !== (job?.schedule ?? "0 9 * * 1") || prompt !== (job?.prompt ?? "") || nodes !== (job?.nodes ?? "") || mode !== (job?.permissionMode ?? DEFAULT_PERMISSION_MODE) || model !== (job?.model ?? "");
+  useEffect(() => { onDirty(dirty); return () => onDirty(false); }, [dirty, onDirty]);
   const [dryRun, setDryRun] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [selectedNode, setSelectedNode] = useState("");
@@ -1694,6 +1697,13 @@ function ScheduledView({ snapshot, act, busy, openThread }: { snapshot: Snapshot
   const jobs = snapshot.scheduledJobs;
   const [picked, setPicked] = useState("");
   const [mode, setMode] = useState<"editor" | "graph">("editor");
+  const dirty = useRef(false);
+  const onDirty = useCallback((value: boolean) => { dirty.current = value; }, []);
+  const pick = (id: string) => {
+    if (dirty.current && !confirm("Leave this workflow? What you changed here is not saved.")) return;
+    setPicked(id);
+    if (id === "new") setMode("editor");
+  };
   const commands = useTaskCommands(loadSettings().tools.disabledTools);
   const selected = jobs.find((item) => item.id === picked);
   const creating = picked === "new" || (!selected && !jobs.length);
@@ -1708,12 +1718,12 @@ function ScheduledView({ snapshot, act, busy, openThread }: { snapshot: Snapshot
     </header>
     <div className="tasks-body">
       <nav className="tasks-rail" aria-label="Workflows">
-        {jobs.map((item) => <button key={item.id} type="button" className={!creating && item.id === job?.id ? "active" : ""} disabled={busy} onClick={() => setPicked(item.id)}>
+        {jobs.map((item) => <button key={item.id} type="button" className={!creating && item.id === job?.id ? "active" : ""} disabled={busy} onClick={() => pick(item.id)}>
           <span>{item.title}</span>
           <small>{describeTrigger(item.schedule)}</small>
           <b className={item.enabled ? "on" : ""}>{item.enabled ? "live" : "paused"}</b>
         </button>)}
-        <button type="button" className={`tasks-new ${creating ? "active" : ""}`} disabled={busy} onClick={() => { setPicked("new"); setMode("editor"); }}>+ New workflow</button>
+        <button type="button" className={`tasks-new ${creating ? "active" : ""}`} disabled={busy} onClick={() => pick("new")}>+ New workflow</button>
       </nav>
       <TaskEditor
         key={creating ? "new" : job?.id ?? "new"}
@@ -1725,6 +1735,7 @@ function ScheduledView({ snapshot, act, busy, openThread }: { snapshot: Snapshot
         openThread={openThread}
         onSaved={setPicked}
         onDeleted={() => setPicked("")}
+        onDirty={onDirty}
         commands={commands}
       />
     </div>
@@ -1929,7 +1940,7 @@ function NotesView({ notes, notesError, busy, reload, hues, setHues }: { notes: 
         recolour={(choice) => { const next = { ...hues }; if (choice) next[shelf.folder.name] = choice; else delete next[shelf.folder.name]; setHues(next); }}
         rename={(name) => rename(shelf.folder.name, name)} />)}
       {naming
-        ? <article className="kb-folder kb-folder-new"><form className="kb-folder-front kb-naming" onSubmit={make}><input autoFocus value={draft} maxLength={MAX_FOLDER_NAME} spellCheck={false} aria-label="Folder name" placeholder="Name it…" onChange={(event) => setDraft(event.target.value)} onBlur={() => { setNaming(false); setDraft(""); }} onKeyDown={(event) => { if (event.key === "Escape") { setNaming(false); setDraft(""); } }} /><small>Enter to create</small></form></article>
+        ? <article className="kb-folder kb-folder-new"><form className="kb-folder-front kb-naming" onSubmit={make}><input autoFocus value={draft} maxLength={MAX_FOLDER_NAME} spellCheck={false} aria-label="Folder name" placeholder="Name it…" onChange={(event) => setDraft(event.target.value)} onBlur={() => { setNaming(false); setDraft(""); setError(""); }} onKeyDown={(event) => { if (event.key === "Escape") { setNaming(false); setDraft(""); setError(""); } }} /><small>Enter to create</small></form></article>
         : <article className="kb-folder kb-folder-new"><button type="button" className="kb-folder-open" disabled={busy} onClick={() => setNaming(true)}><span className="kb-folder-front"><strong>＋ New folder</strong><small>Drag saves onto it</small></span></button></article>}
     </div>}
     {vault && !(into ? shown.length : sorted.length) && <div className="content-empty"><Mark /><h2>{into ? "This folder is empty" : "Nothing saved yet"}</h2><p>{into ? "Drag a save onto a folder to file it here." : "Saved pages, screenshots and highlights land in the vault folder above."}</p></div>}

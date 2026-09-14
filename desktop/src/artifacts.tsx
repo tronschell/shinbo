@@ -196,6 +196,11 @@ function ArtifactPanel({ id, className, busy, close, edit, remove }: { id: strin
   const artifact = useArtifact(id);
   const [source, setSource] = useState(false);
   const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1200);
+    return () => clearTimeout(timer);
+  }, [copied]);
 
   return <section className={className}>
     <header>
