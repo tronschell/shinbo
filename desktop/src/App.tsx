@@ -1678,7 +1678,7 @@ function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, comm
       <button type="button" disabled={busy || !graph.nodes.length || graph.errors.length > 0} onClick={() => void test()}>Test</button>
       {job && <button type="button" disabled={busy} onClick={() => void act("runScheduledJob", { jobId: job.id })}>Run now</button>}
       {job && <button type="button" disabled={busy} onClick={() => void act("setScheduledJobEnabled", { jobId: job.id, enabled: String(!job.enabled) })}>{job.enabled ? "Pause" : "Resume"}</button>}
-      {job && <button type="button" className="task-danger" data-armed={confirming} disabled={busy} onClick={() => void remove()}>{confirming ? liveRuns ? `Delete for good · archives ${liveRuns} ${liveRuns === 1 ? "run" : "runs"}` : "Delete for good" : "Delete"}</button>}
+      {job && <button type="button" className="task-danger" data-armed={confirming} disabled={busy} onClick={() => void remove()}>{confirming ? liveRuns ? `Delete for good · stops and archives ${liveRuns} ${liveRuns === 1 ? "run" : "runs"}` : "Delete for good" : "Delete"}</button>}
     </div>
     {dryRun && <pre className="task-dry-run">{dryRun}</pre>}
     {job && <section className="task-runs">
@@ -4987,18 +4987,22 @@ function AgentImports({ done }: { done?: () => void }) {
     setBusy(true); setStatus("");
     try {
       const imported = await window.shinbo.importAgentSources(selected);
+      setSources((items) => items.map((item) => ({ ...item, registered: imported.includes(item.id) })));
       setStatus(`${imported.length} ${plural(imported.length, "agent source")} registered`);
       done?.();
     } catch (reason) { setStatus(reasonText(reason)); }
     finally { setBusy(false); }
   };
   const found = sources.filter((source) => source.skills > 0 || source.mcpConfigs > 0);
+  const registered = sources.filter((source) => source.registered).map((source) => source.id);
+  const changed = selected.length !== registered.length || selected.some((id) => !registered.includes(id));
+  const adding = selected.some((id) => !registered.includes(id));
   const missing = sources.filter((source) => !found.includes(source));
   return <div className="import-sources import-settings">
     <header className="settings-intro"><div><h3>Bring your existing setup</h3><p>Use skills and MCP configurations from agents already on this computer. Their files stay where they are.</p></div><span className="settings-count">{busy ? "Scanning…" : `${found.length} sources found`}</span></header>
     <div className="import-list">{found.map((source) => <label key={source.id}><input type="checkbox" disabled={busy} checked={selected.includes(source.id)} onChange={(event) => setSelected(event.target.checked ? [...selected, source.id] : selected.filter((id) => id !== source.id))} /><BrandIcon brand={brandForImporter(source.id)} className={`integration-mark ${source.id}`} /><div><strong>{source.label}</strong><small>{source.skills} {plural(source.skills, "skill")} · {source.mcpConfigs} MCP {plural(source.mcpConfigs, "config")}{source.registered ? " · imported" : ""}</small></div></label>)}</div>
     {!busy && !found.length && <p className="import-status">No existing skills or MCP configurations were found in the default locations.</p>}
-    <footer><div><p>{selected.length} {plural(selected.length, "source")} selected</p><small>Imported tools stay inactive until selected by a thread or plugin.</small></div><button type="button" onClick={() => void submit()} disabled={busy || !selected.length}>{busy ? "Working…" : "Import selected"}</button></footer>
+    <footer><div><p>{selected.length} {plural(selected.length, "source")} selected</p><small>Imported tools stay inactive until selected by a thread or plugin.</small></div><button type="button" onClick={() => void submit()} disabled={busy || !changed}>{busy ? "Working…" : adding ? "Import selected" : "Save selection"}</button></footer>
     {status && <p className="import-status" role="status">{status}</p>}
     {found.length > 0 && <SettingsSection title="Source locations" summary="Referenced in place">{found.map((source) => <div className="import-location" key={source.id}><strong>{source.label}</strong>{source.locations.map((location) => <code key={location}>{location}</code>)}</div>)}</SettingsSection>}
     {missing.length > 0 && <SettingsSection title="Not found on this computer" summary={`${missing.length} agents`}><p>{missing.map((source) => source.label).join(" · ")}</p><p>Shinbo checked their default configuration locations.</p></SettingsSection>}

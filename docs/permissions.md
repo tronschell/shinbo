@@ -195,12 +195,13 @@ looking at the payload, ids are `randomUUID()` and are deleted on first settle.
 
 ## Unattended runs carry their saved mode
 
-A scheduled task stores its own `permissionMode`. `workflow`
-offers three values, not four — `auto` needs a verifier the unattended path does
-not run:
+A scheduled task stores its own `permissionMode`. `workflow` offers the same
+four values as the composer; an unattended `auto` run asks the verifier exactly
+as an interactive thread does, and falls back to the dialog when it blocks or
+cannot answer:
 
 ```
-enum: ["ask", "acceptEdits", "full"]
+enum: ["ask", "acceptEdits", "auto", "full"]
 ```
 
 Normalised through `asPermissionMode` on save and again at execution, which falls

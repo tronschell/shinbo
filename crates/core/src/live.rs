@@ -1040,6 +1040,12 @@ impl Runtime {
             .scheduled
             .load(&job_id)
             .map_err(|error| LiveError::new(format!("could not load scheduled job: {error}")))?;
+        let now = Timestamp::now();
+        if enabled && !job.enabled && job.next_run_at.is_some_and(|due| due <= now) {
+            job.book_next_run(now).map_err(|error| {
+                LiveError::new(format!("could not book scheduled job: {error}"))
+            })?;
+        }
         job.enabled = enabled;
         self.scheduled
             .save(&job)
@@ -1922,6 +1928,46 @@ mod tests {
             assert!(snapshot.warnings.is_empty());
             assert!(snapshot.scheduled_jobs.contains(&job));
         }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn resuming_a_paused_job_rebooks_a_booking_that_passed_while_paused() {
+        let root = temp_child();
+        let runtime = Runtime::new(root.join("threads"), root.join("scheduled"), no_jobs());
+        let now = Timestamp::now();
+        let mut job = runtime
+            .save_scheduled_job(
+                None,
+                "Daily reading".into(),
+                "0 9 * * *".into(),
+                "Find useful reading".into(),
+                String::new(),
+                vec![],
+                "ask".into(),
+                String::new(),
+            )
+            .unwrap();
+        job.enabled = false;
+        job.next_run_at = Some(Timestamp::from_unix_seconds(
+            now.unix_seconds() - 3 * 86_400,
+        ));
+        runtime.scheduled.save(&job).unwrap();
+
+        let resumed = runtime
+            .set_scheduled_job_enabled(job.id.clone(), true)
+            .unwrap();
+        let next = resumed.next_run_at.unwrap();
+        assert!(resumed.enabled);
+        assert!(next > now);
+        assert!(next.unix_seconds() <= now.unix_seconds() + 86_400);
+        assert_eq!(runtime.scheduled.load(&job.id).unwrap(), resumed);
+
+        let paused = runtime
+            .set_scheduled_job_enabled(job.id.clone(), false)
+            .unwrap();
+        assert!(!paused.enabled);
+        assert_eq!(paused.next_run_at, Some(next));
         fs::remove_dir_all(root).unwrap();
     }
 

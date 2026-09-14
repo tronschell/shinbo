@@ -43,7 +43,9 @@ would take explicit loopback.
 An imported skill is an inactive reference until a thread attaches it; its
 `SKILL.md` is loaded only on attachment. An imported MCP server is registered
 when the harness builds a session, then launched only when the model first
-searches for or calls an MCP tool.
+searches for or calls an MCP tool. The harness keys servers by name, so when two
+sources define the same name the first source in the manifest wins and the rest
+are skipped with a log line; Settings and the harness see the same one.
 
 Configs and environment values stay in the main process. The renderer receives
 bounded metadata, redacted arguments, and environment **key names** only.
@@ -117,9 +119,13 @@ over one is replaced on the next launch.
 `mirrorSkillsToHarness` copies every visible skill — bundled, imported, written,
 and plugin — into the harness's own `.fx/skills` root, because the harness
 discovers skills from its `$HOME`. Copied, not symlinked; the harness drops
-symlinked skill directories. A skill switched off in Settings is simply not
-written. A missing `name`/`description` frontmatter header is generated from the
-first non-heading line, since the harness's catalog is description-driven.
+symlinked skill directories, though a symlinked source directory (the Vercel
+`skills` CLI layout) is read through. Each copy carries a `.shinbo-mirrored`
+marker; a directory without one is a harness `install_skill` clone, which the
+mirror leaves alone and which shadows a same-named import. A skill switched off
+in Settings is simply not written. A missing `name`/`description` frontmatter
+header is generated from the first non-heading line, since the harness's catalog
+is description-driven.
 
 ## Plugins
 

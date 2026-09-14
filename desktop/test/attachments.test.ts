@@ -73,6 +73,27 @@ test("new uploads preserve held attachments older than seven days", () => {
   assert.equal(new AttachmentStore(root).read(first.id).text, "permanent conversation context");
 });
 
+test("a relaunch sweeps copies older than thirty days and files the index no longer names, and leaves picked files alone", () => {
+  const root = userData();
+  const store = new AttachmentStore(root);
+  const stale = store.save("stale.md", new TextEncoder().encode("old"));
+  const fresh = store.save("fresh.md", new TextEncoder().encode("new"));
+  const picked = path.join(root, "picked.md");
+  writeFileSync(picked, "# picked");
+  const held = store.hold(picked);
+  const ancient = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+  utimesSync(stale.path, ancient, ancient);
+  utimesSync(picked, ancient, ancient);
+  writeFileSync(path.join(root, "attachments", `${stale.id}-model.jpg`), "jpg");
+  writeFileSync(path.join(root, "attachments", "orphan-model.jpg"), "jpg");
+  const relaunched = new AttachmentStore(root);
+  assert.equal(relaunched.holds(stale.path), false);
+  assert.equal(relaunched.read(fresh.id).text, "new");
+  assert.equal(relaunched.read(held.id).text, "# picked");
+  assert.deepEqual(readdirSync(path.join(root, "attachments")).sort(), [`${fresh.id}-fresh.md`, "held.json"]);
+  assert.equal(new AttachmentStore(root).holds(stale.path), false);
+});
+
 for (const operation of ["save", "hold"] as const) {
   test(`a failed attachment index write rejects ${operation} and preserves already saved attachments`, (t) => {
     const root = userData();

@@ -77,7 +77,7 @@ pub struct ScheduledJob {
 }
 
 pub const MAX_SCHEDULED_SOURCE_DOMAINS: usize = 32;
-pub const PERMISSION_MODES: [&str; 3] = ["ask", "acceptEdits", "full"];
+pub const PERMISSION_MODES: [&str; 4] = ["ask", "acceptEdits", "auto", "full"];
 pub const MAX_SCHEDULED_MODEL_LEN: usize = 128;
 pub const MAX_WORKFLOW_NODE_BYTES: usize = 32 * 1024;
 pub const MAX_WORKFLOW_OUTPUT_BYTES: usize = 16 * 1024;
@@ -130,7 +130,7 @@ impl ScheduledJob {
         validate_text("scheduled job title", &title, true)?;
         validate_text("scheduled job prompt", &prompt, true)?;
         validate_text("scheduled job nodes", &nodes, false)?;
-        if title.len() > 128 || prompt.len() > 8 * 1024 {
+        if title.chars().count() > 128 || prompt.len() > 8 * 1024 {
             return Err(ValidationError::new("scheduled job text is too long"));
         }
         if nodes.len() > MAX_WORKFLOW_NODE_BYTES {

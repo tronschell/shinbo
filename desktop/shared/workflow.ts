@@ -234,8 +234,10 @@ const stepOf = (field: string): number | null => field === "*" ? 1 : /^\*\/\d+$/
 const step = (count: number) => count > 1 ? `*/${count}` : "*";
 const two = (value: number) => String(value).padStart(2, "0");
 
+const EVERY_MAX: Partial<Record<TriggerKind, number>> = { minutes: 59, hourly: 23, daily: 31 };
+
 export function buildTrigger(trigger: Trigger): string {
-  const every = Math.max(1, Math.round(trigger.every) || 1);
+  const every = Math.min(EVERY_MAX[trigger.kind] ?? 1, Math.max(1, Math.round(trigger.every) || 1));
   const minute = Math.min(59, Math.max(0, Math.round(trigger.minute) || 0));
   const hour = Math.min(23, Math.max(0, Math.round(trigger.hour) || 0));
   const day = Math.min(31, Math.max(1, Math.round(trigger.day) || 1));

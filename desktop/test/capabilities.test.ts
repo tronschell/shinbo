@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { harnessMcpServers, ImportedCapabilityRuntime, listShinboTools, MAX_SKILL_RESULTS, parseMcpConfig, seedBuiltinSkills, SkillAttachmentStore, writeShinboTool } from "../main/capabilities";
+import { harnessMcpServers, ImportedCapabilityRuntime, listShinboTools, loadImportedSkill, MAX_SKILL_RESULTS, mirrorSkillsToHarness, parseMcpConfig, previewImportedSkill, seedBuiltinSkills, SkillAttachmentStore, writeShinboTool } from "../main/capabilities";
 import { shellQuoted } from "../main/tools";
 import { isWindows } from "../main/platform";
 
@@ -179,6 +179,80 @@ test("an installed MCP server is listed with no import and no relaunch", async (
     await runtime.installMcpServer(definition);
     assert.equal((await runtime.listMcpServers()).length, 1);
     await assert.rejects(() => runtime.installMcpServer({ ...definition, name: "not a name" }), /not valid/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a command that is not on the login-shell PATH is refused at install instead of dropped at launch", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "shinbo-install-mcp-path-"));
+  try {
+    const runtime = new ImportedCapabilityRuntime(path.join(root, "user-data"));
+    await assert.rejects(() => runtime.installMcpServer({ name: "fixture", command: "shinbo-no-such-command", args: [], env: {} }), /not on the login-shell PATH/);
+    assert.deepEqual(await runtime.listMcpServers(), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("two sources naming the same MCP server keep the first one for Settings and the harness alike", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "shinbo-mcp-dupe-"));
+  try {
+    const userData = path.join(root, "user-data");
+    await mkdir(userData, { recursive: true });
+    const first = path.join(root, "claude.json");
+    const second = path.join(root, "cursor.json");
+    await writeFile(first, JSON.stringify({ mcpServers: { github: { command: process.execPath, args: ["first"], env: {} } } }));
+    await writeFile(second, JSON.stringify({ mcpServers: { github: { command: process.execPath, args: ["second"], env: {} }, other: { command: process.execPath, args: [], env: {} } } }));
+    await writeFile(path.join(userData, "imports.json"), JSON.stringify({ version: 1, sources: [{ id: "claude", skillRoots: [], mcpFiles: [first] }, { id: "cursor", skillRoots: [], mcpFiles: [second] }] }));
+    const listed = await new ImportedCapabilityRuntime(userData).listMcpServers();
+    assert.deepEqual(listed.map((server) => server.id), ["mcp:claude:0:github", "mcp:cursor:0:other"]);
+    assert.deepEqual((await harnessMcpServers(userData)).map((server) => [server.name, "args" in server ? server.args : []]), [["github", ["first"]], ["other", []]]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a symlinked skill directory attaches and previews, and a CRLF SKILL.md keeps its own frontmatter", async () => {
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), "shinbo-symlink-skill-")));
+  try {
+    const userData = path.join(root, "user-data");
+    const harnessHome = path.join(userData, "harness");
+    const skills = path.join(root, "skills");
+    const target = path.join(root, "agents", "skills", "linked");
+    await mkdir(skills, { recursive: true });
+    await mkdir(userData, { recursive: true });
+    await mkdir(target, { recursive: true });
+    await writeFile(path.join(target, "SKILL.md"), "---\r\nname: linked\r\ndescription: Linked in.\r\n---\r\nFollow the link.\r\n");
+    await symlink(target, path.join(skills, "linked"));
+    await writeFile(path.join(userData, "imports.json"), JSON.stringify({ version: 1, sources: [{ id: "claude", skillRoots: [skills], mcpFiles: [] }] }));
+    assert.equal((await loadImportedSkill(userData, "skill:claude:0:linked")).instructions, "---\r\nname: linked\r\ndescription: Linked in.\r\n---\r\nFollow the link.\r\n");
+    assert.equal((await previewImportedSkill(userData, "linked"))?.path, path.join(target, "SKILL.md"));
+    assert.deepEqual(await mirrorSkillsToHarness(userData, harnessHome), ["linked"]);
+    assert.equal(await readFile(path.join(harnessHome, ".fx", "skills", "linked", "SKILL.md"), "utf8"), "---\r\nname: linked\r\ndescription: Linked in.\r\n---\r\nFollow the link.\r\n");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a skill the harness installed is neither overwritten nor removed by a same-named import", async () => {
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), "shinbo-shadowed-skill-")));
+  try {
+    const userData = path.join(root, "user-data");
+    const harnessHome = path.join(userData, "harness");
+    const installed = path.join(harnessHome, ".fx", "skills", "deploy");
+    const skills = path.join(root, "skills", "deploy");
+    await mkdir(installed, { recursive: true });
+    await mkdir(skills, { recursive: true });
+    await writeFile(path.join(installed, "SKILL.md"), "---\nname: deploy\ndescription: Cloned.\n---\nFrom the clone.\n");
+    await writeFile(path.join(installed, "helper.sh"), "echo clone\n");
+    await writeFile(path.join(skills, "SKILL.md"), "---\nname: deploy\ndescription: Imported.\n---\nFrom the import.\n");
+    await writeFile(path.join(userData, "imports.json"), JSON.stringify({ version: 1, sources: [{ id: "claude", skillRoots: [path.dirname(skills)], mcpFiles: [] }] }));
+    assert.deepEqual(await mirrorSkillsToHarness(userData, harnessHome), []);
+    assert.equal(await readFile(path.join(installed, "SKILL.md"), "utf8"), "---\nname: deploy\ndescription: Cloned.\n---\nFrom the clone.\n");
+    await writeFile(path.join(userData, "imports.json"), JSON.stringify({ version: 1, sources: [] }));
+    assert.deepEqual(await mirrorSkillsToHarness(userData, harnessHome), ["deploy"]);
+    assert.equal(await readFile(path.join(installed, "helper.sh"), "utf8"), "echo clone\n");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

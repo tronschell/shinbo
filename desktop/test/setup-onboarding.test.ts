@@ -16,6 +16,21 @@ function binding(file: ts.SourceFile, owner: string | null, name: string) {
   assert.ok(node, `${owner ?? file.fileName}.${name}`);
   return ts.transpile(`(${node.getText(file)})`, { target: ts.ScriptTarget.ES2022 });
 }
+function jsxHandler(file: ts.SourceFile, id: string, attribute: string) {
+  let handler: ts.Expression | undefined;
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) {
+      const attributes = node.attributes.properties.filter(ts.isJsxAttribute);
+      const matches = attributes.some((item) => item.name.getText(file) === "id" && item.initializer && ts.isStringLiteral(item.initializer) && item.initializer.text === id);
+      const found = matches ? attributes.find((item) => item.name.getText(file) === attribute)?.initializer : undefined;
+      if (found && ts.isJsxExpression(found)) handler = found.expression;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  assert.ok(handler, `#${id} ${attribute}`);
+  return ts.transpile(`(${handler.getText(file)})`, { target: ts.ScriptTarget.ES2022 });
+}
 
 test("onboarding needs a stored OpenRouter key that is not rejected, even when subscriptions are connected", async () => {
   const key: KeyBalance = { keyed: true, freeTier: true, remaining: 0, usage: 0, error: "" };
@@ -42,6 +57,9 @@ test("onboarding needs a stored OpenRouter key that is not rejected, even when s
   await verify();
   assert.equal(ready(), false);
   assert.equal(state.balance.error, "OpenRouter rejected that key.");
+  runInContext(jsxHandler(providers, "setup-router-key", "onChange"), state)({ target: { value: "invalid-again" } });
+  assert.equal(state.drafts.OPENROUTER_API_KEY, "invalid-again");
+  assert.equal(ready(), false);
   state.window.shinbo.openRouterBalance = async () => key;
   await verify();
   assert.equal(ready(), true);

@@ -217,7 +217,7 @@ its trace through the same `recordTrace` path as a short run.
 | `credentials.json` | `0600` in `0700` | `{"OPENROUTER_API_KEY": "<base64 safeStorage ciphertext>"}`. Shinbo refuses to save when `safeStorage.isEncryptionAvailable()` is false or a `decryptString(encryptString(…))` round trip fails. Each entry is decrypted on its own: one that fails is kept as opaque ciphertext, rewritten verbatim on the next save, never applied to `process.env`, and listed as `readable: false` until you paste that key again or remove the slot. On host start the readable ones decrypt into `process.env` and names it no longer holds are unset |
 | `Local State` | Chromium | Chromium's own prefs, including the profile encryption key that `credentials.json` is sealed with, DPAPI-wrapped under `os_crypt.encrypted_key` on Windows. Chromium mints a fresh key when the file has none and persists it only at a clean shutdown, so a key pasted into a process that is killed first — the Windows installer's `--squirrel-firstrun` relaunch is the one that bites — cannot be decrypted again. Deleting this file makes every stored key unreadable |
 | `folders.json` | `0600` | `[{id, path, name}]`. The renderer only ever names a grant by `id`; every read re-checks the real path |
-| `mcp.json` | `0600` | `{"mcpServers": {…}}`, written whole and re-parsed before the rename. Reading also accepts JSONC and TOML, and root keys `mcp_servers`, `servers`, `mcp`. Bare command names are refused |
+| `mcp.json` | `0600` | `{"mcpServers": {…}}`, written whole and re-parsed before the rename. Reading also accepts JSONC and TOML, and root keys `mcp_servers`, `servers`, `mcp`. A bare command name is resolved on the login-shell `PATH` before the write and refused when nothing is found, so `install_mcp` cannot report a server the harness would drop |
 | `imports.json` | | What was imported from Codex, Claude, Antigravity, Pi, OpenCode, Cursor, Windsurf and Devin at first launch. Paths only, and only ones that existed |
 | `installed-plugins.json` | | Plugins installed from the Plugins page: id, marketplace, version, contributed skill and MCP paths |
 | `plugin-hooks.json` | | Hash of each plugin lifecycle hook you reviewed. Nothing runs without a match, so editing a hook on disk turns it off |
@@ -233,7 +233,7 @@ its trace through the same `recordTrace` path as a short run.
 | `tools/<slug>/run` | `0700` | A Shinbo-authored tool. Must start with `#!` |
 | `tools/<slug>/about.txt` | `0600` | That tool's description |
 | `memories/` | | The `memory` tool's root. The model's `/memories/...` prefix is a fiction mapped onto this directory. 256 KiB per file, 256 files |
-| `attachments/<uuid>-<name>` | `0600` in `0700` | Files dropped or pasted into the composer. Files picked in the native dialog are read where they are and never copied |
+| `attachments/<uuid>-<name>` | `0600` in `0700` | Files dropped or pasted into the composer, indexed in `held.json`; `<uuid>-model.jpg` beside one is the copy shrunk for the model. At launch the store drops copies older than 30 days, and any file in the directory no longer indexed, so old thread images stop rendering after that. Files picked in the native dialog are read where they are, never copied, and never swept |
 | `workspaces/<threadId>/` | | Scratch working directory for a thread with no folder attached |
 | `plugins/<id>/plugin.json` | | A UI plugin manifest: `id`, `name`, semver `version`, `uiStylesheet` |
 | `plugins/<id>/<name>.css` | | Its stylesheet. Capped at 128 KiB; rejected if it contains `@import` or `url(` |
@@ -298,7 +298,7 @@ inside Shinbo's data. Names from
 | --- | --- |
 | `.fx/system-prompt-<hash>.md` | The resolved system prompt for one model key — model, workspace, mode, disabled tools, kept improvements. Named to the child in `SHINBO_SYSTEM_PROMPT` ([system-prompt.ts](../desktop/main/system-prompt.ts)) |
 | `.fx/AGENTS.md` | Written empty every turn |
-| `.fx/skills/<slug>/SKILL.md` | A mirror of every skill Shinbo can see, minus anything disabled. Rewritten on every capability change; a slug the mirror no longer covers is deleted |
+| `.fx/skills/<slug>/SKILL.md` | A mirror of every skill Shinbo can see, minus anything disabled, each beside a `.shinbo-mirrored` marker. Rewritten on every capability change; a marked slug the mirror no longer covers is deleted. A directory without the marker is the harness's own `install_skill` clone: never written into, never deleted, and it shadows a same-named import |
 | `.fx/sessions/<id>/` | One harness session: `session.json`, `events.jsonl`, `checkpoint.json`, `authority.json`, `usage-v2.json`, lock files, `artifacts/`, `subagent/` |
 | `.fx/settings.json`, `.fx/mcp.json` | The harness's own settings and MCP config |
 | `.fx/auth.json`, `.fx/chatgpt-auth.json`, `.fx/api-key` | Credential files the fork still supports. Shinbo uses `SHINBO_PROVIDER_API_KEY` instead |

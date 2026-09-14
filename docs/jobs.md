@@ -120,7 +120,7 @@ it. The run is what stops it: `runWorkflow` walks at most 32 node visits and
 returns whatever it has. (Plans do refuse a cycle outright — see
 [plan.ts](../desktop/shared/plan.ts).)
 
-**Permission mode.** Core accepts three: `ask`, `acceptEdits`, `full`. A job
+**Permission mode.** Core accepts four: `ask`, `acceptEdits`, `auto`, `full`. A job
 stored as `plan` — the mode that no longer exists — loads as `ask`. See
 [permissions.md](permissions.md).
 

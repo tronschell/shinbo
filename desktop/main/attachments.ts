@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -15,6 +15,7 @@ export type Attachment = { id: string; name: string; path: string };
 
 export const MAX_MODEL_IMAGE_BYTES = 1024 * 1024;
 export const MAX_MODEL_IMAGE_EDGE = 1568;
+export const ATTACHMENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 const exec = promisify(execFile);
 
@@ -142,17 +143,30 @@ export class AttachmentStore {
   constructor(userData: string) {
     this.directory = path.join(userData, "attachments");
     this.index = path.join(this.directory, "held.json");
+    const expired = Date.now() - ATTACHMENT_RETENTION_MS;
     try {
       const stored = JSON.parse(readFileSync(this.index, "utf8")) as unknown;
       if (Array.isArray(stored)) {
         for (const item of stored as Attachment[]) {
           if (!item || typeof item.id !== "string" || typeof item.name !== "string" || typeof item.path !== "string") continue;
           if (!existsSync(item.path)) continue;
+          if (path.dirname(item.path) === this.directory && statSync(item.path).mtimeMs < expired) continue;
           this.held.set(item.id, { id: item.id, name: item.name, path: item.path });
           this.paths.add(item.path);
         }
       }
     } catch { return; }
+    this.sweep();
+  }
+
+  private sweep() {
+    let entries: string[];
+    try { entries = readdirSync(this.directory); } catch { return; }
+    const swept = entries.filter((entry) => entry !== "held.json" && !this.held.has(entry.slice(0, 36)));
+    for (const entry of swept) {
+      try { rmSync(path.join(this.directory, entry), { force: true }); } catch { continue; }
+    }
+    if (swept.length) writeAtomicSync(this.index, `${JSON.stringify([...this.held.values()])}\n`);
   }
 
   hold(file: string): Attachment {

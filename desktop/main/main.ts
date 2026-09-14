@@ -431,14 +431,14 @@ const harnessThought = new Map<string, string>();
 const harnessRouted = new Map<string, string>();
 const harnessUsage = new Map<string, TurnUsage>();
 const harnessChildren = new Map<string, { childId: string; title: string; startedAt: number; client: Harness }>();
-const workflowRuns = new Map<string, AbortController>();
+const workflowRuns = new Map<string, { jobId: string; controller: AbortController }>();
 let settleRuntimeReady: (error?: string) => void;
 let runtimeReady = new Promise<string | undefined>((resolve) => { settleRuntimeReady = resolve; });
 const runtimeReadyTimeout = setTimeout(() => settleRuntimeReady("Saved settings did not finish loading. Open the workspace and try this task again."), 30_000);
 runtimeReadyTimeout.unref();
 function cancelThreadWork(threadId: string) {
   goalStopped.add(threadId);
-  workflowRuns.get(threadId)?.abort();
+  workflowRuns.get(threadId)?.controller.abort();
   if (computerRuntime?.threadId === threadId) computerRuntime.abort();
   const child = harnessChildren.get(threadId);
   if (child) void child.client.cancelChild(child.childId).catch(() => undefined);
@@ -453,7 +453,7 @@ const stopThread = (threadId: string) => {
 };
 function stopEveryThread() {
   agents!.stopAll();
-  for (const controller of workflowRuns.values()) controller.abort();
+  for (const run of workflowRuns.values()) run.controller.abort();
   for (const threadId of goalDriving) goalStopped.add(threadId);
   for (const threadId of harnessText.keys()) stopThread(threadId);
   for (const threadId of harnessChildren.keys()) stopThread(threadId);
@@ -2779,6 +2779,11 @@ function answerRequest(method: string, params: Record<string, string> = {}): Pro
         await validateWorkflowScripts(graph.nodes);
         return await host!.request({ method, params });
       });
+    case "deleteScheduledJob":
+      return host!.request({ method, params }).then((deleted) => {
+        for (const [threadId, run] of workflowRuns) if (run.jobId === params.jobId) cancelThreadWork(threadId);
+        return deleted;
+      });
     case "setRouters":
       return Promise.resolve().then(() => {
         routers = validateRouters(JSON.parse(params.routers ?? "[]"));
@@ -4185,7 +4190,7 @@ async function resolveMentions(prompt: string): Promise<{ content: string; skill
 async function runScheduledWorkflow(job: HostDueJob["dueJob"]) {
   if (workflowRuns.has(job.threadId)) throw new Error("This workflow is already running.");
   const controller = new AbortController();
-  workflowRuns.set(job.threadId, controller);
+  workflowRuns.set(job.threadId, { jobId: job.jobId, controller });
   try {
     const startupError = await runtimeReady;
     if (startupError) throw new Error(startupError);
@@ -6093,7 +6098,7 @@ app.on("before-quit", (event) => {
   });
 });
 app.on("will-quit", (event) => {
-  for (const controller of workflowRuns.values()) controller.abort();
+  for (const run of workflowRuns.values()) run.controller.abort();
   bridge?.stop();
   semanticGrep.stop();
   globalShortcut.unregisterAll();

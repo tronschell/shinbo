@@ -542,7 +542,7 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
         trigger: { type: "string", description: "Cron, \"manual\", \"after <job-id>\", \"on launch\", or \"on note-kept\"." },
         prompt: { type: "string", description: "What the task does, for a one-step task. Also the summary shown for a graph." },
         nodes: { type: "string", description: "The node graph as a JSON array. Omit for a one-step task that just runs prompt." },
-        permissionMode: { type: "string", enum: ["ask", "acceptEdits", "full"], description: "What the unattended run may do. In \"ask\" mode each gated call raises the permission dialog in the main window, opening it if needed, and counts as refused if nobody answers within ten minutes." },
+        permissionMode: { type: "string", enum: ["ask", "acceptEdits", "auto", "full"], description: "What the unattended run may do. In \"auto\" mode a verifier clears ordinary gated calls and anything it blocks or cannot judge raises the dialog. In \"ask\" mode each gated call raises the permission dialog in the main window, opening it if needed, and counts as refused if nobody answers within ten minutes." },
         model: { type: "string", description: "The model every run of this task uses, as \"openrouter:<model-id>\". Omit or send empty to run on whichever model the app is set to." },
         variables: { type: "string", description: "A JSON object of starting variables, for run and test." },
       },
