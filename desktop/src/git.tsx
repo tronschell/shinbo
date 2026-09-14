@@ -47,23 +47,26 @@ export type GitState = { snapshot: GitSnapshot | null; ready: GitReady };
 
 const NO_GIT_STATE: GitState = { snapshot: null, ready: "no-repo" };
 
-export function useGit(folderId: string | undefined, sending: boolean): GitState {
+export const GIT_CHANGED_EVENT = "shinbo-git-changed";
+
+export function useGit(folderId: string | undefined, sending: boolean, includeDiff = false): GitState {
   const [state, setState] = useState<GitState>(NO_GIT_STATE);
   useEffect(() => {
     if (!folderId) return;
     let active = true;
-    const load = () => void window.shinbo.gitStatus(folderId)
+    const load = () => void window.shinbo.gitStatus(folderId, includeDiff)
       .then(async (snapshot) => {
         if (!active) return;
         if (snapshot) { setState({ snapshot, ready: "ready" }); return; }
-        const ready = await window.shinbo.gitReady(folderId).catch(() => "no-repo" as GitReady);
+        const ready = await window.shinbo.gitReady(folderId).catch((reason: unknown) => ({ error: reasonText(reason) }));
         if (active) setState({ snapshot: null, ready });
       })
-      .catch(() => { if (active) setState(NO_GIT_STATE); });
+      .catch((reason: unknown) => { if (active) setState({ snapshot: null, ready: { error: reasonText(reason) } }); });
     load();
     const listener = window.shinbo.onChanged(load);
-    return () => { active = false; window.shinbo.offChanged(listener); };
-  }, [folderId, sending]);
+    addEventListener(GIT_CHANGED_EVENT, load);
+    return () => { active = false; window.shinbo.offChanged(listener); removeEventListener(GIT_CHANGED_EVENT, load); };
+  }, [folderId, sending, includeDiff]);
   return folderId ? state : NO_GIT_STATE;
 }
 
@@ -80,7 +83,9 @@ export function GitSetup({ ready, folderId }: { ready: GitReady; folderId: strin
       <span className="git-setup-mark" aria-hidden>⑂</span>
       {ready === "no-git"
         ? <><h2>Git is not installed</h2><code>{GIT_INSTALL_COMMAND}</code></>
-        : <><h2>No repository here yet</h2><button type="button" className="git-do" disabled={busy} onClick={init}>{busy ? "Starting…" : "git init"}</button></>}
+        : typeof ready === "object"
+          ? <><h2>Git could not read this folder</h2><code>{ready.error}</code></>
+          : <><h2>No repository here yet</h2><button type="button" className="git-do" disabled={busy} onClick={init}>{busy ? "Starting…" : "git init"}</button></>}
       {error && <p className="git-commit-error" role="alert">{error}</p>}
     </div>
   </div>;
@@ -96,7 +101,8 @@ function pickHighlight() {
 }
 
 export function GitPanel({ snapshot, folderId, full, onOpen }: { snapshot: GitSnapshot; folderId?: string; full?: boolean; onOpen?: () => void }) {
-  const files = useMemo(() => parseDiff(snapshot.diff, full ? Infinity : MAX_DIFF_LINES), [snapshot.diff, full]);
+  const diffs = useMemo(() => new Map(parseDiff(snapshot.diff, full ? Infinity : MAX_DIFF_LINES).map((file) => [file.path, file])), [snapshot.diff, full]);
+  const files = snapshot.files.map((file) => diffs.get(file.path) ?? { path: file.path, added: 0, removed: 0, lines: [] });
   const total = files.reduce((sum, file) => ({ added: sum.added + file.added, removed: sum.removed + file.removed }), { added: 0, removed: 0 });
   return <div className={`git-panel ${full ? "git-page" : ""}`} onMouseUp={pickHighlight}>
     <section className="git-head">
@@ -105,7 +111,7 @@ export function GitPanel({ snapshot, folderId, full, onOpen }: { snapshot: GitSn
       {onOpen && <button type="button" className="git-expand" title="Open the full diff in a tab" aria-label="Open the full diff in a tab" onClick={onOpen}>⤢</button>}
       <small>{files.length ? `${files.length} ${plural(files.length, "file")} uncommitted` : "Working tree clean"}</small>
       {files.length > 0 && <ChangeCount stat={total} />}
-      {snapshot.truncated && <small>Diff cut at its size limit — later files are not listed.</small>}
+      {snapshot.truncated && <small>Diff cut at its size limit — later files show no diff.</small>}
     </section>
     {files.map((file) => <details className="git-file" data-path={file.path} key={file.path} open={full}>
       <summary>
@@ -117,6 +123,7 @@ export function GitPanel({ snapshot, folderId, full, onOpen }: { snapshot: GitSn
       </summary>
       <pre className="diff">{file.lines.map((line, index) => <span key={index}
         className={line.kind === "+" ? "added" : line.kind === "-" ? "removed" : line.kind === "@" ? "hunk" : undefined}>{line.kind === "@" ? "" : line.kind}{line.text}{"\n"}</span>)}
+        {!file.lines.length && <span>{!snapshot.diff || (snapshot.truncated && !diffs.has(file.path)) ? "Diff not loaded" : "No text diff — binary, empty, or mode-only change"}</span>}
         {!full && file.lines.length >= MAX_DIFF_LINES && <span>… truncated at {MAX_DIFF_LINES} lines — open the Git tab for the rest</span>}</pre>
     </details>)}
   </div>;
@@ -208,11 +215,12 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
     return next;
   });
 
+  const changed = () => { reload(); loadHistory(0); dispatchEvent(new Event(GIT_CHANGED_EVENT)); };
   const branchTo = (branch: string, create: boolean, from?: string) => {
     if (!branch.trim()) return;
     setError("");
     void window.shinbo.setBranch({ folderId, branch: branch.trim(), create, from: from && from !== live.branch ? from : undefined })
-      .then(() => { reload(); loadHistory(0); })
+      .then(() => { changed(); })
       .catch((reason: unknown) => setError(reasonText(reason)))
       .finally(() => { setBranchOpen(false); setNaming(false); setDraft(""); });
   };
@@ -221,7 +229,7 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
     event.preventDefault();
     setBusy(true); setError("");
     void window.shinbo.gitCommit({ folderId, message, paths: selected, amend })
-      .then(() => { setMessage(""); setAmend(false); reload(); loadHistory(0); })
+      .then(() => { setMessage(""); setAmend(false); changed(); })
       .catch((reason: unknown) => setError(reasonText(reason)))
       .finally(() => setBusy(false));
   };
@@ -230,7 +238,7 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
     if (!selected.length || !confirm(`Throw away the changes in ${selected.length} ${plural(selected.length, "file")}? This cannot be undone.`)) return;
     setBusy(true); setError("");
     void window.shinbo.gitDiscard({ folderId, paths: selected })
-      .then(reload)
+      .then(changed)
       .catch((reason: unknown) => setError(reasonText(reason)))
       .finally(() => setBusy(false));
   };
@@ -241,6 +249,15 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
       .then(setMessage)
       .catch((reason: unknown) => setError(reasonText(reason)))
       .finally(() => setBusy(false));
+  };
+
+  const sync = (direction: "push" | "pull") => {
+    setBusy(true); setError("");
+    const request = direction === "push" ? window.shinbo.gitPush({ folderId, setUpstream: !live.upstream }) : window.shinbo.gitPull({ folderId });
+    void request
+      .then((result) => { if (!result.ok) setError(result.output || `git ${direction} failed`); })
+      .catch((reason: unknown) => setError(reasonText(reason)))
+      .finally(() => { setBusy(false); changed(); });
   };
 
   const print = (text: string) => setOutput((current) => `${current}${current ? "\n" : ""}${text}`.slice(-CONSOLE_LIMIT));
@@ -254,7 +271,7 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
     void window.shinbo.gitRun({ folderId, args })
       .then((result) => print(`$ git ${args.join(" ")}\n${result.output.trim() || (result.ok ? "(no output)" : "(failed with no output)")}`))
       .catch((reason: unknown) => print(`$ git ${args.join(" ")}\n${reasonText(reason)}`))
-      .finally(() => { reload(); loadHistory(0); });
+      .finally(() => { changed(); });
   };
 
   const dirty = message.trim().length > 0;
@@ -284,6 +301,10 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
       {live.worktree && <span className="git-worktree" title="A checkout beside the folder itself">worktree</span>}
       <span className="git-head" title={live.head}>{live.head.slice(0, 7)}</span>
       <span className="git-spacer" />
+      {live.remotes.length > 0 && <>
+        <button type="button" className="git-do" disabled={busy} title={live.upstream ? `Push to ${live.upstream}` : "Push and set the upstream branch"} onClick={() => sync("push")}>Push</button>
+        <button type="button" className="git-do" disabled={busy || !live.upstream} title={live.upstream ? `Pull from ${live.upstream}` : "No upstream branch to pull from"} onClick={() => sync("pull")}>Pull</button>
+      </>}
       <OpenIn folderId={folderId} />
     </header>
     <div className="git-body" style={{ "--git-side-height": `${sideHeight}px`, "--git-files-height": `${filesHeight}px` } as CSSProperties}>
@@ -381,7 +402,7 @@ export function GitPage({ snapshot, folderId, brand }: { snapshot: GitSnapshot; 
             <pre className="diff">{file.lines.map((line, index) => <span key={index}
               className={line.kind === "+" ? "added" : line.kind === "-" ? "removed" : line.kind === "@" ? "hunk" : undefined}>{line.kind === "@" ? "" : line.kind}{line.text}{"\n"}</span>)}</pre>
           </details>)}
-          {live.truncated && <p>Diff cut at its size limit — later files are not listed.</p>}
+          {live.truncated && <p>Diff cut at its size limit — later files show no diff.</p>}
         </div>}
         {view === "console" && <div className="git-console">
           <form className="git-console-form" onSubmit={run}>

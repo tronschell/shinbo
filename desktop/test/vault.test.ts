@@ -133,17 +133,16 @@ test("a vault that has moved is said out loud, never recreated underneath the us
   assert.deepEqual((await listNotes(moved)).map((item) => item.title), ["Kept"]);
 });
 
-test("a knowledge folder deleted under a vault that is still there is said out loud, never recreated", async () => {
+test("a knowledge folder deleted under a vault that is still there is created again on demand", async () => {
   const vault = workspace();
-  const note = await keepNote(vault, { kind: "note", title: "Kept", text: "body" });
+  await keepNote(vault, { kind: "note", title: "Kept", text: "body" });
   rmSync(noteFolder(vault), { recursive: true });
-  await assert.rejects(listNotes(vault), /is not at .* any more/);
-  assert.throws(() => listNoteFolders(vault), /is not at .* any more/);
-  assert.throws(() => noteInVault(vault, note.relative), /is not at .* any more/);
-  await assert.rejects(keepNote(vault, { kind: "note", title: "Later", text: "body" }), /is not at .* any more/);
-  assert.equal(vaultWritable(vault), false);
-  assert.equal(existsSync(noteFolder(vault)), false);
-  assert.deepEqual(readdirSync(vault.root), []);
+  assert.deepEqual(await listNotes(vault), []);
+  assert.equal(existsSync(noteFolder(vault)), true);
+  assert.deepEqual(listNoteFolders(vault), []);
+  assert.equal(vaultWritable(vault), true);
+  const later = await keepNote(vault, { kind: "note", title: "Later", text: "body" });
+  assert.deepEqual((await listNotes(vault)).map((item) => item.relative), [later.relative]);
 });
 
 test("a note is named relative to the guarded folder, and nothing outside it is a note", async () => {

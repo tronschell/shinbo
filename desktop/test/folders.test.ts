@@ -122,6 +122,19 @@ test("the context block drops whole sections once its budget is gone", () => {
   assert.equal(contextBlock([]), "");
 });
 
+test("an oversized section is truncated to the remaining budget and says so", () => {
+  const block = contextBlock([{ heading: "Log", body: "x".repeat(2000) }, { heading: "Rows", body: "y".repeat(2000) }], 1000);
+  assert.ok(block.length <= 1000, String(block.length));
+  const kept = Number(/\(truncated at (\d+) chars\)/.exec(block)?.[1]);
+  assert.ok(kept >= 256 && kept < 2000, String(kept));
+  assert.match(block, new RegExp(`## Log\\nx{${kept}}\\n\\(truncated at ${kept} chars\\)`));
+  assert.doesNotMatch(block, /## Rows/);
+  assert.match(block, /1 more attachment omitted/);
+  const whole = contextBlock([{ heading: "Small", body: "ok" }]);
+  assert.match(whole, /## Small\nok$/);
+  assert.doesNotMatch(whole, /truncated/);
+});
+
 test("merged context stays inside the host's skill-context ceiling", () => {
   assert.equal(mergeSkillContext("files", "skill"), "files\n\nskill");
   assert.ok(new TextEncoder().encode(mergeSkillContext("x".repeat(90_000), "y".repeat(90_000))).length <= 64 * 1024);

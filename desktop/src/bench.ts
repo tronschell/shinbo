@@ -7,14 +7,33 @@ import { scopeApplies, scopeLabel } from "../shared/prompts";
 
 const KEY = "shinbo.bench.v1";
 
+const listeners = new Set<() => void>();
+let held: Bench | undefined;
+let progress: BenchProgress | null = null;
+
+const notify = () => { for (const listener of listeners) listener(); };
+
+export function subscribeBench(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+export function benchProgress(): BenchProgress | null {
+  return progress;
+}
+
 export function readBench(): Bench {
-  try { return validateBench(JSON.parse(localStorage.getItem(KEY) ?? "null")); }
-  catch { return { cases: [], runs: [] }; }
+  if (held) return held;
+  try { held = validateBench(JSON.parse(localStorage.getItem(KEY) ?? "null")); }
+  catch { held = { cases: [], runs: [] }; }
+  return held;
 }
 
 export function saveBench(next: Bench): Bench {
   const valid = validateBench(next);
   localStorage.setItem(KEY, JSON.stringify(valid));
+  held = valid;
+  notify();
   return valid;
 }
 
@@ -52,11 +71,6 @@ export function addBenchCase(input: { title: string; prompt: string; folderId: s
   return { id, store };
 }
 
-function store(input: { onStore?: (store: Bench) => void }, next: Bench): void {
-  const saved = saveBench(next);
-  input.onStore?.(saved);
-}
-
 export function startBench(input: {
   cases: readonly BenchCase[];
   metric: BenchMetric;
@@ -68,8 +82,6 @@ export function startBench(input: {
   caseMinutes?: number;
   describe?: { label?: string; brand?: string };
   judge?: VerifierSettings;
-  onStore?: (store: Bench) => void;
-  onProgress?: (progress: BenchProgress | null) => void;
   onJudgeError?: (note: string) => void;
 }): { runId: string; finished: Promise<void> } {
   const current = readBench();
@@ -99,20 +111,20 @@ export function startBench(input: {
   };
   const patch = (runId: string, next: (row: BenchRun) => BenchRun) => {
     const held = readBench();
-    store(input, { ...held, runs: held.runs.map((row) => row.id === runId ? next(row) : row) });
+    saveBench({ ...held, runs: held.runs.map((row) => row.id === runId ? next(row) : row) });
   };
-  store(input, { ...current, runs: [...current.runs, run] });
+  saveBench({ ...current, runs: [...current.runs, run] });
   const finished = driveBench({
     run,
     cases: input.cases,
     ...(input.judge ? { judge: input.judge } : {}),
     onThread: (runId, threadId) => patch(runId, (row) => ({ ...row, threads: [...row.threads, threadId] })),
     onResult: (runId, value) => patch(runId, (row) => ({ ...row, results: [...row.results, value] })),
-    onProgress: (progress) => input.onProgress?.(progress),
+    onProgress: (next) => { progress = next; notify(); },
     onJudgeError: (note) => input.onJudgeError?.(note),
   }).finally(() => {
+    progress = null;
     patch(run.id, (row) => ({ ...row, state: runComplete(row) ? "done" : "stopped", finishedAt: Date.now() }));
-    input.onProgress?.(null);
   });
   return { runId: run.id, finished };
 }

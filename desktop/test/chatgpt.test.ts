@@ -46,6 +46,9 @@ test("only a ChatGPT plan sign-in is accepted", () => {
   const claims = Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acct-2" } })).toString("base64url");
   assert.deepEqual(readChatgptAuth({ tokens: { access_token: "a.b.c", account_id: "acct-1" } }), { accessToken: "a.b.c", accountId: "acct-1" });
   assert.equal(readChatgptAuth({ tokens: { access_token: `head.${claims}.sig` } }).accountId, "acct-2");
+  const expired = Buffer.from(JSON.stringify({ exp: 1_000 })).toString("base64url");
+  assert.throws(() => readChatgptAuth({ tokens: { access_token: `head.${expired}.sig`, account_id: "acct-1" } }, 1_000_001), /expired/);
+  assert.equal(readChatgptAuth({ tokens: { access_token: `head.${expired}.sig`, account_id: "acct-1" } }, 999_999).accountId, "acct-1");
 });
 
 test("a chat completion becomes a stored-free responses call", () => {

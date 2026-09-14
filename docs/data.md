@@ -162,7 +162,7 @@ Every write is atomic: temp file, then rename.
 
 ```markdown
 ---
-shinbo-thread-format: 13
+shinbo-thread-format: 15
 id: "1787453493-cbe6-18ce4f7b7b4713c8-0"
 title: "New thread"
 parent-thread-id: ""
@@ -176,7 +176,7 @@ trace-count: 0
 ---
 ```
 
-Format is `13` ([thread.rs:108](../crates/core/src/thread.rs#L108)); a file
+Format is `15` ([thread.rs:108](../crates/core/src/thread.rs#L108)); a file
 claiming a higher one is rejected. A thread pursuing a goal carries twelve more
 front-matter keys between `archived-at` and `message-count` — `goal-objective`,
 `goal-status`, `goal-evidence`, `goal-blocked-reason`, `goal-blocked-streak`,
@@ -184,8 +184,12 @@ front-matter keys between `archived-at` and `message-count` — `goal-objective`
 `goal-time-used-seconds`, `goal-turns`, `goal-created-at` and `goal-updated-at`
 — and a thread without one carries none of them ([goals.md](goals.md)). Messages carry `Role:`, `Time:`,
 `Generation: present|none` and, when a model produced them, `Output-Tokens:`,
-`Duration-Milliseconds:`, `Input-Tokens:`, `Model:`, then the quoted content.
-There are no `knowledge-base-id` fields any more.
+`Duration-Milliseconds:`, `Input-Tokens:`, `Cache-Read-Tokens:`,
+`Cache-Input-Tokens:`, `Cache-Write-Tokens:`, `Cost-Micro-Usd:` (the last four
+empty when unknown), `Model:`, then the quoted content.
+There are no `knowledge-base-id` fields any more. A thread whose `archived-at`
+is more than 30 days old is deleted by the host's 30-second sweep
+([live.rs:22](../crates/core/src/live.rs#L22)).
 
 Scheduled jobs are `shinbo-scheduled-job-format: 4`.
 

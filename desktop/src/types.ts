@@ -156,6 +156,7 @@ export interface AgentImportSource {
   skills: number;
   mcpConfigs: number;
   locations: string[];
+  registered: boolean;
 }
 
 export interface ImportedSkill {
@@ -194,6 +195,7 @@ export interface BrowserTab {
   title: string;
   favicon?: string;
   loading: boolean;
+  error?: string;
 }
 
 export interface BrowserStatus {
@@ -201,6 +203,7 @@ export interface BrowserStatus {
   url?: string;
   title?: string;
   loading: boolean;
+  error?: string;
   canGoBack: boolean;
   canGoForward: boolean;
   activeTab?: string;
@@ -234,17 +237,18 @@ declare global {
       movePill(value: { x: number; y: number }): void;
       expandPill(): void;
       dismissOverlay(): void;
-      openWorkspace(settingsPage?: string): void;
+      openWorkspace(settingsPage?: string, threadId?: string): void;
       resyncWindow(): void;
       voiceStatus(settings: VoiceSettings): Promise<VoiceStatus>;
       transcribe(value: { audio: ArrayBuffer; mimeType: string; settings: VoiceSettings }): Promise<{ text: string; raw: string }>;
       onOpenSettings(listener: (page: string) => void): () => void;
+      onSelectThread(listener: (threadId: string) => void): () => void;
       sendQuickCommand(value: string): void;
       onQuickCommand(listener: (value: string) => void): () => void;
       onNewQuickSession(listener: () => void): () => void;
       onNotchHover(listener: (value: boolean) => void): () => void;
       updateReady(): Promise<string>;
-      installUpdate(): Promise<void>;
+      installUpdate(): Promise<string>;
       onUpdateReady(listener: (value: string) => void): () => void;
       onActivity(listener: (value: { threadId: string }) => void): () => void;
       onDelta(listener: (value: { threadId: string; delta: string; thinking?: boolean; recovery?: boolean }) => void): () => void;
@@ -310,6 +314,7 @@ declare global {
       exportBench(value: { name: string; sheets: { name: string; rows: (string | number)[][] }[] }): Promise<string>;
       exportThreadStats(value: { folder: string; files: { name: string; text: string }[] }): Promise<string>;
       listFolders(): Promise<FolderGrant[]>;
+      onFoldersChanged(listener: () => void): () => void;
       pluginCatalog(): Promise<PluginCatalog>;
       addMarketplace(value: { source: string; ref: string; sparse: string }): Promise<PluginCatalog>;
       removeMarketplace(id: string): Promise<PluginCatalog>;
@@ -329,6 +334,8 @@ declare global {
       gitDiscard(value: { folderId: string; paths: string[] }): Promise<void>;
       gitRun(value: { folderId: string; args: string[] }): Promise<GitCommandResult>;
       gitMessage(value: { folderId: string }): Promise<string>;
+      gitPush(value: { folderId: string; setUpstream?: boolean }): Promise<GitCommandResult>;
+      gitPull(value: { folderId: string }): Promise<GitCommandResult>;
       machineSample(): Promise<MachineSample>;
       listEditors(): Promise<EditorApp[]>;
       openInEditor(value: { folderId?: string; path: string; editorId: string }): Promise<void>;
@@ -338,7 +345,7 @@ declare global {
       worktreeRemove(value: { folderId: string; paths: string[] }): Promise<void>;
       setBranch(value: { folderId: string; branch: string; create: boolean; from?: string }): Promise<void>;
       readFolderFile(value: { folderId: string; path: string }): Promise<{ path: string; text: string; missing?: boolean }>;
-      attachFiles(): Promise<HeldAttachment[]>;
+      attachFiles(): Promise<{ picked: HeldAttachment[]; failed: string[] }>;
       attachData(value: { name: string; data: ArrayBuffer }): Promise<HeldAttachment>;
       readAttachment(id: string): Promise<HeldAttachment & { text?: string }>;
       clearThreadContext(threadId: string): Promise<void>;
@@ -433,7 +440,7 @@ declare global {
       threadChanges(threadId: string): Promise<FileChange[]>;
       revertChange(value: { folderId: string; path: string; before: string }): Promise<void>;
       onAgents(listener: (value: LiveAgent[]) => void): () => void;
-      onSpans(listener: (value: Record<string, TraceSpan[]>) => void): () => void;
+      onSpans(listener: () => void): () => void;
       onPermissionAsk(listener: (value: PermissionAsk) => void): () => void;
       onPermissionResolved(listener: (value: { id: string; allowed: boolean }) => void): () => void;
       setZeroRetention(value: boolean): Promise<void>;

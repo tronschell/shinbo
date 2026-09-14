@@ -33,10 +33,11 @@ export function useContextLedger(thread: Thread | undefined, uses: ContextUse[],
 
 export function useThreadCalls(threadId: string | undefined, sending: boolean): number {
   const [counted, setCounted] = useState<{ threadId: string; calls: number }>();
+  const fetched = useRef<string>(undefined);
   useEffect(() => {
-    if (!threadId) return;
+    if (!threadId || (sending && fetched.current === threadId)) return;
     let alive = true;
-    const take = (calls: number) => { if (alive) setCounted({ threadId, calls }); };
+    const take = (calls: number) => { if (alive) { fetched.current = threadId; setCounted({ threadId, calls }); } };
     void window.shinbo.threadTraces(threadId)
       .then((traces) => take(traces.reduce((sum, trace) => sum + countCalls(decodeSpans(trace.text)), 0)))
       .catch(() => take(0));

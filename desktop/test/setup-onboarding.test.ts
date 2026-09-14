@@ -17,13 +17,13 @@ function binding(file: ts.SourceFile, owner: string | null, name: string) {
   return ts.transpile(`(${node.getText(file)})`, { target: ts.ScriptTarget.ES2022 });
 }
 
-test("onboarding requires a verified OpenRouter key even when subscriptions are connected", async () => {
+test("onboarding needs a stored OpenRouter key that is not rejected, even when subscriptions are connected", async () => {
   const key: KeyBalance = { keyed: true, freeTier: true, remaining: 0, usage: 0, error: "" };
   const state = createContext({
     balance: null as KeyBalance | null, checking: false, saving: false, error: "", stored: [], drafts: { OPENROUTER_API_KEY: "invalid" }, OPENROUTER_ENV: "OPENROUTER_API_KEY",
     reasonText: (reason: Error) => reason.message,
     window: { shinbo: {
-      saveCredential: async () => [{ env: "OPENROUTER_API_KEY", masked: "key", readable: true }],
+      saveCredential: async ({ env }: { env: string }) => [{ env, masked: "key", readable: true }],
       openRouterBalance: async () => ({ ...key, error: "OpenRouter rejected that key." }),
     } },
   });
@@ -50,13 +50,15 @@ test("onboarding requires a verified OpenRouter key even when subscriptions are 
   state.checking = false;
   state.window.shinbo.openRouterBalance = async () => { throw new Error("Offline"); };
   await verify();
-  assert.equal(ready(), false);
+  assert.equal(ready(), true);
   assert.equal(state.error, "Offline");
   state.window.shinbo.saveCredential = async () => { throw new Error("Credential store locked"); };
   await state.saveKey("OPENROUTER_API_KEY", "replacement");
-  assert.equal(ready(), false);
+  assert.equal(ready(), true);
   assert.equal(state.saving, false);
   assert.equal(state.error, "Credential store locked");
+  state.stored = [];
+  assert.equal(ready(), false);
 });
 
 test("onboarding offers every subscription with no preselected provider", () => {
@@ -74,11 +76,16 @@ test("onboarding cannot advance or finish before verification and saves its resu
   let page = 0;
   const state = createContext({ ready: false, busy: false, SETUP_STEP_KEY: "step", localStorage: { setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) }, setPage: (value: number) => { page = value; }, setError() {}, close: () => { finished = true; } });
   const move = runInContext(binding(app, "SetupDialog", "move"), state);
+  state.skip = runInContext(binding(app, "SetupDialog", "skip"), state);
   const finish = runInContext(binding(app, "SetupDialog", "finish"), state);
   move(1);
   finish();
   assert.equal(page, 0);
   assert.equal(finished, false);
+  state.busy = true;
+  state.skip();
+  assert.equal(finished, false);
+  state.busy = false;
   state.ready = true;
   move(1);
   assert.equal(page, 1);
@@ -88,6 +95,12 @@ test("onboarding cannot advance or finish before verification and saves its resu
   assert.equal(finished, false);
   state.busy = false;
   finish();
+  assert.equal(finished, true);
+  assert.equal(values.has("step"), false);
+  finished = false;
+  state.ready = false;
+  values.set("step", "1");
+  state.skip();
   assert.equal(finished, true);
   assert.equal(values.has("step"), false);
 });

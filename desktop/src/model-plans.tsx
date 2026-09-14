@@ -117,7 +117,7 @@ export function ProviderGrid({ busy, onReady, onAddProvider }: { busy: boolean; 
     window.addEventListener("focus", readClis);
     return () => { active = false; window.removeEventListener("focus", readClis); };
   }, [readClis]);
-  const ready = !!balance?.keyed && !balance.error && !checking && !saving;
+  const ready = (stored.some((item) => item.env === OPENROUTER_ENV && item.masked) || !!balance?.keyed) && !balance?.error && !checking && !saving;
   useEffect(() => { onReady(ready); }, [ready, onReady]);
   const connected = (tile: ProviderTile) => tile.cli ? clis.some((item) => item.id === tile.cli?.id && item.signedIn) : stored.some((item) => item.env === tile.plan?.credentialEnv && item.masked);
   const saveKey = async (env: string, secret?: string) => {

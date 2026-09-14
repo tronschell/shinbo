@@ -35,6 +35,12 @@ test("listing notes yields while reading bodies and preserves complete metadata 
   assert.match(notes[0].excerpt!, /^Body text\./);
   fs.writeFileSync(path.join(folder, "Research", "note-39.md"), text(39).replace("Note 39", "Edited 39"));
   assert.equal((await listNotes(vault))[0].title, "Edited 39 日本語");
+  const reads = t.mock.method(fs.promises, "readFile");
+  assert.equal((await listNotes(vault)).length, 40);
+  assert.equal(reads.mock.callCount(), 0);
   fs.rmSync(folder, { recursive: true });
+  assert.deepEqual(await listNotes(vault), []);
+  assert.equal(fs.existsSync(folder), true);
+  fs.rmSync(root, { recursive: true });
   await assert.rejects(listNotes(vault), /is not at .* any more/);
 });

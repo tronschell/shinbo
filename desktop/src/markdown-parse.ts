@@ -11,8 +11,8 @@ export interface Span {
   image?: true;
 }
 
-export interface Item { spans: Span[]; sub?: List; checked?: boolean }
-export interface List { ordered: boolean; items: Item[] }
+export interface Item { spans: Span[]; sub?: List[]; checked?: boolean }
+export interface List { ordered: boolean; items: Item[]; start?: number }
 export type Row = Span[][];
 
 export type Block =
@@ -26,8 +26,8 @@ export type Block =
 
 
 
-const INLINE = /`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__|~~([^~]+)~~|\*([^*]+)\*|_([^_]+)_|(!?)\[([^\]]{0,512})\]\(([^)\s]{1,2048})\)|(https?:\/\/[^\s<>()[\]]{0,2048}[^\s<>()[\].,;:!?'"])/g;
-const FENCE = /^\s{0,3}(?:```|~~~)\s*([\w+#.-]*)/;
+const INLINE = /\\(?<escaped>[\\`*_~[\]()#|])|(?<tick>`{1,3})(?<code>(?:(?!\k<tick>)[\s\S])+?)\k<tick>|\*\*\*(?=\S)(?<both>[^*]+?)(?<=\S)\*\*\*|\*\*(?=\S)(?<strong>[^*]+?)(?<=\S)\*\*|(?<![\w_])__(?=\S)(?<strong2>[^_]+?)(?<=\S)__(?![\w_])|~~(?<strike>[^~]+)~~|(?<![\w*])\*(?=\S)(?<emphasis>[^*]+?)(?<=\S)\*(?![\w*])|(?<![\w_])_(?=\S)(?<emphasis2>[^_]+?)(?<=\S)_(?![\w_])|(?<bang>!?)\[(?<label>[^\]]{0,512})\]\((?<target>(?:[^()\s]|\([^()\s]*\)){1,2048})(?:\s+"[^"]*")?\)|(?<bare>https?:\/\/[^\s<>()[\]]{0,2048}[^\s<>()[\].,;:!?'"])/g;
+const FENCE = /^(\s{0,3})(`{3,}|~{3,})\s*([\w+#.-]*)/;
 const HEADING = /^\s{0,3}(#{1,6})\s+/;
 const RULE = /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/;
 const BULLET = /^(\s*)(?:[-*+]|(\d+)[.)])\s+(.*)$/;
@@ -59,19 +59,23 @@ export function inlineSpans(text: string): Span[] {
     const at = match.index;
     if (at > last) spans.push({ text: text.slice(last, at) });
     last = at + match[0].length;
-    const strong = match[2] ?? match[3];
-    const emphasis = match[5] ?? match[6];
-    const bare = match[10] ? safeHref(match[10]) : undefined;
-    if (match[10]) spans.push(bare ? { text: match[10], href: bare } : { text: match[10] });
-    else if (match[1]) spans.push({ text: match[1], code: true, path: filePath(match[1]) });
+    const found: Partial<Record<string, string>> = match.groups ?? {};
+    const strong = found.strong ?? found.strong2;
+    const emphasis = found.emphasis ?? found.emphasis2;
+    const bare = found.bare ? safeHref(found.bare) : undefined;
+    if (found.escaped) spans.push({ text: found.escaped });
+    else if (found.bare) spans.push(bare ? { text: found.bare, href: bare } : { text: found.bare });
+    else if (found.code) spans.push({ text: found.code, code: true, path: filePath(found.code) });
+    else if (found.both) spans.push({ text: found.both, bold: true, italic: true });
     else if (strong) spans.push({ text: strong, bold: true });
-    else if (match[4]) spans.push({ text: match[4], strike: true });
+    else if (found.strike) spans.push({ text: found.strike, strike: true });
     else if (emphasis) spans.push({ text: emphasis, italic: true });
     else {
-      const href = safeHref(match[9]);
-      const file = href ? undefined : filePath(match[9]);
-      if (match[7] && file) spans.push({ text: match[8], path: file, image: true });
-      else spans.push(href ? { text: match[8], href } : file ? { text: match[8], path: file } : { text: match[8] });
+      const { target = "", label = "" } = found;
+      const href = safeHref(target);
+      const file = href ? undefined : filePath(target);
+      if (found.bang && file) spans.push({ text: label, path: file, image: true });
+      else spans.push(href ? { text: label, href } : file ? { text: label, path: file } : { text: label });
     }
   }
   if (last < text.length) spans.push({ text: text.slice(last) });
@@ -80,7 +84,16 @@ export function inlineSpans(text: string): Span[] {
 
 
 function cells(line: string): Span[][] {
-  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => inlineSpans(cell.trim()));
+  return line.trim().replace(/^\|/, "").replace(/(?<!\\)\|$/, "").split(/(?<!\\)\|(?=(?:[^`]*`[^`]*`)*[^`]*$)/).map((cell) => inlineSpans(cell.trim().replace(/\\\|/g, "|")));
+}
+
+function nest(list: List | undefined, indent: number): [List | undefined, Item | undefined] {
+  let owner: Item | undefined;
+  for (let depth = 2; depth <= indent && list; depth += 2) {
+    owner = list.items[list.items.length - 1];
+    list = owner.sub?.[owner.sub.length - 1];
+  }
+  return [list, owner];
 }
 
 export function parseBlocks(markdown: string): Block[] {
@@ -107,8 +120,10 @@ export function parseBlocks(markdown: string): Block[] {
     if (fence) {
       flush();
       const body: string[] = [];
-      for (index += 1; index < lines.length && !FENCE.test(lines[index]); index += 1) body.push(lines[index]);
-      blocks.push({ kind: "code", language: fence[1], text: body.join("\n") });
+      const close = new RegExp(`^\\s{0,3}${fence[2][0]}{${fence[2].length},}\\s*$`);
+      const strip = fence[1].length;
+      for (index += 1; index < lines.length && !close.test(lines[index]); index += 1) body.push(lines[index].replace(/^\s+/, (space) => space.slice(strip)));
+      blocks.push({ kind: "code", language: fence[3], text: body.join("\n") });
       continue;
     }
 
@@ -154,16 +169,19 @@ export function parseBlocks(markdown: string): Block[] {
       const task = ordered ? null : TASK.exec(bullet[3]);
       const made: Item = task ? { spans: inlineSpans(task[2]), checked: task[1] !== " " } : { spans: inlineSpans(bullet[3]) };
       const previous = blocks[blocks.length - 1];
-      if (previous?.kind === "list") {
-        const item = previous.items[previous.items.length - 1];
-        if (bullet[1].length >= 2) {
-          if (item.sub?.ordered === ordered) item.sub.items.push(made);
-          else item.sub = { ordered, items: [made] };
-          continue;
-        }
-        if (previous.ordered === ordered) { previous.items.push(made); continue; }
-      }
-      blocks.push({ kind: "list", ordered, items: [made] });
+      const start = ordered ? { start: Number(bullet[2]) } : {};
+      const [list, owner] = nest(previous?.kind === "list" ? previous : undefined, bullet[1].length);
+      if (list?.ordered === ordered) list.items.push(made);
+      else if (owner) (owner.sub ??= []).push({ ordered, items: [made], ...start });
+      else blocks.push({ kind: "list", ordered, items: [made], ...start });
+      continue;
+    }
+
+    const previous = blocks[blocks.length - 1];
+    const indent = line.length - line.trimStart().length;
+    if (previous?.kind === "list" && indent >= 2 && !paragraph.length && !quote.length) {
+      const [, item] = nest(previous, indent);
+      item?.spans.push(...inlineSpans("\n" + line.trim()));
       continue;
     }
 

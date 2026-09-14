@@ -51,7 +51,7 @@ function Prose({ text, embed }: { text: string; embed?: string }) {
     {strip && <div className="preview-meta">
       {kind && <em data-kind={kind}>{keepKindLabel(kind)}</em>}
       {saved && <time dateTime={saved}>{savedFormat(new Date(saved))}</time>}
-      {source && <a href={source} title={source}>{host(source)}</a>}
+      {source && <a href={source} title={source} target="_blank" rel="noreferrer">{host(source)}</a>}
       {tags.length > 0 && <span className="preview-tags">{tags.map((tag) => <span key={tag}>{tag}</span>)}</span>}
     </div>}
     {title && <h1>{title}</h1>}

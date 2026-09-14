@@ -12,12 +12,13 @@ import { MAX_TOOL_OUTPUT_BYTES } from "./tools";
 
 export const INSTALL_COMMAND = "npm install -g agent-browser && agent-browser install";
 
-export type BrowserTab = { id: string; url: string; title: string; favicon?: string; loading: boolean };
+export type BrowserTab = { id: string; url: string; title: string; favicon?: string; loading: boolean; error?: string };
 export type BrowserStatus = {
   running: boolean;
   url?: string;
   title?: string;
   loading: boolean;
+  error?: string;
   canGoBack: boolean;
   canGoForward: boolean;
   activeTab?: string;
@@ -45,9 +46,12 @@ const CLIP_KEYS = ["c", "x", "v"];
 const TRUNCATION_NOTICE = "\n[truncated — read less at a time: snapshot with interactive true, or narrow it with a selector]";
 const MAX_CURSOR_ACTIONS = 20;
 const MAX_CURSOR_LABEL = 80;
+const LOAD_MS = 30_000;
+const ABORTED = -3;
+const POINTERLESS = new Set(["snapshot", "get", "eval", "wait", "scroll", "screenshot"]);
 
 export type Ran = { text: string; code: number | null; signal: NodeJS.Signals | null };
-type Tab = { id: string; view: WebContentsView; targetId?: string; favicon?: string; iconRequest: number; point?: { x: number; y: number } };
+type Tab = { id: string; view: WebContentsView; targetId?: string; favicon?: string; iconRequest: number; point?: { x: number; y: number }; error?: string };
 type Session = { name: string; threadId: string; tabs: Tab[]; activeId?: string; bounds?: BrowserBounds; shown: boolean; connected?: Promise<void>; pinned?: string };
 type Driving = { session: Session; tab: Tab; action: string; actions: number };
 
@@ -70,6 +74,10 @@ export class Browsers {
     window.on("closed", () => {
       if (this.window === window) this.window = null;
     });
+    for (const session of this.sessions.values()) {
+      for (const tab of session.tabs) if (!tab.view.webContents.isDestroyed()) window.contentView.addChildView(tab.view);
+      this.layout(session);
+    }
   }
 
   status(threadId: string): BrowserStatus {
@@ -82,6 +90,7 @@ export class Browsers {
       url: contents.getURL() || undefined,
       title: contents.getTitle() || undefined,
       loading: contents.isLoading(),
+      error: active.error,
       canGoBack: contents.navigationHistory.canGoBack(),
       canGoForward: contents.navigationHistory.canGoForward(),
       activeTab: active.id,
@@ -91,6 +100,7 @@ export class Browsers {
         title: tab.view.webContents.getTitle(),
         favicon: tab.favicon,
         loading: tab.view.webContents.isLoading(),
+        error: tab.error,
       })),
     };
   }
@@ -100,7 +110,7 @@ export class Browsers {
     if (!target) throw new Error(`Shinbo's browser opens http and https addresses only, and ${url.slice(0, 120)} is neither.`);
     const session = this.session(threadId);
     const tab = this.active(session) ?? this.spawnTab(session);
-    await tab.view.webContents.loadURL(target.href).catch(() => undefined);
+    await this.load(session, tab, target.href);
     this.onChange();
     return this.status(threadId);
   }
@@ -111,7 +121,7 @@ export class Browsers {
     const tab = this.spawnTab(session);
     const target = url ? externalUrl(url) : null;
     if (url && !target) throw new Error(`Shinbo's browser opens http and https addresses only, and ${url.slice(0, 120)} is neither.`);
-    await tab.view.webContents.loadURL(target ? target.href : HOME).catch(() => undefined);
+    await this.load(session, tab, target ? target.href : HOME);
     this.onChange();
     return this.status(threadId);
   }
@@ -129,8 +139,7 @@ export class Browsers {
     const session = this.session(threadId);
     const index = session.tabs.findIndex((tab) => tab.id === tabId);
     if (index < 0) return this.status(threadId);
-    this.destroyTab(session, session.tabs[index]!);
-    session.tabs.splice(index, 1);
+    this.destroyTab(session, session.tabs.splice(index, 1)[0]!);
     if (session.activeId === tabId) session.activeId = session.tabs[Math.min(index, session.tabs.length - 1)]?.id;
     if (!session.tabs.length) this.forget(session);
     else this.layout(session);
@@ -142,8 +151,7 @@ export class Browsers {
     if (!NAVIGATIONS.includes(action)) throw new Error(`Shinbo's browser has no "${String(action).slice(0, 32)}" navigation.`);
     const session = this.session(threadId);
     if (action === "close") {
-      for (const tab of session.tabs) this.destroyTab(session, tab);
-      session.tabs = [];
+      for (const tab of session.tabs.splice(0)) this.destroyTab(session, tab);
       this.forget(session);
       this.onChange();
       return this.status(threadId);
@@ -201,7 +209,7 @@ export class Browsers {
     await this.pin(session, tab);
     this.drives = (this.drives + 1) % MAX_CURSOR_ACTIONS;
     this.driving = { session, tab, action: action ?? argv[0] ?? "working", actions: this.drives };
-    this.pointAt(tab);
+    if (!POINTERLESS.has(argv[0] ?? "")) this.pointAt(tab);
     try {
       return bounded((await this.exec(session, argv)).text);
     } finally {
@@ -212,8 +220,7 @@ export class Browsers {
 
   stopAll() {
     for (const session of this.sessions.values()) {
-      for (const tab of session.tabs) this.destroyTab(session, tab);
-      session.tabs = [];
+      for (const tab of session.tabs.splice(0)) this.destroyTab(session, tab);
       this.forget(session);
     }
   }
@@ -248,7 +255,7 @@ export class Browsers {
       setTimeout(rememberClip, CLIP_SETTLE_MS).unref();
     });
     contents.on("input-event", (_event, input) => {
-      if (input.type !== "mouseMove" && input.type !== "mouseDown") return;
+      if (input.type !== "mouseDown") return;
       const { x, y } = input as Electron.MouseInputEvent;
       this.pointAt(tab, { x, y });
     });
@@ -275,16 +282,47 @@ export class Browsers {
       this.layout(session);
       this.onChange();
     };
-    contents.on("did-navigate", changed);
+    contents.on("did-fail-load", (_event, code, description, _url, isMainFrame) => {
+      if (!isMainFrame || code === ABORTED) return;
+      tab.error = `This page could not be loaded: ${description || `error ${code}`}`;
+      changed();
+    });
+    contents.on("did-navigate", () => {
+      tab.error = undefined;
+      changed();
+    });
     contents.on("did-navigate-in-page", changed);
     contents.on("page-title-updated", changed);
     contents.on("did-start-loading", changed);
     contents.on("did-stop-loading", changed);
+    contents.once("destroyed", () => {
+      if (session.tabs.includes(tab)) this.closeTab(session.threadId, tab.id);
+    });
     session.tabs.push(tab);
     session.activeId = tab.id;
     this.window?.contentView.addChildView(view);
     this.layout(session);
     return tab;
+  }
+
+  private async load(session: Session, tab: Tab, url: string): Promise<void> {
+    const contents = tab.view.webContents;
+    let expired = false;
+    const timer = setTimeout(() => {
+      expired = true;
+      if (!contents.isDestroyed()) contents.stop();
+    }, LOAD_MS);
+    try {
+      await contents.loadURL(url);
+    } catch (error) {
+      if (expired) {
+        tab.error = `This page took longer than ${LOAD_MS / 1000}s to load.`;
+        this.layout(session);
+      }
+      throw new Error(`Could not open ${url.slice(0, 120)}: ${tab.error ?? (error instanceof Error ? error.message : String(error))}`, { cause: error });
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private pointAt(tab: Tab, point?: { x: number; y: number }) {
@@ -323,7 +361,7 @@ export class Browsers {
     const active = this.active(session);
     const zoom = this.window?.webContents.getZoomFactor() ?? 1;
     for (const tab of session.tabs) {
-      const shows = session.shown && !!session.bounds && tab.id === active?.id && !blankPage(tab.view.webContents.getURL());
+      const shows = session.shown && !!session.bounds && tab.id === active?.id && !tab.error && !blankPage(tab.view.webContents.getURL());
       tab.view.setVisible(shows);
       if (shows && session.bounds) tab.view.setBounds(whole(session.bounds, zoom));
     }

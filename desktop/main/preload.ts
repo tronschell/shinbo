@@ -36,7 +36,7 @@ contextBridge.exposeInMainWorld("shinbo", {
   movePill: (value: { x: number; y: number }) => ipcRenderer.send("shinbo:move-pill", value),
   expandPill: () => ipcRenderer.send("shinbo:expand-pill"),
   dismissOverlay: () => ipcRenderer.send("shinbo:dismiss-overlay"),
-  openWorkspace: (settingsPage?: string) => ipcRenderer.send("shinbo:open-workspace", settingsPage),
+  openWorkspace: (settingsPage?: string, threadId?: string) => ipcRenderer.send("shinbo:open-workspace", settingsPage, threadId),
   resyncWindow: () => ipcRenderer.send("shinbo:resync-window"),
   voiceStatus: (settings: unknown) => ipcRenderer.invoke("shinbo:voice-status", settings),
   transcribe: (value: { audio: ArrayBuffer; mimeType: string; settings: unknown }) => ipcRenderer.invoke("shinbo:transcribe", value),
@@ -44,6 +44,11 @@ contextBridge.exposeInMainWorld("shinbo", {
     const wrapped = (_event: unknown, value: unknown) => { if (typeof value === "string") listener(value); };
     ipcRenderer.on("shinbo:open-settings", wrapped);
     return () => ipcRenderer.removeListener("shinbo:open-settings", wrapped);
+  },
+  onSelectThread: (listener: (threadId: string) => void) => {
+    const wrapped = (_event: unknown, value: unknown) => { if (typeof value === "string") listener(value); };
+    ipcRenderer.on("shinbo:select-thread", wrapped);
+    return () => ipcRenderer.removeListener("shinbo:select-thread", wrapped);
   },
   sendQuickCommand: (value: string) => ipcRenderer.send("shinbo:quick-command", value),
   onQuickCommand: (listener: (value: string) => void) => {
@@ -183,6 +188,11 @@ contextBridge.exposeInMainWorld("shinbo", {
   exportBench: (value: { name: string; sheets: { name: string; rows: (string | number)[][] }[] }) => ipcRenderer.invoke("shinbo:export-bench", value),
   exportThreadStats: (value: { folder: string; files: { name: string; text: string }[] }) => ipcRenderer.invoke("shinbo:export-thread-stats", value),
   listFolders: () => ipcRenderer.invoke("shinbo:list-folders"),
+  onFoldersChanged: (listener: () => void) => {
+    const wrapped = () => listener();
+    ipcRenderer.on("shinbo:folders-changed", wrapped);
+    return () => ipcRenderer.removeListener("shinbo:folders-changed", wrapped);
+  },
   pluginCatalog: () => ipcRenderer.invoke("shinbo:plugin-catalog"),
   addMarketplace: (value: { source: string; ref: string; sparse: string }) => ipcRenderer.invoke("shinbo:add-marketplace", value),
   removeMarketplace: (id: string) => ipcRenderer.invoke("shinbo:remove-marketplace", id),
@@ -225,6 +235,8 @@ contextBridge.exposeInMainWorld("shinbo", {
   gitDiscard: (value: { folderId: string; paths: string[] }) => ipcRenderer.invoke("shinbo:git-discard", value),
   gitRun: (value: { folderId: string; args: string[] }) => ipcRenderer.invoke("shinbo:git-run", value),
   gitMessage: (value: { folderId: string }) => ipcRenderer.invoke("shinbo:git-message", value),
+  gitPush: (value: { folderId: string; setUpstream?: boolean }) => ipcRenderer.invoke("shinbo:git-push", value),
+  gitPull: (value: { folderId: string }) => ipcRenderer.invoke("shinbo:git-pull", value),
   mobileStatus: () => ipcRenderer.invoke("shinbo:mobile-status"),
   mobilePair: (pin: string) => ipcRenderer.invoke("shinbo:mobile-pair", pin),
   mobileCancelPair: () => ipcRenderer.invoke("shinbo:mobile-cancel-pair"),
@@ -404,10 +416,10 @@ contextBridge.exposeInMainWorld("shinbo", {
     ipcRenderer.on("shinbo:agents", wrapped);
     return () => ipcRenderer.removeListener("shinbo:agents", wrapped);
   },
-  onSpans: (listener: (value: Record<string, unknown[]>) => void) => {
-    const wrapped = (_event: unknown, value: unknown) => { if (value && typeof value === "object" && !Array.isArray(value)) listener(value as Record<string, unknown[]>); };
-    ipcRenderer.on("shinbo:spans", wrapped);
-    return () => ipcRenderer.removeListener("shinbo:spans", wrapped);
+  onSpans: (listener: () => void) => {
+    const wrapped = () => listener();
+    ipcRenderer.on("shinbo:spans-changed", wrapped);
+    return () => ipcRenderer.removeListener("shinbo:spans-changed", wrapped);
   },
   onPermissionAsk: (listener: (value: { id: string; threadId: string; tool: string; summary: string; detail: string }) => void) => {
     const wrapped = (_event: unknown, value: unknown) => { if (value && typeof value === "object") listener(value as { id: string; threadId: string; tool: string; summary: string; detail: string }); };

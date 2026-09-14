@@ -12,6 +12,7 @@ import { familiesOf, normalizeModel } from "../shared/prompts";
 import type { HarnessExperiments } from "../shared/settings";
 
 const MAX_ASK_MS = 10 * 60 * 1000;
+const MAX_FINISHED_RUNS = 32;
 const CHARS_PER_TOKEN = 4;
 const LIVE_REFRESH_MS = 250;
 const DISCOVERY = new Set(["search_tools", "select_tool", "mcp_search_tools", "mcp_select_tool"]);
@@ -113,7 +114,7 @@ export type LoopDeps = {
 
   stopped?(threadId: string): void;
   steer?(threadId: string, text: string): Promise<void>;
-  verify(request: VerifierRequest, threadId: string): Promise<VerifierReview>;
+  verify(request: VerifierRequest, threadId: string): Promise<VerifierReview | undefined>;
 
   advise(transcript: string, signal?: AbortSignal): Promise<Advice>;
 
@@ -158,11 +159,11 @@ export class AgentRuntime {
 
   constructor(private readonly deps: LoopDeps) {}
 
-  list(): LiveAgent[] {
+  list(withPrompt = true): LiveAgent[] {
     return [...this.runs.values()]
       .map((run): LiveAgent => ({
         threadId: run.threadId, parentThreadId: run.parentThreadId, title: run.title, color: run.color,
-        status: run.status, mode: run.mode, model: run.model, activity: run.activity, prompt: run.prompt,
+        status: run.status, mode: run.mode, model: run.model, activity: run.activity, ...(withPrompt ? { prompt: run.prompt } : {}),
         tool: run.spans.some((span) => span.id.startsWith("call:") && span.status === "running"),
         startedAt: run.startedAt, endedAt: run.endedAt, steps: run.steps, toolCalls: run.toolCalls,
         inputTokens: run.inputTokens, outputTokens: run.outputTokens, generationMs: run.generationMs, effort: run.effort, error: run.error,
@@ -600,7 +601,19 @@ export class AgentRuntime {
     }
     run.modelSpan = undefined;
     this.flushTrace(run);
+    this.evictFinished();
     this.deps.changed();
+  }
+
+  private evictFinished() {
+    const finished = [...this.runs.values()]
+      .filter((run) => run.depth === 0 && run.endedAt !== undefined && !run.changes.length)
+      .sort((left, right) => left.endedAt! - right.endedAt!);
+    for (const run of finished.slice(0, Math.max(0, finished.length - MAX_FINISHED_RUNS))) {
+      for (const [id, member] of this.runs) {
+        if ((id === run.threadId || member.parentThreadId === run.threadId) && member.endedAt !== undefined && !member.changes.length) this.runs.delete(id);
+      }
+    }
   }
 
   private async readTrace(turn: TurnRequest, thread: string | undefined, limit: number, offset = 0): Promise<string> {
@@ -773,7 +786,7 @@ export class AgentRuntime {
         void this.reviewed(run, ask).then((review) => {
           if (!this.asks.has(id)) return;
           if (!live()) { settle("denied"); return; }
-          if (run.mode === "auto") {
+          if (run.mode === "auto" && review) {
             if (review.verdict?.allow) { settle("allowed"); return; }
             const said = review.verdict ? `blocked this: ${review.verdict.reason || "no reason given"}` : `could not answer: ${review.error ?? "no verdict"}`;
             ask = { ...ask, detail: `${ask.detail}\n\n[auto agent] ${said}` };
@@ -804,7 +817,7 @@ export class AgentRuntime {
     }
   }
 
-  private async reviewed(run: Run, ask: Omit<PermissionAsk, "id">): Promise<VerifierReview> {
+  private async reviewed(run: Run, ask: Omit<PermissionAsk, "id">): Promise<VerifierReview | undefined> {
     const request: VerifierRequest = {
       goal: run.goal,
       title: run.title,
@@ -816,7 +829,7 @@ export class AgentRuntime {
     const authorized = this.authorization(run.threadId);
     const startedAt = Date.now();
     const review = await this.deps.verify(request, run.threadId);
-    if (review.verdict?.allow || !authorized()) return review;
+    if (!review || review.verdict?.allow || !authorized()) return review;
     this.verifications += 1;
     const toolCallId = `verify:${run.threadId}:${this.verifications}`;
     const title = review.verdict ? "auto agent blocked" : "auto agent could not answer";

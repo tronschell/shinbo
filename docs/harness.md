@@ -261,7 +261,7 @@ app both read, and the third-party licences travel inside the tarball.
 ## The ACP wire
 
 Newline-delimited JSON-RPC 2.0 over the child's stdio. Shinbo spawns `shinbo-cli
-acp` once per workspace directory, at most `MAX_HARNESSES = 4` alive at once
+acp` once per workspace directory, at most `MAX_HARNESSES = 8` alive at once
 (least-recently-used; `reapHarnesses` never closes one with a call in flight).
 
 - `cwd` is the workspace. The harness derives its workspace root from its own
@@ -305,13 +305,14 @@ stopped.
 ### Methods Shinbo calls
 
 `AcpMethod.parse` in [`acp/server.zig`](../harness/src/acp/server.zig) accepts
-fourteen:
+fifteen:
 
 | Method | What it does |
 | --- | --- |
 | `initialize` | Once per process. `protocolVersion: 1`, `clientCapabilities.fs = {readTextFile: false, writeTextFile: false}`. A second call is an error |
 | `session/new` | Takes `cwd` and `mcpServers`, returns `sessionId`, makes it active |
-| `session/load`, `session/list`, `session/remove` | Session store |
+| `session/load`, `session/list` | Session store |
+| `session/remove` | Parsed, but the desktop build answers `-32601 Method not found`; only the web build's JS session store serves it |
 | `session/resume` | Re-activates a session this process displaced, so a thread keeps its history |
 | `session/close` | Flushes usage, drops the active session |
 | `session/prompt` | Runs one turn |
@@ -644,7 +645,7 @@ stops sending it for the life of the process.
 | One JSON-RPC line | 8 MiB | `MAX_LINE_BYTES`, [`harness.ts`](../desktop/main/harness.ts) |
 | Tool arguments kept for the transcript | 4096 chars | `rawInput`, [`harness.ts`](../desktop/main/harness.ts) |
 | Pending outbound requests | 32 | `max_pending_outbound`, [`acp/server.zig`](../harness/src/acp/server.zig) |
-| Live harness processes | 4 | `MAX_HARNESSES`, [`main.ts`](../desktop/main/main.ts) |
+| Live harness processes | 8 | `MAX_HARNESSES`, [`main.ts`](../desktop/main/main.ts) |
 | Idle before a call is abandoned | 30 min of silence | `MAX_IDLE_MS`, [`harness.ts`](../desktop/main/harness.ts) |
 | Grace for a woken connection to prove it lives | 45 s | `WAKE_GRACE_MS`, [`main.ts`](../desktop/main/main.ts) |
 

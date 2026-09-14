@@ -74,6 +74,7 @@ const KIND_OPTIONS = (Object.keys(KIND_LABELS) as TriggerKind[]).map((kind) => (
 const MONTH_OPTIONS = MONTH_NAMES.map((name, index) => ({ value: index + 1, label: name }));
 
 const two = (value: number) => String(value).padStart(2, "0");
+const daysIn = (month: number) => new Date(2000, month, 0).getDate();
 const hintFormat = zoned({ hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
 const clockValue = (trigger: Trigger) => `${two(trigger.hour)}:${two(trigger.minute)}`;
 
@@ -119,8 +120,8 @@ export function TriggerPicker({ value, onChange, disabled }: { value: string; on
     </>}
     {trigger.kind === "monthly" && <><label className="trigger-field"><span>Day of month</span><input type="number" min={1} max={31} value={trigger.day} disabled={disabled} onChange={(event) => set({ day: Number(event.target.value) })} /><small>a month without this day is skipped</small></label>{time}</>}
     {trigger.kind === "yearly" && <>
-      <label className="trigger-field trigger-month"><span>Month</span><Picker label="Month" value={trigger.month} options={MONTH_OPTIONS} disabled={disabled} onChange={(month) => set({ month })} /></label>
-      <label className="trigger-field"><span>Day</span><input type="number" min={1} max={31} value={trigger.day} disabled={disabled} onChange={(event) => set({ day: Number(event.target.value) })} /></label>
+      <label className="trigger-field trigger-month"><span>Month</span><Picker label="Month" value={trigger.month} options={MONTH_OPTIONS} disabled={disabled} onChange={(month) => set({ month, day: Math.min(trigger.day, daysIn(month)) })} /></label>
+      <label className="trigger-field"><span>Day</span><input type="number" min={1} max={daysIn(trigger.month)} value={trigger.day} disabled={disabled} onChange={(event) => set({ day: Math.min(Number(event.target.value), daysIn(trigger.month)) })} /></label>
       {time}
     </>}
     {trigger.kind === "cron" && <label className="trigger-field trigger-wide"><span>Five cron fields, UTC</span><input value={value} maxLength={128} spellCheck={false} disabled={disabled} onChange={(event) => onChange(event.target.value)} placeholder="0 9 * * 1" /><small>minute hour day-of-month month day-of-week</small></label>}

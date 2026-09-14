@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { installedCapabilitySources } from "./marketplace";
-import { findExecutable, isWindows, pathInside } from "./platform";
+import { findExecutable, isWindows, loginShellPath, pathInside } from "./platform";
 
 const MAX_MANIFEST_BYTES = 128 * 1024;
 const MAX_CONFIG_BYTES = 256 * 1024;
@@ -177,12 +177,12 @@ export async function writeShinboTool(userData: string, name: unknown, descripti
   const temporary = path.join(directory, `.run.${randomUUID()}.tmp`);
   try {
     await writeFile(temporary, body, { encoding: "utf8", mode: 0o700 });
+    await writeFile(path.join(directory, "about.txt"), about, { encoding: "utf8", mode: 0o600 });
     await rename(temporary, path.join(directory, "run"));
   } catch (error) {
     await rm(temporary, { force: true });
     throw error;
   }
-  await writeFile(path.join(directory, "about.txt"), about, { encoding: "utf8", mode: 0o600 });
   return { name: slug, description: about, run: path.join(directory, "run") };
 }
 
@@ -636,8 +636,8 @@ export async function harnessMcpServers(userData: string, disabled: readonly str
     const command = server.command ? await absoluteCommand(server.command) : undefined;
     if (!command) return undefined;
     const env = Object.entries(server.env);
-    const inherited = env.length === 0 ? [] : Object.entries({
-      PATH: process.env.PATH ?? "",
+    const inherited = Object.entries({
+      PATH: await loginShellPath(),
       HOME: process.env.HOME ?? "",
       ...(isWindows ? {
         USERPROFILE: process.env.USERPROFILE ?? "",
@@ -659,7 +659,7 @@ export async function harnessMcpServers(userData: string, disabled: readonly str
 
 async function absoluteCommand(command: string) {
   if (path.isAbsolute(command)) return command;
-  return await findExecutable(command, process.env.PATH ?? "");
+  return await findExecutable(command, await loginShellPath());
 }
 
 export class ImportedCapabilityRuntime {

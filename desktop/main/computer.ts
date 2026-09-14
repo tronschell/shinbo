@@ -281,19 +281,24 @@ export class ComputerUseRuntime {
     this.progress({ step: run.steps, actions: run.actions, action: computerActionLabels[action.action] });
     if (action.app && run.denied.has(action.app)) throw new Error("The user did not allow this app. Do not try it again this turn.");
     if (action.action === "launch_app") return await this.launch(run, action.name!, approve);
-    const apps = await listApps(this.helperPath, run.controller.signal);
-    this.check(run);
-    if (action.action === "list_apps") return apps.length ? apps.map((app) => `${app.name} — ${app.id} — pid ${app.pid} — ${app.path}`).join("\n") : "No eligible apps are running. Use launch_app with the app's name to open one.";
-    const matches = apps.filter((app) => app.id === action.app && (action.pid === undefined || app.pid === action.pid));
-    if (matches.length !== 1) throw new Error(matches.length ? "Several instances match. Use the pid from list_apps." : "That app is not running or is Shinbo itself. Use launch_app with its name, then list_apps again.");
-    const app = matches[0];
-    let grant = run.approved.get(app.id);
-    if (grant && (grant.app.pid !== app.pid || grant.app.path !== app.path || grant.app.launchedAt !== app.launchedAt)) throw new Error("The approved app instance changed. Start a new turn for a new approval.");
-    if (!grant) {
+    if (action.action === "list_apps") {
+      const apps = await listApps(this.helperPath, run.controller.signal);
+      this.check(run);
+      return apps.length ? apps.map((app) => `${app.name} — ${app.id} — pid ${app.pid} — ${app.path}`).join("\n") : "No eligible apps are running. Use launch_app with the app's name to open one.";
+    }
+    let grant = run.approved.get(action.app!);
+    if (!grant || (action.pid !== undefined && action.pid !== grant.app.pid)) {
+      const apps = await listApps(this.helperPath, run.controller.signal);
+      this.check(run);
+      const matches = apps.filter((app) => app.id === action.app && (action.pid === undefined || app.pid === action.pid));
+      if (matches.length !== 1) throw new Error(matches.length ? "Several instances match. Use the pid from list_apps." : "That app is not running or is Shinbo itself. Use launch_app with its name, then list_apps again.");
+      const app = matches[0]!;
+      if (grant) throw new Error("The approved app instance changed. Start a new turn for a new approval.");
       await this.consent(run, app.id, app, approve);
       grant = { app };
       run.approved.set(app.id, grant);
     }
+    const app = grant.app;
     grant.helper ??= new AppHelper(this.helperPath, app, run.controller.signal);
     if (action.action !== "get_app_state" && action.snapshot !== grant.snapshot) throw new Error("Get a fresh app state before acting; that snapshot is stale or belongs to another app");
     const wait = MIN_ACTION_INTERVAL_MS - (Date.now() - run.lastActionAt);
@@ -383,7 +388,7 @@ export class ComputerUseRuntime {
   }
 }
 
-export async function captureDisplay(display: Display): Promise<ScreenFrame> {
+export async function captureDisplay(display: Display): Promise<Electron.NativeImage> {
   if (process.platform === "darwin" && ["denied", "restricted"].includes(systemPreferences.getMediaAccessStatus("screen"))) {
     throw new Error("Screen Recording permission is required. Enable Shinbo in System Settings → Privacy & Security → Screen Recording.");
   }
@@ -392,10 +397,13 @@ export async function captureDisplay(display: Display): Promise<ScreenFrame> {
   const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width, height }, fetchWindowIcons: false });
   const source = sources.find((item) => item.display_id === String(display.id));
   if (!source || source.thumbnail.isEmpty()) throw new Error("Shinbo could not capture this display. Check Screen Recording permission and try again.");
-  const size = source.thumbnail.getSize();
-  const image = `data:image/jpeg;base64,${source.thumbnail.toJPEG(82).toString("base64")}`;
-  if (!validJpegDataUrl(image)) throw new Error("Shinbo captured an invalid screen frame");
-  return { image, width: size.width, height: size.height };
+  return source.thumbnail;
+}
+
+export function screenFrame(image: Electron.NativeImage): ScreenFrame {
+  const dataUrl = `data:image/jpeg;base64,${image.toJPEG(82).toString("base64")}`;
+  if (!validJpegDataUrl(dataUrl)) throw new Error("Shinbo captured an invalid screen frame");
+  return { image: dataUrl, ...image.getSize() };
 }
 
 export function compressScreenFrame(image: Electron.NativeImage) {
@@ -405,7 +413,7 @@ export function compressScreenFrame(image: Electron.NativeImage) {
     const resized = image.resize({ width, quality: "good" });
     for (const quality of [68, 54, 42, 32]) {
       const dataUrl = `data:image/jpeg;base64,${resized.toJPEG(quality).toString("base64")}`;
-      if (validJpegDataUrl(dataUrl, MAX_SCREEN_CONTEXT_CHARS)) return { image: dataUrl, ...resized.getSize() };
+      if (dataUrl.length <= MAX_SCREEN_CONTEXT_CHARS) return { image: dataUrl, ...resized.getSize() };
     }
   }
   throw new Error("Screen frame could not be compressed safely");

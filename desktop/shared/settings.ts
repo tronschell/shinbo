@@ -3,6 +3,7 @@ import { asPermissionMode, DEFAULT_PERMISSION_MODE, type PermissionMode } from "
 import { defaultContextPages, validateContextPages, type ContextPage } from "./context-bar";
 import { DEFAULT_SYSTEM_PROMPT, validatePrompts, type PromptPreset } from "./prompts";
 import { validNoteFolder } from "./vault";
+import { retiredDefaults } from "./legacy-defaults";
 
 export interface QuickAction {
   label: string;
@@ -962,6 +963,8 @@ export const SECOND_MODELS: Record<SecondModelId, SecondModel> = {
   },
 };
 
+const currentDefault = (text: string, fallback: string) => !text || retiredDefaults.includes(text) ? fallback : text;
+
 function validateSecondModel(value: unknown, fallback: VerifierSettings, label: string): VerifierSettings {
   if (value === undefined || value === null) return fallback;
   if (typeof value !== "object") throw new Error(`The ${label} model is invalid`);
@@ -969,7 +972,7 @@ function validateSecondModel(value: unknown, fallback: VerifierSettings, label: 
   const model = (settings.model ?? "").split(",").map((id) => id.trim()).filter(Boolean).join(",");
   const endpoint = (settings.endpoint ?? "").trim();
   const credentialEnv = (settings.credentialEnv ?? "").trim();
-  const system = (typeof settings.system === "string" ? settings.system : "").trim() || fallback.system;
+  const system = currentDefault((typeof settings.system === "string" ? settings.system : "").trim(), fallback.system);
   const chain = model ? model.split(",") : [];
   if (chain.length > MAX_ROUTER_MODELS || chain.some((id) => id.length > 128)) throw new Error(`The ${label} model id is invalid`);
   if (system.length > MAX_VERIFIER_SYSTEM_CHARS) throw new Error(`Keep the ${label} rules under ${MAX_VERIFIER_SYSTEM_CHARS} characters`);
@@ -1146,7 +1149,7 @@ export function validateSettings(value: unknown, platform = "darwin"): UserSetti
   const routers = validateRouters(settings.routers ?? legacyRouters((value as { freeRouterModels?: unknown }).freeRouterModels));
   const requireZeroRetention = settings.requireZeroRetention ?? defaultSettings.requireZeroRetention;
   if (typeof requireZeroRetention !== "boolean") throw new Error("The zero-retention setting is invalid");
-  const systemPrompt = settings.systemPrompt || defaultSettings.systemPrompt;
+  const systemPrompt = currentDefault(settings.systemPrompt || "", defaultSettings.systemPrompt);
   if (typeof systemPrompt !== "string" || systemPrompt.length > MAX_SYSTEM_PROMPT_CHARS) throw new Error(`Keep the system prompt under ${MAX_SYSTEM_PROMPT_CHARS} characters`);
   const prompts = validatePrompts(settings.prompts, MAX_SYSTEM_PROMPT_CHARS);
   const accent = legacyHue(settings.accent) ?? defaultSettings.accent;
@@ -1165,6 +1168,24 @@ export function validateSettings(value: unknown, platform = "darwin"): UserSetti
   const keybinds = validateKeybinds(settings.keybinds, platform);
   const contextPages = validateContextPages(settings.contextPages);
   return { accent, tabColor, navIconColors, navHues, folderHues, uiScale, conversationWidth, interfaceFont, agentFont, thinkingLevel, keybinds, contextPages, quickActions, cursorOrbs: [...cursorOrbs], cursorOrbsEnabled, notchCommandsEnabled, notchGap, notchModel, notchConcurrency, transcriptionEnabled: settings.transcriptionEnabled, transcriptionEngine, transcriptionEndpoint: settings.transcriptionEndpoint, transcriptionModel: settings.transcriptionModel, voiceHoldMs, voiceCleanup, voiceCleanupEndpoint, voiceCleanupModel, providers, selectedModel, defaultPermissionMode, verifier, tagger, tools, harnessExperiments, review, favoriteModels: favoriteModels.map(legacyModelKey), routers, requireZeroRetention, systemPrompt, prompts };
+}
+
+export function repairSettings(value: unknown, platform = "darwin"): UserSettings {
+  const raw = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  let settings: Record<string, unknown> = { ...defaultSettings };
+  const accepts = (patch: Record<string, unknown>) => { try { validateSettings({ ...settings, ...patch }, platform); return true; } catch { return false; } };
+  for (const [key, slice] of Object.entries(raw)) {
+    if (accepts({ [key]: slice })) { settings = { ...settings, [key]: slice }; continue; }
+    if (!slice || typeof slice !== "object") continue;
+    const fallback = settings[key];
+    let kept: unknown[] | Record<string, unknown> = Array.isArray(slice) ? [] : fallback && typeof fallback === "object" && !Array.isArray(fallback) ? { ...fallback } : {};
+    for (const [name, item] of Object.entries(slice)) {
+      const next = Array.isArray(kept) ? [...kept, item] : { ...kept, [name]: item };
+      if (accepts({ [key]: next })) kept = next;
+    }
+    if (accepts({ [key]: kept })) settings = { ...settings, [key]: kept };
+  }
+  return validateSettings(settings, platform);
 }
 
 export function toggleFavoriteModel(settings: UserSettings, key: string): UserSettings {
@@ -1216,7 +1237,8 @@ export function forgetRouter(settings: UserSettings, id: string): UserSettings {
 }
 
 export function forgetProvider(settings: UserSettings, profileId: string): UserSettings {
-  return { ...settings, providers: settings.providers.filter((item) => item.id !== profileId), favoriteModels: settings.favoriteModels.filter((key) => key !== `provider:${profileId}`) };
+  const key = `provider:${profileId}`;
+  return { ...settings, providers: settings.providers.filter((item) => item.id !== profileId), favoriteModels: settings.favoriteModels.filter((item) => item !== key), notchModel: settings.notchModel === key ? "" : settings.notchModel };
 }
 
 export function validateOverlayPreferences(value: unknown): OverlayPreferences {

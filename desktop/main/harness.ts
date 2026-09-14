@@ -20,6 +20,12 @@ const PROTOCOL_VERSION = 1;
 
 const MAX_TOOL_OUTPUT_BYTES = 64 * 1024;
 
+const boundedOutput = (output: string) => {
+  if (output.length <= MAX_TOOL_OUTPUT_BYTES) return output;
+  const notice = `\n[truncated — ${output.length - MAX_TOOL_OUTPUT_BYTES} more characters; ask for a narrower range]`;
+  return `${output.slice(0, MAX_TOOL_OUTPUT_BYTES - notice.length)}${notice}`;
+};
+
 export const MAX_IDLE_MS = 30 * 60 * 1000;
 const MAX_STDERR_TAIL = 4 * 1024;
 const CLOSE_GRACE_MS = 2000;
@@ -32,7 +38,7 @@ export type TurnUsage = { inputTokens: number; outputTokens: number; cacheInputT
 
 const mediaType =(file: string) => `image/${path.extname(file).slice(1).toLowerCase().replace("jpg", "jpeg")}`;
 
-export type TurnExtras = { skillContext?: string; toolHints?: Record<string, string>; preselect?: string[]; stepLimit?: number; contextWindow?: number; effort?: ThinkingRoute; experiments?: HarnessExperiments; semanticGrep?: string; imageInput?: boolean; compact?: boolean; handoff?: string; images?: string[]; continueRecovery?: boolean };
+export type TurnExtras = { skillContext?: string; toolHints?: Record<string, string>; preselect?: string[]; stepLimit?: number; contextWindow?: number; effort?: ThinkingRoute; experiments?: HarnessExperiments; semanticGrep?: string; imageInput?: boolean; compact?: boolean; handoff?: string; images?: string[]; continueRecovery?: boolean; prepare?: () => void };
 
 export type ThinkingRoute = { level: string; published: string[] };
 
@@ -420,9 +426,12 @@ const FAILURE_EXPLANATIONS: Record<string, string> = {
   RequestTooLarge: "the conversation outgrew what this model accepts, even after older tool results were pruned. Shinbo will compact it on your next message; send Continue",
 };
 
+export const MISSING_CREDENTIAL = "no model is signed in. Add a provider key under Settings → Models, then send Continue";
+
 export function explainFailure(detail: string): string {
   const known = FAILURE_EXPLANATIONS[detail];
   if (known) return known;
+  if (detail.includes("has no provider credential")) return MISSING_CREDENTIAL;
   if (!/^[A-Z][A-Za-z0-9]*$/.test(detail)) return detail;
   return `${detail.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase()} — the agent gave up on this turn. Send Continue to pick it back up`;
 }
@@ -453,6 +462,7 @@ export class Harness {
   readonly paused = new Map<string, { message: string; cause?: string; requiredAction?: string }>();
   private readonly permissionChecks = new Set<{ threadId: string; childId?: string; cancelled: boolean }>();
   private failure: Error | undefined;
+  private readonly deliveredTurns = new Set<string>();
 
   private heardAt = 0;
 
@@ -460,6 +470,10 @@ export class Harness {
 
   get running() {
     return this.child !== undefined && this.failure === undefined;
+  }
+
+  delivered(threadId: string) {
+    return this.deliveredTurns.has(threadId);
   }
 
   get busy() {
@@ -489,6 +503,7 @@ export class Harness {
   }
 
   async start() {
+    if (this.failure) throw this.failure;
     if (this.child) return;
     if (!exists(this.deps.cwd)) {
       const gone = new Error(missingFolderMessage(path.basename(this.deps.cwd) || this.deps.cwd, this.deps.cwd));
@@ -526,6 +541,7 @@ export class Harness {
         for (const line of this.lines.push(data)) this.receive(line);
       } catch (error) {
         this.fail(error as Error);
+        void this.close();
       }
     });
     child.stderr.on("data", (data) => {
@@ -555,6 +571,7 @@ export class Harness {
     if (cwd !== this.deps.cwd) throw new Error(`Harness is bound to ${this.deps.cwd}, not ${cwd}`);
     this.cancelled.delete(threadId);
     this.paused.delete(threadId);
+    this.deliveredTurns.delete(threadId);
     if (this.busy) this.phase(threadId, "waiting for the turn ahead of this one");
 
     const turn = this.turns.catch(() => undefined).then(() => this.runPrompt(threadId, cwd, text, mode, model, extra));
@@ -612,6 +629,7 @@ export class Harness {
       this.phase(threadId, "compacting the context");
       await this.request("session/compact", { sessionId, ...(extra.handoff ? { handoff: extra.handoff } : {}) }).catch((error: unknown) => console.error("Shinbo: the harness would not compact", error));
     }
+    extra.prepare?.();
     const prompt = extra.continueRecovery ? [] : [
       { type: "text", text },
       ...(extra.skillContext ? [{ type: "text", text: extra.skillContext }] : []),
@@ -623,6 +641,7 @@ export class Harness {
     await this.lifecycle("UserPromptSubmit", threadId, sessionId, mode, model, { prompt: text });
     if (this.cancelled.has(threadId)) throw new Error("This turn was stopped before it reached the model.");
     this.phase(threadId, "waiting for the model");
+    this.deliveredTurns.add(threadId);
     const result = (await this.request("session/prompt", {
       sessionId,
       prompt,
@@ -1081,7 +1100,7 @@ export class Harness {
       output = error instanceof Error ? error.message : String(error);
       isError = true;
     }
-    this.send({ jsonrpc: "2.0", id, result: { output: output.slice(0, MAX_TOOL_OUTPUT_BYTES), isError } });
+    this.send({ jsonrpc: "2.0", id, result: { output: boundedOutput(output), isError } });
   }
 
   private fail(error: Error) {

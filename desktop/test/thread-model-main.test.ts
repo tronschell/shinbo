@@ -20,7 +20,7 @@ function findGetter(node: ts.Node) {
 }
 findGetter(source);
 const program = ts.transpileModule([
-  ...["threadContextsFile", "loadThreadContexts", "rememberThreadContext", "threadContext", "threadModel", "threadEffort", "threadContextRequest", "keepThreadContext", "subagentRoute", "thinkingLevel", "selectModel", "answerRequest", "runTurn", "driveTurn", "runScheduledWorkflow"].map(lift),
+  ...["threadContextsFile", "loadThreadContexts", "rememberThreadContext", "writeThreadContexts", "threadContext", "threadModel", "threadEffort", "threadContextRequest", "keepThreadContext", "subagentRoute", "thinkingLevel", "selectModel", "answerRequest", "runTurn", "driveTurn", "runScheduledWorkflow"].map(lift),
   `${getter};`,
   "({ loadThreadContexts, rememberThreadContext, threadContextRequest, keepThreadContext, selectModel, answerRequest, runTurn, runScheduledWorkflow });",
 ].join("\n"), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -64,7 +64,7 @@ function setup(t: test.TestContext) {
     runOnHarness: async (_client: unknown, _cwd: string, turn: Turn) => turn,
     changed: () => undefined, refuseBenchTurn: () => undefined, benchThread: () => undefined,
     threadNames: new Map(), runDrivenTurn: async (turn: Turn): Promise<unknown> => turn,
-    parseWorkflow, parseVariables, runWorkflow, packVariables,
+    parseWorkflow, parseVariables, runWorkflow, packVariables, validateWorkflowScripts: async () => undefined,
     resolveMentions: async (content: string) => ({ content }), lastAssistantMessage: () => "done",
   };
   const api = runInNewContext(program, state) as {

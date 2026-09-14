@@ -19,10 +19,12 @@ function useArtifact(id: string) {
   useEffect(() => {
     if (!id) return;
     let active = true;
-    void window.shinbo.readArtifact(id)
+    const read = () => void window.shinbo.readArtifact(id)
       .then((artifact) => { if (active) setState({ id, artifact }); })
       .catch(() => { if (active) setState({ id, artifact: false }); });
-    return () => { active = false; };
+    read();
+    const stop = window.shinbo.onArtifactsChanged(read);
+    return () => { active = false; stop(); };
   }, [id]);
   return state?.id === id ? state.artifact : null;
 }
@@ -94,7 +96,7 @@ export function ArtifactsView({ busy, select, openArtifact }: { busy: boolean; s
   useEffect(() => {
     let active = true;
     const load = () => void window.shinbo.listArtifacts()
-      .then((found) => { if (active) setList(found); })
+      .then((found) => { if (active) { setList(found); setError(""); } })
       .catch(() => { if (active) setError("Shinbo could not read the artifacts folder."); });
     load();
     const stop = window.shinbo.onArtifactsChanged(load);
@@ -102,6 +104,7 @@ export function ArtifactsView({ busy, select, openArtifact }: { busy: boolean; s
   }, []);
 
   const remove = async (id: string) => {
+    setError("");
     try {
       await window.shinbo.deleteArtifact(id);
       setList((current) => current.filter((item) => item.id !== id));
@@ -131,13 +134,13 @@ export function ArtifactsView({ busy, select, openArtifact }: { busy: boolean; s
       <p>An artifact is something a conversation produced that is worth keeping — a document, a snippet, a page, a drawing, a diagram. Type <b>/artifact</b> in a thread to make one.</p>
     </div>}
     {list.length > 0 && !shown.length && <p className="artifact-missing">Nothing matches that.</p>}
-    <div className="artifact-grid">{shown.map((meta) => <GridCard key={`${meta.id}:${meta.version}`} meta={meta} busy={busy} open={() => openArtifactId(meta.id)} edit={openArtifact} onEditError={() => setError("That artifact could not be opened for editing.")} remove={() => setDoomed(meta)} />)}</div>
+    <div className="artifact-grid">{shown.map((meta) => <GridCard key={`${meta.id}:${meta.version}`} meta={meta} busy={busy} open={() => openArtifactId(meta.id)} edit={openArtifact} onEditError={() => setError("That artifact could not be opened for editing.")} remove={() => setDoomed(meta)} onRevealError={() => setError("That artifact could not be revealed.")} />)}</div>
     {openId && <ArtifactDialog id={openId} busy={busy} close={() => openArtifactId("")} edit={openArtifact} remove={setDoomed} />}
     {doomed && <ConfirmDialog meta={doomed} busy={busy} close={() => setDoomed(null)} confirm={() => void remove(doomed.id)} />}
   </section>;
 }
 
-function GridCard({ meta, busy, open, edit, onEditError, remove }: { meta: ArtifactMeta; busy: boolean; open: () => void; edit: (artifact: Artifact) => void; onEditError: () => void; remove: () => void }) {
+function GridCard({ meta, busy, open, edit, onEditError, onRevealError, remove }: { meta: ArtifactMeta; busy: boolean; open: () => void; edit: (artifact: Artifact) => void; onEditError: () => void; onRevealError: () => void; remove: () => void }) {
   const [target, nearViewport] = useNearViewport();
   const editCurrent = () => {
     void window.shinbo.readArtifact(meta.id).then(edit).catch(onEditError);
@@ -149,7 +152,7 @@ function GridCard({ meta, busy, open, edit, onEditError, remove }: { meta: Artif
     </button>
     <div className="artifact-actions artifact-icons">
       <button type="button" title="Edit in a thread" aria-label="Edit in a thread" disabled={busy} onClick={editCurrent}><PencilIcon /></button>
-      <button type="button" title={REVEAL_LABEL} aria-label={REVEAL_LABEL} disabled={busy} onClick={() => void window.shinbo.revealArtifact(meta.id)}><FolderIcon /></button>
+      <button type="button" title={REVEAL_LABEL} aria-label={REVEAL_LABEL} disabled={busy} onClick={() => void window.shinbo.revealArtifact(meta.id).catch(onRevealError)}><FolderIcon /></button>
       <button type="button" className="artifact-danger" title="Delete" aria-label="Delete" disabled={busy} onClick={remove}><TrashIcon /></button>
     </div>
   </article>;
@@ -197,7 +200,7 @@ function ArtifactPanel({ id, className, busy, close, edit, remove }: { id: strin
         onClick={() => void navigator.clipboard.writeText(artifact.content).then(() => setCopied(true)).catch(() => undefined)}>{copied ? <CheckIcon /> : <CopyIcon />}</button>}
       <button type="button" className="artifact-icon" onClick={close} aria-label="Close artifact" title="Close">×</button>
     </header>
-    {artifact && <button type="button" className="artifact-location" title={REVEAL_LABEL} onClick={() => void window.shinbo.revealArtifact(artifact.id)}>{artifact.path}</button>}
+    {artifact && <button type="button" className="artifact-location" title={REVEAL_LABEL} onClick={() => void window.shinbo.revealArtifact(artifact.id).catch(() => undefined)}>{artifact.path}</button>}
     {artifact === false && <p className="dialog-error">{GONE}</p>}
     {artifact && (source || ["code", "react", "markdown"].includes(artifact.kind)
       ? <Minimap key={id} className="artifact-body"><ArtifactRender artifact={artifact} source={source} /></Minimap>
@@ -221,7 +224,7 @@ export function ArtifactPane({ id, busy, close, edit }: { id: string; busy: bool
     } catch { setError("That artifact could not be deleted."); }
   };
   return <>
-    <ArtifactPanel id={id} className="artifact-pane" busy={busy} close={close} edit={edit} remove={setDoomed} />
+    <ArtifactPanel key={id} id={id} className="artifact-pane" busy={busy} close={close} edit={edit} remove={setDoomed} />
     {error && <p className="region-error">{error}</p>}
     {doomed && <ConfirmDialog meta={doomed} busy={busy} close={() => setDoomed(null)} confirm={() => void remove()} />}
   </>;
@@ -234,7 +237,7 @@ function ArtifactDialog({ id, busy, close, edit, remove }: { id: string; busy: b
   return <dialog ref={dialog} className="modal-backdrop" aria-labelledby="artifact-title" onClose={close}
     onCancel={(event) => { event.preventDefault(); close(); }}
     onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
-    <ArtifactPanel id={id} className="agent-dialog artifact-dialog" busy={busy} close={close} edit={edit} remove={remove} />
+    <ArtifactPanel key={id} id={id} className="agent-dialog artifact-dialog" busy={busy} close={close} edit={edit} remove={remove} />
   </dialog>;
 }
 

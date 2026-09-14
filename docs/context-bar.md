@@ -138,7 +138,7 @@ See [plugins.md](plugins.md).
 | Data | Produced by |
 |---|---|
 | Messages, replies, output tokens, tok/s, rate curve | `message.generation` on the thread. Its `durationMilliseconds` is the turn's wall clock less any time the turn spent parked on a permission prompt, so tok/s reads the model's speed rather than yours |
-| Attachment and skill rows | `recordUses` → `shinbo.threadContextUses.v1`, merged by `mergeUses`, capped at `MAX_USES` (32) |
+| Attachment and skill rows | `recordUses` → `shinbo.threadContextUses.v2`, merged by `mergeUses`, capped at `MAX_USES` (32) |
 | The transcript row | `historyUse` — the characters of every stored message |
 | The turn in flight | `inputTokens` and `toolCalls` summed over the live agents main broadcasts |
 | The residual row | `systemChars(lastInputTokens(thread), measuredChars)`, floored at 0 |

@@ -18,7 +18,7 @@ use crate::{
 use serde::Serialize;
 
 const MAX_AGENT_TITLE_BYTES: usize = 256;
-const MAX_AGENT_MESSAGE_BYTES: usize = 64 * 1024;
+const MAX_AGENT_MESSAGE_BYTES: usize = 120 * 1024;
 pub const ARCHIVE_RETENTION_SECONDS: i64 = 30 * 24 * 60 * 60;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -558,6 +558,7 @@ pub fn start_live_runtime(
                 }
                 if Instant::now() >= due {
                     runtime.run_due_jobs();
+                    runtime.sweep_expired_threads();
                     due = Instant::now() + tick;
                 }
             }
@@ -743,6 +744,17 @@ impl Runtime {
         }
     }
 
+    fn sweep_expired_threads(&self) {
+        let Ok(listing) = self.threads.list_summaries() else {
+            return;
+        };
+        for thread in listing.threads {
+            if expired(thread.archived_at) {
+                let _ = self.threads.delete(&thread.id);
+            }
+        }
+    }
+
     fn run_due_jobs(&mut self) {
         self.scheduled_warnings.clear();
         let listing = match self.scheduled.list() {
@@ -836,16 +848,9 @@ impl Runtime {
             .threads
             .list_summaries()
             .map_err(|error| LiveError::new(format!("could not load threads: {error}")))?;
-        let expired = Timestamp::now().unix_seconds() - ARCHIVE_RETENTION_SECONDS;
-        listing.threads.retain(|thread| {
-            let keep = thread
-                .archived_at
-                .is_none_or(|at| at.unix_seconds() > expired);
-            if !keep {
-                let _ = self.threads.delete(&thread.id);
-            }
-            keep
-        });
+        listing
+            .threads
+            .retain(|thread| !expired(thread.archived_at));
         self.snapshot_records(listing)
     }
 
@@ -864,16 +869,9 @@ impl Runtime {
             self.threads.list_uncached()
         }
         .map_err(|error| LiveError::new(format!("could not load threads: {error}")))?;
-        let expired = Timestamp::now().unix_seconds() - ARCHIVE_RETENTION_SECONDS;
-        thread_listing.threads.retain(|thread| {
-            let keep = thread
-                .archived_at
-                .is_none_or(|at| at.unix_seconds() > expired);
-            if !keep {
-                let _ = self.threads.delete(&thread.id);
-            }
-            keep
-        });
+        thread_listing
+            .threads
+            .retain(|thread| !expired(thread.archived_at));
         self.snapshot_records(thread_listing)
     }
 
@@ -977,7 +975,16 @@ impl Runtime {
     fn delete_scheduled_job(&self, job_id: ScheduledJobId) -> Result<(), LiveError> {
         self.scheduled
             .delete(&job_id)
-            .map_err(|error| LiveError::new(format!("could not delete scheduled job: {error}")))
+            .map_err(|error| LiveError::new(format!("could not delete scheduled job: {error}")))?;
+        if let Ok(listing) = self.threads.list_summaries() {
+            for thread in listing.threads {
+                if thread.scheduled_job_id.as_ref() == Some(&job_id) && thread.archived_at.is_none()
+                {
+                    let _ = self.set_thread_archived(thread.id.clone(), true);
+                }
+            }
+        }
+        Ok(())
     }
 
     fn run_scheduled_job(
@@ -1077,6 +1084,15 @@ impl Runtime {
         self.threads
             .save(&thread)
             .map_err(|error| LiveError::new(format!("could not save archived thread: {error}")))?;
+        if let Ok(listing) = self.threads.list_summaries() {
+            for child in listing.threads {
+                if child.parent_thread_id.as_ref() == Some(&thread_id)
+                    && child.archived_at.is_some() != archived
+                {
+                    let _ = self.set_thread_archived(child.id.clone(), archived);
+                }
+            }
+        }
         Ok(thread)
     }
 
@@ -1277,6 +1293,11 @@ impl Runtime {
 
 pub const MAX_TRACE_REPLY_BYTES: usize = 8 * 1024 * 1024;
 
+fn expired(archived_at: Option<Timestamp>) -> bool {
+    let cutoff = Timestamp::now().unix_seconds() - ARCHIVE_RETENTION_SECONDS;
+    archived_at.is_some_and(|at| at.unix_seconds() <= cutoff)
+}
+
 fn transcript_text(text: &str) -> String {
     let mut normalized = String::with_capacity(text.len());
     for character in text.chars() {
@@ -1286,7 +1307,26 @@ fn transcript_text(text: &str) -> String {
             normalized.push(character);
         }
     }
-    elide_middle(&normalized, MAX_AGENT_MESSAGE_BYTES)
+    if normalized.len() <= MAX_AGENT_MESSAGE_BYTES {
+        return normalized;
+    }
+    let close = ["</think>", "</thinking>", "</reasoning>"]
+        .into_iter()
+        .find_map(|tag| normalized.find(tag).map(|at| (at, tag)));
+    let Some((at, tag)) = close else {
+        return elide_middle(&normalized, MAX_AGENT_MESSAGE_BYTES);
+    };
+    let thinking = &normalized[..at];
+    let answer = &normalized[at + tag.len()..];
+    let answer_max = MAX_AGENT_MESSAGE_BYTES
+        .saturating_sub(thinking.len() + tag.len())
+        .max(MAX_AGENT_MESSAGE_BYTES / 2);
+    let answer = elide_middle(answer, answer_max);
+    let thinking = elide_middle(
+        thinking,
+        MAX_AGENT_MESSAGE_BYTES.saturating_sub(answer.len() + tag.len()),
+    );
+    format!("{thinking}{tag}{answer}")
 }
 
 fn newest_within(traces: &[ThreadTrace], budget: usize) -> Vec<ThreadTrace> {
@@ -1336,6 +1376,21 @@ mod tests {
 
         let one = newest_within(&[big(4, 4_000)], 16);
         assert_eq!(one.len(), 1);
+    }
+
+    #[test]
+    fn a_long_reasoning_reply_keeps_its_closing_tag_and_whole_answer() {
+        let thinking = "thought\n".repeat(10_000);
+        let answer = "answer line\n".repeat(4_000);
+        let stored = transcript_text(&format!("<think>{thinking}</think>\n{answer}"));
+        assert!(stored.len() <= MAX_AGENT_MESSAGE_BYTES);
+        let (head, tail) = stored.split_once("</think>\n").unwrap();
+        assert!(head.starts_with("<think>thought\n"));
+        assert!(head.contains("lines elided"));
+        assert_eq!(tail, answer);
+        let plain = transcript_text(&"x".repeat(MAX_AGENT_MESSAGE_BYTES + 1));
+        assert!(plain.len() <= MAX_AGENT_MESSAGE_BYTES);
+        assert!(plain.contains("bytes elided"));
     }
     use super::*;
 
@@ -1449,12 +1504,14 @@ mod tests {
         assert_eq!(summaries.threads[0].id, active.id);
         assert!(summaries.scheduled_jobs.is_empty());
         assert!(summaries.warnings.is_empty());
+        assert!(runtime.thread(expired.id.clone()).is_ok());
+        runtime.sweep_expired_threads();
         assert!(runtime.thread(expired.id).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn compact_snapshot_keeps_only_the_last_explicitly_read_thread() {
+    fn compact_snapshot_keeps_only_explicitly_read_threads() {
         let root = temp_child();
         let runtime = Runtime::new(root.join("threads"), root.join("scheduled"), no_jobs());
         let first = runtime.create_thread(None, None, ThreadKind::Main).unwrap();
@@ -1481,10 +1538,11 @@ mod tests {
         assert_eq!(runtime.thread(first.id.clone()).unwrap().id, first.id);
         assert_eq!(runtime.threads.cached_len(), 1);
         runtime.thread(second.id.clone()).unwrap();
+        assert_eq!(runtime.threads.cached_len(), 2);
         fs::remove_file(root.join("threads").join(format!("{}.md", second.id))).unwrap();
         let compact = runtime.snapshot_uncached().unwrap();
         assert_eq!(compact.threads.len(), 1);
-        assert_eq!(runtime.threads.cached_len(), 0);
+        assert_eq!(runtime.threads.cached_len(), 1);
         fs::remove_dir_all(root.join("threads")).unwrap();
         let compact = runtime.snapshot_uncached().unwrap();
         assert!(compact.threads.is_empty());
@@ -1541,10 +1599,53 @@ mod tests {
         let threads = runtime.snapshot().unwrap().threads;
         assert_eq!(threads.len(), 1);
         assert_eq!(threads[0].id, kept.id);
+        runtime.sweep_expired_threads();
         assert!(runtime.threads.load(&expired.id).is_err());
         assert!(
             runtime
                 .set_thread_archived(kept.id.clone(), false)
+                .unwrap()
+                .archived_at
+                .is_none()
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn archiving_a_thread_cascades_to_its_subagent_threads() {
+        let root = temp_child();
+        let runtime = Runtime::new(root.join("threads"), root.join("scheduled"), no_jobs());
+        let parent = runtime.create_thread(None, None, ThreadKind::Main).unwrap();
+        let child = runtime
+            .create_thread(None, Some(parent.id.clone()), ThreadKind::Subagent)
+            .unwrap();
+        let other = runtime.create_thread(None, None, ThreadKind::Main).unwrap();
+        runtime
+            .set_thread_archived(parent.id.clone(), true)
+            .unwrap();
+        assert!(
+            runtime
+                .threads
+                .load(&child.id)
+                .unwrap()
+                .archived_at
+                .is_some()
+        );
+        assert!(
+            runtime
+                .threads
+                .load(&other.id)
+                .unwrap()
+                .archived_at
+                .is_none()
+        );
+        runtime
+            .set_thread_archived(parent.id.clone(), false)
+            .unwrap();
+        assert!(
+            runtime
+                .threads
+                .load(&child.id)
                 .unwrap()
                 .archived_at
                 .is_none()
@@ -1986,6 +2087,15 @@ mod tests {
 
         runtime.delete_scheduled_job(second.id.clone()).unwrap();
         assert!(runtime.scheduled.load(&second.id).is_err());
+        let runs = runtime
+            .thread_summaries()
+            .unwrap()
+            .threads
+            .into_iter()
+            .filter(|thread| thread.scheduled_job_id.as_ref() == Some(&second.id))
+            .collect::<Vec<_>>();
+        assert!(!runs.is_empty());
+        assert!(runs.iter().all(|thread| thread.archived_at.is_some()));
         assert!(
             runtime
                 .finish_scheduled_job(second.id.clone(), outputs.into(), 0)

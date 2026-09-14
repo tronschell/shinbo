@@ -135,6 +135,10 @@ test("a recorded turn is cut to fit the host's request line", () => {
   assert.match(huge.response, /^<think>thought/);
   assert.match(huge.response, /<\/think>\nanswer/);
   assert.match(huge.response, /characters elided/);
+  const answer = "answer\n".repeat(7_000);
+  const thoughtful = recordedTurn({ ...telemetry, prompt: "hi", thinking: "thought\n".repeat(50_000), answer });
+  assert.ok(Buffer.byteLength(JSON.stringify(thoughtful)) <= MAX_RECORDED_TURN_BYTES);
+  assert.ok(thoughtful.response.endsWith(`</think>\n${answer}`));
   const unbroken = recordedTurn({ ...telemetry, prompt: "hi", answer: `x${"🙂".repeat(200_000)}done` });
   assert.ok(Buffer.byteLength(JSON.stringify(unbroken)) <= MAX_RECORDED_TURN_BYTES);
   assert.ok(unbroken.response.startsWith("x🙂"));
@@ -332,6 +336,8 @@ test("starred models cap at six and drop with their local profile", () => {
   assert.equal(toggleFavoriteModel(full, "openrouter:vendor/a:free").favoriteModels[0], "openrouter:vendor/f:free");
   const starred = toggleFavoriteModel(base, "provider:local-qwen");
   assert.deepEqual(forgetProvider(starred, "local-qwen"), { ...base, providers: [] });
+  assert.equal(forgetProvider({ ...starred, notchModel: "provider:local-qwen" }, "local-qwen").notchModel, "");
+  assert.equal(forgetProvider({ ...starred, notchModel: "provider:other" }, "local-qwen").notchModel, "provider:other");
   assert.throws(() => validateSettings({ ...base, favoriteModels: ["fallback", "fallback"] }), /invalid/);
 });
 

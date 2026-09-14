@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usageDay, recentDays } from "../shared/invocations";
 import { activeYears, countDays, heatLevel, lineage, messageDays, projectActivity, streak, weekGrid, type DayGrid } from "./activity";
 import { Bars } from "./bars";
@@ -45,8 +45,10 @@ function Heat({ grid, days, peak, today, labels }: { grid: DayGrid; days: Record
 }
 
 function HistoryDialog({ days, peak, today, close }: { days: Record<string, number>; peak: number; today: string; close: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => { if (!dialog.current?.open) dialog.current?.showModal(); }, []);
   const years = activeYears(days);
-  return <dialog className="modal-backdrop" open aria-labelledby="activity-history-title"
+  return <dialog ref={dialog} className="modal-backdrop" aria-labelledby="activity-history-title" onClose={close} onCancel={close}
     onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
     <section className="agent-dialog activity-dialog">
       <header>

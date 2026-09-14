@@ -72,10 +72,11 @@ The picker deals in keys, not raw model ids ([settings.ts](../desktop/shared/set
 Only `fallback` sends **nothing**, leaving the harness on its own `default_model`.
 
 A key saved as `local:<profileId>` is rewritten to `provider:<profileId>` by
-`legacyModelKey` on the way through `validateSettings`, and a stored `localModels`
-array becomes `providers` the same way, so a profile saved before this existed
-keeps working and keeps its star. `free-router` is rewritten to `router:free` the
-same way.
+`legacyModelKey` on the way through `validateSettings`, so a profile saved before
+this existed keeps its star. `free-router` is rewritten to `router:free` the
+same way. `validateSettings` would also accept a stored `localModels` array as
+`providers`, but `repairSettings` runs first on boot and seeds `providers` from
+the defaults, so that key is dropped instead.
 
 ### How a provider profile routes the whole loop
 
@@ -85,7 +86,7 @@ providerId)` therefore puts the provider id in the harness map key, and
 `harnessClient` hands that harness `chatUrl` and the provider's own `apiKey` in
 its spawn environment. One process per workspace per provider; a thread on
 DeepSeek and a thread on OpenRouter run side by side, each against its own
-endpoint. `MAX_HARNESSES` (4) still reaps the idle ones.
+endpoint. `MAX_HARNESSES` (8) still reaps the idle ones.
 
 A profile with an empty `credentialEnv` is a server that wants no key, but
 `shinbo-cli` refuses to start without `SHINBO_PROVIDER_API_KEY`, so Shinbo sends the
@@ -118,8 +119,9 @@ for the second models); the whole chain stays for the picker and the window look
 vendors, whatever the chain is for. `validateRouters` checks them on the way in
 and again in the main process, which learns the table over the `setRouters`
 request and holds none until the renderer sends one. A settings file written
-before routers existed carries a `freeRouterModels` array, which becomes the
-first router.
+before routers existed carries a `freeRouterModels` array; `validateSettings`
+would read it as the first router, but `repairSettings` seeds `routers` from the
+defaults before it runs, so the key is dropped.
 
 The shipped default is one router, `free`, named **Shinbo Free Router**, holding
 `FREE_ROUTER_MODELS` — ten free ids:
@@ -542,13 +544,14 @@ child, holds no credential and makes no network request.
 
 ## Settings → Models
 
-[App.tsx](../desktop/src/App.tsx) renders, in order: **ModelCatalog** (the full
+[App.tsx](../desktop/src/App.tsx) renders, in order: the role panels (Workspace,
+Quick Ask, **VerifierPanel** · **AdvisorPanel** · **VisionPanel** · **SecretPanel**),
+then **ModelCatalog** (the full
 list, a "Free only" filter persisted under `shinbo.freeModelsOnly.v1`, a `Free`/`Paid`
 badge, a reload that names what was added and removed, `CATALOG_PAGE` 15 rows at
 a time, and the shared provider control under the selected row when a plan covers it) ·
-**ModelPlans** (Subscriptions, above — keys only) · **ProviderSettings** · **VerifierPanel** · **AdvisorPanel** ·
-**VisionPanel** · **SecretPanel** · **ProviderKeys** · **Private routing** · **Automatic fallback**
-· **Local deterministic profile** · **Speech to text**.
+**ProviderSettings** · **ModelPlans** (Subscriptions, above — keys only) ·
+**ProviderKeys** · **Private routing**.
 
 **Provider profiles.** `PROVIDER_PRESETS` fills the form's chips — OpenRouter,
 Z.AI, DeepSeek, OpenCode Zen, OpenCode Go, LM Studio, Ollama, llama.cpp, Custom —
@@ -625,9 +628,9 @@ means a local server that needs no key.
 
 | Subsystem | File | Default model | Timeout | Max tokens |
 | --- | --- | --- | --- | --- |
-| Verifier | [verifier.ts](../desktop/main/verifier.ts) | `liquid/lfm-2.5-2.6b:free` | 20 s | 700 |
-| Note tagger | [vault-tags.ts](../desktop/main/vault-tags.ts) | `thinkingmachines/inkling-small:free` | 20 s | 1024 |
-| Vision | [vision.ts](../desktop/main/vision.ts) | `nvidia/nemotron-nano-12b-v2-vl:free` | 60 s | 1024 |
+| Verifier | [verifier.ts](../desktop/main/verifier.ts) | `liquid/lfm-2.5-2.6b:free`, then `nvidia/nemotron-nano-9b-v2:free`, `thinkingmachines/inkling-small:free` | 20 s | 700 |
+| Note tagger | [vault-tags.ts](../desktop/main/vault-tags.ts) | `thinkingmachines/inkling-small:free`, then `google/gemma-4-31b-it:free`, `nvidia/nemotron-3.5-lightning:free` | 20 s | 1024 |
+| Vision | [vision.ts](../desktop/main/vision.ts) | `nvidia/nemotron-nano-12b-v2-vl:free`, then `google/gemma-4-31b-it:free`, `thinkingmachines/inkling-small:free` | 60 s | 1024 |
 | Advisor | [advisor.ts](../desktop/main/advisor.ts) | `""` (off) | 120 s | 1024 |
 | Secrets | [secret.ts](../desktop/main/secret.ts) | `""` (off) | 60 s | 1024 |
 
@@ -662,10 +665,11 @@ them on this computer. See [privacy.md](privacy.md).
 **Note tagger** — titles and tags a note kept into your vault
 (`MAX_TAG_TEXT_CHARS` 6000, at most `MAX_TAGS` tags). See
 [knowledge.md](knowledge.md). Its rules are `defaultTaggerSystem` and it sends
-them; a stored `system` replaces them. It has no panel: `shinbo:set-tagger` exists
-on the IPC surface but nothing in the renderer calls it, so its model is
-whatever `defaultTagger` says — a three-model chain, none of which reasons
-unless asked to.
+them; a stored `system` replaces them. It has no Settings panel, but it is a
+role tab in the model picker (`SECOND_MODEL_IDS`), sent over `shinbo:set-tagger`
+when picked and again on every boot; until you pick one its model is whatever
+`defaultTagger` says — a three-model chain, none of which reasons unless asked
+to.
 
 ### The reviewer is not one of them
 

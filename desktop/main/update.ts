@@ -43,17 +43,28 @@ export function readyUpdate() {
   return ready;
 }
 
-export function installUpdate() {
+export function installUpdate(): string {
   if (!ready) {
     console.warn("Shinbo: no update is downloaded");
-    return;
+    return "";
   }
-  if (!installable) {
+  if (installable) {
+    autoUpdater.quitAndInstall();
+    return "";
+  }
+  if (!installWhenReady) {
     installWhenReady = true;
     forceCheck();
-    return;
   }
-  autoUpdater.quitAndInstall();
+  return `Downloading ${ready}…`;
+}
+
+function dropStale() {
+  installWhenReady = false;
+  if (!ready || installable) return;
+  ready = "";
+  forgetReady();
+  announceReady("");
 }
 
 function forceCheck() {
@@ -98,13 +109,13 @@ export function startUpdates(announce: (version: string) => void) {
   }
   autoUpdater.on("error", (error) => {
     console.error("Shinbo: update check failed", error);
-    installWhenReady = false;
+    dropStale();
     if (!asked) return;
     asked = false;
     reportFailure(error);
   });
   autoUpdater.on("update-not-available", () => {
-    installWhenReady = false;
+    dropStale();
     if (!asked) return;
     asked = false;
     reportUpToDate();

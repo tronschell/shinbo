@@ -91,7 +91,7 @@ function dictationFixture() {
   new Function("exports", "require", "navigator", "MediaRecorder", "OfflineAudioContext", "window", compile(renderer))(
     exports, (id) => id === "react" ? hooks : rendererRequire(id),
     { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } }, Recorder, Decoder,
-    { shinbo: { platform: "darwin", transcribe: () => { submissions += 1; return new Promise((resolve) => { reply = resolve; }); } } },
+    { shinbo: { platform: "darwin", transcribe: () => { submissions += 1; return new Promise((resolve) => { reply = resolve; }); } }, setTimeout },
   );
   const dictation = exports.useDictation(settings, (text) => texts.push(text));
   return { dictation, unmount: effects[1](), texts, submissions: () => submissions, decoding: () => Boolean(decode), decode: () => decode({ numberOfChannels: 1, getChannelData: () => new Float32Array(16_000) }), reply: () => reply({ text: "Disposable transcript" }) };

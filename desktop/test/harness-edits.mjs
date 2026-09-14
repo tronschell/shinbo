@@ -19,6 +19,7 @@ try {
   const note = vm.runInNewContext(ts.transpileModule('(' + node.getText(source) + ')', { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, {
     escapesRoot, folders, path, pathInside, samePath,
     readFileSync: (...args) => { reads.push(args[0]); return fs.readFileSync(...args); },
+    statSync: fs.statSync, MAX_FILE_BYTES: 256 * 1024,
     harnessBefore: snapshots, agents: { noteChange: (threadId, change) => captured.push({ threadId, ...change }) }, changed() {},
   });
   const calls = [];
@@ -81,6 +82,13 @@ try {
   h.applyUpdate('child', { sessionUpdate: 'tool_call_update', toolCallId: 'same', status: 'completed' });
   assert.equal(captured[1].threadId, 'child');
   assert.equal(captured[1].before, 'parent');
+  assert.equal(snapshots.size, 0);
+  const big = path.join(cwd, 'big.txt');
+  fs.writeFileSync(big, 'x'.repeat(256 * 1024 + 1));
+  h.applyUpdate('t', { sessionUpdate: 'tool_call', toolCallId: 'big', kind: 'edit', status: 'pending', _shinbo_filePath: 'big.txt' });
+  fs.writeFileSync(big, 'small now');
+  h.applyUpdate('t', { sessionUpdate: 'tool_call_update', toolCallId: 'big', status: 'completed' });
+  assert.equal(captured.length, 2);
   assert.equal(snapshots.size, 0);
   console.log('Harness edit capture and IPC revert: complete path, restored before text, rejected escapes, and child IDs passed');
 } finally {

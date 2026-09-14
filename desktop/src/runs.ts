@@ -298,14 +298,20 @@ function rehydrate(threadId: string, token: number, snapshot = recoverySnapshot(
     .catch(() => undefined);
 }
 
+const promptAsked = new Set<string>();
+
 function reconcile(live: LiveAgent[]) {
   let snapshot: ReturnType<typeof recoverySnapshot> | undefined;
   for (const agent of live) {
     if (agent.status === "stopped" && runs.has(agent.threadId) && !read(agent.threadId).stopped) write(agent.threadId, { stopped: true });
-    if (agent.status !== "running" && agent.status !== "waiting") continue;
+    if (agent.status !== "running" && agent.status !== "waiting") { promptAsked.delete(agent.threadId); continue; }
     if (!read(agent.threadId).sending) adoptForeign(agent.threadId, snapshot ??= recoverySnapshot());
-    if (!read(agent.threadId).pending && typeof agent.prompt === "string" && agent.prompt.trim()) {
-      write(agent.threadId, { pending: { content: agent.prompt, after: 0, params: {} } });
+    if (read(agent.threadId).pending) continue;
+    if (typeof agent.prompt === "string") {
+      if (agent.prompt.trim()) write(agent.threadId, { pending: { content: agent.prompt, after: 0, params: {} } });
+    } else if (!promptAsked.has(agent.threadId)) {
+      promptAsked.add(agent.threadId);
+      void window.shinbo.listAgents().then(reconcile).catch(() => undefined);
     }
   }
   for (const [threadId, run] of runs) {
@@ -480,7 +486,8 @@ export function sendTurn(threadId: string, turn: QueuedTurn, reload: () => unkno
 
 const inFlight = (run: Run) => (run.sending && !run.foreign ? 1 : 0);
 
-export const canSteer = (turn: QueuedTurn) => !turn.attached && Object.keys(turn.params).length === 0;
+export const MAX_STEER_CHARS = 4096;
+export const canSteer = (turn: QueuedTurn) => !turn.attached && Object.keys(turn.params).length === 0 && turn.content.length <= MAX_STEER_CHARS;
 
 export function queuedTurns(run: Run) {
   return run.queue.slice(inFlight(run));
@@ -491,6 +498,7 @@ export function dropQueued(threadId: string, index: number) {
 }
 
 export function steerRunning(threadId: string, content: string) {
+  if (content.length > MAX_STEER_CHARS) return Promise.reject(new Error(`A steering message is at most ${MAX_STEER_CHARS.toLocaleString("en-US")} characters; this one is ${content.length.toLocaleString("en-US")}. Trim it, or wait for the turn to end and send it as its own message.`));
   const block: Block = { kind: "notice", text: content, plain: true, steer: true };
   write(threadId, (run) => ({ blocks: [...run.blocks, block] }));
   return window.shinbo.steerAgent({ threadId, text: content }).catch((reason: unknown) => {
@@ -508,7 +516,6 @@ export function steerQueued(threadId: string, index: number) {
   void steerRunning(threadId, turn.content).catch((reason: unknown) => {
     write(threadId, (current) => ({ queue: [...current.queue.slice(0, inFlight(current)), turn, ...current.queue.slice(inFlight(current))] }));
     dispatchEvent(new CustomEvent<RunFailure>(RUN_ERROR_EVENT, { detail: { threadId, text: reasonText(reason) } }));
-    interruptQueued(threadId, 0);
   });
 }
 

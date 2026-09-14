@@ -147,12 +147,16 @@ test("a remote server is kept only over https and reaches the harness with its h
 
     assert.equal(JSON.stringify(listed).includes("do-not-render"), false);
 
-    assert.deepEqual(await harnessMcpServers(userData), [{
+    const forHarness = await harnessMcpServers(userData);
+    assert.deepEqual(forHarness[0], {
       name: "remote",
       type: "http",
       url: "https://mcp.example.com/s/do-not-render/v1",
       headers: [{ name: "Authorization", value: "Bearer do-not-render" }],
-    }, { name: "local", command: process.execPath, args: [], env: [] }]);
+    });
+    assert.deepEqual({ ...forHarness[1], env: undefined }, { name: "local", command: process.execPath, args: [], env: undefined });
+    assert.equal(forHarness[1].env?.[0]?.name, "PATH");
+    assert.notEqual(forHarness[1].env?.[0]?.value, "");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

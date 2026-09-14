@@ -48,7 +48,6 @@ const MAX_HOOKS_PER_PLUGIN = 32;
 const MAX_HOOK_OUTPUT_BYTES = 8 * 1024;
 const HOOK_SECONDS = 10;
 const MAX_HOOK_SECONDS = 60;
-const MAX_SESSION_END_SECONDS = 3;
 let gitExecutable: { pathValue: string; value: Promise<string | null> } | undefined;
 let npmExecutable: { pathValue: string; value: Promise<string | null> } | undefined;
 let tarExecutable: { pathValue: string; value: Promise<string | null> } | undefined;
@@ -312,12 +311,29 @@ async function readHostedApps(root: string, relative: string): Promise<HostedApp
   try { return parseHostedApps(await readJson(file)); } catch { return []; }
 }
 
-async function readMarketplaceFile(root: string) {
+async function marketplaceFile(root: string) {
   for (const candidate of MARKETPLACE_FILES) {
     const file = await inside(root, ...candidate.split(/[\\/]/));
-    if (file) return parseMarketplace(await readJson(file));
+    if (file) return file;
   }
   throw new Error(`No marketplace.json here — Shinbo looked for ${MARKETPLACE_FILES.join(", ")}.`);
+}
+
+async function readMarketplaceFile(root: string) {
+  return parseMarketplace(await readJson(await marketplaceFile(root)));
+}
+
+let catalogCache: { key: string; marketplaces: Marketplace[] } | undefined;
+
+async function sourceKey(source: StoredSource) {
+  const head = [source.id, source.origin, source.ref, source.sparse.join(","), source.path];
+  try {
+    const file = await marketplaceFile(source.path);
+    const information = await stat(file);
+    return [...head, file, information.mtimeMs, information.size].join("|");
+  } catch {
+    return [...head, "missing"].join("|");
+  }
 }
 
 async function readSources(userData: string): Promise<StoredSource[]> {
@@ -468,17 +484,21 @@ async function decorateCards(marketplaces: Marketplace[]) {
 
 export async function readCatalog(userData: string): Promise<PluginCatalog> {
   const sources = await readSources(userData);
-  const marketplaces = await Promise.all(sources.map(async (source): Promise<Marketplace> => {
-    const shell = { id: source.id, displayName: source.id, origin: source.origin, ref: source.ref, sparse: source.sparse, local: source.local, root: source.path, plugins: [] };
-    try {
-      const listing = await readMarketplaceFile(source.path);
-      return { ...shell, displayName: listing.displayName, plugins: listing.plugins };
-    } catch (error) {
-      return { ...shell, error: error instanceof Error ? error.message : String(error) };
-    }
-  }));
-  await decorateCards(marketplaces);
-  return { marketplaces, installed: await installedHooks(userData) };
+  const key = [userData, ...await Promise.all(sources.map(sourceKey))].join("\n");
+  if (catalogCache?.key !== key || sources.some((source) => source.local)) {
+    const marketplaces = await Promise.all(sources.map(async (source): Promise<Marketplace> => {
+      const shell = { id: source.id, displayName: source.id, origin: source.origin, ref: source.ref, sparse: source.sparse, local: source.local, root: source.path, plugins: [] };
+      try {
+        const listing = await readMarketplaceFile(source.path);
+        return { ...shell, displayName: listing.displayName, plugins: listing.plugins };
+      } catch (error) {
+        return { ...shell, error: error instanceof Error ? error.message : String(error) };
+      }
+    }));
+    await decorateCards(marketplaces);
+    catalogCache = { key, marketplaces };
+  }
+  return { marketplaces: catalogCache.marketplaces, installed: await installedHooks(userData) };
 }
 
 export async function pluginDetail(userData: string, marketplaceId: unknown, pluginName: unknown): Promise<PluginDetail> {
@@ -542,7 +562,8 @@ export async function addMarketplace(userData: string, request: { source: unknow
       throw error;
     }
   }
-  if (sources.some((entry) => entry.id === stored.id)) {
+  const current = await readSources(userData);
+  if (current.some((entry) => entry.id === stored.id)) {
     await rm(checkout, { recursive: true, force: true });
     throw new Error(`A marketplace named "${stored.id}" is already added.`);
   }
@@ -550,16 +571,16 @@ export async function addMarketplace(userData: string, request: { source: unknow
     await rm(stored.path, { recursive: true, force: true });
     await rename(checkout, stored.path);
   }
-  await writeJson(sourcesFile(userData), { version: 1, sources: [...sources, stored] });
+  await writeJson(sourcesFile(userData), { version: 1, sources: [...current, stored] });
   return readCatalog(userData);
 }
 
 export async function ensureDefaultMarketplace(userData: string, source: string = DEFAULT_MARKETPLACE): Promise<PluginCatalog> {
   const mark = defaultMarketplaceMark(userData);
   if (await exists(mark) || (await readSources(userData)).length) return readCatalog(userData);
-  const catalog = await addMarketplace(userData, { source });
+  await mkdir(marketplaceRoot(userData), { recursive: true, mode: 0o700 });
   await writeFile(mark, "", { encoding: "utf8", mode: 0o600 });
-  return catalog;
+  return addMarketplace(userData, { source });
 }
 
 export async function removeMarketplace(userData: string, id: unknown): Promise<PluginCatalog> {
@@ -572,6 +593,8 @@ export async function removeMarketplace(userData: string, id: unknown): Promise<
   await forgetTrust(userData, installed);
   await writeJson(sourcesFile(userData), { version: 1, sources: sources.filter((entry) => entry.id !== slug) });
   if (!source.local) await rm(path.join(marketplaceRoot(userData), slug), { recursive: true, force: true });
+  await rm(path.join(marketplaceRoot(userData), ".remote", slug), { recursive: true, force: true });
+  await rm(path.join(userData, "plugin-data", slug), { recursive: true, force: true });
   return readCatalog(userData);
 }
 
@@ -581,7 +604,8 @@ export async function refreshMarketplace(userData: string, id: unknown): Promise
   if (!source) throw new Error(`Shinbo is not tracking a marketplace named "${slug}".`);
   if (source.local) return readCatalog(userData);
   await git(source.path, ["fetch", "--depth", "1", "origin", source.ref || "HEAD"]);
-  await git(source.path, ["reset", "--hard", "FETCH_HEAD"]);
+  await git(source.path, ["reset", "--hard", "FETCH_HEAD"], CLONE_TIMEOUT_MS);
+  catalogCache = undefined;
   return readCatalog(userData);
 }
 
@@ -658,6 +682,9 @@ export async function uninstallPlugin(userData: string, id: unknown): Promise<Pl
   const kept = installed.filter((entry) => entry.id !== id);
   await writeJson(installedFile(userData), { version: 1, installed: kept });
   await forgetTrust(userData, kept);
+  const checkout = path.join(marketplaceRoot(userData), ".remote", plugin.marketplace, plugin.name);
+  if (plugin.marketplace && plugin.name && pathInside(await realpath(checkout).catch(() => checkout), plugin.root)) await rm(checkout, { recursive: true, force: true });
+  await rm(pluginDataRoot(userData, id), { recursive: true, force: true });
   return readCatalog(userData);
 }
 
@@ -741,9 +768,8 @@ function runHook(hook: PluginHook, root: string, data: string, cwd: string, inpu
 }
 
 export async function runPluginHooks(userData: string, event: RunnableHookEvent, input: Record<string, unknown>): Promise<string[]> {
-  const subject = event === "SessionStart" ? String(input.source ?? "") : event === "SessionEnd" ? String(input.reason ?? "") : "";
+  const subject = event === "SessionStart" ? String(input.source ?? "") : "";
   const cwd = typeof input.cwd === "string" ? input.cwd : homedir();
-  const ceiling = event === "SessionEnd" ? MAX_SESSION_END_SECONDS : MAX_HOOK_SECONDS;
   const running: Promise<string>[] = [];
   for (const plugin of await installedHooks(userData)) {
     const matched = plugin.hooks.filter((hook) => hook.event === event && hook.trusted && hookMatches(hook, subject));
@@ -751,7 +777,7 @@ export async function runPluginHooks(userData: string, event: RunnableHookEvent,
     const data = pluginDataRoot(userData, plugin.id);
     await mkdir(data, { recursive: true, mode: 0o700 });
     for (const hook of matched) {
-      const seconds = Math.min(hook.timeout || HOOK_SECONDS, ceiling);
+      const seconds = Math.min(hook.timeout || HOOK_SECONDS, MAX_HOOK_SECONDS);
       running.push(runHook(hook, plugin.root, data, cwd, input, seconds)
         .then((failure) => (failure ? `${plugin.displayName || plugin.name} · ${event} hook ${failure}` : "")));
     }

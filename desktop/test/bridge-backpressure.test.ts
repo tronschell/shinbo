@@ -104,14 +104,15 @@ test("a blocked phone cannot retain unbounded encrypted output or delay a health
   slow.request("pending");
   bridge.ask({ id: "permission", threadId: "thread", tool: "edit", summary: "fixture", detail: "fixture", askedAt: Date.now(), expiresAt: Date.now() + 60_000 });
   const data = "x".repeat(64 * 1024);
-  for (let index = 0; index < 1000; index++) bridge.event({ k: "evt", t: "delta", threadId: "thread", delta: data });
+  const step = { threadId: "thread", toolCallId: "call", title: "fixture", kind: "execute" as const, status: "completed" as const, output: data, at: 0 };
+  for (let index = 0; index < 1000; index++) bridge.event({ k: "evt", t: "step", step });
   const beforeReply = slow.frames.length;
   complete();
   await Promise.resolve();
   await Promise.resolve();
-  t.diagnostic(JSON.stringify({ offeredEvents: 1000, payloadBytes: data.length, maximumQueuedBytes: slow.maximum, retainedBytes: slow.bufferedAmount, terminated: slow.terminated, healthyEvents: healthy.messages.filter((frame) => frame.k === "evt" && frame.t === "delta").length }));
+  t.diagnostic(JSON.stringify({ offeredEvents: 1000, payloadBytes: data.length, maximumQueuedBytes: slow.maximum, retainedBytes: slow.bufferedAmount, terminated: slow.terminated, healthyEvents: healthy.messages.filter((frame) => frame.k === "evt" && frame.t === "step").length }));
   assert.equal(healthy.terminated, 0);
-  assert.equal(healthy.messages.filter((frame) => frame.k === "evt" && frame.t === "delta").length, 1000);
+  assert.equal(healthy.messages.filter((frame) => frame.k === "evt" && frame.t === "step").length, 1000);
   assert.ok(slow.maximum <= protocol.MAX_FRAME_BYTES * 4);
   assert.equal(slow.terminated, 1);
   assert.equal(slow.frames.length, 0);
@@ -145,4 +146,21 @@ test("a draining phone retains normal bursts and an asynchronous send error drop
   assert.equal(timers.size, 2);
   bridge.event({ k: "evt", t: "delta", threadId: "thread", delta: "after failure" });
   assert.ok(healthy.messages.some((frame) => frame.k === "evt" && frame.t === "delta" && frame.delta === "after failure"));
+});
+
+test("a phone behind a slow link skips streamed events instead of losing its connection", async (t) => {
+  const { bridge, connect } = await fixture(t);
+  const slow = connect(0, true);
+  const healthy = connect(1, false);
+  for (let index = 0; index < 1000; index++) bridge.event({ k: "evt", t: "delta", threadId: "thread", delta: "x".repeat(64 * 1024) });
+  assert.equal(slow.terminated, 0);
+  assert.equal(slow.readyState, Socket.OPEN);
+  assert.ok(slow.maximum <= protocol.MAX_FRAME_BYTES * 2 + 65 * 1024);
+  assert.equal(healthy.messages.filter((frame) => frame.k === "evt" && frame.t === "delta").length, 1000);
+  bridge.ask({ id: "permission", threadId: "thread", tool: "edit", summary: "fixture", detail: "fixture", askedAt: Date.now(), expiresAt: Date.now() + 60_000 });
+  slow.drain();
+  assert.ok(slow.messages.some((frame) => frame.k === "evt" && frame.t === "permission-ask"));
+  bridge.event({ k: "evt", t: "delta", threadId: "thread", delta: "after drain" });
+  slow.drain();
+  assert.ok(slow.messages.some((frame) => frame.k === "evt" && frame.t === "delta" && frame.delta === "after drain"));
 });

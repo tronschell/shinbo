@@ -32,18 +32,18 @@ test("T4 the workspace acknowledges readiness only after settings, privacy and m
   const scope = {
     restoredModel: { current: true },
     settings: { selectedModel: "fallback", requireZeroRetention: true },
-    syncMainPreferences: () => config.promise,
+    syncMainPreferences: (settings: { requireZeroRetention: boolean }) => Promise.all([config.promise, scope.window.shinbo.setZeroRetention(settings.requireZeroRetention)]),
     SETTINGS_KEY: "settings", localStorage: { getItem: () => '{"selectedModel":"fallback"}' },
     reasonText: String, setError: (reason: string) => { throw new Error(reason); },
     window: { shinbo: {
-      setZeroRetention: async () => { calls.push("privacy"); },
+      setZeroRetention: async (_value: boolean) => { calls.push("privacy"); },
       request: async () => { calls.push("model"); await model.promise; },
       runtimeReady: async () => { calls.push("ready"); },
     } },
   };
   const run = Function(...Object.keys(scope), ts.transpile(`return (${restore.getText(source)});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(scope))();
   await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.deepEqual(calls, []);
+  assert.deepEqual(calls, ["privacy"]);
   config.resolve();
   await new Promise<void>((resolve) => setImmediate(resolve));
   assert.deepEqual(calls, ["privacy", "model"]);
@@ -57,7 +57,7 @@ test("T4 restoring preferences waits for the actual tool-settings operation", as
   assert.ok(declaration);
   const tools = deferred();
   const api = new Proxy({}, { get: (_target, name) => name === "setToolSettings" ? () => tools.promise : async () => undefined });
-  const sync = Function("window", "syncImprovements", ts.transpile(`${declaration.getText(source)}\nreturn syncMainPreferences;`, { target: ts.ScriptTarget.ES2022 }))({ shinbo: api }, () => {});
+  const sync = Function("window", "syncImprovements", "syncOverlayPreferences", ts.transpile(`${declaration.getText(source)}\nreturn syncMainPreferences;`, { target: ts.ScriptTarget.ES2022 }))({ shinbo: api }, () => {}, async () => undefined);
   let ready = false;
   const run = Promise.resolve(sync({})).then(() => { ready = true; });
   await new Promise<void>((resolve) => setImmediate(resolve));

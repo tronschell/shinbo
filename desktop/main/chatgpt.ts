@@ -13,6 +13,7 @@ const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 
 const SIGN_IN = `Shinbo could not read a ChatGPT sign-in at ${AUTH_FILE}. Run \`codex login\` in a terminal and pick Sign in with ChatGPT, then send this again.`;
 const NOT_A_PLAN = "That sign-in stores an API key, not a ChatGPT plan. Run `codex logout` then `codex login` and pick Sign in with ChatGPT.";
+const EXPIRED = "Your ChatGPT sign-in has expired. Run `codex login` in a terminal and pick Sign in with ChatGPT, then send this again.";
 
 export type ChatgptAuth = { accessToken: string; accountId: string };
 
@@ -24,22 +25,25 @@ type ChatMessage = {
   tool_calls?: { id?: string; function?: { name?: string; arguments?: string } }[];
 };
 
-function claimedAccount(token: string): string {
+function tokenClaims(token: string): Record<string, unknown> {
   try {
-    const body = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString()) as Record<string, unknown>;
-    const auth = body["https://api.openai.com/auth"] as { chatgpt_account_id?: unknown } | undefined;
-    return typeof auth?.chatgpt_account_id === "string" ? auth.chatgpt_account_id : "";
+    const body = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString()) as unknown;
+    return body && typeof body === "object" && !Array.isArray(body) ? body as Record<string, unknown> : {};
   } catch {
-    return "";
+    return {};
   }
 }
 
-export function readChatgptAuth(stored: unknown): ChatgptAuth {
+export function readChatgptAuth(stored: unknown, now = Date.now()): ChatgptAuth {
   const tokens = (stored as { tokens?: { access_token?: unknown; account_id?: unknown } } | null)?.tokens;
   const accessToken = typeof tokens?.access_token === "string" ? tokens.access_token : "";
   if (!accessToken) throw new Error(NOT_A_PLAN);
-  const accountId = typeof tokens?.account_id === "string" && tokens.account_id ? tokens.account_id : claimedAccount(accessToken);
+  const claims = tokenClaims(accessToken);
+  const auth = claims["https://api.openai.com/auth"] as { chatgpt_account_id?: unknown } | undefined;
+  const claimed = typeof auth?.chatgpt_account_id === "string" ? auth.chatgpt_account_id : "";
+  const accountId = typeof tokens?.account_id === "string" && tokens.account_id ? tokens.account_id : claimed;
   if (!accountId) throw new Error(NOT_A_PLAN);
+  if (typeof claims.exp === "number" && claims.exp * 1000 < now) throw new Error(EXPIRED);
   return { accessToken, accountId };
 }
 
@@ -288,6 +292,7 @@ async function relay(request: IncomingMessage, response: ServerResponse, token: 
       upstream = await send(true);
       refusal = upstream.ok && upstream.body ? "" : (await upstream.text()).slice(0, 2048);
     }
+    if (upstream.status === 401) return fail(401, EXPIRED);
     if (!upstream.ok || !upstream.body) return fail(upstream.status, refusal || "The ChatGPT endpoint refused the request.");
     const buffered = body.stream === false;
     const collected: Record<string, unknown>[] = [];

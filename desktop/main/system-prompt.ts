@@ -37,7 +37,7 @@ function promptVariables(context: PromptContext): PromptVariables {
   const mode = context.mode ?? "ask";
   const families = familiesOf(model).map(familyLabel);
   return {
-    available_tools: toolDefinitions(mode, { folders: true, computer: true }, context.disabledTools ?? []).map((tool) => tool.name).join(", "),
+    available_tools: toolDefinitions(mode, { folders: true, computer: true }, context.disabledTools ?? []).map((tool) => tool.name === "vision" ? "look_at_image" : tool.name).join(", "),
     model: model || "the agent's own default model",
     model_family: families.join(" and ") || "unknown",
     workspace: context.workspace || "no folder",

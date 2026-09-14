@@ -8,7 +8,7 @@ const createElement = (type, props, ...children) => ({ type: typeof type === "fu
 const draw = (name, bindings, props) => {
   const component = source.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === name);
   assert.ok(component, name);
-  const scope = { React: { createElement, Fragment: "fragment" }, useState: (initial) => [initial, () => {}], useEffect: () => {}, InfoDot: "info", reasonText: String, ...bindings };
+  const scope = { React: { createElement, Fragment: "fragment" }, useState: (initial) => [initial, () => {}], useEffect: () => {}, InfoDot: "info", reasonText: String, NumberField: "number-field", ...bindings };
   const code = ts.transpileModule(`${component.getText(source)}\nreturn ${name};`, { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } }).outputText;
   return Function(...Object.keys(scope), code)(...Object.values(scope))(props);
 };
@@ -18,11 +18,11 @@ test("context rule thresholds are only shown while enabled and the toggle keeps 
   let saved;
   const props = { label: "Repeat prompt", blurb: "Repeat", steps: 0, percent: 0, suggested: 15, busy: false, onChange: (next) => saved = next };
   const off = nodes(draw("ExperimentRow", { MAX_EXPERIMENT_STEPS: 1000 }, props));
-  assert.equal(off.filter((node) => node.type === "input" && node.props.type === "number").length, 0);
+  assert.equal(off.filter((node) => node.type === "number-field").length, 0);
   off.find((node) => node.type === "input").props.onChange({ target: { checked: true } });
   assert.deepEqual(saved, { steps: 15, percent: 0 });
   const on = nodes(draw("ExperimentRow", { MAX_EXPERIMENT_STEPS: 1000 }, { ...props, ...saved }));
-  assert.equal(on.filter((node) => node.type === "input" && node.props.type === "number").length, 2);
+  assert.equal(on.filter((node) => node.type === "number-field").length, 2);
   on.find((node) => node.type === "input").props.onChange({ target: { checked: false } });
   assert.deepEqual(saved, { steps: 0, percent: 0 });
 });

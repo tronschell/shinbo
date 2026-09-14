@@ -1,5 +1,5 @@
 import { readFileSync, statSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { CODEX_MODEL_ID, CODEX_PREFIX, planForProfile, type ProviderProfile } from "../shared/settings";
@@ -173,19 +173,21 @@ export class ModelMetadataCatalog {
   private catalog: ModelsDevCatalog = {};
   private fetchedAt = "";
   private inFlight?: Promise<MetadataRefresh>;
+  private readonly loaded: Promise<void>;
   private codexModified = -1;
   private codexModels = new Map<string, RouteModelMetadata>();
 
   constructor(userData: string, private readonly codexFile = path.join(homedir(), ".codex", "models_cache.json")) {
     this.file = path.join(userData, CACHE_FILE);
-    try {
-      const stored = JSON.parse(readFileSync(this.file, "utf8")) as { catalog?: unknown; fetchedAt?: unknown };
+    this.loaded = readFile(this.file, "utf8").then((text) => {
+      const stored = JSON.parse(text) as { catalog?: unknown; fetchedAt?: unknown };
       this.catalog = validCatalog(stored.catalog);
       if (typeof stored.fetchedAt === "string") this.fetchedAt = stored.fetchedAt;
-    } catch (error) { void error; }
+    }).catch(() => undefined);
   }
 
   async refresh(maxAgeMs = 0, load: () => Promise<unknown> = fetchModelsDevCatalog): Promise<MetadataRefresh> {
+    await this.loaded;
     if (maxAgeMs && Date.now() - Date.parse(this.fetchedAt) < maxAgeMs) return { fetchedAt: this.fetchedAt, stale: false };
     if (!this.inFlight) {
       this.inFlight = this.fetchNow(load);

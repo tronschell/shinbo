@@ -34,8 +34,8 @@ export function setThreadFolders(threadId: string, ids: string[]): void {
   dispatchEvent(new Event("shinbo-thread-folders-changed"));
 }
 
-function storeEvicting(prefix: string, threadId: string, text: string): void {
-  const write = () => { try { localStorage.setItem(prefix + threadId, text); return true; } catch { return false; } };
+function storeEvicting(prefix: string, threadId: string, texts: string[]): void {
+  const write = () => texts.some((text) => { try { localStorage.setItem(prefix + threadId, text); return true; } catch { return false; } });
   if (write()) return;
   for (const key of Object.keys(localStorage)) if (key.startsWith(prefix) && key !== prefix + threadId) localStorage.removeItem(key);
   write();
@@ -76,7 +76,7 @@ export function rememberBlocks(threadId: string, turns: Record<string, Block[]>)
     kept = kept.slice(1);
     text = JSON.stringify(Object.fromEntries(kept));
   }
-  storeEvicting(BLOCKS_KEY, threadId, text);
+  storeEvicting(BLOCKS_KEY, threadId, [text]);
 }
 
 const PICK_KINDS = new Set(["file", "note", "artifact", "attachment", "terminal", "diff", "visual", "component"]);
@@ -109,15 +109,16 @@ export function rememberTurnAttachments(threadId: string, after: number, content
   if (!items.length) return;
   let kept = [...storedAttachments(threadId), { after, content, items }].slice(-KEPT_ATTACHED_TURNS);
   let text = JSON.stringify(kept);
+  const stripped = (turns: AttachedTurn[]) => turns.map((turn) => ({ ...turn, items: turn.items.map(({ thumbnail: _picture, ...rest }) => rest) }));
   if (text.length > KEPT_ATTACHED_BYTES) {
-    kept = kept.map((turn) => ({ ...turn, items: turn.items.map(({ thumbnail: _picture, ...rest }) => rest) }));
+    kept = stripped(kept);
     text = JSON.stringify(kept);
   }
   while (text.length > KEPT_ATTACHED_BYTES && kept.length > 1) {
     kept = kept.slice(1);
     text = JSON.stringify(kept);
   }
-  storeEvicting(ATTACHED_KEY, threadId, text);
+  storeEvicting(ATTACHED_KEY, threadId, [text, JSON.stringify(stripped(kept))]);
 }
 
 export function pendingAttachments(threadId: string, after: number, content: string): TurnAttachment[] {
@@ -246,12 +247,10 @@ export function recordUses(threadId: string, uses: Omit<ContextUse, "turns">[]):
 
 const CLEARED_KEY = "shinbo.threadCleared.v1";
 
-function allCleared(): Record<string, number> {
-  try {
-    const stored = JSON.parse(localStorage.getItem(CLEARED_KEY) ?? "{}") as Record<string, unknown>;
-    return Object.fromEntries(Object.entries(stored).filter(([, value]) => typeof value === "number" && Number.isInteger(value) && value >= 0)) as Record<string, number>;
-  } catch { return {}; }
-}
+const allCleared = storedMap(CLEARED_KEY, (text) => {
+  const stored = JSON.parse(text) as Record<string, unknown>;
+  return Object.fromEntries(Object.entries(stored).filter(([, value]) => typeof value === "number" && Number.isInteger(value) && value >= 0)) as Record<string, number>;
+});
 
 export function clearedAt(threadId: string): number {
   return allCleared()[threadId] ?? 0;
@@ -720,19 +719,18 @@ export interface ModelSwitch {
   effort?: string;
 }
 
-function allModelSwitches(): Record<string, ModelSwitch[]> {
-  try {
-    const stored = JSON.parse(localStorage.getItem(MODEL_SWITCH_KEY) ?? "{}") as Record<string, unknown>;
-    return Object.fromEntries(Object.entries(stored)
-      .map(([id, value]) => [id, Array.isArray(value)
-        ? (value as ModelSwitch[]).filter((mark) => Number.isInteger(mark?.at) && mark.at >= 0 && typeof mark.label === "string")
-        : []])
-      .filter(([, marks]) => (marks as ModelSwitch[]).length)) as Record<string, ModelSwitch[]>;
-  } catch { return {}; }
-}
+const allModelSwitches = storedMap(MODEL_SWITCH_KEY, (text) => {
+  const stored = JSON.parse(text) as Record<string, unknown>;
+  return Object.fromEntries(Object.entries(stored)
+    .map(([id, value]) => [id, Array.isArray(value)
+      ? (value as ModelSwitch[]).filter((mark) => Number.isInteger(mark?.at) && mark.at >= 0 && typeof mark.label === "string")
+      : []])
+    .filter(([, marks]) => (marks as ModelSwitch[]).length)) as Record<string, ModelSwitch[]>;
+});
+const NO_SWITCHES: ModelSwitch[] = [];
 
 export function modelSwitches(threadId: string): ModelSwitch[] {
-  return allModelSwitches()[threadId] ?? [];
+  return allModelSwitches()[threadId] ?? NO_SWITCHES;
 }
 
 export function recordModelSwitch(threadId: string, mark: ModelSwitch): void {

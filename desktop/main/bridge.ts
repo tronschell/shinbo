@@ -17,6 +17,8 @@ const WATCH_MS = 15_000;
 const MAX_ID_CHARS = 128;
 const MAX_ERROR_CHARS = 200;
 const MAX_QUEUED_BYTES = 4 * MAX_FRAME_BYTES;
+const SOFT_QUEUED_BYTES = MAX_QUEUED_BYTES / 2;
+const SKIPPABLE = new Set(["agents", "spans", "delta"]);
 
 const MAX_PIN_TRIES = 5;
 const UNKNOWN_METHOD = "Shinbo does not answer that request.";
@@ -149,6 +151,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
   let listening = false;
 
   let targets: string[] | undefined;
+  const resolved = new Map<string, string[]>();
   let tries = 0;
   let reason = "";
   let reported = "";
@@ -165,7 +168,14 @@ export function createBridge(deps: BridgeDeps): Bridge {
   const candidates = (): Peer[] => (staged ? [...peers, staged] : peers);
 
 
-  const bindAddr = (): string | undefined => staged?.addr ?? peers[0]?.addr;
+  const bindHosts = (): string[] => {
+    const found = new Set<string>();
+    for (const peer of candidates()) {
+      const host = splitAddress(peer.addr)?.host;
+      if (host) found.add(host);
+    }
+    return [...found];
+  };
 
   const sessionOf = (peer: Peer): [PhoneSocket, Session] | undefined => {
     for (const entry of sessions) if (entry[1].peer.pairedAt === peer.pairedAt) return entry;
@@ -185,7 +195,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
     full: peers.length >= MAX_PEERS,
     reason,
     name: deps.identity.name,
-    addr: bindAddr() ?? "",
+    addr: [...new Set(candidates().map((peer) => peer.addr))].join(", "),
   });
 
   const changed = () => {
@@ -216,6 +226,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
 
   const to = (session: Session, frame: BridgeFrame): boolean => {
     if (frame.k === "evt" && !session.peer.verified) return false;
+    if (frame.k === "evt" && SKIPPABLE.has(frame.t) && session.ws.bufferedAmount > SOFT_QUEUED_BYTES) return false;
     if (!session.codec.ready || !writable(session)) return false;
     const sealed = session.codec.seal(frame);
     return sealed ? send(session, sealed) : false;
@@ -379,7 +390,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
   };
 
   const schedule = () => {
-    if (!running || !bindAddr() || retry !== undefined || !missing()) return;
+    if (!running || !bindHosts().length || retry !== undefined || !missing()) return;
     const wait = backoff;
     backoff = Math.min(backoff * 2, BACKOFF_MAX_MS);
     retry = setTimeout(() => {
@@ -486,15 +497,13 @@ export function createBridge(deps: BridgeDeps): Bridge {
 
 
   const reconcile = () => {
-    const addr = bindAddr();
-    const where = addr ? splitAddress(addr) : undefined;
-    if (!running || !where || !targets) return;
+    if (!running || !targets) return;
     for (const [address, held] of [...servers]) {
       if (targets.includes(address)) continue;
       servers.delete(address);
       close(held.server);
     }
-    for (const address of targets) if (!servers.has(address)) open(address, where.port);
+    for (const address of targets) if (!servers.has(address)) open(address, BRIDGE_PORT);
     listening = anyUp();
     changed();
   };
@@ -505,15 +514,19 @@ export function createBridge(deps: BridgeDeps): Bridge {
 
 
   const refresh = async () => {
-    const addr = bindAddr();
-    if (!running || !addr) return;
-    const where = splitAddress(addr);
-    if (!where) return;
-    const found = await addressesFor(where.host);
-
-    if (!running || bindAddr() !== addr) return;
-    targets = found;
-    if (!found.length) {
+    const hosts = bindHosts();
+    if (!running || !hosts.length) return;
+    const looked = await Promise.all(hosts.map(addressesFor));
+    if (!running || bindHosts().join(" ") !== hosts.join(" ")) return;
+    if (looked.every((addresses) => addresses === undefined)) return;
+    const found = new Set<string>();
+    hosts.forEach((host, index) => {
+      const addresses = looked[index] ?? resolved.get(host) ?? [];
+      resolved.set(host, addresses);
+      for (const address of addresses) found.add(address);
+    });
+    targets = [...found].sort();
+    if (!found.size) {
       if (reason === MOVED && !servers.size) return;
       reason = MOVED;
       shut();

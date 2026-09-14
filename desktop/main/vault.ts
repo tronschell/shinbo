@@ -34,6 +34,7 @@ const IMAGE_DATA_URL = /^data:image\/(png|jpe?g|webp|gif);base64,([A-Za-z0-9+/=\
 const EMBED = /!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]|!\[[^\]]*\]\(([^)\s]+)\)/;
 const IMAGE_FILE = /\.(png|jpe?g|gif|bmp)$/i;
 const MAX_EXCERPT = 280;
+const noteCache = new Map<string, { mtimeMs: number; size: number; note: KeptNote | null }>();
 const OBSIDIAN_CONFIG = isWindows
   ? path.join(process.env.APPDATA || path.join(homedir(), "AppData", "Roaming"), "obsidian", "obsidian.json")
   : path.join(homedir(), "Library", "Application Support", "obsidian", "obsidian.json");
@@ -270,33 +271,43 @@ export async function keepNote(vault: VaultChoice, request: KeepRequest): Promis
 async function readNote(root: string, name: string): Promise<KeptNote | null> {
   const file = path.join(root, name);
   try {
-    const text = await readFile(file, "utf8");
-    const fields = parseFrontmatter(text);
-    const kind = fields?.kind;
-    if (!fields || !isKeepKind(kind)) return null;
-    const saved = typeof fields.saved === "string" ? fields.saved.trim() : "";
-    const title = typeof fields.title === "string" ? fields.title.trim() : "";
-    const source = typeof fields.source === "string" ? fields.source.trim() : "";
-    const application = typeof fields.application === "string" ? fields.application.trim() : "";
-    const body = text.slice(FRONTMATTER.exec(text)?.[0].length ?? 0);
-    const image = noteImage(root, body);
-    const held = name.includes("/") ? name.slice(0, name.indexOf("/")) : "";
-    return {
-      path: file,
-      relative: name,
-      ...(held ? { folder: held } : {}),
-      title: title || name.replace(/\.md$/, ""),
-      tags: (Array.isArray(fields.tags) ? fields.tags : []).filter(validTag).slice(0, MAX_TAGS),
-      savedAt: Number.isNaN(Date.parse(saved)) ? (await stat(file)).mtime.toISOString() : saved,
-      kind,
-      excerpt: noteExcerpt(body),
-      ...(image ? { image } : {}),
-      ...(source ? { sourceUrl: source } : {}),
-      ...(application ? { sourceApplication: application } : {}),
-    };
+    const information = await stat(file);
+    const cached = noteCache.get(file);
+    if (cached && cached.mtimeMs === information.mtimeMs && cached.size === information.size) return cached.note;
+    const note = await parseNote(root, name, file, information.mtime);
+    if (noteCache.size >= MAX_VAULT_NOTES * 2) noteCache.clear();
+    noteCache.set(file, { mtimeMs: information.mtimeMs, size: information.size, note });
+    return note;
   } catch {
     return null;
   }
+}
+
+async function parseNote(root: string, name: string, file: string, modified: Date): Promise<KeptNote | null> {
+  const text = await readFile(file, "utf8");
+  const fields = parseFrontmatter(text);
+  const kind = fields?.kind;
+  if (!fields || !isKeepKind(kind)) return null;
+  const saved = typeof fields.saved === "string" ? fields.saved.trim() : "";
+  const title = typeof fields.title === "string" ? fields.title.trim() : "";
+  const source = typeof fields.source === "string" ? fields.source.trim() : "";
+  const application = typeof fields.application === "string" ? fields.application.trim() : "";
+  const body = text.slice(FRONTMATTER.exec(text)?.[0].length ?? 0);
+  const image = noteImage(root, body);
+  const held = name.includes("/") ? name.slice(0, name.indexOf("/")) : "";
+  return {
+    path: file,
+    relative: name,
+    ...(held ? { folder: held } : {}),
+    title: title || name.replace(/\.md$/, ""),
+    tags: (Array.isArray(fields.tags) ? fields.tags : []).filter(validTag).slice(0, MAX_TAGS),
+    savedAt: Number.isNaN(Date.parse(saved)) ? modified.toISOString() : saved,
+    kind,
+    excerpt: noteExcerpt(body),
+    ...(image ? { image } : {}),
+    ...(source ? { sourceUrl: source } : {}),
+    ...(application ? { sourceApplication: application } : {}),
+  };
 }
 
 function markdownIn(folder: string, prefix = ""): string[] {
@@ -324,6 +335,7 @@ export function notesRoot(vault: VaultChoice): string {
   const choice = normalizeVault(vault);
   if (!isDirectory(choice.root)) throw new Error(`Your vault is not at ${choice.root} any more. It was moved, renamed or unmounted, so Shinbo is not reading or writing your notes until you choose it again on the Knowledge base page.`);
   const folder = noteFolder(choice);
+  attempt(() => mkdirSync(folder, { recursive: true }));
   if (!isDirectory(folder)) throw new Error(`Your knowledge folder is not at ${folder} any more. It was moved, renamed or deleted, so Shinbo is not reading or writing your notes until you choose it again on the Knowledge base page.`);
   return folder;
 }
@@ -349,7 +361,20 @@ export async function listNotes(vault: VaultChoice): Promise<KeptNote[]> {
 
 export function listNoteFolders(vault: VaultChoice): NoteFolder[] {
   const root = notesRoot(vault);
-  return subfolders(root).map((name) => ({ name, changedAt: statSync(path.join(root, name)).mtime.toISOString() }));
+  return subfolders(root).flatMap((name) => {
+    try {
+      return [{ name, changedAt: statSync(path.join(root, name)).mtime.toISOString() }];
+    } catch {
+      return [];
+    }
+  });
+}
+
+export function locateNote(notePath: string, inFolder: boolean): string {
+  if (existsSync(notePath)) return notePath;
+  const root = inFolder ? path.dirname(path.dirname(notePath)) : path.dirname(notePath);
+  const name = path.basename(notePath);
+  return [root, ...subfolders(root).map((folder) => path.join(root, folder))].map((folder) => path.join(folder, name)).find((candidate) => existsSync(candidate)) ?? notePath;
 }
 
 export function createNoteFolder(vault: VaultChoice, value: unknown): NoteFolder {

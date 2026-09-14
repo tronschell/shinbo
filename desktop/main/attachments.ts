@@ -1,37 +1,24 @@
-
-
-
-
-
-
-
-
-
-
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { nativeImage } from "electron";
-import { isImageAttachment, MAX_FILE_BYTES } from "../shared/folders";
+import { attachmentLimit, isConvertibleImage, isImageAttachment, MAX_FILE_BYTES, MAX_IMAGE_BYTES, oversizeMessage } from "../shared/folders";
 import { writeAtomicSync } from "./write-atomic";
 
-export { isImageAttachment };
-
+export { isConvertibleImage, isImageAttachment, MAX_IMAGE_BYTES };
 
 export type Attachment = { id: string; name: string; path: string };
 
-
-export const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 export const MAX_MODEL_IMAGE_BYTES = 1024 * 1024;
 export const MAX_MODEL_IMAGE_EDGE = 1568;
 
 const exec = promisify(execFile);
 
-type ImageSize = { height: number } | { maxEdge: number } | { maxWidth: number };
+type ImageSize = { height: number } | { maxEdge: number } | { maxWidth: number } | { convert: true };
 
 let imagePreparation: Promise<void> = Promise.resolve();
 
@@ -45,12 +32,13 @@ async function preparePng(file: string, size: ImageSize): Promise<Buffer | undef
   if (process.platform !== "darwin") return undefined;
   const { dir, name, ext } = path.parse(file);
   const scales = ["1", "1.25", "1.33", "1.4", "1.5", "1.8", "2", "2.5", "3", "4", "5"];
-  if (/@[\d.]+x$/.test(name) || (await Promise.all(scales.map((scale) =>
-    access(path.join(dir, `${name}@${scale}x${ext}`)).then(() => true, () => false)))).some(Boolean)) return undefined;
+  if (!("convert" in size) && (/@[\d.]+x$/.test(name) || (await Promise.all(scales.map((scale) =>
+    access(path.join(dir, `${name}@${scale}x${ext}`)).then(() => true, () => false)))).some(Boolean))) return undefined;
   let directory: string | undefined;
   try {
     let resize: string[];
-    if ("height" in size) resize = ["--resampleHeight", String(size.height)];
+    if ("convert" in size) resize = [];
+    else if ("height" in size) resize = ["--resampleHeight", String(size.height)];
     else {
       const { stdout } = await exec("/usr/bin/sips", ["-g", "pixelWidth", "-g", "pixelHeight", file], { timeout: 10_000, maxBuffer: 16 * 1024 });
       const width = Number(/pixelWidth:\s+(\d+)/.exec(stdout)?.[1]);
@@ -82,14 +70,62 @@ export async function attachmentImage(file: string, size: ImageSize): Promise<El
   return nativeImage.createFromPath(file);
 }
 
-export async function attachmentPreview(file: string, maxWidth: number): Promise<string | null> {
+export async function convertedPng(file: string): Promise<{ name: string; data: Buffer } | undefined> {
+  if (!isConvertibleImage(file)) return undefined;
+  const png = await resizedPng(file, { convert: true });
+  return png ? { name: `${path.parse(file).name}.png`, data: png } : undefined;
+}
+
+export async function convertedPngBytes(rawName: unknown, data: Uint8Array): Promise<{ name: string; data: Buffer } | undefined> {
+  const name = safeName(rawName);
+  if (!isConvertibleImage(name) || data.byteLength > MAX_IMAGE_BYTES) return undefined;
+  const directory = await mkdtemp(path.join(tmpdir(), "shinbo-convert-"));
+  try {
+    const source = path.join(directory, name);
+    await writeFile(source, data);
+    return await convertedPng(source);
+  } finally {
+    await rm(directory, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+const MAX_CACHED_PREVIEWS = 24;
+const previews = new Map<string, string>();
+
+async function freshPreview(file: string, maxWidth: number): Promise<string | null> {
   const png = await resizedPng(file, { maxWidth });
   if (png) return `data:image/png;base64,${png.toString("base64")}`;
   const image = nativeImage.createFromPath(file);
   if (image.isEmpty()) return null;
-  return (image.getSize().width > maxWidth ? image.resize({ width: maxWidth }) : image).toDataURL();
+  if (image.getSize().width > maxWidth) return image.resize({ width: maxWidth }).toDataURL();
+  const type = path.extname(file).slice(1).toLowerCase().replace("jpg", "jpeg");
+  return `data:image/${type};base64,${(await readFile(file)).toString("base64")}`;
 }
 
+export async function attachmentPreview(file: string, maxWidth: number): Promise<string | null> {
+  let key: string;
+  try { key = `${file}:${statSync(file).mtimeMs}:${maxWidth}`; } catch { return null; }
+  const cached = previews.get(key);
+  if (cached) {
+    previews.delete(key);
+    previews.set(key, cached);
+    return cached;
+  }
+  const preview = await freshPreview(file, maxWidth);
+  if (!preview) return null;
+  previews.set(key, preview);
+  if (previews.size > MAX_CACHED_PREVIEWS) previews.delete(previews.keys().next().value!);
+  return preview;
+}
+
+function checkText(name: string, bytes: Uint8Array) {
+  if (isConvertibleImage(name)) {
+    throw new Error(process.platform === "darwin"
+      ? `${name} could not be converted to PNG; save it as PNG or JPEG and attach that.`
+      : `${name} can only be converted on macOS; save it as PNG or JPEG and attach that.`);
+  }
+  if (bytes.includes(0)) throw new Error(`${name} is not a text file, so there is nothing to attach.`);
+}
 
 function safeName(value: unknown): string {
   const name = typeof value === "string" ? path.basename(value).replace(/[/\\]/g, "").trim() : "";
@@ -101,9 +137,7 @@ export class AttachmentStore {
   private readonly directory: string;
   private readonly index: string;
   private readonly held = new Map<string, Attachment>();
-
-
-
+  private readonly paths = new Set<string>();
 
   constructor(userData: string) {
     this.directory = path.join(userData, "attachments");
@@ -112,15 +146,14 @@ export class AttachmentStore {
       const stored = JSON.parse(readFileSync(this.index, "utf8")) as unknown;
       if (Array.isArray(stored)) {
         for (const item of stored as Attachment[]) {
-
-
           if (!item || typeof item.id !== "string" || typeof item.name !== "string" || typeof item.path !== "string") continue;
-          if (existsSync(item.path)) this.held.set(item.id, { id: item.id, name: item.name, path: item.path });
+          if (!existsSync(item.path)) continue;
+          this.held.set(item.id, { id: item.id, name: item.name, path: item.path });
+          this.paths.add(item.path);
         }
       }
     } catch { return; }
   }
-
 
   hold(file: string): Attachment {
     const full = realpathSync(file);
@@ -128,15 +161,16 @@ export class AttachmentStore {
     if (!stats.isFile()) throw new Error("That is not a file.");
     const name = path.basename(full);
     this.check(name, stats.size);
+    if (!isImageAttachment(name)) checkText(name, readFileSync(full));
     const attachment = { id: randomUUID(), name, path: full };
     this.remember(attachment);
     return attachment;
   }
 
-
   save(rawName: unknown, data: Uint8Array): Attachment {
     const name = safeName(rawName);
     this.check(name, data.byteLength);
+    if (!isImageAttachment(name)) checkText(name, data);
     const id = randomUUID();
     mkdirSync(this.directory, { recursive: true });
     const full = path.join(this.directory, `${id}-${name}`);
@@ -151,16 +185,13 @@ export class AttachmentStore {
     }
   }
 
-
   read(id: unknown): Attachment & { text?: string } {
     const attachment = typeof id === "string" ? this.held.get(id) : undefined;
     if (!attachment) throw new Error("That attachment is no longer held.");
     if (isImageAttachment(attachment.name)) return { ...attachment };
     if (statSync(attachment.path).size > MAX_FILE_BYTES) throw new Error(`${attachment.name} is larger than an attachment can carry.`);
     const bytes = readFileSync(attachment.path);
-
-
-    if (bytes.includes(0)) throw new Error(`${attachment.name} is not a text file, so there is nothing to attach.`);
+    checkText(attachment.name, bytes);
     return { ...attachment, text: bytes.toString("utf8") };
   }
 
@@ -191,20 +222,17 @@ export class AttachmentStore {
 
 
   holds(file: string): boolean {
-    for (const attachment of this.held.values()) if (attachment.path === file) return true;
-    return false;
+    return this.paths.has(file);
   }
 
   private check(name: string, bytes: number) {
-    const max = isImageAttachment(name) ? MAX_IMAGE_BYTES : MAX_FILE_BYTES;
-    if (bytes > max) throw new Error(`${name} is ${Math.round(bytes / 1024)} KB; attachments stop at ${Math.round(max / 1024)} KB.`);
+    if (bytes > attachmentLimit(name)) throw new Error(oversizeMessage(name, bytes));
   }
 
   private remember(attachment: Attachment) {
     mkdirSync(this.directory, { recursive: true, mode: 0o700 });
-    writeAtomicSync(this.index, `${JSON.stringify([...this.held.values(), attachment], null, 2)}\n`);
+    writeAtomicSync(this.index, `${JSON.stringify([...this.held.values(), attachment])}\n`);
     this.held.set(attachment.id, attachment);
+    this.paths.add(attachment.path);
   }
-
-
 }

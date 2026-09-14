@@ -123,7 +123,7 @@ anything that is not on the list.
 | `screen` | ▣ | Captures the screen and attaches it to the next turn |
 | `draw` | ✎ | Opens the yellow pen over the screen — see [voice.md](voice.md) |
 | `page` | ⧉ | Keeps what you are looking at as a note — screenshot, then the vision model, then the app in front — see [knowledge.md](knowledge.md) |
-| `keep` | ◈ | Listed in the catalog, but the island has no handler for it — nothing happens |
+| `keep` | ◈ | Same as `page` — keeps what you are looking at as a note |
 | `workspace` | ▤ | Opens the main window |
 
 ## Settings

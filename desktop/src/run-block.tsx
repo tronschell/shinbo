@@ -73,7 +73,7 @@ export function CodeBlock({ text, language }: { text: string; language?: string 
     <div className="md-code-bar">
       {language && <span className="md-code-lang">{language}</span>}
       {runnable && <button type="button" className="md-code-button" title={running ? "Stop" : "Run this command"} aria-label={running ? "Stop this command" : "Run this command"}
-        onClick={() => running && id ? void window.shinbo.stopBackground(id) : start()}>
+        onClick={() => running && id ? void window.shinbo.stopBackground(id).catch((reason: unknown) => setError(reasonText(reason))) : start()}>
         <Icon path={running ? STOP : PLAY} />
       </button>}
       <button type="button" className="md-code-button" title={copied ? "Copied" : "Copy"} aria-label={copied ? "Copied" : "Copy this block"}

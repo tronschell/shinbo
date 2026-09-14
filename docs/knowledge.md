@@ -82,8 +82,11 @@ It is written into `attachments/` under the note's own stem, `jpeg` renamed to
 | `MAX_TAG_BYTES` | 48, matching `/^[a-z0-9][a-z0-9/-]*$/` |
 | `MAX_VAULT_NOTES` | 2000 listed, and the ceiling on one slug's collisions |
 
-`listNotes` reads the note folder, parses front matter, drops anything without a
-known `kind`, and sorts newest first. A note whose `saved` will not parse falls
+`listNotes` reads the note folder and one level of subfolders, parses front
+matter, drops anything without a known `kind`, and sorts newest first. The page
+offers **＋ New folder**, rename-in-place, and drag-a-card onto a folder tile or
+onto the crumb to file or unfile a note (`createNoteFolder`, `renameNoteFolder`,
+`moveNote`). A note whose `saved` will not parse falls
 back to the file's mtime, so a note you wrote by hand still lists.
 
 ## Saving the screen
@@ -168,7 +171,7 @@ frontmost, then shows it again.
 
 | Surface | What it does |
 |---|---|
-| Knowledge base page | Lists every note — kind, title, saved date, tags, source, filename. The vault is re-read whenever the page opens and whenever the window is focused again, so a note written in Obsidian shows up. **Open ↗** opens `obsidian://open?vault=…&file=…` for an Obsidian vault, otherwise reveals the file in Finder |
+| Knowledge base page | Lists every note — kind, title, excerpt, saved date, tags, source. The vault is re-read whenever the page opens and whenever the window is focused again, so a note written in Obsidian shows up. **Open ↗** opens `obsidian://open?vault=…&file=…` for an Obsidian vault, otherwise reveals the file in Finder |
 | Island | ⧉ **Save screen** keeps what you are looking at — see [Saving the screen](#saving-the-screen) |
 | A turn | The agent calls `keep` |
 | Setup step 3 | Picks the vault and the folder inside it |

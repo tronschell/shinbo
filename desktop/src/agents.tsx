@@ -11,13 +11,22 @@ import { ReadMarkdown } from "./preview";
 import type { Spawned } from "./threads";
 import { reasonText } from "./errors";
 
+let agentList: LiveAgent[] = [];
+const agentListeners = new Set<() => void>();
+let agentEventsWired = false;
+const publishAgents = (next: LiveAgent[]) => { agentList = next; for (const listener of agentListeners) listener(); };
+const subscribeAgents = (listener: () => void) => {
+  if (!agentEventsWired) {
+    agentEventsWired = true;
+    window.shinbo.onAgents(publishAgents);
+    void window.shinbo.listAgents().then(publishAgents).catch(() => undefined);
+  }
+  agentListeners.add(listener);
+  return () => { agentListeners.delete(listener); };
+};
+
 export function useAgents(): LiveAgent[] {
-  const [agents, setAgents] = useState<LiveAgent[]>([]);
-  useEffect(() => {
-    void window.shinbo.listAgents().then(setAgents).catch(() => undefined);
-    return window.shinbo.onAgents(setAgents);
-  }, []);
-  return agents;
+  return useSyncExternalStore(subscribeAgents, () => agentList);
 }
 
 const alive = (agent: LiveAgent) => agent.status === "running" || agent.status === "waiting";
@@ -153,6 +162,7 @@ export function BackgroundRail() {
   const [tasks, setTasks] = useState<BackgroundTask[]>([]);
   const [open, setOpen] = useState("");
   const [output, setOutput] = useState("");
+  const [error, setError] = useState("");
   const reload = () => void window.shinbo.listBackground().then(setTasks).catch(() => undefined);
   useEffect(() => { reload(); return window.shinbo.onBackground(reload); }, []);
   useEffect(() => {
@@ -171,6 +181,7 @@ export function BackgroundRail() {
   const running = tasks.filter((task) => task.status === "running").length;
   return <div className="sidebar-agents sidebar-background">
     <span className="sidebar-label">Background · {running}</span>
+    {error && <p className="capability-error" role="alert">{error}</p>}
     {tasks.map((task) => <div key={task.id}>
       <div className="background-row">
         <button type="button" className={`agent-chip ${task.id === open ? "active" : ""}`} title={task.command} aria-expanded={task.id === open} onClick={() => { setOutput(""); setOpen(task.id === open ? "" : task.id); }}>
@@ -178,7 +189,7 @@ export function BackgroundRail() {
           <span className="nav-label">{task.command.split("\n")[0]}</span>
           <small className="nav-label">{task.id} · {task.status === "running" ? task.folder || "running" : `exit ${task.exitCode ?? "—"}`}</small>
         </button>
-        {task.status === "running" && <button type="button" className="agent-button nav-label" onClick={() => void window.shinbo.stopBackground(task.id).then(reload)}>Stop</button>}
+        {task.status === "running" && <button type="button" className="agent-button nav-label" onClick={() => void window.shinbo.stopBackground(task.id).catch((reason: unknown) => setError(reasonText(reason))).finally(reload)}>Stop</button>}
       </div>
       {task.id === open && <pre className="background-output">{output.trim() || "(no output yet)"}</pre>}
     </div>)}
@@ -215,11 +226,12 @@ export function AgentPanel({ agent, transcript }: { agent: LiveAgent; transcript
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [, tick] = useState(0);
+  const running = alive(agent);
   useEffect(() => {
-    if (!alive(agent)) return;
+    if (!running) return;
     const timer = setInterval(() => tick((current) => current + 1), 1000);
     return () => clearInterval(timer);
-  }, [agent]);
+  }, [agent.threadId, running]);
   const steer = (event: FormEvent) => {
     event.preventDefault();
     const text = message.trim();
