@@ -2405,6 +2405,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
   const [popped, setPopped] = useState<string[]>([]);
   const [raw, setRaw] = useState<string[]>([]);
   const [floated, setFloated] = useState<string[]>([]);
+  const [dismissed, setDismissed] = useState<string[]>([]);
   const [browserFloat, setBrowserFloat] = useState(false);
   useEffect(() => {
     if (tab === "thread" || tab === "goal") return;
@@ -2678,7 +2679,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
   const pastAgent = !openAgent && loadedSubthread?.id === tab ? loadedSubthread : undefined;
   const subagentLoading = !!subagentId && loadedSubthread?.id !== subagentId;
   const subagentError = threadLoadError?.id === subagentId ? threadLoadError.text : "";
-  const threadClis = cliRuns.filter((run) => run.threadId === thread.id);
+  const threadClis = cliRuns.filter((run) => run.threadId === thread.id && (run.status === "running" || !dismissed.includes(run.id)));
   const openCli = threadClis.find((run) => run.id === tab);
   const openCliRun = (id: string) => { setFloated((current) => current.filter((runId) => runId !== id)); setTab(id); };
   const parentThread = thread.parentThreadId ? snapshot.threads.find((item) => item.id === thread.parentThreadId) : undefined;
@@ -2746,7 +2747,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
     : null;
   return <GoalThreads.Provider value={snapshot.threads}><div className="thread-layout">
     <div className="thread-column">
-      <TabStrip tabs={tabs} active={tab} onPick={(id) => { if (threadTabs.has(id)) openThreadPage(id); else setTab(id); }} onClose={(id) => { if (tab === id) setTab("thread"); }} />
+      <TabStrip tabs={tabs} active={tab} onPick={(id) => { if (threadTabs.has(id)) openThreadPage(id); else setTab(id); }} onClose={(id) => { setDismissed((current) => [...current, id]); setFloated((current) => current.filter((runId) => runId !== id)); if (tab === id) setTab("thread"); }} />
       <div className="thread-stage">
       {notice && <div className={`pick-toast ${notice.tone} ${notice.funds ? "funds" : ""}`} role={notice.tone === "error" ? "alert" : "status"} key={notice.id}>
         <span>{notice.funds ? `OpenRouter would not run that turn — out of credit, or over what a free key is allowed. ${notice.text}` : notice.text}</span>
@@ -5501,6 +5502,8 @@ function Overlay() {
   }, [mode, modelKey]);
   useEffect(() => window.shinbo.onNewQuickSession(() => {
     session.current += 1;
+    running.current = 0;
+    window.shinbo.setOverlayBusy(false);
     endStream();
     setThread(undefined);
     setTurns([]);
@@ -5573,8 +5576,7 @@ function Overlay() {
       }
       setError(reasonText(reason));
     } finally {
-      endRun();
-      if (session.current === mine) { endStream(); setBusy(false); }
+      if (session.current === mine) { endRun(); endStream(); setBusy(false); }
     }
   };
   const dictation = useDictation(settings, useCallback((text: string) => setMessage((current) => current ? `${current.trimEnd()} ${text}` : text), []));
@@ -5602,7 +5604,7 @@ function Overlay() {
       setTurns((list) => [...list, { role: "assistant", content: latestReply(answered), steps: liveSteps.current }]);
       if (screenContextId) { setAnnotationId(""); setThumbnail(""); setAttachedApp(""); }
     } catch (reason) { if (session.current === mine) setError(reasonText(reason)); }
-    finally { endRun(); if (session.current === mine) { endStream(); setBusy(false); } }
+    finally { if (session.current === mine) { endRun(); endStream(); setBusy(false); } }
   }, [applyMode, busy, endRun, endStream, screenContextId, settings, startRun, startStream]);
   useSpaceHold(settings.voiceHoldMs, dictation.ready && !busy && !transcribing && !message.trim(), dictation);
   useEffect(() => { const listener = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && /^[123]$/.test(event.key)) { event.preventDefault(); void runAction(Number(event.key) - 1); } }; addEventListener("keydown", listener); return () => removeEventListener("keydown", listener); }, [runAction]);
@@ -5715,7 +5717,7 @@ function Overlay() {
       if (failed) mark(failed.toolCallId, failed.title, failed.kind, "failed");
       if (session.current === mine) setError(reasonText(reason));
     }
-    finally { endStream(); endRun(); if (session.current === mine) setBusy(false); }
+    finally { endStream(); if (session.current === mine) { endRun(); setBusy(false); } }
   }, [busy, endRun, endStream, setError, startRun]);
   const runCommand = useCallback((value: string) => {
     if (value === "voice") { void dictate(); return; }
@@ -5751,7 +5753,7 @@ function Overlay() {
       </div>
       {slashOpen && <section className="source-popover slash-menu" ref={slashMenu} id="island-slash-menu" role="listbox" aria-label={slash?.sigil === "@" ? "Artifacts, saved notes and files" : "Built-in tools, skills and MCP servers"}>
         {slashMatches.map((item, index) => <button type="button" role="option" aria-selected={index === slashActive} className={`slash-row ${index === slashActive ? "active" : ""}`} key={`${item.kind}-${item.id}`} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setSlashPick(index)} title={item.detail} onClick={() => pickCommand(item)}><strong>{slash?.sigil ?? "/"}{item.name}</strong><em className="slash-kind" data-kind={item.kind}>{KIND_LABELS[item.kind]}</em><small>{item.detail}</small></button>)}
-        {!slashMatches.length && <p className="slash-empty">Nothing matches “{slash?.query}”. {slash?.sigil === "@" ? "Artifacts, saved notes and the files of granted folders appear here." : "Built-in tools, imported skills and MCP servers appear here."}</p>}
+        {!slashMatches.length && <p className="slash-empty">Nothing matches “{slash?.query}”. {slash?.sigil === "@" ? "Artifacts, saved notes and the files of granted folders appear here." : "Built-in tools and MCP servers appear here."}</p>}
       </section>}
       <div className="island-thread" ref={transcript}>
         {turns.map((turn, index) => <Fragment key={index}>

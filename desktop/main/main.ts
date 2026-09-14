@@ -662,6 +662,8 @@ function sendHoldKeybinds() {
 function runOverlayCommand(command: string) {
   if (overlay && !overlay.isDestroyed()) {
     closeRadial();
+    if (!overlay.isVisible()) showOverlay(overlay);
+    if (overlaySurface === "pill") expandPill(overlay);
     overlay.webContents.send("shinbo:quick-command", command);
     overlay.focus();
     return;
@@ -880,8 +882,17 @@ function expandPill(window: BrowserWindow) {
   const layout = popoutLayout(screen.getDisplayMatching(window.getBounds()), window.getBounds(), overlayGrow);
   overlaySurface = "popout";
   overlayBaseHeight = layout.base;
+  overlayFront = frontContextNote().catch(() => "");
   window.setBounds(layout.bounds);
   window.webContents.send("shinbo:overlay-surface", "popout");
+  window.focus();
+}
+
+function showOverlay(window: BrowserWindow) {
+  closeOverlayWhenIdle = false;
+  newQuickSession(window);
+  if (overlaySurface !== "pill") overlayFront = frontContextNote().catch(() => "");
+  window.show();
   window.focus();
 }
 
@@ -904,16 +915,14 @@ function toggleOverlay(command?: string) {
     return;
   }
   if (overlay) {
-    if (overlaySurface === "pill") { newQuickSession(overlay); expandPill(overlay); return; }
-    if (overlaySurface === "popout") { collapseToPill(overlay); return; }
     if (!overlay.isVisible() && !capturing) {
-      closeOverlayWhenIdle = false;
-      newQuickSession(overlay);
-      overlay.show();
-      overlay.focus();
+      showOverlay(overlay);
+      if (overlaySurface === "pill") expandPill(overlay);
       if (command) overlay.webContents.send("shinbo:quick-command", command);
       return;
     }
+    if (overlaySurface === "pill") { newQuickSession(overlay); expandPill(overlay); return; }
+    if (overlaySurface === "popout") { collapseToPill(overlay); return; }
     closeOverlay(overlay);
     return;
   }
@@ -943,7 +952,7 @@ function toggleOverlay(command?: string) {
   overlay = window;
   overlayBaseHeight = layout.bounds.height;
   pinWindow(window);
-  window.on("blur", () => { if (!annotating && !capturing) leaveOverlay(window); });
+  window.on("blur", () => { if (!annotating && !capturing && window.isVisible()) leaveOverlay(window); });
   window.on("closed", () => {
     if (overlay === window) overlay = null;
     closeRadial();
@@ -1713,7 +1722,9 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
       const caveat = harness && !harness.ownsSession && args.action === "run"
         ? ` ${harness.label} resumes by "most recent session in this folder" rather than by id, so keep one ${run.cli} run going at a time here.`
         : "";
-      return `${run.cli} run ${run.id} finished turn ${run.turns} (${run.status === "failed" ? `failed, exit ${run.exitCode ?? "unknown"}` : `exit ${run.exitCode ?? "?"}`}). Send it more with cli {"action":"send","id":"${run.id}","prompt":"…"}.${caveat}\n\n${(run.status === "failed" ? read?.output : read?.result)?.trim() || "(no output)"}`;
+      const text = (run.status === "failed" ? read?.output : read?.result)?.trim() || "(no output)";
+      const cut = run.status === "failed" ? (read?.output.length ?? 0) >= MAX_COMMAND_OUTPUT : read?.resultTruncated === true;
+      return `${run.cli} run ${run.id} finished turn ${run.turns} (${run.status === "failed" ? `failed, exit ${run.exitCode ?? "unknown"}` : `exit ${run.exitCode ?? "?"}`}). Send it more with cli {"action":"send","id":"${run.id}","prompt":"…"}.${caveat}\n\n${cliOutputNotice(cut)}${text}`;
     }
     case "cli_runs": {
       if (args.cli) {
@@ -1736,7 +1747,7 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
       const read = clis.output(args.id, MAX_COMMAND_OUTPUT);
       if (!read) return `There is no CLI run called ${args.id}. ${describeRuns(clis.list())}`;
       const state = read.run.status === "running" ? `still working on turn ${read.run.turns}` : `${read.run.status} after ${read.run.turns} ${read.run.turns === 1 ? "turn" : "turns"} (exit ${read.run.exitCode ?? "?"})`;
-      return `${args.id} is ${state}.\n\n${read.output.trim() || "(no output yet)"}`;
+      return `${args.id} is ${state}.\n\n${cliOutputNotice(read.output.length >= MAX_COMMAND_OUTPUT)}${read.output.trim() || "(no output yet)"}`;
     }
     case "computer": {
       ensureComputerRun(turn.threadId);
@@ -2240,6 +2251,7 @@ function runDirectCommand(cwd: string, binary: string, args: string[], timeoutMs
 }
 
 const MAX_COMMAND_OUTPUT = 16 * 1024;
+const cliOutputNotice = (cut: boolean) => cut ? `[earlier output omitted — only the last ${MAX_COMMAND_OUTPUT} characters are shown; the Terminal tab keeps the log, or ask the CLI to write its result to a file]\n\n` : "";
 const MAX_CLI_VIEW_CHARS = 128 * 1024;
 const MAX_COMMAND_MS = 120_000;
 
@@ -3039,7 +3051,7 @@ async function runTurn(turn: TurnRequest) {
     return await runOnHarness(harnessClient(cwd, key, route), cwd, withGoal(withTrialArm(turn, modelName(turn.model)), activeGoal(turn.threadId)), key);
   } finally {
     pendingTurns.delete(turn.threadId);
-    if (turn.nested && key) {
+    if (turn.nested && key && !harnesses.get(key)?.busy) {
       harnesses.get(key)?.close();
       harnesses.delete(key);
     }
@@ -3128,6 +3140,7 @@ async function releaseThreadPanes(threadId: string) {
   if (!threadId) return;
   if (browsers.status(threadId).running) await browsers.navigate(threadId, "close");
   for (const tab of terminals.list(threadId)) terminals.close(tab.id);
+  for (const run of clis.list(threadId)) clis.stop(run.id);
 }
 
 function threadSummary(thread: unknown): ThreadSummary {
@@ -4428,7 +4441,7 @@ protocol.registerSchemesAsPrivileged([
   { scheme: COMPONENT_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
 ]);
 
-app.commandLine.appendSwitch("remote-debugging-port", "0");
+if (!app.isPackaged || process.env.SHINBO_REMOTE_DEBUG === "1") app.commandLine.appendSwitch("remote-debugging-port", "0");
 
 if (isWindows) {
   app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);

@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { CLI_HARNESSES, cliHarness, terminalText, type CliRun, cliInputIds, type CliInput, type CliOptions, validateCliOptions } from "../shared/cli";
 import { validateCatalogEffort } from "./cli-models";
+import { withoutCredentials } from "./credentials";
 import { cliPlan } from "../shared/settings";
 import { findExecutable, isWindows, loginShellPath, spawnCommand, terminateProcessTree, windowsShimTarget } from "./platform";
 
@@ -203,13 +204,23 @@ export class CliRuns {
     this.append(entry, `\n$ ${[binary.split(/[\\/]/).pop(), ...argv].join(" ")}\n`);
     const shim = await windowsShimTarget(binary);
     return new Promise((resolve) => {
-      const child = spawnCommand(shim?.command ?? binary, shim ? [...shim.args, ...argv] : argv, {
-        cwd: entry.cwd,
-        env: { ...process.env, PATH: this.cachedPath ?? process.env.PATH ?? "", ...(entry.cli === "claude" && entry.effort ? { CLAUDE_CODE_EFFORT_LEVEL: entry.effort } : {}) },
-        stdio: ["ignore", "pipe", "pipe"],
-        detached: !isWindows,
-        windowsHide: true,
-      });
+      let child: ChildProcess;
+      try {
+        child = spawnCommand(shim?.command ?? binary, shim ? [...shim.args, ...argv] : argv, {
+          cwd: entry.cwd,
+          env: { ...withoutCredentials(process.env), PATH: this.cachedPath ?? process.env.PATH ?? "", ...(entry.cli === "claude" && entry.effort ? { CLAUDE_CODE_EFFORT_LEVEL: entry.effort } : {}) },
+          stdio: ["ignore", "pipe", "pipe"],
+          detached: !isWindows,
+          windowsHide: true,
+        });
+      } catch (error) {
+        entry.status = "failed";
+        entry.endedAt = Date.now();
+        this.append(entry, `\n[could not start: ${error instanceof Error ? error.message : String(error)}]\n`);
+        this.onChange();
+        resolve();
+        return;
+      }
       entry.child = child;
       const deadline = setTimeout(() => {
         this.append(entry, "\n[stopped: no output for 30 minutes]\n");
@@ -223,7 +234,8 @@ export class CliRuns {
         this.append(entry, text);
         deadline.refresh();
       });
-      child.stderr?.on("data", (data: Buffer) => { this.append(entry, String(data)); deadline.refresh(); });
+      child.stderr?.setEncoding("utf8");
+      child.stderr?.on("data", (text: string) => { this.append(entry, text); deadline.refresh(); });
       const finish = (note: string, code: number | null, failed: boolean) => {
         if (entry.child !== child || entry.status !== "running") return;
         clearTimeout(deadline);

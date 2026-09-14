@@ -213,12 +213,20 @@ fn captureCopy(
     destination: []const u8,
 ) !?change_tracker.FileOperation {
     if (tracker == null) return null;
+    const stat = std.Io.Dir.cwd().statFile(io_mod.getIo(), destination, .{}) catch |err| switch (err) {
+        error.FileNotFound => null,
+        else => return err,
+    };
+    const previous_content: ?[]u8 = if (stat) |entry| blk: {
+        if (entry.kind != .file or entry.size >= max_undo_capture_bytes) return null;
+        break :blk try change_tracker.ChangeTracker.captureFileState(std.heap.c_allocator, destination);
+    } else null;
+    errdefer if (previous_content) |content| std.heap.c_allocator.free(content);
     const owned_path = try std.heap.c_allocator.dupe(u8, destination);
-    errdefer std.heap.c_allocator.free(owned_path);
     return .{
         .kind = .write,
         .path = owned_path,
-        .previous_content = try captureUndoableFileState(destination),
+        .previous_content = previous_content,
         .timestamp_ms = 0,
     };
 }
@@ -787,8 +795,8 @@ test "tracked mutations proceed without an undo preimage when capture exceeds it
 
     const copied = try executeCopy(input, testCall("copy_file", "{\"source\":\"source.txt\",\"destination\":\"large.txt\"}"));
     try std.testing.expectEqual(tool_dispatch.DispatchResult.Status.success, copied.status);
-    try std.testing.expectEqual(@as(usize, 1), tracker.stack.items.len);
-    try std.testing.expect(tracker.stack.items[0].previous_content == null);
+    try std.testing.expectEqual(@as(usize, 0), tracker.stack.items.len);
+    try std.testing.expectEqual(change_tracker.UndoResult.empty, tracker.undoLast(std.heap.c_allocator));
     const copied_content = try readFileAlloc(arena_state.allocator(), tmp.dir, "workspace/large.txt");
     try std.testing.expectEqualStrings("source", copied_content);
 
@@ -798,8 +806,8 @@ test "tracked mutations proceed without an undo preimage when capture exceeds it
 
     const deleted = try executeDelete(input, testCall("delete_file", "{\"path\":\"large.txt\"}"));
     try std.testing.expectEqual(tool_dispatch.DispatchResult.Status.success, deleted.status);
-    try std.testing.expectEqual(@as(usize, 2), tracker.stack.items.len);
-    try std.testing.expect(tracker.stack.items[1].previous_content == null);
+    try std.testing.expectEqual(@as(usize, 1), tracker.stack.items.len);
+    try std.testing.expect(tracker.stack.items[0].previous_content == null);
     try std.testing.expectError(error.FileNotFound, tmp.dir.statFile(io_mod.getIo(), "workspace/large.txt", .{}));
     try std.testing.expectEqual(change_tracker.UndoResult.empty, tracker.undoLast(std.heap.c_allocator));
 }

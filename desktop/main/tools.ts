@@ -159,7 +159,7 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
         selector: { type: "string", description: "Which element to act on: a ref the last snapshot gave it, like @e1, or a CSS selector. Prefer the ref — a selector you guessed rather than read is the usual reason a click lands on nothing." },
         text: { type: "string", description: "What to put in: fill replaces the value of the element at selector, type sends the keystrokes to that element, or to whatever has focus when you give no selector." },
         key: { type: "string", description: "One key for press: Enter, Tab, Escape, ArrowDown, or a combination such as Control+A." },
-        field: { type: "string", enum: [...BROWSER_FIELDS], description: "What get reads: text, html, value or attr off the element at selector, or title, url or count for the page. Defaults to text." },
+        field: { type: "string", enum: [...BROWSER_FIELDS], description: "What get reads: text, html, value, count or attr off the element at selector, or title or url for the page. Defaults to text." },
         direction: { type: "string", enum: [...BROWSER_DIRECTIONS], description: "Which way scroll goes. Defaults to down." },
         amount: { type: "number", description: "How far scroll travels, in pixels. Defaults to one screenful." },
         name: { type: "string", description: "Which attribute to read, for get with field \"attr\": href, src, aria-label." },
@@ -218,14 +218,14 @@ const DEFINITIONS: (ToolDefinition & { needs: keyof ToolAvailability | "always" 
     needs: "always",
     description:
       "Look at an image through a vision model and get an answer back in words. Use it whenever the work involves a picture: a screenshot, a photo, a mockup, a chart, a scanned page, a diagram — including when you cannot see images at all, which is most of the time.\n" +
-      `Name the image with path (a file in a connected folder, or the absolute path of any image on this ${LOCAL_DEVICE} — an attachment, a screenshot, a file a tool just wrote) or url (a public image URL), and ask one specific question. Specific questions get specific answers: "what error is in this dialog, quoted exactly" beats "what is this".\n` +
+      "Name the image with path (a file in a connected folder or an attachment on this thread) or url (a public image URL), and ask one specific question. Specific questions get specific answers: \"what error is in this dialog, quoted exactly\" beats \"what is this\".\n" +
       "It can identify what is in the image, read the text in it, and locate things — ask for a bounding box and you get [x0, y0, x1, y1] in pixels with the image size, which is what you need before clicking anything.\n" +
       "Ask again with a narrower question rather than assuming: the model that looked is not you, and it can misread. Never state as fact something it said it could not tell.",
     inputSchema: {
       type: "object",
       properties: {
         question: { type: "string", description: "What you want to know about the image. One specific question; name the boxes, the text or the objects you want back." },
-        path: { type: "string", description: `Image file relative to a connected folder's root, e.g. screenshots/error.png — or any absolute path on this ${LOCAL_DEVICE}, such as one a tool just wrote.` },
+        path: { type: "string", description: "Image file relative to a connected folder's root, e.g. screenshots/error.png — or the path of an attachment on this thread." },
         url: { type: "string", description: `Public URL of the image, when it is not on this ${LOCAL_DEVICE}. Use path for a local file.` },
         ...FOLDER_FIELD,
       },
@@ -739,6 +739,9 @@ export function parseToolArgs(name: string, raw: string): AnyToolArgs {
       if (action === "eval" && !parsed.js) throw new Error('The "js" argument is required for eval.');
       if (action === "get" && field === "attr" && (!parsed.selector || !parsed.attribute)) {
         throw new Error('Reading an attribute needs both "selector" and "name" — which element, and which attribute of it.');
+      }
+      if (action === "get" && (field ?? "text") !== "title" && (field ?? "text") !== "url" && !parsed.selector) {
+        throw new Error(`The "selector" argument is required for get ${field ?? "text"}: only title and url read the page itself.`);
       }
       return parsed;
     }

@@ -20,6 +20,7 @@ function fixture({ windows = false, delayedKill = false } = {}) {
       const child = new EventEmitter();
       Object.assign(child, { pid: 2000 + children.length, exitCode: null, signalCode: null, stdout: new EventEmitter(), stderr: new EventEmitter() });
       child.stdout.setEncoding = () => {};
+      child.stderr.setEncoding = () => {};
       child.close = () => { child.signalCode = "SIGTERM"; child.emit("close", null, "SIGTERM"); };
       children.push(child);
       return child;

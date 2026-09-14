@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { writeAtomicSync } from "./write-atomic";
+import { withoutCredentials } from "./credentials";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { BoundedLines } from "./ndjson";
@@ -438,6 +439,12 @@ export function explainFailure(detail: string): string {
   return `${detail.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase()} — the agent gave up on this turn. Send Continue to pick it back up`;
 }
 
+const unresumable = (error: unknown) => {
+  if (!(error instanceof Error)) return false;
+  const code = (error as Error & { code?: unknown }).code;
+  return code === -32602 || code === -32603 && error.message === "Session could not be loaded";
+};
+
 export class Harness {
   private child: ChildProcessWithoutNullStreams | undefined;
 
@@ -524,7 +531,7 @@ export class Harness {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: process.platform === "win32",
       env: {
-        ...process.env,
+        ...withoutCredentials(process.env),
         HOME: this.deps.home,
         ...(process.platform === "win32" ? {
           USERPROFILE: this.deps.home,
@@ -760,26 +767,24 @@ export class Harness {
   private async activeSession(threadId: string, cwd: string) {
     const sessionId = await this.session(threadId, cwd);
     if (this.active === sessionId && !this.rebind) return sessionId;
+    this.threadsBySession.delete(sessionId);
     try {
       await this.request("session/resume", { sessionId, mcpServers: await this.servers(threadId) });
+      this.threadsBySession.set(sessionId, threadId);
       this.active = sessionId;
       this.rebind = false;
       return sessionId;
     } catch (error) {
-      if (!(error instanceof Error) || error.message !== "Session not found" || (error as Error & { code?: number }).code !== -32602) throw error;
+      if (!unresumable(error)) throw error;
       console.error("Shinbo: could not resume the harness session for this thread, starting a new one", error);
       this.forgetSession(threadId);
-      this.threadsBySession.delete(sessionId);
       return await this.session(threadId, cwd);
     }
   }
 
   private async session(threadId: string, cwd: string) {
     const existing = this.sessions.get(threadId);
-    if (existing) {
-      this.threadsBySession.set(existing, threadId);
-      return existing;
-    }
+    if (existing) return existing;
     const result = await this.request("session/new", { cwd, mcpServers: await this.servers(threadId) });
     const sessionId = (result as { sessionId?: unknown } | null)?.sessionId;
     if (typeof sessionId !== "string" || sessionId.length === 0) throw new Error("Harness returned no session id");
@@ -917,7 +922,8 @@ export class Harness {
   private childThread(parentThreadId: string, child: ChildTag): Promise<string> {
     const key = `${parentThreadId}/${child.id}`;
     const known = this.children.get(key);
-    if (known) return known.thread;
+    if (known && (!known.ended || child.ended)) return known.thread;
+    this.cancelledChildren.delete(child.id);
     const created = this.deps.onChildStart({ parentThreadId, childId: child.id, title: child.title });
     this.children.set(key, { thread: created, ended: false });
     return created;
@@ -1079,7 +1085,7 @@ export class Harness {
       if (name === "_model_context") {
         const { model, title, skills } = args;
         if (!this.deps.onModelContext || typeof model !== "string" || !model.trim() || model.length > 256 || /[\s\0]/.test(model) || typeof childId !== "string" || args.childId !== childId || typeof skills !== "string" || skills.length > 128 * 1024 || this.cancelled.has(threadId)) throw new Error("Invalid model context request");
-        if (this.children.get(`${threadId}/${childId}`)?.ended || this.cancelledChildren.has(childId)) throw new Error("This subagent is no longer running.");
+        if (this.children.get(`${threadId}/${childId}`)?.ended === false && this.cancelledChildren.has(childId)) throw new Error("This subagent is no longer running.");
         const childThreadId = await this.childThread(threadId, { id: childId, title: typeof title === "string" ? title.slice(0, 120) : "Subagent", ended: false });
         if (this.cancelled.has(threadId) || this.children.get(`${threadId}/${childId}`)?.ended || this.cancelledChildren.has(childId)) throw new Error("This subagent is no longer running.");
         output = JSON.stringify(this.deps.onModelContext(threadId, childThreadId, model, skills));

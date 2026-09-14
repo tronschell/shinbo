@@ -143,20 +143,33 @@ export function computerLaunchTarget(value: unknown): ComputerLaunch {
   return { name, target };
 }
 
+const HELPER_MISSING = "Shinbo's computer helper is not installed; rebuild the native helpers";
+
+function helperError(error: unknown): Error {
+  if ((error as { code?: unknown }).code === "ENOENT") return new Error(HELPER_MISSING);
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+async function helperReply(helper: string, args: string[], timeout: number, signal: AbortSignal): Promise<Record<string, unknown>> {
+  try {
+    const { stdout } = await exec(helper, args, { encoding: "utf8", timeout, maxBuffer: MAX_HELPER_BYTES, signal });
+    return reply(stdout);
+  } catch (error) {
+    throw helperError(error);
+  }
+}
+
 async function resolveApp(helper: string, name: string, signal: AbortSignal): Promise<ComputerLaunch> {
-  const { stdout } = await exec(helper, ["--resolve", name], { encoding: "utf8", timeout: HELPER_TIMEOUT_MS, maxBuffer: MAX_HELPER_BYTES, signal });
-  return computerLaunchTarget(reply(stdout).app);
+  return computerLaunchTarget((await helperReply(helper, ["--resolve", name], HELPER_TIMEOUT_MS, signal)).app);
 }
 
 async function launchApp(helper: string, name: string, signal: AbortSignal): Promise<{ app: ComputerApp; target: ComputerLaunch }> {
-  const { stdout } = await exec(helper, ["--launch", name], { encoding: "utf8", timeout: LAUNCH_TIMEOUT_MS, maxBuffer: MAX_HELPER_BYTES, signal });
-  const result = reply(stdout);
+  const result = await helperReply(helper, ["--launch", name], LAUNCH_TIMEOUT_MS, signal);
   return { app: computerAppIdentity(result.app), target: computerLaunchTarget(result.target) };
 }
 
 async function listApps(helper: string, signal: AbortSignal): Promise<ComputerApp[]> {
-  const { stdout } = await exec(helper, ["--list"], { encoding: "utf8", timeout: HELPER_TIMEOUT_MS, maxBuffer: MAX_HELPER_BYTES, signal });
-  const apps = reply(stdout).apps;
+  const apps = (await helperReply(helper, ["--list"], HELPER_TIMEOUT_MS, signal)).apps;
   if (!Array.isArray(apps) || apps.length > 256) throw new Error("Invalid computer app list");
   return apps.map(computerAppIdentity).filter((app) => app.pid !== process.pid);
 }
@@ -198,7 +211,7 @@ class AppHelper {
     });
     this.child.stdout.on("end", () => { try { this.lines.end(); } catch { this.close(new Error("Incomplete computer helper response")); } });
     this.child.stderr.resume();
-    this.child.once("error", (error) => this.close(error));
+    this.child.once("error", (error) => this.close(helperError(error)));
     this.child.stdin.on("error", (error) => this.close(error));
     this.child.once("exit", () => this.close(new Error("Computer helper stopped; start a new turn before using the app again")));
     signal.addEventListener("abort", this.cancel, { once: true });

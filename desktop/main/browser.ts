@@ -118,9 +118,9 @@ export class Browsers {
   async newTab(threadId: string, url?: string): Promise<BrowserStatus> {
     const session = this.session(threadId);
     if (session.tabs.length >= MAX_TABS) throw new Error(`Shinbo's browser holds ${MAX_TABS} tabs at once. Close one first.`);
-    const tab = this.spawnTab(session);
     const target = url ? externalUrl(url) : null;
     if (url && !target) throw new Error(`Shinbo's browser opens http and https addresses only, and ${url.slice(0, 120)} is neither.`);
+    const tab = this.spawnTab(session);
     await this.load(session, tab, target ? target.href : HOME);
     this.onChange();
     return this.status(threadId);
@@ -318,6 +318,8 @@ export class Browsers {
       if (expired) {
         tab.error = `This page took longer than ${LOAD_MS / 1000}s to load.`;
         this.layout(session);
+      } else if ((error as { errno?: number }).errno === ABORTED) {
+        return;
       }
       throw new Error(`Could not open ${url.slice(0, 120)}: ${tab.error ?? (error instanceof Error ? error.message : String(error))}`, { cause: error });
     } finally {
@@ -436,7 +438,7 @@ function contextMenu(contents: Electron.WebContents, params: Electron.ContextMen
   const items: Electron.MenuItemConstructorOptions[] = [];
   const { editFlags } = params;
   if (params.linkURL) {
-    items.push({ label: "Open Link in New Tab", click: () => openTab(params.linkURL) });
+    if (externalUrl(params.linkURL)) items.push({ label: "Open Link in New Tab", click: () => openTab(params.linkURL) });
     items.push({ label: "Copy Link", click: () => clipboard.writeText(params.linkURL) });
     items.push({ type: "separator" });
   }

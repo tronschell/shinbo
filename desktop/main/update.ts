@@ -12,6 +12,7 @@ let asked = false;
 let announceReady: (version: string) => void = () => {};
 let recheck: (() => void) | undefined;
 let installWhenReady = false;
+let checking = false;
 
 const readyFile = () => path.join(app.getPath("userData"), "update-ready.json");
 
@@ -49,6 +50,7 @@ export function installUpdate(): string {
     return "";
   }
   if (installable) {
+    asked = true;
     autoUpdater.quitAndInstall();
     return "";
   }
@@ -73,6 +75,7 @@ function forceCheck() {
     return;
   }
   asked = true;
+  if (checking) return;
   lastCheck = 0;
   recheck();
 }
@@ -109,18 +112,21 @@ export function startUpdates(announce: (version: string) => void) {
   }
   autoUpdater.on("error", (error) => {
     console.error("Shinbo: update check failed", error);
+    checking = false;
     dropStale();
     if (!asked) return;
     asked = false;
     reportFailure(error);
   });
   autoUpdater.on("update-not-available", () => {
+    checking = false;
     dropStale();
     if (!asked) return;
     asked = false;
     reportUpToDate();
   });
   autoUpdater.on("update-downloaded", (_event, _notes, name) => {
+    checking = false;
     asked = false;
     const install = installWhenReady;
     installWhenReady = false;
@@ -148,9 +154,11 @@ export function startUpdates(announce: (version: string) => void) {
   const check = () => {
     if (!dueForCheck(Date.now(), lastCheck, installable)) return;
     lastCheck = Date.now();
+    checking = true;
     try {
       autoUpdater.checkForUpdates();
     } catch (error) {
+      checking = false;
       console.error("Shinbo: update check failed", error);
     }
   };

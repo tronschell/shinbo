@@ -108,7 +108,7 @@ Every ceiling below applies in **every** permission mode, `full` included.
 | Want | Do |
 | --- | --- |
 | Main-process logs | The terminal running `npm run dev`. `shinbo-cli` stderr is prefixed `shinbo-cli:`; host errors are prefixed `Shinbo:` |
-| Renderer logs | `⌥⌘I` from the View menu of a macOS dev build (a packaged build and Windows have no DevTools shortcut); or drive the running app: `node desktop/scripts/drive.mjs '<expression>'` (attaches over CDP on `SHINBO_CDP_PORT`, default `9222`) |
+| Renderer logs | `⌥⌘I` from the View menu of a macOS dev build (a packaged build and Windows have no DevTools shortcut); or drive the running app: `node desktop/scripts/drive.mjs '<expression>'` (attaches over CDP on `SHINBO_CDP_PORT`, default `9222`; a dev build always listens, a packaged build only when launched with `SHINBO_REMOTE_DEBUG=1`) |
 | Harness session records | `<userData>/harness/.fx/sessions/<id>/` — `events.jsonl`, `usage-v2.json` |
 | Wipe everything | Settings → Reset all data. Shinbo removes its Electron `userData` root and configured `SHINBO_DATA_DIR`, then relaunches ([main.ts:2545](../desktop/main/main.ts#L2545)). Your vault is outside both roots and survives |
 | Wipe just the harness | Remove `<userData>/harness` (`%APPDATA%/Shinbo/harness` on a packaged Windows build; use `rm -rf ~/Library/Application\\ Support/shinbo-desktop/harness` for a macOS dev profile) |

@@ -418,6 +418,33 @@ test("a subagent paused by a terminal provider failure ends with that reason", a
   client.close();
 });
 
+test("a persistent subagent that ended can run again under a fresh thread", async () => {
+  const { client, deltas, children, ended } = harness(async () => "allow_once");
+  const inner = client as unknown as { threadsBySession: Map<string, string>; handleUpdate: (params: Record<string, unknown>) => void; cancelledChildren: Set<string> };
+  inner.threadsBySession.set("session-child", "thread-parent");
+  const say = (state: string, text: string) => inner.handleUpdate({
+    sessionId: "session-child",
+    update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text }, _meta: { fx: { child: { id: "child_1", title: "read the docs", state } } } },
+  });
+
+  say("running", "first");
+  inner.cancelledChildren.add("child_1");
+  say("ended", "");
+  await Promise.resolve();
+  assert.equal(children.length, 1);
+  assert.deepEqual(ended, [{ threadId: "thread_for_child_1", reason: undefined }]);
+
+  say("running", "second");
+  await Promise.resolve();
+  assert.equal(children.length, 2);
+  assert.equal(inner.cancelledChildren.has("child_1"), false);
+  assert.deepEqual(deltas.filter((entry) => entry.threadId === "thread_for_child_1").map((entry) => entry.delta), ["first", "", "second"]);
+  say("ended", "");
+  await Promise.resolve();
+  assert.equal(ended.length, 2);
+  client.close();
+});
+
 test("a subagent left running when its process dies is told, not left spinning", async () => {
   const { client, children, ended } = harness(async () => "allow_once");
   await client.prompt("thread-parent", workspace, "orphan a subagent", "ask");
@@ -733,6 +760,38 @@ test("a thread keeps its harness session across a restart", async () => {
     second.client.close();
   }
   assert.equal(index(alias)["thread-b"], before);
+});
+
+test("a recovery replay sent before the resume reply never lands in the live turn", async () => {
+  const home = mkdtempSync(path.join(tmpdir(), "shinbo-harness-replay-"));
+  writeFileSync(path.join(home, "shinbo-sessions.json"), JSON.stringify({ "thread-r": "sess_1_x" }));
+  const { client, text, calls } = harness(async () => "allow_once", undefined, async () => "", home);
+  try {
+    const { stopReason } = await client.prompt("thread-r", workspace, "again", "ask");
+    assert.equal(stopReason, "end_turn");
+    assert.ok(!text().join("").includes("replayed"), text().join(""));
+    assert.equal(calls.some((call) => call.toolCallId === "replayed_call"), false);
+    assert.ok(text().join("").endsWith("done"), text().join(""));
+  } finally {
+    client.close();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("a session the harness cannot load is replaced instead of wedging the thread", async () => {
+  const home = mkdtempSync(path.join(tmpdir(), "shinbo-harness-unloadable-"));
+  writeFileSync(path.join(home, "shinbo-sessions.json"), JSON.stringify({ "thread-u": "broken_1" }));
+  const { client, text } = harness(async () => "allow_once", undefined, async () => "", home);
+  try {
+    const { stopReason } = await client.prompt("thread-u", workspace, "hello", "ask");
+    assert.equal(stopReason, "end_turn");
+    assert.ok(text().join("").endsWith("done"), text().join(""));
+    const index = JSON.parse(readFileSync(path.join(home, "shinbo-sessions.json"), "utf8")) as Record<string, string>;
+    assert.ok(index["thread-u"]?.startsWith("sess_1_"), index["thread-u"]);
+  } finally {
+    client.close();
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test("a session forgotten mid-turn still routes the rest of that turn", async () => {

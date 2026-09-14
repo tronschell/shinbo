@@ -122,8 +122,8 @@ pub fn normalize(alloc: Allocator, raw_url: []const u8) Error!ValidatedUrl {
     const host_policy = try canonicalizeHost(alloc, parsed_authority.host, parsed_authority.is_ipv6_literal);
     defer alloc.free(host_policy.host);
 
-    const scheme: Scheme = .https;
     const port = normalizedPort(input_scheme, parsed_authority.port);
+    const scheme: Scheme = if (input_scheme == .http and port != Scheme.https.defaultPort()) .http else .https;
     const explicit_port = normalizedExplicitPort(scheme, port, parsed_authority.port);
     const raw_path_query = stripFragment(raw_url[authority_end..]);
     const path_query = try normalizePathQuery(alloc, raw_path_query);
@@ -581,6 +581,27 @@ test "web_fetch canonicalizes ascii hostname root dot and rejects malformed perc
     try std.testing.expectError(error.MalformedPercentEncoding, normalize(alloc, "https://example.com/%zz"));
     try std.testing.expectError(error.PercentEncodedHost, normalize(alloc, "https://exa%6dple.com/"));
     try std.testing.expectError(error.UnicodeHost, normalize(alloc, "https://éxample.com/"));
+}
+
+test "web_fetch keeps plain http for explicit non-default ports and upgrades default ports" {
+    const alloc = std.testing.allocator;
+
+    var plain = try normalize(alloc, "http://example.com:8080/docs");
+    defer plain.deinit(alloc);
+    try std.testing.expectEqual(.http, plain.scheme);
+    try std.testing.expectEqual(@as(u16, 8080), plain.port);
+    try std.testing.expectEqualStrings("http://example.com:8080/docs", plain.retrieval_url);
+
+    var upgraded = try normalize(alloc, "http://example.com:80/docs");
+    defer upgraded.deinit(alloc);
+    try std.testing.expectEqual(.https, upgraded.scheme);
+    try std.testing.expectEqual(@as(u16, 443), upgraded.port);
+    try std.testing.expectEqualStrings("https://example.com/docs", upgraded.retrieval_url);
+
+    var tls_port = try normalize(alloc, "http://example.com:443/docs");
+    defer tls_port.deinit(alloc);
+    try std.testing.expectEqual(.https, tls_port.scheme);
+    try std.testing.expectEqualStrings("https://example.com/docs", tls_port.retrieval_url);
 }
 
 test "web_fetch rejects raw spaces in request targets and redirects" {

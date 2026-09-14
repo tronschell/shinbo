@@ -1058,9 +1058,10 @@ impl Runtime {
         let mut thread = Thread::new(title, Timestamp::now())
             .map_err(|error| LiveError::new(format!("could not create thread: {error}")))?;
         if let Some(parent) = parent_thread_id {
-            self.threads.load(&parent).map_err(|error| {
+            let loaded = self.threads.load(&parent).map_err(|error| {
                 LiveError::new(format!("parent thread {parent} is unusable: {error}"))
             })?;
+            thread.archived_at = loaded.archived_at;
             thread.parent_thread_id = Some(parent);
         } else if kind == ThreadKind::Subagent {
             return Err(LiveError::new("a subagent thread must have a parent"));
@@ -1649,6 +1650,25 @@ mod tests {
                 .unwrap()
                 .archived_at
                 .is_none()
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_subagent_spawned_under_an_archived_parent_starts_archived() {
+        let root = temp_child();
+        let runtime = Runtime::new(root.join("threads"), root.join("scheduled"), no_jobs());
+        let parent = runtime.create_thread(None, None, ThreadKind::Main).unwrap();
+        let archived = runtime
+            .set_thread_archived(parent.id.clone(), true)
+            .unwrap();
+        let child = runtime
+            .create_thread(None, Some(parent.id.clone()), ThreadKind::Subagent)
+            .unwrap();
+        assert_eq!(child.archived_at, archived.archived_at);
+        assert_eq!(
+            runtime.threads.load(&child.id).unwrap().archived_at,
+            archived.archived_at
         );
         fs::remove_dir_all(root).unwrap();
     }

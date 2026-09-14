@@ -1028,7 +1028,8 @@ pub fn handlePrompt(
                 return err;
             }
         };
-        if (!server.takeSteerInterject(state)) break;
+        if (!server.takeSteerInterject(state) and
+            (!session.cancel_flag.load(.seq_cst) or !server.takeSteerInterject(state))) break;
         const steering = try server.takePendingSteering(state, steer_arena.allocator()) orelse break;
         server.clearDeliveredSteering(state);
         session.cancel_flag.store(false, .seq_cst);

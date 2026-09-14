@@ -384,13 +384,16 @@ fn convertSuccess(alloc: Allocator, success: http_fetch.Success) !ConvertedFetch
 
     const binary_body: ?[]u8 = if (classification.kind == .binary) try alloc.dupe(u8, success.body) else null;
     errdefer if (binary_body) |body| alloc.free(body);
+    const repaired_body = if (classification.kind != .binary) try repairedTextBody(alloc, success.body) else null;
+    defer if (repaired_body) |body| alloc.free(body);
+    const text_body: ?[]const u8 = if (text_utils.isModelSafeText(success.body)) success.body else repaired_body;
     const converted_content = switch (classification.kind) {
-        .html => if (text_utils.isModelSafeText(success.body))
-            try html_to_markdown.convert(alloc, success.body, .{ .max_output_bytes = content.max_converted_content_bytes })
+        .html => if (text_body) |body|
+            try html_to_markdown.convert(alloc, body, .{ .max_output_bytes = content.max_converted_content_bytes })
         else
             try alloc.dupe(u8, "binary or non-utf8 response omitted"),
-        .text => if (text_utils.isModelSafeText(success.body))
-            try alloc.dupe(u8, success.body)
+        .text => if (text_body) |body|
+            try alloc.dupe(u8, body)
         else
             try alloc.dupe(u8, "binary or non-utf8 response omitted"),
         .binary => try alloc.dupe(u8, ""),
@@ -410,6 +413,12 @@ fn convertSuccess(alloc: Allocator, success: http_fetch.Success) !ConvertedFetch
         .converted_content = converted_content,
         .binary_body = binary_body,
     };
+}
+
+fn repairedTextBody(alloc: Allocator, body: []const u8) !?[]u8 {
+    if (std.mem.findScalar(u8, body, 0) != null) return null;
+    if (std.unicode.utf8ValidateSlice(body)) return null;
+    return try std.fmt.allocPrint(alloc, "{f}", .{std.unicode.fmtUtf8(body)});
 }
 
 fn formatFetchOutput(alloc: Allocator, success: OutputView) ![]u8 {
@@ -763,6 +772,36 @@ test "web_fetch returns markdown directly" {
         .failure => return error.TestExpectedEqual,
     };
     try std.testing.expect(std.mem.find(u8, body, "# Raw markdown") != null);
+}
+
+test "web_fetch repairs non-utf8 text bodies and keeps the placeholder for nul bytes" {
+    const alloc = std.testing.allocator;
+    var runtime = web_fetch_runtime.Runtime.init(.{ .allocator = alloc });
+    defer runtime.deinit(alloc);
+    var transport = MockTransport{
+        .body = "<html><body><p>caf\xe9 latin</p></body></html>",
+        .content_type = "text/html; charset=iso-8859-1",
+    };
+    defer transport.deinit(alloc);
+
+    var result = try callUrlWithRuntime(alloc, &runtime, "https://example.com/latin1", &transport);
+    defer result.deinit(alloc);
+    const body = switch (result) {
+        .success => |body| body,
+        .failure => return error.TestExpectedEqual,
+    };
+    try std.testing.expect(std.mem.find(u8, body, "caf\u{FFFD} latin") != null);
+    try std.testing.expect(std.mem.find(u8, body, "binary or non-utf8 response omitted") == null);
+
+    var nul_transport = MockTransport{ .body = "text\x00binary", .content_type = "text/plain" };
+    defer nul_transport.deinit(alloc);
+    var nul_result = try callUrlWithRuntime(alloc, &runtime, "https://example.com/nul", &nul_transport);
+    defer nul_result.deinit(alloc);
+    const nul_body = switch (nul_result) {
+        .success => |success| success,
+        .failure => return error.TestExpectedEqual,
+    };
+    try std.testing.expect(std.mem.find(u8, nul_body, "binary or non-utf8 response omitted") != null);
 }
 
 test "web_fetch never invokes web_search perplexity search or parallel search" {

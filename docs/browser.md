@@ -77,10 +77,9 @@ menu floating over the stage would be behind the page.
 While a `browser` tool call is in flight, the input the agent sends to the page
 is echoed as the same cue the computer tool draws over a native app: a grey
 arrow haloed in the secondary accent that glides to the point, a pulse on
-arrival, and a label naming what Shinbo is doing there. It is the tab's own input events that place it, so a
-click, a hover, a fill or a drag marks the spot it landed on, and a snapshot, a
-`get` or a scroll — none of which move a pointer — show nothing rather than
-guess.
+arrival, and a label naming what Shinbo is doing there. It is the tab's own
+mouse-down events that place it, so a click or a drag marks the spot it landed
+on; hover, fill, snapshot, `get` and scroll show nothing rather than guess.
 
 The overlay is a transparent, click-through window ordered directly above
 Shinbo's own window, so it cannot take focus, cannot swallow a click the user

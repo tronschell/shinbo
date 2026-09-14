@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { cliHarness } from "../shared/cli";
+import { withoutCredentials } from "./credentials";
 import { cliPlan } from "../shared/settings";
 import { MAX_TERMINAL_COLUMNS, MAX_TERMINAL_SCROLLBACK, MAX_TERMINAL_TABS, terminalTitle, type TerminalTab } from "../shared/terminal";
 import { isWindows, shellArguments, shellBinary, terminateProcessTree } from "./platform";
@@ -59,7 +60,7 @@ export class Terminals {
     const login = command ? [shell, ...shellArguments(command)] : (isWindows ? [shell, ...windowsInteractive] : [shell, "-il"]);
     const child = spawn(this.binary(), [String(columns), String(rows), ...login], {
       cwd: request.cwd,
-      env: { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor" },
+      env: { ...withoutCredentials(process.env), TERM: "xterm-256color", COLORTERM: "truecolor" },
       stdio: ["pipe", "pipe", "pipe", "pipe"],
       windowsHide: true,
     });
