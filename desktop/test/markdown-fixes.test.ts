@@ -28,6 +28,12 @@ test("nested lists keep every item when the marker type changes or a third level
   const [deep] = parseBlocks("- a\n  - b\n    - c\n  - d");
   assert.equal(deep.kind === "list" && text(deep.items[0].sub?.[0].items[0].sub?.[0].items[0].spans ?? []), "c");
   assert.deepEqual(deep.kind === "list" && deep.items[0].sub?.[0].items.map((item) => text(item.spans)), ["b", "d"]);
+  const [wide] = parseBlocks("1. Foo\n    - bar\n    - baz");
+  assert.deepEqual(wide.kind === "list" && wide.items[0].sub?.map((sub) => sub.items.map((item) => text(item.spans))), [["bar", "baz"]]);
+  assert.equal(wide.kind === "list" && wide.items[0].sub?.[0].items[0].sub, undefined);
+  const [plain] = parseBlocks("- a\n    - b\n    - c");
+  assert.deepEqual(plain.kind === "list" && plain.items[0].sub?.map((sub) => sub.items.map((item) => text(item.spans))), [["b", "c"]]);
+  assert.equal(plain.kind === "list" && plain.items[0].sub?.[0].items[0].sub, undefined);
 });
 
 test("identifiers and arithmetic are not emphasis, and triple stars are both", () => {

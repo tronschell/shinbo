@@ -262,11 +262,25 @@ fn transportFailureBody(alloc: Allocator, err: anyerror, url: []const u8) tool_d
         .{ .name = "url", .value = .{ .string = display_url } },
         .{ .name = "error", .value = .{ .string = @errorName(err) } },
     };
+    const text: struct { message: []const u8, suggestion: []const u8 } = switch (err) {
+        error.NonPublicDnsAnswer => .{
+            .message = "web_fetch refused a host that resolves to a non-public address",
+            .suggestion = "Use web_fetch only for known public HTTP(S) URLs; do not retry this host.",
+        },
+        error.BodyTooLarge => .{
+            .message = "web_fetch response body exceeded the " ++ std.fmt.comptimePrint("{d}", .{http_fetch.max_body_bytes / (1024 * 1024)}) ++ " MiB limit",
+            .suggestion = "Fetch a smaller resource or a more specific page instead of retrying.",
+        },
+        else => .{
+            .message = "web_fetch transport failed",
+            .suggestion = "Retry after checking the remote server's DNS, network, TLS, or HTTP response behavior. Use web_search when direct retrieval remains unavailable.",
+        },
+    };
     return try tool_result_errors.toolExecutionFailureJson(alloc, .{
         .tool_name = "web_fetch",
-        .message = "web_fetch transport failed",
+        .message = text.message,
         .details = &details,
-        .suggestion = "Retry after checking the remote server's DNS, network, TLS, or HTTP response behavior. Use web_search when direct retrieval remains unavailable.",
+        .suggestion = text.suggestion,
     });
 }
 

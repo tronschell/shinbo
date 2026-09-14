@@ -177,6 +177,17 @@ pub const component = ToolSpec{
                     .json_type = .string,
                     .description = "The whole module. Required on create and rewrite.",
                 },
+                .{
+                    .name = "expand",
+                    .json_type = .boolean,
+                    .description = "Give it a ⤢ that opens it over the whole window, for something that cannot be read in a 288px column. The component is handed `expanded` so it can draw both. Leave it off on a rewrite to keep what it has.",
+                },
+                .{
+                    .name = "variables",
+                    .json_type = .array,
+                    .description = "Environment variable names this component needs. The user fills them in Settings → Built by Shinbo and approves each credential-bearing request template. Write {{NAME}} in headers or the body, never the URL. Leave it off on a rewrite to keep what it has.",
+                    .shape = &.{ .array_values = .{ .json_type = .string } },
+                },
             },
         },
     },
@@ -247,6 +258,11 @@ pub const workflow = ToolSpec{
                     .json_type = .string,
                     .description = "What the unattended run may do. Nobody is there to answer a question, so \"ask\" declines every gated call.",
                     .shape = &.{ .enum_values = &.{ "plan", "ask", "acceptEdits", "full" } },
+                },
+                .{
+                    .name = "model",
+                    .json_type = .string,
+                    .description = "The model every run of this task uses, as \"openrouter:<model-id>\". Omit or send empty to run on whichever model the app is set to.",
                 },
                 .{
                     .name = "variables",

@@ -92,7 +92,7 @@ fn summarize(raw_ctx: *anyopaque, alloc: Allocator, request: session.SummaryRequ
         .messages = &messages,
         .tool_choice = .none,
         .provider_options = .{},
-        .max_output_tokens = @intCast(@max(request.max_chars / 4, 1)),
+        .max_output_tokens = @intCast(@max(request.max_chars / 2, 1)),
         .stream = false,
         .budget = .{ .deadline = deadline, .cancel_flag = config.cancel_flag },
     });
@@ -111,8 +111,12 @@ fn summarize(raw_ctx: *anyopaque, alloc: Allocator, request: session.SummaryRequ
         return err;
     };
     defer gateway_json.freeGatewayCompletion(alloc, completion);
-    if (types.classifyProviderCompletion(completion) != .completed) return error.InvalidProviderResponse;
     const content = completion.content orelse return error.EmptyCompactionSummary;
+    switch (types.classifyProviderCompletion(completion)) {
+        .completed => {},
+        .length_limited => if (std.mem.indexOf(u8, content, "## Goal") == null) return error.InvalidProviderResponse,
+        else => return error.InvalidProviderResponse,
+    }
     return alloc.dupe(u8, content);
 }
 
@@ -172,7 +176,7 @@ test "gateway compaction summarizer returns the model summary" {
     try std.testing.expectEqual(@as(usize, 1), fake.calls);
     try std.testing.expect(std.mem.indexOf(u8, fake.seen_payload, "\"model\":\"openai/gpt-5\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, fake.seen_payload, "\"messages\":[{\"role\":\"system\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, fake.seen_payload, "\"max_tokens\":300") != null);
+    try std.testing.expect(std.mem.indexOf(u8, fake.seen_payload, "\"max_tokens\":600") != null);
     try std.testing.expect(std.mem.indexOf(u8, fake.seen_payload, "\"stream\":false") != null);
     try std.testing.expect(std.mem.indexOf(u8, fake.seen_payload, "\"prompt\":") == null);
     try std.testing.expect(std.mem.indexOf(u8, fake.seen_payload, "\"toolChoice\"") == null);
@@ -267,11 +271,31 @@ test "gateway compaction summarizer forwards the previous summary for an iterati
     try std.testing.expect(std.mem.indexOf(u8, fake.seen_payload, "PRESERVE all existing information") != null);
 }
 
+test "gateway compaction keeps a length-truncated summary that reached the goal section" {
+    const alloc = std.testing.allocator;
+    var cancel_flag = std.atomic.Value(bool).init(false);
+    var fake = FakePost{ .body =
+        \\{"choices":[{"message":{"content":"## Goal\nPartial summary that ran long"},"finish_reason":"length"}]}
+    };
+    defer if (fake.seen_payload.len > 0) alloc.free(fake.seen_payload);
+    var config = Config{
+        .api_key = "key",
+        .chat_url = "https://example.test/chat",
+        .model = "openai/gpt-5",
+        .cancel_flag = &cancel_flag,
+        .post_fn = FakePost.execute,
+        .post_ctx = &fake,
+    };
+    const text = try summarize(&config, alloc, .{ .conversation = "Original constraint" });
+    defer alloc.free(text);
+    try std.testing.expectEqualStrings("## Goal\nPartial summary that ran long", text);
+}
+
 test "gateway compaction rejects incomplete and failed model summaries" {
     const alloc = std.testing.allocator;
     var cancel_flag = std.atomic.Value(bool).init(false);
     for ([_]?[]const u8{ "length", "content_filter", "error", null }) |finish_reason| {
-        const choice = .{ .message = .{ .content = "## Goal\nPartial summary" }, .finish_reason = finish_reason };
+        const choice = .{ .message = .{ .content = "Partial summary with no sections" }, .finish_reason = finish_reason };
         const body = try std.json.Stringify.valueAlloc(alloc, .{ .choices = .{choice} }, .{});
         defer alloc.free(body);
         var fake = FakePost{ .body = body };

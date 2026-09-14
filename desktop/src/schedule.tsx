@@ -173,6 +173,8 @@ export function useTaskCommands(disabledTools: readonly string[] = []) {
   return { skills, tools, atItems, folders, files };
 }
 
+export const MAX_SCHEDULED_PROMPT_BYTES = 8 * 1024;
+
 export function PromptField({ value, onChange, commands, atItems, disabled, rows = 3, placeholder, label }: {
   value: string;
   onChange: (text: string) => void;
@@ -209,7 +211,7 @@ export function PromptField({ value, onChange, commands, atItems, disabled, rows
     <textarea
       ref={input}
       value={value}
-      maxLength={8192}
+      maxLength={MAX_SCHEDULED_PROMPT_BYTES}
       rows={rows}
       disabled={disabled}
       role="combobox"

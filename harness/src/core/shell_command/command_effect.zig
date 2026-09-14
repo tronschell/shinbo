@@ -151,13 +151,27 @@ fn reversibleGit(words: []const command_lex.ArgvToken) bool {
     }
     if (std.mem.eql(u8, subcommand, "fetch")) {
         for (words[1..]) |word| {
-            if (std.mem.eql(u8, word.value, "--prune") or
-                std.mem.eql(u8, word.value, "-p") or
-                std.mem.eql(u8, word.value, "--prune-tags")) return false;
+            if (!reversibleGitFetchWord(word.value)) return false;
         }
         return true;
     }
     return false;
+}
+
+fn reversibleGitFetchWord(value: []const u8) bool {
+    if (value.len == 0) return false;
+    if (value[0] == '-') {
+        if (std.mem.eql(u8, value, "--tags") or
+            std.mem.eql(u8, value, "--all") or
+            std.mem.eql(u8, value, "-q") or
+            std.mem.eql(u8, value, "--quiet")) return true;
+        if (!std.mem.startsWith(u8, value, "--depth=")) return false;
+        const depth = value["--depth=".len..];
+        if (depth.len == 0) return false;
+        for (depth) |byte| if (!std.ascii.isDigit(byte)) return false;
+        return true;
+    }
+    return std.mem.indexOf(u8, value, "::") == null;
 }
 
 fn reversibleNpm(words: []const command_lex.ArgvToken) bool {
@@ -216,6 +230,7 @@ test "known reversible auto commands exclude destructive and hidden effects" {
         "git remote -v",
         "git worktree list --porcelain",
         "git fetch origin main",
+        "git fetch --tags --quiet --depth=1 origin",
         "npm install 2>&1",
         "npm run dev",
         "zig build test",
@@ -238,6 +253,13 @@ test "known reversible auto commands exclude destructive and hidden effects" {
         "npm install --prefix=/tmp/global",
         "npm install --location global",
         "git fetch --prune origin",
+        "git fetch -p origin",
+        "git fetch --prune-tags origin",
+        "git fetch --upload-pack=/tmp/evil.sh origin",
+        "git fetch --upload-pack='touch /tmp/pwned' .",
+        "git fetch 'ext::sh -c touch% /tmp/pwned'",
+        "git fetch --depth=abc origin",
+        "git fetch -- origin",
     }) |command| {
         try std.testing.expect(!try knownReversibleAutoCommandForOs(
             std.testing.allocator,

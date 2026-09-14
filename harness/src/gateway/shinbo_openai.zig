@@ -75,8 +75,14 @@ pub const provider = stream_provider.Provider{
 };
 
 pub fn chatUrl() []const u8 {
-    const override = io_mod.getenv(chat_url_env) orelse return default_chat_url;
-    return if (override.len == 0) default_chat_url else override;
+    return resolveChatUrl(default_chat_url, io_mod.getenv(chat_url_env));
+}
+
+pub fn resolveChatUrl(fallback: []const u8, override: ?[]const u8) []const u8 {
+    const candidate = override orelse return fallback;
+    if (candidate.len == 0) return fallback;
+    if (gateway_client.isHttpsUrl(candidate) or gateway_client.isPrivateHttpUrl(candidate)) return candidate;
+    return "";
 }
 
 pub const zero_retention_env = "SHINBO_OPENROUTER_ZDR";
@@ -538,6 +544,7 @@ fn stream(_: ?*anyopaque, alloc: Allocator, request: stream_provider.Request) an
     defer sink.deinit();
 
     const url = if (request.chat_url.len > 0) request.chat_url else chatUrl();
+    if (url.len == 0) return error.UntrustedProviderUrl;
     var affinity_id: [openrouter_session_id_bytes]u8 = undefined;
     var extra_headers_buf: [1]std.http.Header = undefined;
     const extra_headers: []const std.http.Header = if (openRouterSessionHeader(
@@ -859,7 +866,7 @@ const SseSink = struct {
         }
         completion.tool_calls = try list.toOwnedSlice(self.alloc);
 
-        completion.finish_reason = self.finish_reason;
+        completion.finish_reason = normalizedFinishReason(self.finish_reason, completion.tool_calls.len);
         const disposition = types.classifyProviderCompletion(completion);
         if (self.content.items.len == 0 and completion.tool_calls.len == 0 and
             disposition != .provider_failure and disposition != .length_limited)
@@ -914,6 +921,7 @@ const PostCall = struct {
         try request.sendBodyComplete(@constCast(self.payload));
 
         var response = try request.receiveHead(&.{});
+        self.silence.touch();
         const status = response.head.status;
         const decompress_buffer: []u8 = switch (response.head.content_encoding) {
             .identity => &.{},
@@ -1057,7 +1065,7 @@ fn parseCompletion(alloc: Allocator, body: []const u8) !types.GatewayCompletion 
     }
 
     if (choice.get("finish_reason")) |reason| {
-        if (reason == .string) completion.finish_reason = finishReason(reason.string);
+        if (reason == .string) completion.finish_reason = normalizedFinishReason(finishReason(reason.string), completion.tool_calls.len);
     }
     if (parsed.value.object.get("usage")) |usage| {
         if (usage == .object) {
@@ -1079,6 +1087,14 @@ fn finishReason(raw: []const u8) ?types.ProviderFinishReason {
     return types.ProviderFinishReason.parse_legacy(raw) orelse .other;
 }
 
+fn normalizedFinishReason(reason: ?types.ProviderFinishReason, tool_call_count: usize) ?types.ProviderFinishReason {
+    if (tool_call_count == 0) return reason;
+    return switch (reason orelse return null) {
+        .stop, .other => .tool_calls,
+        else => reason,
+    };
+}
+
 fn tokenCount(value: ?std.json.Value) ?u64 {
     const found = value orelse return null;
     return switch (found) {
@@ -1097,7 +1113,7 @@ fn cacheReadTokenCount(usage: std.json.ObjectMap) ?u64 {
 fn cacheWriteTokenCount(usage: std.json.ObjectMap) ?u64 {
     const details = usage.get("prompt_tokens_details") orelse return null;
     if (details != .object) return null;
-    return tokenCount(details.object.get("cache_creation_tokens"));
+    return tokenCount(details.object.get("cache_write_tokens")) orelse tokenCount(details.object.get("cache_creation_tokens"));
 }
 
 fn costMicroUsd(value: ?std.json.Value) ?u64 {
@@ -1456,6 +1472,13 @@ test "completion parsing accepts content, tool calls, and usage but rejects empt
     try std.testing.expectEqualStrings("bash", called.tool_calls[0].name);
     try std.testing.expectEqualStrings("call_1", called.tool_calls[0].id);
 
+    var stopped_with_calls = try parseCompletion(alloc,
+        \\{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_2","type":"function","function":{"name":"bash","arguments":"{}"}}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"prompt_tokens_details":{"cache_write_tokens":9}}}
+    );
+    defer freeCompletion(alloc, &stopped_with_calls);
+    try std.testing.expectEqual(types.ProviderFinishReason.tool_calls, stopped_with_calls.finish_reason.?);
+    try std.testing.expectEqual(@as(?u64, 9), stopped_with_calls.usage.cache_write_tokens);
+
     var reasoned = try parseCompletion(alloc,
         \\{"choices":[{"message":{"content":"4","reasoning":"two plus two"}}]}
     );
@@ -1756,6 +1779,26 @@ test "tool call arguments are assembled from fragments across events" {
     try std.testing.expectEqualStrings("{}", completion.tool_calls[1].arguments_json);
     try std.testing.expectEqual(types.ProviderFinishReason.tool_calls, completion.finish_reason.?);
     try std.testing.expectEqualStrings("{\"path\":{}\"a.txt\"}", harness.capture.tool_inputs.items);
+}
+
+test "a stop finish reason with streamed tool calls reads as tool_calls" {
+    const alloc = std.testing.allocator;
+    var harness = StreamHarness.init(alloc);
+    defer harness.deinit();
+
+    const payload =
+        "data:{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"list_files\",\"arguments\":\"{}\"}}]}}]}\n\n" ++
+        "data:{\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n" ++
+        "data:[DONE]\n\n";
+
+    var transfer_buffer: [128]u8 = undefined;
+    var completion = try consumeSseForTest(&harness, payload, &transfer_buffer);
+    defer freeCompletion(alloc, &completion);
+
+    try std.testing.expectEqual(@as(usize, 1), completion.tool_calls.len);
+    try std.testing.expectEqualStrings("list_files", completion.tool_calls[0].name);
+    try std.testing.expectEqual(types.ProviderFinishReason.tool_calls, completion.finish_reason.?);
+    try std.testing.expectEqual(types.ProviderCompletionDisposition.completed, types.classifyProviderCompletion(completion));
 }
 
 test "streaming holds the buffered bounds on tool call count and argument size" {

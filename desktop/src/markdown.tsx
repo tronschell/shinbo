@@ -41,7 +41,7 @@ function Picture({ path, alt }: { path: string; alt: string }) {
   }, [path]);
   const source = preview?.path === path ? preview.image : "";
   return <span ref={target}>{source
-    ? <img className="md-image" src={source} alt={alt} title={path} onClick={() => openPreview(path, alt || undefined)} />
+    ? <button type="button" className="md-image-button" aria-label={`Open ${path}`} title={path} onClick={() => openPreview(path, alt || undefined)}><img className="md-image" src={source} alt={alt} /></button>
     : <PathSpan path={path} text={alt} />}</span>;
 }
 

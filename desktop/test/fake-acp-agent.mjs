@@ -205,7 +205,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           },
         });
       });
-      const text = reply.error ? `error:${reply.error.message}` : `output:${reply.result.output.length}:${reply.result.output.slice(0, 12)}`;
+      const text = reply.error ? `error:${reply.error.message}` : `output:${Buffer.byteLength(reply.result.output)}:${reply.result.output.slice(0, 12)}`;
       notify(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
       send({ jsonrpc: "2.0", id, result: { stopReason: "end_turn", usage: {} } });
       return;

@@ -12,7 +12,7 @@ export interface Span {
 }
 
 export interface Item { spans: Span[]; sub?: List[]; checked?: boolean }
-export interface List { ordered: boolean; items: Item[]; start?: number }
+export interface List { ordered: boolean; items: Item[]; start?: number; indent: number }
 export type Row = Span[][];
 
 export type Block =
@@ -89,9 +89,12 @@ function cells(line: string): Span[][] {
 
 function nest(list: List | undefined, indent: number): [List | undefined, Item | undefined] {
   let owner: Item | undefined;
-  for (let depth = 2; depth <= indent && list; depth += 2) {
-    owner = list.items[list.items.length - 1];
-    list = owner.sub?.[owner.sub.length - 1];
+  while (list && indent > list.indent) {
+    const item = list.items[list.items.length - 1];
+    const sub = item.sub?.[item.sub.length - 1];
+    if (!sub || sub.indent > indent) return [undefined, item];
+    owner = item;
+    list = sub;
   }
   return [list, owner];
 }
@@ -170,10 +173,11 @@ export function parseBlocks(markdown: string): Block[] {
       const made: Item = task ? { spans: inlineSpans(task[2]), checked: task[1] !== " " } : { spans: inlineSpans(bullet[3]) };
       const previous = blocks[blocks.length - 1];
       const start = ordered ? { start: Number(bullet[2]) } : {};
-      const [list, owner] = nest(previous?.kind === "list" ? previous : undefined, bullet[1].length);
+      const indent = bullet[1].length;
+      const [list, owner] = nest(previous?.kind === "list" ? previous : undefined, indent);
       if (list?.ordered === ordered) list.items.push(made);
-      else if (owner) (owner.sub ??= []).push({ ordered, items: [made], ...start });
-      else blocks.push({ kind: "list", ordered, items: [made], ...start });
+      else if (owner) (owner.sub ??= []).push({ ordered, items: [made], indent, ...start });
+      else blocks.push({ kind: "list", ordered, items: [made], indent, ...start });
       continue;
     }
 

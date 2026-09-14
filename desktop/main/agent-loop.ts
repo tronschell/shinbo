@@ -364,8 +364,9 @@ export class AgentRuntime {
   forget(threadId: string) {
     for (const [id, run] of this.runs) {
       if (id !== threadId && run.parentThreadId !== threadId) continue;
+      if (run.status === "running" || run.status === "waiting") continue;
       this.dismissAsks(run);
-      if (run.status !== "running" && run.status !== "waiting") this.runs.delete(id);
+      this.runs.delete(id);
     }
     this.deps.changed();
   }

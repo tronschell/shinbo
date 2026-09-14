@@ -565,7 +565,9 @@ export async function writeLearnedMcpServer(userData: string, server: McpServerD
   try {
     const existing: unknown = JSON.parse(await readBounded(file, MAX_CONFIG_BYTES));
     if (existing && typeof existing === "object" && !Array.isArray(existing)) servers = { ...configRoots(existing as Record<string, unknown>) };
-  } catch { servers = {}; }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
   servers[server.name] = { command: server.command, args: server.args, env: server.env };
   const text = `${JSON.stringify({ mcpServers: servers }, null, 2)}\n`;
   const written = parseMcpConfig(text, "mcp.json", "shinbo", 0).find((candidate) => candidate.name === server.name);

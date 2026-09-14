@@ -112,9 +112,9 @@ export function PreviewHost() {
           <button type="button" className="preview-close" onClick={close} aria-label="Close preview">×</button>
         </div>
       </header>
-      <button type="button" className="preview-location" title="Reveal in the file manager" onClick={() => void window.shinbo.revealPath(shown)}>{shown}</button>
+      <button type="button" className="preview-location" title="Reveal in the file manager" onClick={() => void window.shinbo.revealPath(shown).then((ok) => { if (!ok) setError("Shinbo can only reveal files inside a connected folder or attached to a message."); }).catch(() => setError("That file could not be revealed."))}>{shown}</button>
       {error && <p className="dialog-error">{error}</p>}
-      {file && file.text === null && !file.image && !error && <p className="preview-empty">Shinbo can only read files inside a connected folder or attached to a message, and only text under 256 KB. Open it above, or reveal it in the file manager.</p>}
+      {file && file.text === null && !file.image && !error && <p className="preview-empty">Shinbo can only read files inside a connected folder or attached to a message, and only text under 256 KB. Connect its folder or attach it to a message to open it here.</p>}
       {(file?.text != null || file?.image) && <Minimap key={shown} className="preview-body"><Body path={shown} name={called} text={file.text ?? ""} {...(file.image ? { image: file.image } : {})} {...(asked.image ? { embed: asked.image } : {})} source={source} /></Minimap>}
     </section>
   </dialog>;

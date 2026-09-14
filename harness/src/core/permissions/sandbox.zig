@@ -1390,6 +1390,25 @@ fn executeProcessWithClosedInput(
     return executeProcessWithInput(scratch, cfg, argv, cwd, true, true);
 }
 
+const harness_secret_environment_keys = [_][]const u8{
+    "SHINBO_PROVIDER_API_KEY",
+    "SHINBO_VISION_API_KEY",
+    "AI_GATEWAY_API_KEY",
+};
+
+fn stripHarnessSecrets(environment: *std.process.Environ.Map) void {
+    for (harness_secret_environment_keys) |key| _ = environment.swapRemove(key);
+}
+
+fn shellChildEnvironMap(alloc: Allocator) !?std.process.Environ.Map {
+    var environment = io_mod.cloneEnvironMap(alloc) catch |err| switch (err) {
+        error.EnvironmentUnavailable => return null,
+        else => return err,
+    };
+    stripHarnessSecrets(&environment);
+    return environment;
+}
+
 fn executeProcessWithInput(
     scratch: Allocator,
     cfg: Config,
@@ -1399,12 +1418,15 @@ fn executeProcessWithInput(
     isolate_process_group: bool,
 ) !CollectedProcess {
     const started_ms = io_mod.milliTimestamp();
+    var environment = try shellChildEnvironMap(scratch);
+    defer if (environment) |*map| map.deinit();
     var child = try std.process.spawn(io_mod.getIo(), .{
         .argv = argv,
         .stdin = if (closed_input) .pipe else .ignore,
         .stdout = .pipe,
         .stderr = .pipe,
         .cwd = .{ .path = cwd },
+        .environ_map = if (environment) |*map| map else null,
         .pgid = if (isolate_process_group and builtin.os.tag != .windows and builtin.os.tag != .wasi) 0 else null,
         .start_suspended = windowsChildStartsSuspended(builtin.os.tag),
     });
@@ -1512,12 +1534,15 @@ fn executeProcessWithDetachedSession(
     try helper_argv.appendSlice(scratch, argv);
 
     const started_ms = io_mod.milliTimestamp();
+    var environment = try shellChildEnvironMap(scratch);
+    defer if (environment) |*map| map.deinit();
     var child = try std.process.spawn(io_mod.getIo(), .{
         .argv = helper_argv.items,
         .stdin = .pipe,
         .stdout = .pipe,
         .stderr = .pipe,
         .cwd = .{ .path = cwd },
+        .environ_map = if (environment) |*map| map else null,
     });
 
     var output = OutputCollector.init(scratch, cfg);
@@ -1684,12 +1709,15 @@ fn executeProcessWithScriptUnisolated(
     script: []const u8,
 ) !CollectedProcess {
     const started_ms = io_mod.milliTimestamp();
+    var environment = try shellChildEnvironMap(scratch);
+    defer if (environment) |*map| map.deinit();
     var child = try std.process.spawn(io_mod.getIo(), .{
         .argv = argv,
         .stdin = .pipe,
         .stdout = .pipe,
         .stderr = .pipe,
         .cwd = .{ .path = cwd },
+        .environ_map = if (environment) |*map| map else null,
         .pgid = if (builtin.os.tag != .windows and builtin.os.tag != .wasi) 0 else null,
         .start_suspended = windowsChildStartsSuspended(builtin.os.tag),
     });
@@ -2983,6 +3011,20 @@ test "backend public labels hide internal implementation names" {
     try std.testing.expectEqualStrings("none", publicModeForBackendForProbe(.none, .{ .host_capabilities = host.nativeForOs(.macos) }).label());
     try std.testing.expectEqualStrings("os", publicModeForBackendForProbe(.auto, .{ .host_capabilities = host.nativeForOs(.macos) }).label());
     try std.testing.expectEqualStrings("none", publicModeForBackendForProbe(.auto, .{ .host_capabilities = host.nativeForOs(.linux) }).label());
+}
+
+test "shell child environment strips harness provider secrets" {
+    var environment = std.process.Environ.Map.init(std.testing.allocator);
+    defer environment.deinit();
+    try environment.put("PATH", "/usr/bin");
+    try environment.put("SHINBO_PROVIDER_API_KEY", "provider");
+    try environment.put("SHINBO_VISION_API_KEY", "vision");
+    try environment.put("AI_GATEWAY_API_KEY", "gateway");
+    stripHarnessSecrets(&environment);
+    try std.testing.expectEqualStrings("/usr/bin", environment.get("PATH").?);
+    try std.testing.expect(environment.get("SHINBO_PROVIDER_API_KEY") == null);
+    try std.testing.expect(environment.get("SHINBO_VISION_API_KEY") == null);
+    try std.testing.expect(environment.get("AI_GATEWAY_API_KEY") == null);
 }
 
 test "config construction carries explicit output cap" {

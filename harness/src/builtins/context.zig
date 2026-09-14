@@ -158,15 +158,29 @@ fn readSystemPromptFile(path: []const u8) ?[]const u8 {
     var file = std.Io.Dir.openFileAbsolute(io_mod.getIo(), path, .{
         .allow_directory = false,
         .follow_symlinks = false,
-    }) catch return null;
+    }) catch |err| {
+        if (err != error.FileNotFound) logSystemPromptRejected(path, @errorName(err));
+        return null;
+    };
     defer file.close(io_mod.getIo());
 
     var fixed: std.heap.FixedBufferAllocator = .init(&override_storage);
     const arena = fixed.allocator();
-    const text = io_mod.readFileToEnd(arena, &file, system_prompt_override_bytes) catch return null;
+    const text = io_mod.readFileToEnd(arena, &file, system_prompt_override_bytes) catch |err| {
+        logSystemPromptRejected(path, @errorName(err));
+        return null;
+    };
     const body = std.mem.trim(u8, text, trim_chars);
     if (body.len == 0) return null;
     return std.fmt.allocPrint(arena, "{s}\n\n{s}", .{ body, tools_and_verification_section }) catch return null;
+}
+
+fn logSystemPromptRejected(path: []const u8, reason: []const u8) void {
+    debug_trace.logf(
+        "context",
+        "system prompt override at {s} ignored ({s}; must be a regular non-symlink file of at most {d} bytes), using the built-in prompt",
+        .{ path, reason, system_prompt_override_bytes },
+    );
 }
 
 pub const prompt_policy = prompt_policy_contract.Policy{

@@ -83,7 +83,7 @@ picker, and a footer reading the model's window and the last answer's tok/s.
 | Leaving with | What happens |
 |---|---|
 | Nothing running | The window is **destroyed** — no idle renderer sitting behind the menu bar |
-| A turn running | The window hides and is destroyed when the run lands (`closeOverlayWhenIdle`) |
+| A turn running | The island collapses to the chip; ⌥⌥ or opening the workspace hides it and destroys it when the run lands (`closeOverlayWhenIdle`) |
 | The island detached, or any island on Windows | It collapses to the chip instead of closing |
 
 An unsent draft survives either way: the composer writes it to `localStorage`
@@ -92,10 +92,10 @@ is built again.
 
 ## The chip and the popout
 
-Dragged off the housing, Quick Ask becomes a 44px chip parked where you left it
-— always whole and inside the work area, because a chip half off the screen is
-one you cannot get back. Clicking it expands the same island beside it, with a
-28px header where the housing wrap would have been.
+Leaving a busy island, or any island on Windows, collapses Quick Ask to a 44px
+chip — always whole and inside the work area, because a chip half off the
+screen is one you cannot get back. Clicking it expands the same island beside
+it, with a 28px header where the housing wrap would have been.
 
 The chip is also the island's exit on Windows: leaving collapses to it, it
 reports the run's state — working, error, or done — and once the run is done it

@@ -76,9 +76,9 @@ import { review } from "./verifier";
 import { MAX_REVIEW_ROUNDS, REVIEWABLE_KINDS, reviewPrompt, reviewTitle, reviewVerdict, revisionPrompt } from "./review";
 import { advise } from "./advisor";
 import { describeScreen, look } from "./vision";
-import { readSecret } from "./secret";
+import { readSecret, SECRET_UNSET, secretKey } from "./secret";
 import { listMemories, MAX_MEMORY_FILE_BYTES, resolveMemoryPath, runMemoryCommand } from "./memory";
-import { browserArgv, BROWSER_NAVIGATIONS, describeToolCall, MAX_CLI_PROMPT_CHARS, parseToolArgs, shellQuoted, toolNeeds, type ToolArgs } from "./tools";
+import { browserArgv, BROWSER_NAVIGATIONS, describeToolCall, MAX_CLI_PROMPT_CHARS, parseToolArgs, shellQuoted, toolNeeds, type AnyToolArgs, type ToolArgs } from "./tools";
 import { Browsers, type BrowserStatus } from "./browser";
 import { Terminals } from "./terminal";
 import { MAX_TERMINAL_COLUMNS, MAX_TERMINAL_INPUT } from "../shared/terminal";
@@ -1812,6 +1812,7 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
       return await look(toolSettings.vision, image, args.question, undefined, agents!.signalFor(turn.threadId));
     }
     case "secret": {
+      if (secretKey(toolSettings.secret) === undefined) return SECRET_UNSET;
       const signal = agents!.signalFor(turn.threadId);
       const attached = threadFolder(turn.threadId);
       const output = await runCommand(attached ? folders!.directory(attached) : homedir(), args.command, undefined, signal);
@@ -2530,11 +2531,13 @@ async function runShinboTool(threadId: string, wireName: string, args: Record<st
   const unavailable = whyUnavailable(threadId, name, wireName);
   if (unavailable) throw new Error(unavailable);
   const parsed = parseToolArgs(name, JSON.stringify(args));
-  if (gate === "ask" && name !== "computer") {
+  const authored = name === "artifact" || name === "component";
+  const mounts = authored && await mountsCode(parsed);
+  if (gate === "ask" && name !== "computer" && (mounts || !authored)) {
     const allowed = await agents!.question({
       threadId,
       tool: name,
-      summary: describeToolCall(parsed),
+      summary: mounts ? `${describeToolCall(parsed)} — this module runs inside Shinbo with the app's own access: it can open terminals, run git, read your threads and credentials, and open links` : describeToolCall(parsed),
       detail: JSON.stringify(args, null, 2).slice(0, 4096),
     });
     if (!allowed) throw new Error(`The user did not allow ${wireName} to run. Do not try it again this turn; say what you needed it for instead.`);
@@ -2545,6 +2548,15 @@ async function runShinboTool(threadId: string, wireName: string, args: Record<st
     ? agents!.runThreadTool(parsed, current)
     : executeTool(parsed as ToolArgs, current);
   return turn.bench ? await benchReplay.run(true, call) : await call();
+}
+
+async function mountsCode(args: AnyToolArgs): Promise<boolean> {
+  if (args.name === "component") return args.action === "create" || args.action === "rewrite";
+  if (args.name !== "artifact" || args.action === "list" || args.action === "get") return false;
+  if (args.surface) return args.surface !== "none";
+  if (args.action === "create") return false;
+  const existing = await readArtifact(app.getPath("userData"), args.id!).catch(() => undefined);
+  return !!existing?.surface;
 }
 
 function whyUnavailable(threadId: string, name: string, called = name): string | undefined {
@@ -3822,7 +3834,7 @@ async function runDrivenTurn(turn: TurnRequest) {
   const thread = noteThread(recorded);
   await noteGoalFailure(turn.threadId, agents!.list().find((agent) => agent.threadId === turn.threadId)?.error);
   if (!turn.goalTurn) void continueGoal(turn, thread).catch((error: unknown) => console.error("Shinbo: a goal's continuation failed", error));
-  if (wantsReview(turn, thread)) void reviewWork(turn, recorded).catch((error: unknown) => console.error("Shinbo: a second-model review failed", error));
+  if (wantsReview(turn, thread)) void reviewWork(turn, recorded).catch((error: unknown) => noteReviewFailure(turn, error));
   return recorded;
 }
 
@@ -3868,8 +3880,17 @@ async function reviewWork(turn: TurnRequest, recorded: unknown) {
   }
 }
 
+function noteReviewFailure(turn: TurnRequest, error: unknown) {
+  console.error("Shinbo: a second-model review failed", error);
+  const message = error instanceof Error ? error.message : String(error);
+  void recordTurn({ threadId: turn.threadId, prompt: reviewTitle(turn.title), answer: "", notice: `Review skipped: ${message}`, durationMilliseconds: "0", outputTokens: "0", inputTokens: "0", model: "", goalTurn: "false" })
+    .then((thread) => { noteThread(thread); changed(); })
+    .catch((why: unknown) => console.error("Shinbo: the review failure could not be recorded", why));
+}
+
 async function runReview(turn: TurnRequest, answered: string): Promise<string> {
   const title = reviewTitle(turn.title);
+  await turnRoute(reviewSettings.model);
   const created = await host!.request({ method: "createThread", params: { parentThreadId: turn.threadId, title } });
   const threadId = (created as { id?: unknown }).id;
   if (typeof threadId !== "string") throw new Error("Shinbo host returned an invalid thread");
@@ -3901,7 +3922,7 @@ async function noteGoalFailure(threadId: string, detail: string | undefined) {
 
 const goalHalted = (threadId: string) =>
   goalStopped.has(threadId) || agents!.list().some((agent) => agent.threadId === threadId
-    && (agent.status === "stopped" || agent.status === "running" || agent.status === "waiting"));
+    && (agent.status === "stopped" || agent.status === "failed" || agent.status === "running" || agent.status === "waiting"));
 
 async function continueGoal(turn: TurnRequest, thread: ThreadRecord | undefined) {
   const threadId = turn.threadId;

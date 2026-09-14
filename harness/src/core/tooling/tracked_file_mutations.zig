@@ -12,6 +12,7 @@ else
     struct {};
 
 const Allocator = std.mem.Allocator;
+const max_undo_capture_bytes: u64 = 10 * 1024 * 1024;
 
 pub const Input = struct {
     dispatch_ctx: tool_dispatch.DispatchContext,
@@ -177,10 +178,7 @@ fn captureDelete(
         .kind = .delete,
         .path = owned_path,
         .previous_directory = previous_directory,
-        .previous_content = if (previous_directory) null else try change_tracker.ChangeTracker.captureFileState(
-            std.heap.c_allocator,
-            path,
-        ),
+        .previous_content = if (previous_directory) null else try captureUndoableFileState(path),
         .timestamp_ms = 0,
     };
 }
@@ -204,10 +202,7 @@ fn captureRename(
         .kind = .rename,
         .path = owned_old_path,
         .previous_directory = previous_directory,
-        .previous_content = if (previous_directory) null else try change_tracker.ChangeTracker.captureFileState(
-            std.heap.c_allocator,
-            new_path,
-        ),
+        .previous_content = if (previous_directory) null else try captureUndoableFileState(new_path),
         .new_path = owned_new_path,
         .timestamp_ms = 0,
     };
@@ -223,12 +218,18 @@ fn captureCopy(
     return .{
         .kind = .write,
         .path = owned_path,
-        .previous_content = try change_tracker.ChangeTracker.captureFileState(
-            std.heap.c_allocator,
-            destination,
-        ),
+        .previous_content = try captureUndoableFileState(destination),
         .timestamp_ms = 0,
     };
+}
+
+fn captureUndoableFileState(path: []const u8) !?[]u8 {
+    const stat = std.Io.Dir.cwd().statFile(io_mod.getIo(), path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return null,
+        else => return err,
+    };
+    if (stat.kind != .file or stat.size >= max_undo_capture_bytes) return null;
+    return try change_tracker.ChangeTracker.captureFileState(std.heap.c_allocator, path);
 }
 
 fn freeCapturedOperation(maybe_operation: ?change_tracker.FileOperation) void {
@@ -527,7 +528,7 @@ test "tracked copy preserves destination on failed atomic replacement" {
         testCall("copy_file", "{\"source\":\"source.txt\",\"destination\":\"dest\",\"overwrite\":true}"),
     );
     try std.testing.expectEqual(tool_dispatch.DispatchResult.Status.failure, copied.status);
-    try std.testing.expect(std.mem.indexOf(u8, copied.body, "undo backup could not be saved") != null);
+    try std.testing.expectEqualStrings("copy_file failed: source.txt", copied.body);
     const stat = try tmp.dir.statFile(io_mod.getIo(), "workspace/dest", .{});
     try std.testing.expectEqual(std.Io.File.Kind.directory, stat.kind);
     try std.testing.expectEqual(@as(usize, 0), tracker.stack.items.len);
@@ -767,7 +768,7 @@ fn createSymlinkOrSkip(tmp: *std.testing.TmpDir, target_path: []const u8, link_p
     };
 }
 
-test "tracked mutations leave existing files untouched when undo capture exceeds its bound" {
+test "tracked mutations proceed without an undo preimage when capture exceeds its bound" {
     const alloc = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -783,20 +784,55 @@ test "tracked mutations leave existing files untouched when undo capture exceeds
     var arena_state = std.heap.ArenaAllocator.init(alloc);
     defer arena_state.deinit();
     const input = testInput(arena_state.allocator(), workspace, &tracker);
-    const results = [_]tool_dispatch.DispatchResult{
-        try executeCopy(input, testCall("copy_file", "{\"source\":\"source.txt\",\"destination\":\"large.txt\"}")),
-        try executeRename(input, testCall("rename_file", "{\"old_path\":\"source.txt\",\"new_path\":\"large.txt\"}")),
-        try executeDelete(input, testCall("delete_file", "{\"path\":\"large.txt\"}")),
-    };
-    for (results) |result| {
-        try std.testing.expectEqual(tool_dispatch.DispatchResult.Status.failure, result.status);
-        try std.testing.expect(std.mem.indexOf(u8, result.body, "undo backup could not be saved") != null);
-    }
-    try std.testing.expectEqual(@as(usize, 0), tracker.stack.items.len);
-    const stat = try tmp.dir.statFile(io_mod.getIo(), "workspace/large.txt", .{});
-    try std.testing.expectEqual(@as(u64, 10 * 1024 * 1024 + 1), stat.size);
-    const source = try readFileAlloc(arena_state.allocator(), tmp.dir, "workspace/source.txt");
-    try std.testing.expectEqualStrings("source", source);
+
+    const copied = try executeCopy(input, testCall("copy_file", "{\"source\":\"source.txt\",\"destination\":\"large.txt\"}"));
+    try std.testing.expectEqual(tool_dispatch.DispatchResult.Status.success, copied.status);
+    try std.testing.expectEqual(@as(usize, 1), tracker.stack.items.len);
+    try std.testing.expect(tracker.stack.items[0].previous_content == null);
+    const copied_content = try readFileAlloc(arena_state.allocator(), tmp.dir, "workspace/large.txt");
+    try std.testing.expectEqualStrings("source", copied_content);
+
+    var regrown = try tmp.dir.openFile(io_mod.getIo(), "workspace/large.txt", .{ .mode = .read_write });
+    defer regrown.close(io_mod.getIo());
+    try regrown.setLength(io_mod.getIo(), 10 * 1024 * 1024 + 1);
+
+    const deleted = try executeDelete(input, testCall("delete_file", "{\"path\":\"large.txt\"}"));
+    try std.testing.expectEqual(tool_dispatch.DispatchResult.Status.success, deleted.status);
+    try std.testing.expectEqual(@as(usize, 2), tracker.stack.items.len);
+    try std.testing.expect(tracker.stack.items[1].previous_content == null);
+    try std.testing.expectError(error.FileNotFound, tmp.dir.statFile(io_mod.getIo(), "workspace/large.txt", .{}));
+    try std.testing.expectEqual(change_tracker.UndoResult.empty, tracker.undoLast(std.heap.c_allocator));
+}
+
+extern "c" fn mkfifo(path: [*:0]const u8, mode: std.c.mode_t) c_int;
+
+test "tracked delete removes a fifo without opening it" {
+    if (comptime builtin.os.tag == .windows or builtin.os.tag == .wasi) return error.SkipZigTest;
+    const alloc = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(io_mod.getIo(), "workspace");
+    const workspace = try workspaceRoot(alloc, tmp);
+    defer alloc.free(workspace);
+    const fifo_path = try std.fs.path.join(alloc, &.{ workspace, "pipe" });
+    defer alloc.free(fifo_path);
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const path_z = try std.fmt.bufPrintZ(&path_buf, "{s}", .{fifo_path});
+    if (mkfifo(path_z, 0o600) != 0) return error.SkipZigTest;
+    var tracker: change_tracker.ChangeTracker = .{};
+    defer tracker.deinit(std.heap.c_allocator);
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+
+    const result = try executeDelete(
+        testInput(arena_state.allocator(), workspace, &tracker),
+        testCall("delete_file", "{\"path\":\"pipe\"}"),
+    );
+
+    try std.testing.expectEqual(tool_dispatch.DispatchResult.Status.success, result.status);
+    try std.testing.expectEqual(@as(usize, 1), tracker.stack.items.len);
+    try std.testing.expect(tracker.stack.items[0].previous_content == null);
+    try std.testing.expectError(error.FileNotFound, tmp.dir.statFile(io_mod.getIo(), "workspace/pipe", .{}));
 }
 
 test "tracked directory deletion and overwrite rename remain undoable" {

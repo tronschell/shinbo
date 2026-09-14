@@ -555,9 +555,28 @@ fn callShinboTool(
     var response = maybe_response orelse return error.Cancelled;
     defer response.deinit(alloc);
     if (response.cancelled) return error.Cancelled;
-    if (response.error_json != null) return error.ShinboToolFailed;
+    if (response.error_json) |error_json| return shinboToolError(out_alloc, error_json);
     const result_json = response.result_json orelse return error.ShinboToolFailed;
     return shinboToolOutput(out_alloc, result_json);
+}
+
+fn shinboToolError(alloc: Allocator, error_json: []const u8) !tool_dispatch.ToolResult {
+    var parsed = std.json.parseFromSlice(std.json.Value, alloc, error_json, .{}) catch
+        return error.ShinboToolFailed;
+    defer parsed.deinit();
+    if (parsed.value != .object) return error.ShinboToolFailed;
+    const message = parsed.value.object.get("message") orelse return error.ShinboToolFailed;
+    if (message != .string or message.string.len == 0) return error.ShinboToolFailed;
+    return .{ .failure = try alloc.dupe(u8, message.string) };
+}
+
+test "a JSON-RPC error from Shinbo reaches the model as its message" {
+    const alloc = std.testing.allocator;
+    const failed = try shinboToolError(alloc, "{\"code\":-32602,\"message\":\"Unknown session or tool\"}");
+    defer failed.deinit(alloc);
+    try std.testing.expectEqualStrings("Unknown session or tool", failed.failure);
+    try std.testing.expectError(error.ShinboToolFailed, shinboToolError(alloc, "{\"code\":-32602}"));
+    try std.testing.expectError(error.ShinboToolFailed, shinboToolError(alloc, "[]"));
 }
 
 fn shinboToolParamsJson(

@@ -120,6 +120,7 @@ export class CliRuns {
     if (!binary) throw new Error(`${harness.label} is no longer on the PATH.`);
     const selected = validateCliOptions(entry.cli, { model: entry.model, effort: entry.effort, ...options });
     await validateCatalogEffort(entry.cli, selected);
+    if (this.runs.get(id) !== entry || this.get(id)?.status === "running") throw new Error(`${id} changed while its turn was being prepared. Read it until it goes idle, then send again.`);
     const handoff = this.handoff(entry.threadId, prompt, fromRuns, id);
     this.available(entry.cwd);
     if (!harness.ownsSession && [...this.runs.values()].reverse().find((run) => run.cli === entry.cli && run.cwd === entry.cwd)?.id !== id) throw new Error("This CLI resumes the newest session in this folder. Continue its newest run instead.");

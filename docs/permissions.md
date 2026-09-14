@@ -53,15 +53,22 @@ its implementation asks for the resolved app rather than each individual call.
 | `secret` | ask | ask | verifier | auto |
 | `install_mcp` | ask | ask | verifier | auto |
 | `workflow` | ask | ask | verifier | auto |
-| `artifact` | auto | auto | auto | auto |
-| `component` | auto | auto | auto | auto |
+| `artifact` | ask | ask | verifier | auto |
+| `component` | ask | ask | verifier | auto |
 | `visualize` | auto | auto | auto | auto |
 
 Six tools use the ordinary gate: `browser`, `cli`, `run_tool`, `secret`,
 `install_mcp`, `workflow`. `computer` requires a human app grant;
 its `list_apps` action returns only running-app metadata without that grant.
 
-Creating a component uses its ordinary tool gate, but sending a widget request
+`artifact` and `component` gate only the calls that mount model-written code
+into the app renderer, where it runs with the full `window.shinbo` bridge:
+`component` create and rewrite, and an `artifact` write that sets a `surface`
+or touches an artifact already mounted in one. Listing, reading, plain
+document writes and `surface: "none"` stay `auto`; the question is asked
+before the module is saved, so nothing is mounted on a refusal.
+
+Creating a component asks through that gate, but sending a widget request
 with credentials requires a separate native approval of the exact request
 template in every mode. This is not approval of all future widget requests.
 See [components.md](components.md).

@@ -333,6 +333,11 @@ pub const read_trace = ToolSpec{
                     .json_type = .number,
                     .description = "How many of the most recent traces to read. Default 3.",
                 },
+                .{
+                    .name = "offset",
+                    .json_type = .number,
+                    .description = "How many recent traces to skip when reading older runs. Default 0.",
+                },
             },
             .required = &.{},
         },

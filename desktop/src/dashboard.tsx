@@ -112,7 +112,7 @@ export function Dashboard({ threads, folders, folderId, seed }: {
   const [usage, setUsage] = useState<{ skills: UsageRow[]; models: UsageRow[] }>({ skills: [], models: [] });
   const [repos, setRepos] = useState<Repo[] | null>(null);
   const [steps, setSteps] = useState<{ signature: string; steps: NextStep[] } | null>(null);
-  const [asked, setAsked] = useState("");
+  const [asked, setAsked] = useState<ReadonlySet<string>>(new Set());
   const requested = useRef(new Set<string>());
 
   const project = folders.find((grant) => grant.id === folderId);
@@ -178,18 +178,19 @@ export function Dashboard({ threads, folders, folderId, seed }: {
   useEffect(() => {
     if (!scanned || cached || requested.current.has(signature)) return;
     requested.current.add(signature);
+    const settle = () => setAsked((current) => new Set(current).add(signature));
     void window.shinbo.nextSteps(state)
       .then((found) => {
-        setAsked(signature);
+        settle();
         if (!found.length) return;
         setSteps({ signature, steps: found });
         keepSteps(signature, found);
       })
-      .catch(() => setAsked(signature));
+      .catch(settle);
   }, [cached, signature, scanned, state]);
 
   const suggested = cached ?? (steps?.signature === signature ? steps.steps : []);
-  const settled = !!cached || asked === signature;
+  const settled = !!cached || asked.has(signature);
   const tiles = suggested.length ? suggested : defaultSteps(state);
   const modelRows = usageRows(usage.models, sparkDays, (row) => short(row.name), (row) => <BrandIcon brand={brandForModel(row.name)} className="dash-brand" />);
   const skillRows = usageRows(usage.skills, sparkDays, (row) => row.name);

@@ -445,7 +445,7 @@ fn runSearch(cfg: Config, arena: std.mem.Allocator, query: []const u8, requested
 
     try out.writer.print("[search] {d} results for: {s}\n", .{ shown, query });
     for (results.items[0..shown]) |entry| {
-        const clipped = entry.sample_line[0..@min(entry.sample_line.len, cfg.max_read_file_line_len)];
+        const clipped = entry.sample_line[0..text_utils.utf8BackwardBoundary(entry.sample_line, cfg.max_read_file_line_len)];
         try out.writer.print("{s}:{d}: {s}\n", .{ entry.path, entry.sample_line_number, clipped });
     }
 

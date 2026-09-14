@@ -2,7 +2,7 @@ import { Accessibility, AppWindow, AudioLines, Bell, Mic, Monitor, Archive, Arro
 import { Fragment, lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import { isCurrentThreadLoad, threadMessageCount, type AgentImportSource, type CompactSnapshot, type CredentialSummary, type HeldAttachment, type ImportedMcpServer, type ImportedSkill, type ToolTarget, type Message, type ModelModality, type OpenRouterCatalog, type OverlaySurface, type ScheduledJob, type Snapshot, type Thread, type ThreadContext } from "./types";
 import { describeRun, describeTrigger, parseVariables, parseWorkflow, runWorkflow, triggerProblem } from "../shared/workflow";
-import { PromptField, ScheduleField, useTaskCommands, WorkflowGraph } from "./schedule";
+import { MAX_SCHEDULED_PROMPT_BYTES, PromptField, ScheduleField, useTaskCommands, WorkflowGraph } from "./schedule";
 import { plural } from "./plural";
 import { ColorPicker } from "./color-picker";
 import { zoned } from "./dates";
@@ -16,7 +16,7 @@ import { DndContext, MeasuringStrategy, PointerSensor, closestCenter, useSensor,
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { hasPersistedPrompt } from "./drafts";
-import { arrived, canSteer, dropHeld, dropQueued, groupBlocks, pairBlocks, settleRun, tracedBlocks, queuedTurns, releaseHeld, RUN_ERROR_EVENT, sendTurn, steerQueued, steerRunning, stopTurn, turnToRetry, thinkingOf, useRun, withoutThinking, wrote, type Block, type RunFailure } from "./runs";
+import { arrived, canSteer, dropHeld, dropQueued, groupBlocks, MAX_STEER_CHARS, pairBlocks, settleRun, tracedBlocks, queuedTurns, releaseHeld, RUN_ERROR_EVENT, sendTurn, steerQueued, steerRunning, stopTurn, turnToRetry, thinkingOf, useRun, withoutThinking, wrote, type Block, type RunFailure } from "./runs";
 import { splitThinking } from "../shared/thinking";
 import { latestSteps, runActivity, stepActive } from "./tool-activity";
 import { showsUpdate } from "../shared/update";
@@ -823,7 +823,7 @@ function Workspace() {
   const restoredModel = useRef(false);
   const liveThreads = useMemo(() => snapshot.threads.filter((item) => !item.archivedAt && item.kind !== "subagent"), [snapshot.threads]);
   const archivedThreads = useMemo(() => snapshot.threads.filter((item) => item.archivedAt && item.kind !== "subagent"), [snapshot.threads]);
-  const selectedSummary = liveThreads.find((item) => item.id === threadId) ?? snapshot.threads.find((item) => item.id === threadId) ?? liveThreads[0];
+  const selectedSummary = liveThreads.find((item) => item.id === threadId) ?? liveThreads[0];
   const selectedId = selectedSummary?.id ?? "";
   const selectedIdRef = useRef(selectedId);
   const loadedFor = useRef("");
@@ -991,8 +991,9 @@ function Workspace() {
     "--browser-width": `${fitted.browserOpen ? fitted.browserWidth : 0}px`,
     "--terminal-height": `${layout.terminalOpen ? layout.terminalHeight : 0}px`,
   } as CSSProperties;
-  const filedThreads = useMemo(() => liveThreads.filter((item) => !item.scheduledJobId), [liveThreads]);
-  const scheduledThreads = useMemo(() => liveThreads.filter((item) => item.scheduledJobId), [liveThreads]);
+  const jobIds = useMemo(() => new Set(snapshot.scheduledJobs.map((job) => job.id)), [snapshot.scheduledJobs]);
+  const filedThreads = useMemo(() => liveThreads.filter((item) => !item.scheduledJobId || !jobIds.has(item.scheduledJobId)), [liveThreads, jobIds]);
+  const scheduledThreads = useMemo(() => liveThreads.filter((item) => item.scheduledJobId && jobIds.has(item.scheduledJobId)), [liveThreads, jobIds]);
   const threadById = useMemo(() => new Map(liveThreads.map((item) => [item.id, item])), [liveThreads]);
   const projectOf = useCallback((item: Thread) => {
     let at: Thread | undefined = item;
@@ -1022,7 +1023,17 @@ function Workspace() {
     ? projects.map((group) => group.name.toLowerCase().includes(search) ? group : { ...group, threads: group.threads.filter((item) => threadTitle(item).toLowerCase().includes(search) || (tags[item.id]?.tag ?? "").includes(search)) }).filter((group) => group.threads.length)
     : projects, [projects, search, tags]);
   const queryThreads = (value: string) => { setThreadQuery(value); setThreadLimits({}); };
-  const openThread = useCallback((id: string) => { if (markedUnread.includes(id)) setThreadUnread(id, false); setThreadId(id); setView("threads"); }, [markedUnread]);
+  const openThread = useCallback((id: string) => {
+    const byId = new Map(snapshot.threads.map((item) => [item.id, item]));
+    let item = byId.get(id);
+    if (item?.archivedAt) { setView("archive"); return; }
+    for (let hop = 0; item?.kind === "subagent" && item.parentThreadId && hop < 8; hop += 1) item = byId.get(item.parentThreadId);
+    const parentId = item && item.id !== id ? item.id : id;
+    if (markedUnread.includes(parentId)) setThreadUnread(parentId, false);
+    setThreadId(parentId);
+    if (parentId !== id) setTab(id);
+    setView("threads");
+  }, [markedUnread, snapshot.threads]);
   useEffect(() => window.shinbo.onSelectThread(openThread), [openThread]);
   const attachComponent = (meta: ComponentMeta) => {
     const pick: ContextPick = { kind: "component", id: meta.id, title: meta.title };
@@ -1051,9 +1062,19 @@ function Workspace() {
     const group = projects.find((item) => item.id === id);
     setProjectMenu(null);
     if (!group) return;
-    if (group.threads.length && !confirm(`Remove ${group.name} from the sidebar? Its ${group.threads.length} thread(s) move to Other.`)) return;
+    if (group.threads.length && !confirm(`Remove ${group.name} from the sidebar? Its ${group.threads.length} thread(s) move to Unfiled.`)) return;
     setError("");
     void window.shinbo.forgetFolder(group.id).then(setGrants).catch((reason: unknown) => setError(reasonText(reason)));
+  };
+  const moveThread = async (id: string, folderIds: string[]) => {
+    setThreadMenu(null);
+    setError("");
+    try {
+      const context = await window.shinbo.getThreadContext(id);
+      const mode = await window.shinbo.setThreadContext({ threadId: id, folderIds, mode: context.mode, review: context.review });
+      setThreadFolders(id, folderIds);
+      setLoadedThread((current) => current?.id === id ? { ...current, context: { ...current.context, folderIds, mode } } : current);
+    } catch (reason) { setError(reasonText(reason)); }
   };
   const setArchived = async (id: string, archived: boolean) => {
     setThreadMenu(null);
@@ -1189,6 +1210,7 @@ function Workspace() {
     shortcut.current = (event: KeyboardEvent) => {
       const primary = IS_WINDOWS ? event.ctrlKey && !event.metaKey : event.metaKey && !event.ctrlKey;
       if (!primary || event.altKey || event.shiftKey) return;
+      if (event.target instanceof Element && event.target.closest(".terminal-panel")) return;
       if (event.key === "n") { event.preventDefault(); setError(""); void createThread(); return; }
       if (!/^[1-9]$/.test(event.key)) return;
       const pick = threadAt(projects, thread?.id ?? "", Number(event.key) - 1);
@@ -1290,11 +1312,11 @@ function Workspace() {
           onDragStart={() => setDraggingProject(true)}
           onDragCancel={() => setDraggingProject(false)}
           onDragEnd={(event) => { setDraggingProject(false); dropped(projects, (projectOrder) => pane({ projectOrder }))(event); }}>
-        <SortableContext items={visibleProjects.map((group) => group.id)} strategy={verticalListSortingStrategy}>
+        <SortableContext items={visibleProjects.filter((group) => !virtualGroup(group.id) && group.id !== "unfiled").map((group) => group.id)} strategy={verticalListSortingStrategy}>
         <div className="sidebar-projects" ref={projectList} data-dragging={draggingProject || undefined}>
           <span className="sidebar-label">Projects<span className="sidebar-label-actions"><button type="button" className={`project-new ${layout.projectSort === "priority" ? "on" : ""}`} aria-label="Group threads" title="Group threads" aria-haspopup="menu" aria-expanded={sortMenu !== null} onClick={(event) => { const box = event.currentTarget.getBoundingClientRect(); setSortMenu({ x: box.left, y: box.bottom + 2 }); }}><FilterIcon /></button><button type="button" className="project-new" disabled={uiBusy} aria-label="Connect a folder" title="Connect a folder" onClick={connectProject}>＋</button></span></span>
           {selection.length > 0 && <div className="thread-selection"><span className="nav-label">{selection.length} selected</span><button type="button" disabled={uiBusy} onClick={() => void archiveThreads(selection)}>Archive</button><button type="button" onClick={() => setSelection([])} aria-label="Clear selection">×</button></div>}
-          {visibleProjects.map((group) => { const limit = threadLimits[group.id] ?? Math.max(THREAD_PAGE, Math.floor((listRows - visibleProjects.length - 1) / visibleProjects.length)); return <Sortable key={group.id} id={group.id} className="project-sort">{(handle) => <details className={`project-group ${virtualGroup(group.id) ? "flat" : ""}`} open><summary {...handle} onContextMenu={(event) => { event.preventDefault(); setProjectMenu({ id: group.id, x: event.clientX, y: event.clientY }); }}>{!virtualGroup(group.id) && group.id !== "unfiled" && <FolderIcon />}<span className="nav-label">{group.name}</span>{group.id !== "pinned" && <button type="button" className="project-new" disabled={uiBusy} aria-label={group.id === "priority" ? "New thread" : `New thread in ${group.name}`} title={group.id === "priority" ? "New thread" : `New thread in ${group.name}`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setError(""); void createThread(group.id === "priority" ? undefined : group.id === "unfiled" ? "" : group.id); }}>＋</button>}<b>{group.threads.length}</b></summary>{group.threads.slice(0, limit).map((item) => renaming?.id === item.id
+          {visibleProjects.map((group) => { const limit = threadLimits[group.id] ?? Math.max(THREAD_PAGE, Math.floor((listRows - visibleProjects.length - 1) / visibleProjects.length)); return <Sortable key={group.id} id={group.id} className="project-sort" disabled={virtualGroup(group.id) || group.id === "unfiled"}>{(handle) => <details className={`project-group ${virtualGroup(group.id) ? "flat" : ""}`} open><summary {...handle} onContextMenu={(event) => { event.preventDefault(); setProjectMenu({ id: group.id, x: event.clientX, y: event.clientY }); }}>{!virtualGroup(group.id) && group.id !== "unfiled" && <FolderIcon />}<span className="nav-label">{group.name}</span>{group.id !== "pinned" && <button type="button" className="project-new" disabled={uiBusy} aria-label={group.id === "priority" ? "New thread" : `New thread in ${group.name}`} title={group.id === "priority" ? "New thread" : `New thread in ${group.name}`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setError(""); void createThread(group.id === "priority" ? undefined : group.id === "unfiled" ? "" : group.id); }}>＋</button>}<b>{group.threads.length}</b></summary>{group.threads.slice(0, limit).map((item) => renaming?.id === item.id
             ? <form key={item.id} className="project-thread renaming" onSubmit={(event) => { event.preventDefault(); void renameThread(item.id, renaming.value); }}><input autoFocus value={renaming.value} aria-label="Thread name" onChange={(event) => setRenaming({ id: item.id, value: event.target.value })} onBlur={() => void renameThread(item.id, renaming.value)} onKeyDown={(event) => { if (event.key === "Escape") { renameDone.current = true; setRenaming(null); } }} /><ThreadStatus live={threadStatus.get(item.id)} unseen={unseen(item.id)} /></form>
             : <div className={`project-row ${threadMenu?.id === item.id ? "menu-open" : ""}`} key={item.id}><button type="button" style={{ "--thread-depth": threadDepth(group.threads, item) } as CSSProperties} className={`project-thread ${item.id === thread?.id && view === "threads" && !selection.length ? "active" : ""} ${selection.includes(item.id) ? "selected" : ""}`} title={threadLabel(item)} disabled={uiBusy} onClick={(event) => clickThread(event, group, item.id)} onDoubleClick={() => startRename(item.id, threadLabel(item))} onContextMenu={(event) => { event.preventDefault(); showThreadMenu(item.id, event.clientX, event.clientY); }}><span className="thread-copy"><span className="nav-label">{threadLabel(item)}</span>{virtualGroup(group.id) && <span className="thread-home"><FolderIcon /><span>{projectName(item) || "Unfiled"}</span></span>}</span><span className="thread-indicators">{phone.threads.includes(item.id) && <Smartphone size={14} strokeWidth={1.6} role="img" aria-label="Started from phone" />}<ThreadGitStatus snapshot={threadRepos[projectOf(item)]} /><ThreadStatus live={threadStatus.get(item.id)} unseen={unseen(item.id)} /></span>{tags[item.id] && <em className={`thread-tag ${tags[item.id].auto ? "auto" : ""}`} title={tags[item.id].auto ? `${tags[item.id].tag} · Shinbo’s guess, right-click to change it` : tags[item.id].tag}>{tags[item.id].tag}</em>}</button><button type="button" className={`thread-pin ${pins.includes(item.id) ? "on" : ""}`} title={pins.includes(item.id) ? "Unpin thread" : "Pin thread"} aria-label={`${pins.includes(item.id) ? "Unpin" : "Pin"} ${threadLabel(item)}`} aria-pressed={pins.includes(item.id)} disabled={uiBusy} onClick={() => setThreadPinned(item.id, !pins.includes(item.id))}><Pin size={14} strokeWidth={1.6} fill={pins.includes(item.id) ? "currentColor" : "none"} aria-hidden="true" /></button><button type="button" className="thread-actions" title="Thread options" aria-label={`Options for ${threadLabel(item)}`} aria-haspopup="menu" aria-expanded={threadMenu?.id === item.id} disabled={uiBusy} onClick={(event) => { const box = event.currentTarget.getBoundingClientRect(); showThreadMenu(item.id, box.left, box.bottom + 2); }}><DotsIcon /></button></div>)}{group.threads.length > limit && <button type="button" className="project-more" onClick={() => setThreadLimits((current) => ({ ...current, [group.id]: limit + Math.max(THREAD_PAGE, listRows, limit) }))}>Load more ({group.threads.length - limit})</button>}{!group.threads.length && <p className="project-empty">No threads yet</p>}</details>}</Sortable>; })}
           {search && !visibleProjects.length && <p className="project-empty">No threads match that search</p>}
@@ -1320,14 +1342,14 @@ function Workspace() {
           <button type="button" role="menuitem" disabled={uiBusy} onClick={() => { setThreadMenu(null); startRename(menuThread.id, threadLabel(menuThread)); }}><span className="thread-menu-icon"><PencilIcon /></span><span>Rename</span></button>
           <button type="button" role="menuitem" onClick={() => markThreadUnread(menuThread.id, !unseen(menuThread.id))}><span className="thread-menu-icon"><UnreadIcon /></span><span>{unseen(menuThread.id) ? "Mark as read" : "Mark as unread"}</span></button>
           <button type="button" role="menuitem" disabled={uiBusy} onClick={() => void archiveThreads(selection.includes(menuThread.id) ? selection : [menuThread.id])}><span className="thread-menu-icon"><ArchiveIcon /></span><span>{selection.includes(menuThread.id) && selection.length > 1 ? `Archive ${selection.length} threads` : "Archive"}</span></button>
-          {!menuThread.scheduledJobId && <>
+          {!(menuThread.scheduledJobId && jobIds.has(menuThread.scheduledJobId)) && <>
             <hr />
             <div className="thread-menu-branch" onPointerEnter={() => setThreadSubmenu("project")}>
               <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={threadSubmenu === "project"} onClick={() => setThreadSubmenu("project")}><span className="thread-menu-icon"><FolderIcon /></span><span>Project</span><CaretIcon /></button>
               {threadSubmenu === "project" && <menu className="thread-submenu" aria-label="Move thread to project">
                 <div className="thread-menu-head">Move to</div><hr />
-                <button type="button" role="menuitemradio" aria-checked={!menuProjectId} onClick={() => { setThreadFolders(menuThread.id, []); setThreadMenu(null); }}><span className="thread-menu-icon"><FolderIcon /></span><span>Unfiled</span><span className="thread-menu-check"><CheckIcon /></span></button>
-                {grants.map((grant) => <button type="button" role="menuitemradio" aria-checked={menuProjectId === grant.id} key={grant.id} onClick={() => { setThreadFolders(menuThread.id, [grant.id]); setThreadMenu(null); }}><span className="thread-menu-icon"><FolderIcon /></span><span>{grant.name}</span><span className="thread-menu-check"><CheckIcon /></span></button>)}
+                <button type="button" role="menuitemradio" aria-checked={!menuProjectId} onClick={() => void moveThread(menuThread.id, [])}><span className="thread-menu-icon"><FolderIcon /></span><span>Unfiled</span><span className="thread-menu-check"><CheckIcon /></span></button>
+                {grants.map((grant) => <button type="button" role="menuitemradio" aria-checked={menuProjectId === grant.id} key={grant.id} onClick={() => void moveThread(menuThread.id, [grant.id])}><span className="thread-menu-icon"><FolderIcon /></span><span>{grant.name}</span><span className="thread-menu-check"><CheckIcon /></span></button>)}
               </menu>}
             </div>
             <div className="thread-menu-branch" onPointerEnter={() => setThreadSubmenu("tag")}>
@@ -1427,8 +1449,8 @@ function NavIcon({ view }: { view: string }) {
   return <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[view]}</svg>;
 }
 
-function Sortable({ id, className, children }: { id: string; className: string; children: (handle: Record<string, unknown>) => ReactNode }) {
-  const { setNodeRef, setActivatorNodeRef, listeners, transform, transition, isDragging } = useSortable({ id });
+function Sortable({ id, className, disabled, children }: { id: string; className: string; disabled?: boolean; children: (handle: Record<string, unknown>) => ReactNode }) {
+  const { setNodeRef, setActivatorNodeRef, listeners, transform, transition, isDragging } = useSortable({ id, disabled });
   return <div ref={setNodeRef} className={className} data-dragging={isDragging || undefined} style={{ transform: CSS.Transform.toString(transform), transition }}>
     {children({ ref: setActivatorNodeRef, ...listeners })}
   </div>;
@@ -1570,7 +1592,9 @@ function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, comm
   const graph = parseWorkflow(nodes, prompt);
   const inspected = graph.nodes.find((node) => node.id === selectedNode) ?? graph.nodes[0];
   const problem = triggerProblem(trigger);
-  const ready = Boolean(title.trim() && prompt.trim()) && !problem && !graph.errors.length && graph.nodes.length > 0;
+  const promptBytes = new TextEncoder().encode(prompt.trim()).length;
+  const promptProblem = promptBytes > MAX_SCHEDULED_PROMPT_BYTES ? `The prompt is ${promptBytes.toLocaleString("en-US")} bytes; a scheduled task holds at most ${MAX_SCHEDULED_PROMPT_BYTES.toLocaleString("en-US")}. Trim it, or move the long part into a note and @-mention it.` : "";
+  const ready = Boolean(title.trim() && prompt.trim()) && !problem && !promptProblem && !graph.errors.length && graph.nodes.length > 0;
   const save = async () => {
     if (!ready || busy) return;
     const saved = await act("saveScheduledJob", {
@@ -1605,6 +1629,7 @@ function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, comm
     <div className="task-fields">
       <label><span>Name</span><input value={title} maxLength={128} disabled={busy} onChange={(event) => setTitle(event.target.value)} placeholder="Daily AI news" /></label>
       <div><span className="task-label">What should Shinbo do?</span><PromptField value={prompt} onChange={setPrompt} commands={[...commands.skills, ...commands.tools]} atItems={commands.atItems} disabled={busy} rows={7} label="What should Shinbo do?" placeholder="Write the instructions just as you would in a conversation. Type / for a skill or tool, @ for a file, artifact or saved page." /></div>
+      {promptProblem && <p className="task-problem" role="alert">{promptProblem}</p>}
       <ScheduleField value={trigger} onChange={setTrigger} disabled={busy} />
       <div className="task-run-settings">
         <TaskModelPicker model={model} onChange={setModel} busy={busy} inherit="Current model" label="Workflow model" />
@@ -2804,7 +2829,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
       </div>
       <ProjectBar folders={folders} ids={folderIds} setFolders={setFolders} setIds={setFolderIds} git={git} name={worktreeName(thread.id)} busy={locked} />
       {sending && confirmStop && <div className="queued-stack" role="status"><div className="queued-row"><span>Press Esc again to stop Shinbo</span><button type="button" onClick={() => setConfirmStop(false)} aria-label="Keep going">×</button></div></div>}
-      {queued.length > 0 && <div className="queued-stack" aria-label="Queued messages">{queued.map((turn, index) => <div className="queued-row" key={`${index}-${turn.content}`}><span>Queued · {turn.content}</span><button type="button" className="steering" disabled={!canSteer(turn)} onClick={() => steerNow(index)} aria-label="Steer the running turn with this message now" title={!canSteer(turn) ? "Attachments cannot be steered — this one waits for the turn to end" : "Steer — cut into what Shinbo is doing now and hand it this message"}>steer</button><button type="button" onClick={() => dropQueued(thread.id, index)} aria-label="Drop this queued message">×</button></div>)}</div>}
+      {queued.length > 0 && <div className="queued-stack" aria-label="Queued messages">{queued.map((turn, index) => <div className="queued-row" key={`${index}-${turn.content}`}><span>Queued · {turn.content}</span><button type="button" className="steering" disabled={!canSteer(turn)} onClick={() => steerNow(index)} aria-label="Steer the running turn with this message now" title={turn.content.length > MAX_STEER_CHARS ? `Longer than ${MAX_STEER_CHARS.toLocaleString("en-US")} characters — waits for the turn to end` : !canSteer(turn) ? "Attachments cannot be steered — this one waits for the turn to end" : "Steer — cut into what Shinbo is doing now and hand it this message"}>steer</button><button type="button" onClick={() => dropQueued(thread.id, index)} aria-label="Drop this queued message">×</button></div>)}</div>}
       {run.held.length > 0 && <div className="queued-stack held-stack" aria-label="Held messages">{run.held.map((turn, index) => <div className="queued-row" key={`${index}-${turn.content}`}><span>{turn.failure ? `Not sent · ${turn.failure}` : "Held"} · {turn.content}</span><button type="button" onClick={() => releaseHeld(thread.id, index, reload)} aria-label="Send this held message">↑</button><button type="button" onClick={() => dropHeld(thread.id, index)} aria-label="Drop this held message">×</button></div>)}</div>}
       <DropVeil onFiles={attachDropped} locked={locked} />
       {ask && <PermissionPrompt ask={ask} agents={agents} />}

@@ -429,8 +429,8 @@
 .task-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-5); }
 .task-actions button { min-height: 28px; padding: 0 var(--s-3); border: 1px solid var(--border); background: transparent; color: var(--text-2); font: var(--fs-xs)/1 var(--font-mono); letter-spacing: var(--ls-caps); text-transform: uppercase; white-space: nowrap; transition: color var(--t), border-color var(--t), background-color var(--t); }
 .task-actions button:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); background: var(--surface-2); }
-.task-actions .task-danger { color: var(--rose); border-color: color-mix(in srgb, var(--rose) 45%, transparent); }
-.task-actions .task-danger:hover:not(:disabled) { color: var(--rose); border-color: var(--rose); background: color-mix(in srgb, var(--rose) 12%, transparent); }
+.task-actions .task-danger:not([data-armed="true"]) { color: var(--rose); border-color: color-mix(in srgb, var(--rose) 45%, transparent); }
+.task-actions .task-danger:not([data-armed="true"]):hover:not(:disabled) { color: var(--rose); border-color: var(--rose); background: color-mix(in srgb, var(--rose) 12%, transparent); }
 .task-dry-run { max-height: 220px; margin-top: var(--s-3); overflow: auto; padding: var(--s-3); border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); font: var(--fs-xs)/1.5 var(--font-code); white-space: pre-wrap; }
 
 .task-runs { margin-top: var(--s-5); }

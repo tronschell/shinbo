@@ -20,10 +20,12 @@ const PROTOCOL_VERSION = 1;
 
 const MAX_TOOL_OUTPUT_BYTES = 64 * 1024;
 
-const boundedOutput = (output: string) => {
-  if (output.length <= MAX_TOOL_OUTPUT_BYTES) return output;
-  const notice = `\n[truncated — ${output.length - MAX_TOOL_OUTPUT_BYTES} more characters; ask for a narrower range]`;
-  return `${output.slice(0, MAX_TOOL_OUTPUT_BYTES - notice.length)}${notice}`;
+export const boundedOutput = (output: string) => {
+  const bytes = Buffer.byteLength(output);
+  if (bytes <= MAX_TOOL_OUTPUT_BYTES) return output;
+  const notice = `\n[truncated — ${bytes - MAX_TOOL_OUTPUT_BYTES} more bytes; ask for a narrower range]`;
+  const kept = Buffer.from(output).subarray(0, MAX_TOOL_OUTPUT_BYTES - Buffer.byteLength(notice)).toString("utf8");
+  return `${kept.replace(/\uFFFD$/, "")}${notice}`;
 };
 
 export const MAX_IDLE_MS = 30 * 60 * 1000;

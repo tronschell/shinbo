@@ -10,7 +10,7 @@ import { artifactWritten } from "../shared/artifacts";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { defaultHarnessExperiments, validateHarnessExperiments } from "../shared/settings";
 import { CLOSED_BY_SHINBO, fixPrompt, harnessHealth, STALL_MS, stoppedReason, type HarnessLogLine, type HarnessState } from "../shared/harness-log";
-import { Harness, HARNESS_MODE_ID, INTERRUPTED_CALL, RESTARTED_BY_YOU, explainFailure, callEscapesWorkspace, compactionReported, contextBreakdownReported, contextExperimentFired, describePath, effortOption, escapesRoot, experimentOption, failedTurn, harnessKey, recoveredSessionTraces, toolCallText, toolOutput, turnUsageReported, unwrapMcpResult, type HarnessToolCall, type PermissionAsk, type PermissionContext, type PermissionOption } from "../main/harness";
+import { Harness, HARNESS_MODE_ID, INTERRUPTED_CALL, RESTARTED_BY_YOU, boundedOutput, explainFailure, callEscapesWorkspace, compactionReported, contextBreakdownReported, contextExperimentFired, describePath, effortOption, escapesRoot, experimentOption, failedTurn, harnessKey, recoveredSessionTraces, toolCallText, toolOutput, turnUsageReported, unwrapMcpResult, type HarnessToolCall, type PermissionAsk, type PermissionContext, type PermissionOption } from "../main/harness";
 import { decodeSpans, encodeSpans } from "../shared/trace";
 
 const fakeAgent = path.join(process.cwd(), "test", "fake-acp-agent.mjs");
@@ -1219,4 +1219,18 @@ for (const control of ["cancel", "steer"] as const) test(`R7-4 clearing the next
   } finally {
     await run.client.close();
   }
+});
+
+test("a truncated tool reply never splits an emoji, so the harness can still parse it", () => {
+  const limit = 64 * 1024;
+  for (const offset of [0, 1, 2, 3]) {
+    const output = `${"a".repeat(limit - 120 + offset)}${"\u{1F600}".repeat(200)}`;
+    const cut = boundedOutput(output);
+    assert.ok(Buffer.byteLength(cut) <= limit);
+    assert.equal(cut, Buffer.from(cut).toString("utf8"));
+    assert.doesNotThrow(() => JSON.parse(JSON.stringify({ output: cut })));
+    assert.match(cut, /\[truncated — \d+ more bytes; ask for a narrower range\]$/);
+    assert.ok(!cut.includes("\uFFFD"));
+  }
+  assert.equal(boundedOutput("short"), "short");
 });

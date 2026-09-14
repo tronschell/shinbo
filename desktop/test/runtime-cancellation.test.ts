@@ -40,7 +40,7 @@ function fixture(deps: Partial<LoopDeps> = {}, mode = turn.mode) {
   const harnessTurns = new Map([[turn.threadId, current]]);
   let executed = 0;
   const run = runInNewContext(compiled, {
-    HARNESS_TOOL_NAMES: {}, harnessTurns, agents, toolGate, toolSettings: { disabledTools: [] },
+    HARNESS_TOOL_NAMES: {}, harnessTurns, agents, toolGate, toolSettings: { disabledTools: [] }, mountsCode: async () => false,
     whyUnavailable: () => undefined, parseToolArgs, describeToolCall, OWN_TOOLS, benchReplay,
     executeTool: async () => { executed++; return "inert"; },
   }) as (threadId: string, name: string, args: Record<string, unknown>) => Promise<string>;

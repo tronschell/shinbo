@@ -3651,6 +3651,22 @@ fn buildCompactedSummaryTurn(
     summarizer: ?Summarizer,
     observer: ?CompactionObserver,
 ) !CompactedSummaryHistoryTurn {
+    return (try buildCompactedSummaryTurnTagged(alloc, existing, removed, budget, summarizer, observer)).turn;
+}
+
+const CompactedSummaryTurnTagged = struct {
+    turn: CompactedSummaryHistoryTurn,
+    model_written: bool,
+};
+
+fn buildCompactedSummaryTurnTagged(
+    alloc: Allocator,
+    existing: ?CompactedSummaryHistoryTurn,
+    removed: []const HistoryTurn,
+    budget: CompactionBudget,
+    summarizer: ?Summarizer,
+    observer: ?CompactionObserver,
+) !CompactedSummaryTurnTagged {
     const text = try compactedSummaryText(alloc, existing, removed, budget, summarizer);
     const entry: CompactedSummaryHistoryTurn = .{
         .summary = text.summary,
@@ -3667,7 +3683,7 @@ fn buildCompactedSummaryTurn(
         .model_written = text.model_written,
         .summary = entry.summary,
     });
-    return entry;
+    return .{ .turn = entry, .model_written = text.model_written };
 }
 
 fn compactedSummaryTurnForPrefix(
@@ -3690,7 +3706,7 @@ fn compactedSummaryTurnForPrefix(
             return copy.compacted_summary;
         }
 
-        const summary = try buildCompactedSummaryTurn(
+        const built = try buildCompactedSummaryTurnTagged(
             std.heap.c_allocator,
             existing,
             removed,
@@ -3698,7 +3714,12 @@ fn compactedSummaryTurnForPrefix(
             summarizer,
             observer,
         );
-        entry.replace(prefix, summary, budget);
+        if (summarizer != null and !built.model_written) {
+            defer freeHistoryTurn(std.heap.c_allocator, .{ .compacted_summary = built.turn });
+            const copy = try dupeHistoryTurn(alloc, .{ .compacted_summary = built.turn });
+            return copy.compacted_summary;
+        }
+        entry.replace(prefix, built.turn, budget);
         owns_prefix = false;
         const copy = try dupeHistoryTurn(alloc, .{ .compacted_summary = entry.summary.? });
         return copy.compacted_summary;
@@ -4395,6 +4416,31 @@ test "automatic compaction reports its counts once, and flags the deterministic 
         try std.testing.expectEqual(model_written, observer.last.model_written);
         try std.testing.expect(observer.last.removed_turns > 0);
     }
+}
+
+test "a fallback summary is not cached, so the next compaction of the same prefix retries the model" {
+    const alloc = std.testing.allocator;
+    var fake = FakeSummarizer{ .tracking = alloc, .fail = true };
+    defer fake.deinit();
+    var cache = CompactionCache{};
+    defer cache.deinit();
+    const removed = summarizerTestTurns();
+
+    const first = try compactedSummaryTurnForPrefix(alloc, &removed, null, &removed, .{}, fake.handle(), null, &cache);
+    freeHistoryTurn(alloc, .{ .compacted_summary = first });
+    try std.testing.expectEqual(@as(usize, 1), fake.calls);
+    try std.testing.expect(cache.summary == null);
+
+    fake.fail = false;
+    const second = try compactedSummaryTurnForPrefix(alloc, &removed, null, &removed, .{}, fake.handle(), null, &cache);
+    defer freeHistoryTurn(alloc, .{ .compacted_summary = second });
+    try std.testing.expectEqual(@as(usize, 2), fake.calls);
+    try std.testing.expect(cache.summary != null);
+    try std.testing.expect(std.mem.indexOf(u8, second.summary, "finish the tokenizer port") != null);
+
+    const third = try compactedSummaryTurnForPrefix(alloc, &removed, null, &removed, .{}, fake.handle(), null, &cache);
+    freeHistoryTurn(alloc, .{ .compacted_summary = third });
+    try std.testing.expectEqual(@as(usize, 2), fake.calls);
 }
 
 const original_request_header = "- Original request:";

@@ -531,7 +531,7 @@ Read by `shinbo-cli`, the process that runs your turn:
 | --- | --- |
 | `SHINBO_PROVIDER_API_KEY` | The bearer token. Without it: *"shinbo-cli has no provider credential. Set SHINBO_PROVIDER_API_KEY."* ([credentials.zig](../harness/src/core/auth/credentials.zig)) |
 | `AI_GATEWAY_API_KEY` | Set to the same value by [harness.ts](../desktop/main/harness.ts) |
-| `SHINBO_PROVIDER_CHAT_URL` | Chat Completions URL. Empty or unset means OpenRouter |
+| `SHINBO_PROVIDER_CHAT_URL` | Chat Completions URL. Empty or unset means OpenRouter. `https://` anywhere, or `http://` on loopback, `10/8`, `172.16/12`, `192.168/16`, `100.64/10` or `*.local`; anything else makes every turn fail with `UntrustedProviderUrl` rather than falling back to OpenRouter |
 | `SHINBO_OPENROUTER_ZDR` | Any non-empty value turns on zero-retention routing |
 | `FX_MODEL` | Overrides the startup model ([app_lifecycle.zig](../harness/src/core/app/app_lifecycle.zig)) |
 | `FX_GATEWAY_BASE_URL` | Overrides the gateway base URL (`https://openrouter.ai/api`); ignored unless it is loopback http |
