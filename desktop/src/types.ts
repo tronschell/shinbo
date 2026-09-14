@@ -269,7 +269,7 @@ declare global {
       previewPath(path: string): Promise<{ path: string; text: string | null; image?: string | null } | null>;
       listArtifacts(): Promise<ArtifactMeta[]>;
       readArtifact(id: string): Promise<Artifact>;
-      saveArtifact(value: { id?: string; title: string; kind: string; language?: string; content: string }): Promise<Artifact>;
+      saveArtifact(value: { id?: string; title: string; kind: string; language?: string; content: string; surface?: "none" }): Promise<Artifact>;
       deleteArtifact(id: string): Promise<void>;
       revealArtifact(id: string): Promise<boolean>;
       artifactSql(id: string, sql: string, params: unknown[]): Promise<Record<string, unknown>[]>;

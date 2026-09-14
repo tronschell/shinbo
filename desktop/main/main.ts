@@ -436,6 +436,11 @@ let settleRuntimeReady: (error?: string) => void;
 let runtimeReady = new Promise<string | undefined>((resolve) => { settleRuntimeReady = resolve; });
 const runtimeReadyTimeout = setTimeout(() => settleRuntimeReady("Saved settings did not finish loading. Open the workspace and try this task again."), 30_000);
 runtimeReadyTimeout.unref();
+async function deleteScheduledJob(jobId: string): Promise<unknown> {
+  const deleted = await host!.request({ method: "deleteScheduledJob", params: { jobId } });
+  for (const [threadId, run] of workflowRuns) if (run.jobId === jobId) cancelThreadWork(threadId);
+  return deleted;
+}
 function cancelThreadWork(threadId: string) {
   goalStopped.add(threadId);
   workflowRuns.get(threadId)?.controller.abort();
@@ -1522,12 +1527,12 @@ function connectVault(vault: VaultChoice) {
   const previous = vaultFolderId;
   try {
     const root = realpathSync(vault.root);
-    vaultFolderId = folders!.add(root).find((grant) => samePath(grant.path, root))?.id;
+    vaultFolderId = folders!.add(root, true).find((grant) => samePath(grant.path, root))?.id;
   } catch (error) {
     console.error("Shinbo: could not connect the vault folder", error);
     return;
   }
-  if (previous && previous !== vaultFolderId) folders!.remove(previous);
+  if (previous && previous !== vaultFolderId && folders!.list().some((grant) => grant.id === previous && grant.vault)) folders!.remove(previous);
   if (previous !== vaultFolderId) broadcast("shinbo:folders-changed");
 }
 
@@ -2173,7 +2178,7 @@ async function componentTool(args: Extract<ToolArgs, { name: "component" }>, thr
       const existing = await readComponent(userData, args.id!);
       const saved = await writeComponent(userData, { id: existing.id, title: args.title ?? existing.title, code: args.code!, expands: args.expand, variables: args.variables, sourceThreadId: threadId });
       componentsChanged();
-      return `Reworked "${saved.title}" \u2014 v${saved.version}, reloaded in place.${variableNote(saved.variables)} Ask whether that is what they meant.`;
+      return `Reworked "${saved.title}" \u2014 v${saved.version}, reloaded in place.${saved.disabled ? " It is switched off, so nothing shows until the user enables it in Settings." : ""}${variableNote(saved.variables)} Ask whether that is what they meant.`;
     }
   }
 }
@@ -2560,11 +2565,13 @@ async function runShinboTool(threadId: string, wireName: string, args: Record<st
   const authored = name === "artifact" || name === "component";
   const mounts = authored && await mountsCode(parsed);
   if (gate === "ask" && name !== "computer" && (mounts || !authored)) {
+    const full = JSON.stringify(args, null, 2);
+    const code = parsed.name === "component" ? parsed.code : parsed.name === "artifact" ? parsed.content : undefined;
     const allowed = await agents!.question({
       threadId,
       tool: name,
       summary: mounts ? `${describeToolCall(parsed)} — this module runs inside Shinbo with the app's own access: it can open terminals, run git, read your threads and credentials, and open links` : describeToolCall(parsed),
-      detail: JSON.stringify(args, null, 2).slice(0, 4096),
+      detail: mounts ? code || full : full.slice(0, 4096),
     });
     if (!allowed) throw new Error(`The user did not allow ${wireName} to run. Do not try it again this turn; say what you needed it for instead.`);
   }
@@ -2794,10 +2801,7 @@ function answerRequest(method: string, params: Record<string, string> = {}): Pro
         return await host!.request({ method, params });
       });
     case "deleteScheduledJob":
-      return host!.request({ method, params }).then((deleted) => {
-        for (const [threadId, run] of workflowRuns) if (run.jobId === params.jobId) cancelThreadWork(threadId);
-        return deleted;
-      });
+      return deleteScheduledJob(params.jobId);
     case "setRouters":
       return Promise.resolve().then(() => {
         routers = validateRouters(JSON.parse(params.routers ?? "[]"));
@@ -4286,7 +4290,7 @@ async function workflowTool(args: Extract<ToolArgs, { name: "workflow" }>): Prom
       return describeJob(named());
     case "delete": {
       const job = named();
-      await host!.request({ method: "deleteScheduledJob", params: { jobId: job.id } });
+      await deleteScheduledJob(job.id);
       changed();
       scheduledJobsChanged();
       return `Deleted "${job.title}".`;
@@ -4538,15 +4542,16 @@ if (primaryInstance) app.whenReady().then(() => {
       }
       if (artifact.kind !== "html" && artifact.kind !== "app") return notFound("Not a page.");
       const file = decodeURIComponent(url.pathname).replace(/^\/+/, "");
+      const own = `${ARTIFACT_SCHEME}://${id}`;
+      const appCsp = `default-src 'none'; script-src 'unsafe-inline' ${own}; style-src 'unsafe-inline' ${own}; img-src data: ${own}; font-src data:`;
       if (file) {
         if (artifact.kind !== "app") return notFound("Not a file.");
-        return new Response(await readArtifactFile(userData, id, file), { headers: { "content-type": artifactFileType(file) } });
+        return new Response(await readArtifactFile(userData, id, file), { headers: { "content-type": artifactFileType(file), "content-security-policy": appCsp } });
       }
-      const own = `${ARTIFACT_SCHEME}://${id}`;
       return new Response(artifact.kind === "app" ? appPage(artifact.content) : artifact.content, { headers: {
         "content-type": "text/html; charset=utf-8",
         "content-security-policy": artifact.kind === "app"
-          ? `default-src 'none'; script-src 'unsafe-inline' ${own}; style-src 'unsafe-inline' ${own}; img-src data: ${own}; font-src data:`
+          ? appCsp
           : "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:",
       } });
     } catch {
@@ -5218,12 +5223,14 @@ if (primaryInstance) app.whenReady().then(() => {
     const request = value as Record<string, unknown>;
     if (typeof request.title !== "string" || typeof request.kind !== "string" || typeof request.content !== "string") throw new Error("Artifact request is invalid");
     if (request.language !== undefined && typeof request.language !== "string") throw new Error("Artifact request is invalid");
+    if (request.surface !== undefined && request.surface !== "none") throw new Error("Artifact request is invalid");
     const saved = await writeArtifact(app.getPath("userData"), {
       id: request.id === undefined ? undefined : boundedCapabilityId(request.id, "Artifact"),
       title: request.title,
       kind: request.kind,
       language: request.language,
       content: request.content,
+      surface: request.surface,
     });
     artifactsChanged();
     return saved;

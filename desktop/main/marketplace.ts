@@ -28,6 +28,7 @@ import {
   type RunnableHookEvent,
   type WrittenPlugin,
 } from "../shared/plugins";
+import { withoutCredentials } from "./credentials";
 import { findExecutable, isWindows, pathInside, shellArguments, shellBinary, spawnCommand, terminateProcessTree, windowsSystemExecutable } from "./platform";
 
 const DEFAULT_MARKETPLACE = "openai/plugins";
@@ -118,7 +119,7 @@ const MISSING_TOOL: Record<string, string> = {
 
 function execute(command: string, cwd: string, args: string[], timeout: number, env: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawnCommand(command, args, { cwd, env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    const child = spawnCommand(command, args, { cwd, env: { ...withoutCredentials(process.env), ...env }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     let stdout = "";
     let stderr = "";
     let overflow = false;

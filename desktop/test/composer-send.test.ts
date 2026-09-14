@@ -60,7 +60,7 @@ test("composer consumes context at submit and keeps FIFO across new composer ins
   const pending = new Promise<Awaited<ReturnType<typeof buildAttachedContext>>>((resolve) => { finish = resolve; });
   const captured: unknown[] = [];
   const sent: Record<string, string>[] = [];
-  Object.assign(globalThis, { window: { shinbo: { request: async (_method: string, params: Record<string, string>) => { sent.push(params); } } } });
+  Object.assign(globalThis, { window: { shinbo: { request: async (method: string, params: Record<string, string>) => { if (method === "sendMessage") sent.push(params); } } } });
   const first = composer("fifo", async (_folders, _ids, picks) => { captured.push(picks); return pending; });
   first.send();
   assert.equal(first.state.message, "");
@@ -95,7 +95,7 @@ test("an attachment read failure does not block the following prompt", async () 
   const sent: Record<string, string>[] = [];
   Object.assign(globalThis, { window: { shinbo: {
     readAttachment: async () => { throw new Error("attachment missing"); },
-    request: async (_method: string, params: Record<string, string>) => { sent.push(params); },
+    request: async (method: string, params: Record<string, string>) => { if (method === "sendMessage") sent.push(params); },
   } } });
   const current = composer("read-failure");
   current.send();
@@ -111,7 +111,7 @@ test("preparation failure preserves the next draft and lets later sends drain", 
   let fail!: (reason: Error) => void;
   const pending = new Promise<Awaited<ReturnType<typeof buildAttachedContext>>>((_resolve, reject) => { fail = reject; });
   const sent: string[] = [];
-  Object.assign(globalThis, { window: { shinbo: { request: async (_method: string, params: { content: string }) => { sent.push(params.content); } } } });
+  Object.assign(globalThis, { window: { shinbo: { request: async (method: string, params: { content: string }) => { if (method === "sendMessage") sent.push(params.content); } } } });
   const current = composer("prepare-failure", () => pending);
   current.send();
   const next = composer("prepare-failure");
@@ -133,7 +133,7 @@ test("stopping during preparation never sends the canceled prompt", async () => 
   const pending = new Promise<Awaited<ReturnType<typeof buildAttachedContext>>>((resolve) => { finish = resolve; });
   const sent: string[] = [];
   Object.assign(globalThis, { window: { shinbo: {
-    stopAgent() {}, request: async (_method: string, params: { content: string }) => { sent.push(params.content); },
+    stopAgent() {}, request: async (method: string, params: { content: string }) => { if (method === "sendMessage") sent.push(params.content); },
   } } });
   composer("stop-preparing", () => pending).send();
   stopTurn("stop-preparing");

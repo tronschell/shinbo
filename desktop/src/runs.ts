@@ -159,7 +159,9 @@ function adoptForeign(threadId: string, snapshot?: ReturnType<typeof recoverySna
   if (!previous.landed.length) {
     settlementFrom.set(threadId, undefined);
     void window.shinbo.request<Thread>("thread", { threadId }).then((thread) => {
-      if (generations.get(threadId) === token && read(threadId).sending && read(threadId).foreign) settlementFrom.set(threadId, thread.messages.length);
+      if (generations.get(threadId) !== token || !read(threadId).sending || !read(threadId).foreign) return;
+      settlementFrom.set(threadId, thread.messages.length);
+      write(threadId, (run) => (run.pending ? { pending: { ...run.pending, after: thread.messages.length } } : {}));
     }).catch(() => undefined);
   } else if (!settlementFrom.has(threadId)) settlementFrom.set(threadId, previous.pending?.after);
   void rehydrate(threadId, token, snapshot);
@@ -561,11 +563,13 @@ async function drain(threadId: string, reload: () => unknown) {
   if (draining.has(threadId)) return;
   draining.add(threadId);
   try {
+    let waited = false;
     for (;;) {
       if (read(threadId).sending) return;
       const next = read(threadId).queue[0];
       if (!next) return;
       began(threadId);
+      waited ||= read(threadId).landed.length > 0;
       if (!read(threadId).landed.length) settlementFrom.delete(threadId);
       write(threadId, {
         sending: true, foreign: false, pending: next, stopped: false, activeAt: Date.now(), recovery: "",
@@ -573,6 +577,14 @@ async function drain(threadId: string, reload: () => unknown) {
       });
       let failed = false;
       try {
+        if (waited) {
+          const thread = await window.shinbo.request<Thread>("thread", { threadId }).catch(() => null);
+          if (thread && read(threadId).pending === next) {
+            next.after = thread.messages.length;
+            write(threadId, { pending: next });
+          }
+        }
+        waited = true;
         if (next.prepare) {
           Object.assign(next, await next.prepare());
           delete next.prepare;

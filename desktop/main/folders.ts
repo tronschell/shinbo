@@ -30,12 +30,12 @@ export class FolderStore {
     return this.grants.map((grant) => ({ ...grant }));
   }
 
-  add(directory: string): FolderGrant[] {
+  add(directory: string, vault = false): FolderGrant[] {
     const resolved = realpathSync.native(directory);
     if (!statSync(resolved).isDirectory()) throw new Error("That is not a folder.");
     if (!this.grants.some((grant) => samePath(grant.path, resolved))) {
       if (this.grants.length >= MAX_FOLDERS) throw new Error(`Shinbo keeps at most ${MAX_FOLDERS} folders; remove one first.`);
-      this.grants.push({ id: randomUUID(), path: resolved, name: path.basename(resolved) || resolved });
+      this.grants.push({ id: randomUUID(), path: resolved, name: path.basename(resolved) || resolved, ...(vault ? { vault } : {}) });
       this.save();
     }
     return this.list();

@@ -145,6 +145,9 @@ function GridCard({ meta, busy, open, edit, onEditError, onRevealError, remove }
   const editCurrent = () => {
     void window.shinbo.readArtifact(meta.id).then(edit).catch(onEditError);
   };
+  const handBack = () => {
+    void window.shinbo.readArtifact(meta.id).then(({ id, title, kind, language, content }) => window.shinbo.saveArtifact({ id, title, kind, language, content, surface: "none" })).catch(onEditError);
+  };
   return <article ref={target} className="artifact-card">
     <button type="button" className="artifact-card-open" onClick={open} aria-label={`Open ${meta.title}`}>
       <header><span>{ARTIFACT_LABELS[meta.kind]}{meta.surface ? ` · in the ${SURFACE_LABELS[meta.surface]}` : ""}</span><strong>{meta.title}</strong><small>v{meta.version}</small></header>
@@ -152,6 +155,7 @@ function GridCard({ meta, busy, open, edit, onEditError, onRevealError, remove }
     </button>
     <div className="artifact-actions artifact-icons">
       <button type="button" title="Edit in a thread" aria-label="Edit in a thread" disabled={busy} onClick={editCurrent}><PencilIcon /></button>
+      {meta.surface && <button type="button" title="Hand the region back" aria-label="Hand the region back" disabled={busy} onClick={handBack}><EjectIcon /></button>}
       <button type="button" title={REVEAL_LABEL} aria-label={REVEAL_LABEL} disabled={busy} onClick={() => void window.shinbo.revealArtifact(meta.id).catch(onRevealError)}><FolderIcon /></button>
       <button type="button" className="artifact-danger" title="Delete" aria-label="Delete" disabled={busy} onClick={remove}><TrashIcon /></button>
     </div>
@@ -162,6 +166,10 @@ function GridPreview({ meta }: { meta: ArtifactMeta }) {
   const artifact = useArtifact(meta.id);
   if (artifact === false) return <p className="artifact-missing">{GONE}</p>;
   return <div className="artifact-clip" inert>{artifact && <ArtifactRender artifact={artifact} loading="lazy" />}</div>;
+}
+
+function EjectIcon() {
+  return <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3.5 9.5 8 4l4.5 5.5zM3.5 12.5h9" /></svg>;
 }
 
 function CodeIcon() {

@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { fork } from "node:child_process";
 import { ARTIFACT_DB_FILE, ARTIFACT_EXTENSIONS, ARTIFACT_FILE_TYPES, ARTIFACT_KINDS, ARTIFACT_SURFACES, artifactSlug, isArtifactKind, isArtifactSurface, MAX_ARTIFACT_BYTES, MAX_ARTIFACT_FILES, MAX_ARTIFACT_SQL_CHARS, MAX_ARTIFACT_SQL_PARAMS, MAX_ARTIFACT_TITLE_CHARS, MAX_ARTIFACTS, mountable, validArtifactFile, validArtifactId, type Artifact, type ArtifactKind, type ArtifactMeta } from "../shared/artifacts";
+import { withoutCredentials } from "./credentials";
 import { writeAtomic } from "./write-atomic";
 
 const MAX_QUERY_MS = 2000;
@@ -230,7 +231,7 @@ export async function queryArtifact(userData: string, id: string, sql: unknown, 
   try {
     return await new Promise<Record<string, unknown>[]>((resolve, reject) => {
       const child = fork(path.join(__dirname, "artifact-sql.js"), [], {
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+        env: { ...withoutCredentials(process.env), ELECTRON_RUN_AS_NODE: "1" },
         execArgv: [],
         stdio: ["ignore", "ignore", "ignore", "ipc"],
         serialization: "advanced",

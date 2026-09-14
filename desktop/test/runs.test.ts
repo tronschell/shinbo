@@ -22,6 +22,7 @@ let request: (method: string, params: { content: string }) => Promise<unknown> =
   return new Promise<void>((resolve) => { release = resolve; });
 };
 const stopped: string[] = [];
+let savedThread: { messages: unknown[] } | null = null;
 let liveSpans: Record<string, TraceSpan[]> = {};
 let livePartials: Record<string, { text: string; thinking: string }> = {};
 let pushDelta: (value: { threadId: string; delta: string; thinking?: boolean; recovery?: boolean }) => void = () => undefined;
@@ -29,7 +30,7 @@ let pushCompacted: Parameters<Window["shinbo"]["onCompacted"]>[0] = () => undefi
 let pushAgents: (value: LiveAgent[]) => void = () => undefined;
 (globalThis as unknown as { window: unknown }).window = {
   shinbo: {
-    request: (method: string, params: { content: string }) => method === "thread" ? Promise.reject(new Error("No saved thread")) : request(method, params),
+    request: (method: string, params: { content: string }) => method === "thread" ? (savedThread ? Promise.resolve(savedThread) : Promise.reject(new Error("No saved thread"))) : request(method, params),
     onDelta: (listener: typeof pushDelta) => { pushDelta = listener; return () => undefined; },
     onActivity: () => () => undefined,
     onStep: () => () => undefined,
@@ -389,6 +390,23 @@ test("a repeated short answer lands on the turn that just ran, not the first tha
   ];
   const blocks: Block[] = [{ kind: "text", text: "pong" }];
   assert.deepEqual(pairBlocks(messages, [blocks], {}, 2), [undefined, undefined, undefined, blocks]);
+});
+
+test("a turn that waited behind another is sent against the messages that exist by then", async () => {
+  sent.length = 0;
+  savedThread = { messages: [] };
+  sendTurn("queued", { content: "first", after: 2, params: {} }, () => undefined);
+  sendTurn("queued", { content: "second", after: 2, params: {} }, () => undefined);
+  assert.equal(runOf("queued").pending?.after, 2);
+  savedThread = { messages: [1, 2, 3, 4] };
+  release!();
+  await settle();
+  await settle();
+  assert.deepEqual(sent, ["first", "second"]);
+  assert.equal(runOf("queued").pending?.after, 4);
+  release!();
+  await settle();
+  savedThread = null;
 });
 
 test("the stall swap only resends a turn that is still running", async () => {

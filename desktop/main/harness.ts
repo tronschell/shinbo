@@ -426,7 +426,7 @@ export const RESTARTED_BY_YOU = "Harness restarted";
 const FAILURE_EXPLANATIONS: Record<string, string> = {
   [CLOSED_BY_SHINBO]: "Shinbo was closed while it was in flight. Send Continue to pick it back up",
   [RESTARTED_BY_YOU]: "You restarted the agent while this run was in flight. Send Continue to pick it back up",
-  RequestTooLarge: "the conversation outgrew what this model accepts, even after older tool results were pruned. Shinbo will compact it on your next message; send Continue",
+  RequestTooLarge: "the conversation outgrew what this model accepts, even after older tool results were pruned, so Shinbo compacted it. Send Continue to pick up where it left off",
 };
 
 export const MISSING_CREDENTIAL = "no model is signed in. Add a provider key under Settings → Models, then send Continue";

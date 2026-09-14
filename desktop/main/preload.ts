@@ -146,7 +146,7 @@ contextBridge.exposeInMainWorld("shinbo", {
   previewPath: (value: string) => ipcRenderer.invoke("shinbo:preview-path", value),
   listArtifacts: () => ipcRenderer.invoke("shinbo:list-artifacts"),
   readArtifact: (id: string) => ipcRenderer.invoke("shinbo:read-artifact", id),
-  saveArtifact: (value: { id?: string; title: string; kind: string; language?: string; content: string }) => ipcRenderer.invoke("shinbo:save-artifact", value),
+  saveArtifact: (value: { id?: string; title: string; kind: string; language?: string; content: string; surface?: "none" }) => ipcRenderer.invoke("shinbo:save-artifact", value),
   deleteArtifact: (id: string) => ipcRenderer.invoke("shinbo:delete-artifact", id),
   revealArtifact: (id: string) => ipcRenderer.invoke("shinbo:reveal-artifact", id),
   artifactSql: (id: string, sql: string, params: unknown[]) => ipcRenderer.invoke("shinbo:artifact-sql", { id, sql, params }),

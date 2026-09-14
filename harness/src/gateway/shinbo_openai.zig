@@ -800,11 +800,14 @@ const SseSink = struct {
         if (value != .array) return;
         for (value.array.items) |entry| {
             if (entry != .object) continue;
-            const index: i64 = if (entry.object.get("index")) |raw| switch (raw) {
-                .integer => |number| number,
-                else => 0,
-            } else 0;
-            const fragment = try self.fragmentFor(index);
+            const fragment = if (entry.object.get("index")) |raw|
+                try self.fragmentFor(if (raw == .integer) raw.integer else 0)
+            else if (jsonStringField(entry.object, "id")) |id|
+                try self.fragmentForId(id)
+            else if (self.tools.items.len > 0)
+                &self.tools.items[self.tools.items.len - 1]
+            else
+                try self.fragmentFor(0);
 
             if (jsonStringField(entry.object, "id")) |id| {
                 if (fragment.id.items.len == 0 and id.len <= max_routed_model_bytes) {
@@ -838,6 +841,14 @@ const SseSink = struct {
         if (self.tools.items.len >= max_tool_calls_per_step) return error.InvalidProviderResponse;
         try self.tools.append(self.alloc, .{ .index = index });
         return &self.tools.items[self.tools.items.len - 1];
+    }
+
+    fn fragmentForId(self: *@This(), id: []const u8) !*SseToolFragment {
+        if (id.len == 0) return self.fragmentFor(0);
+        for (self.tools.items) |*fragment| {
+            if (std.mem.eql(u8, fragment.id.items, id)) return fragment;
+        }
+        return self.fragmentFor(@intCast(self.tools.items.len));
     }
 
     fn finish(self: *@This()) !types.GatewayCompletion {
@@ -1779,6 +1790,30 @@ test "tool call arguments are assembled from fragments across events" {
     try std.testing.expectEqualStrings("{}", completion.tool_calls[1].arguments_json);
     try std.testing.expectEqual(types.ProviderFinishReason.tool_calls, completion.finish_reason.?);
     try std.testing.expectEqualStrings("{\"path\":{}\"a.txt\"}", harness.capture.tool_inputs.items);
+}
+
+test "index-less tool calls with distinct ids stay separate and id-less deltas continue the current call" {
+    const alloc = std.testing.allocator;
+    var harness = StreamHarness.init(alloc);
+    defer harness.deinit();
+
+    const payload =
+        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"id\":\"call_a\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a\\\"}\"}},{\"id\":\"call_b\",\"function\":{\"name\":\"grep\",\"arguments\":\"{\\\"pattern\\\":\"}}]}}]}\n\n" ++
+        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"\\\"x\\\"}\"}}]}}]}\n\n" ++
+        "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n" ++
+        "data: [DONE]\n\n";
+
+    var transfer_buffer: [128]u8 = undefined;
+    var completion = try consumeSseForTest(&harness, payload, &transfer_buffer);
+    defer freeCompletion(alloc, &completion);
+
+    try std.testing.expectEqual(@as(usize, 2), completion.tool_calls.len);
+    try std.testing.expectEqualStrings("call_a", completion.tool_calls[0].id);
+    try std.testing.expectEqualStrings("read_file", completion.tool_calls[0].name);
+    try std.testing.expectEqualStrings("{\"path\":\"a\"}", completion.tool_calls[0].arguments_json);
+    try std.testing.expectEqualStrings("call_b", completion.tool_calls[1].id);
+    try std.testing.expectEqualStrings("grep", completion.tool_calls[1].name);
+    try std.testing.expectEqualStrings("{\"pattern\":\"x\"}", completion.tool_calls[1].arguments_json);
 }
 
 test "a stop finish reason with streamed tool calls reads as tool_calls" {

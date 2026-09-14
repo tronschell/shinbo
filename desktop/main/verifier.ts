@@ -96,6 +96,7 @@ export async function review(settings: VerifierSettings, request: VerifierReques
   const prompt = verifierPrompt(request);
   const screened = screen(request);
   if (!screened.allow) return { model: "prohibited-list", prompt, reply: screened.reason, verdict: screened, attempts: 0 };
+  if (request.detail.length > MAX_DETAIL_CHARS) return { model: settings.model, prompt, reply: "", error: `This is ${request.detail.length.toLocaleString()} characters, more than the ${MAX_DETAIL_CHARS.toLocaleString()} a verifier reads in full, so it needs your own review.`, attempts: 0 };
   const key = settings.credentialEnv ? process.env[settings.credentialEnv]?.trim() ?? "" : "";
   if (settings.credentialEnv && !key) return { model: settings.model, prompt, reply: "", error: `${settings.credentialEnv} is not stored, so the verifier cannot be reached.`, attempts: 0 };
   const messages: ChatMessage[] = [

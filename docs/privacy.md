@@ -200,7 +200,8 @@ again. Replacing or removing that slot is the only thing that clears it.
 `applyToEnv(process.env)` decrypts onto Electron's own environment so main can
 read `process.env[credentialEnv]` per call. Child processes do not inherit those
 entries: `shinbo-cli`, coding CLIs, the terminal, background commands, the
-`secret` tool's command and written tools are spawned with
+`secret` tool's command, written tools, workflow scripts, marketplace `git`
+and `npm` commands and the artifact query process are spawned with
 `withoutCredentials(process.env)`, which strips every applied key, and
 `shinbo-cli` receives only the selected profile's key as
 `SHINBO_PROVIDER_API_KEY` and `AI_GATEWAY_API_KEY`. The Rust host inherits

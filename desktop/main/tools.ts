@@ -10,6 +10,7 @@ import { MAX_TASK_LIST_BYTES, MAX_TASK_LIST_TITLE_CHARS, TASK_LIST_STATUSES, typ
 import { GOAL_ACTIONS, GOAL_UPDATE_STATUSES, MAX_GOAL_EVIDENCE_CHARS, MAX_GOAL_OBJECTIVE_CHARS, MAX_GOAL_REASON_CHARS, MAX_GOAL_TOKEN_BUDGET, type GoalAction, type GoalUpdateStatus } from "../shared/goal";
 import { KEEP_KINDS, MAX_NOTE_BYTES, isKeepKind, keepKindLabel, type KeepKind } from "../shared/vault";
 import { toolGate, type PermissionMode } from "../shared/permissions";
+import { MAX_THREAD_TITLE_CHARS } from "./ipc";
 import { MAX_QUICK_ACTION_LABEL_CHARS, MAX_QUICK_ACTION_PROMPT_CHARS, type ShortcutRequest } from "../shared/settings";
 import { isWindows } from "./platform";
 
@@ -861,7 +862,7 @@ export function parseToolArgs(name: string, raw: string): AnyToolArgs {
     case "threads": {
       const action = THREAD_ACTIONS.find((candidate) => candidate === args.action);
       if (!action) throw new Error(`action must be one of ${THREAD_ACTIONS.join(", ")}.`);
-      const title = optionalText(args.title, "title", 128);
+      const title = optionalText(args.title, "title", MAX_THREAD_TITLE_CHARS);
       const thread = optionalText(args.thread, "thread", 96);
       const prompt = optionalText(args.prompt, "prompt", MAX_TASK_PROMPT_CHARS);
       if ((action === "spawn" || action === "rename") && !title) throw new Error(`Say what to call it: pass title with three or four words naming the thread.`);
