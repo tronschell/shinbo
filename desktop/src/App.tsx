@@ -1587,7 +1587,7 @@ function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, onDi
   const [nodes, setNodes] = useState(job?.nodes ?? "");
   const [mode, setMode] = useState<PermissionMode>(job?.permissionMode ?? DEFAULT_PERMISSION_MODE);
   const [model, setModel] = useState(job?.model ?? "");
-  const dirty = title !== (job?.title ?? "") || trigger !== (job?.schedule ?? "0 9 * * 1") || prompt !== (job?.prompt ?? "") || nodes !== (job?.nodes ?? "") || mode !== (job?.permissionMode ?? DEFAULT_PERMISSION_MODE) || model !== (job?.model ?? "");
+  const dirty = title.trim() !== (job?.title ?? "") || trigger.trim() !== (job?.schedule ?? "0 9 * * 1") || prompt.trim() !== (job?.prompt ?? "") || nodes.trim() !== (job?.nodes ?? "") || mode !== (job?.permissionMode ?? DEFAULT_PERMISSION_MODE) || model !== (job?.model ?? "");
   useEffect(() => { onDirty(dirty); return () => onDirty(false); }, [dirty, onDirty]);
   const [dryRun, setDryRun] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -2673,7 +2673,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
       return;
     }
     const params = Object.fromEntries(Object.entries(turn?.params ?? {}).filter(([key]) => key !== "skillAttachmentId"));
-    stopTurn(thread.id, { content, after: mark.at, params, prepare: async () => { recordModelSwitch(thread.id, mark); return { params }; } }, reload);
+    stopTurn(thread.id, { content, after: mark.at, params, attached: turn?.attached, attachments: turn?.attachments, prepare: async () => { recordModelSwitch(thread.id, mark); return { params }; } }, reload);
   };
   const interrupt = () => {
     setConfirmStop(false);

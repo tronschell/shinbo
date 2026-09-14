@@ -21,7 +21,9 @@ export class FolderStore {
       const stored = JSON.parse(readFileSync(this.file, "utf8")) as unknown;
       if (Array.isArray(stored)) {
         this.grants = stored.filter((item): item is FolderGrant =>
-          !!item && typeof item === "object" && typeof (item as FolderGrant).id === "string" && typeof (item as FolderGrant).path === "string" && typeof (item as FolderGrant).name === "string").slice(0, MAX_FOLDERS);
+          !!item && typeof item === "object" && typeof (item as FolderGrant).id === "string" && typeof (item as FolderGrant).path === "string" && typeof (item as FolderGrant).name === "string")
+          .slice(0, MAX_FOLDERS)
+          .map((grant) => ({ id: grant.id, path: grant.path, name: grant.name, ...(typeof grant.vault === "boolean" ? { vault: grant.vault } : {}) }));
       }
     } catch { this.grants = []; }
   }
@@ -41,10 +43,10 @@ export class FolderStore {
     return this.list();
   }
 
-  markVault(id: string): void {
+  markVault(id: string, owned: boolean): void {
     const grant = this.grants.find((item) => item.id === id);
-    if (!grant || grant.vault) return;
-    grant.vault = true;
+    if (!grant || grant.vault !== undefined) return;
+    grant.vault = owned;
     this.save();
   }
 
