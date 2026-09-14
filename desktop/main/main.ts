@@ -44,13 +44,13 @@ import { privacySettingsUrl, type SetupStatus } from "../shared/setup";
 import { modelRates, CatalogCache, fetchDeepSeekBalance, fetchOpenRouterBalance, fetchOpenRouterCatalog, probeProvider, type CatalogModel } from "./catalog";
 import { ModelMetadataCatalog, type RouteModelMetadata } from "./model-metadata";
 import { branchPrefixName, validateGitArgs } from "../shared/git";
-import { checkForUpdates, installUpdate, readyUpdate, startUpdates } from "./update";
+import { checkForUpdates, installUpdate, startUpdates, updateState } from "./update";
 import { newerVersion } from "../shared/update";
 import { addWorktree, commit, commitPaths, discard, gitHistory, gitReady, gitSnapshot, initRepo, listWorktrees, mainCheckout, MAX_COMMIT_MESSAGE_BYTES, MAX_HISTORY, removeWorktrees, runGit, switchBranch, writeCommitMessage } from "./git";
 import { installedEditors, openInEditor } from "./editors";
 import { machineFacts, machineSample } from "./machine";
 import { transcribe, validateUtterance, validateVoiceSettings, voiceStatus } from "./voice";
-import { contextBlock, MAX_FILE_BYTES, MAX_TURN_IMAGES, mergeSkillContext } from "../shared/folders";
+import { contextBlock, MAX_FILE_BYTES, MAX_OPEN_BYTES, MAX_TURN_IMAGES, mergeSkillContext } from "../shared/folders";
 import { BUILTIN_COMMANDS, mentions, pathName } from "../shared/slash";
 import { captureDisplay, compressScreenFrame, ComputerUseRuntime, screenFrame } from "./computer";
 import { CODEX_MODEL_ID, CODEX_PREFIX, cliPlan, codexSlug, isEnvName, MODEL_PLANS, providerCredentials, routerKey, webSearchProvider, FREE_ROUTER_ID, planForModel, planForProfile, MIN_UI_SCALE, MAX_UI_SCALE, defaultHarnessExperiments, defaultReview, defaultSettings, defaultTagger, defaultToolSettings, defaultVerifier, routerChain, routerIdFor, validateRouters, holdBindings, isCursorCommand, isThinkingLevel, isKeybindAction, keybindCommands, normalizeAccelerator, providerChatUrl, validateProviders, validateKeybinds, validateOverlayPreferences, validateHarnessExperiments, validateReview, validateTagger, validateToolSettings, validateVerifier, FREE_ROUTER_MODELS, OPENROUTER_CHAT_ENDPOINT, skippedLinks, type Keybind, type KeybindAction, type Keybinds, type HarnessExperiments, type OverlayPreferences, type ModelRouter, type ProviderProfile, type ReviewSettings, type TaggerSettings, type ThinkingLevel, type ToolSettings, type VerifierSettings } from "../shared/settings";
@@ -4490,7 +4490,7 @@ function installMenu() {
       label: app.name,
       submenu: [
         { role: "about" },
-        { label: "Check for Updates\u2026", click: () => checkForUpdates() },
+        { label: "Check for Updates\u2026", click: () => { openMain(); checkForUpdates(); } },
         { type: "separator" }, { role: "services" }, { type: "separator" },
         { role: "hide" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" }, { role: "quit" },
       ],
@@ -4771,9 +4771,9 @@ if (primaryInstance) app.whenReady().then(() => {
     settleRuntimeReady(error);
     runtimeReady = Promise.resolve(error);
   });
-  ipcMain.handle("shinbo:update-ready", (event) => {
+  ipcMain.handle("shinbo:update-state", (event) => {
     mainWindowSender(event);
-    return readyUpdate();
+    return updateState();
   });
   ipcMain.handle("shinbo:install-update", (event) => {
     mainWindowSender(event);
@@ -5738,11 +5738,37 @@ if (primaryInstance) app.whenReady().then(() => {
     mainWindowSender(event);
     return folders!.files(boundedCapabilityId(value, "Folder"));
   });
+  ipcMain.handle("shinbo:list-folder-paths", (event, value: unknown) => {
+    mainWindowSender(event);
+    return folders!.paths(boundedCapabilityId(value, "Folder"));
+  });
   ipcMain.handle("shinbo:read-folder-file", (event, value: unknown) => {
     mainWindowSender(event);
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("File request is invalid");
     const request = value as Record<string, unknown>;
     return folders!.read(boundedCapabilityId(request.folderId, "Folder"), boundedCapabilityId(request.path, "File path"));
+  });
+  ipcMain.handle("shinbo:list-folder-entries", (event, value: unknown) => {
+    mainWindowSender(event);
+    const request = gitRequest(value, "File");
+    return folders!.entries(boundedCapabilityId(request.folderId, "Folder"), request.path === "" ? "." : boundedCapabilityId(request.path, "File path"));
+  });
+  ipcMain.handle("shinbo:read-folder-blob", (event, value: unknown) => {
+    mainWindowSender(event);
+    const request = gitRequest(value, "File");
+    return folders!.blob(boundedCapabilityId(request.folderId, "Folder"), boundedCapabilityId(request.path, "File path"));
+  });
+  ipcMain.handle("shinbo:write-folder-file", (event, value: unknown) => {
+    mainWindowSender(event);
+    const request = gitRequest(value, "File");
+    if (typeof request.text !== "string") throw new Error("File text is invalid");
+    if (request.previous !== undefined && (typeof request.previous !== "string" || Buffer.byteLength(request.previous, "utf8") > MAX_OPEN_BYTES)) throw new Error("File text is invalid");
+    const folderId = boundedCapabilityId(request.folderId, "Folder");
+    const threadId = request.threadId === undefined ? "" : boundedCapabilityId(request.threadId, "Thread");
+    const { path: written, before } = folders!.write(folderId, boundedCapabilityId(request.path, "File path"), request.text, request.previous);
+    if (threadId) agents!.noteChange(threadId, { folderId, path: written, before, after: request.text, at: Date.now() });
+    changed();
+    return { path: written };
   });
   ipcMain.handle("shinbo:attach-files", async (event) => {
     mainWindowSender(event);
@@ -6097,7 +6123,7 @@ if (primaryInstance) app.whenReady().then(() => {
     }
   });
   openMain();
-  startUpdates((version) => broadcast("shinbo:update-ready", version));
+  startUpdates((state) => broadcast("shinbo:update", state), drainForQuit);
   installMenu();
   readNotchGeometry();
   screen.on("display-added", readNotchGeometry);
@@ -6110,20 +6136,26 @@ if (primaryInstance) app.whenReady().then(() => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
-let quitFlushing = false;
+let quitDrain: Promise<void> | undefined;
 let quitReady = false;
+function drainForQuit() {
+  if (harnessRuns.size === 0 && pendingTurns.size === 0) return Promise.resolve();
+  if (!quitDrain) {
+    stopEveryThread();
+    for (const client of harnesses.values()) client.close();
+    const finished = new Promise<void>((resolve) => {
+      const check = () => harnessRuns.size === 0 && pendingTurns.size === 0 ? resolve() : setTimeout(check, 25);
+      check();
+    });
+    quitDrain = Promise.race([finished, pause(10_000)]).then(() => { quitDrain = undefined; });
+  }
+  return quitDrain;
+}
 app.on("before-quit", (event) => {
   if (quitReady || (harnessRuns.size === 0 && pendingTurns.size === 0)) return;
   event.preventDefault();
-  if (quitFlushing) return;
-  quitFlushing = true;
-  stopEveryThread();
-  for (const client of harnesses.values()) client.close();
-  const finished = new Promise<void>((resolve) => {
-    const check = () => harnessRuns.size === 0 && pendingTurns.size === 0 ? resolve() : setTimeout(check, 25);
-    check();
-  });
-  void Promise.race([finished, pause(10_000)]).finally(() => {
+  if (quitDrain) return;
+  void drainForQuit().then(() => {
     quitReady = true;
     app.quit();
   });

@@ -12,6 +12,7 @@
 @import "./styles/artifacts.css";
 @import "./styles/agents.css";
 @import "./styles/git.css";
+@import "./styles/files.css";
 @import "./styles/goal.css";
 @import "./styles/plugins.css";
 @import "./styles/activity.css";
@@ -60,9 +61,14 @@ select:not(:disabled) { cursor: pointer; }
 ::file-selector-button { min-height: 24px; margin-right: var(--s-2); padding: var(--s-1) var(--s-3); color: var(--text); background: none; border: 1px solid var(--border-strong); font-family: var(--font-mono); font-size: var(--fs-sm); letter-spacing: var(--ls-caps); text-transform: uppercase; cursor: pointer; transition: background-color var(--t), border-color var(--t); }
 ::file-selector-button:hover { background: var(--surface-3); }
 
+@property --scrollbar-thumb { syntax: "<color>"; inherits: true; initial-value: transparent; }
+* { --scrollbar-thumb: transparent; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-strong); border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border: 3px solid transparent; background-clip: padding-box; }
+/* Thumbs stay hidden until the element scrolls; main.tsx flips data-scrolling and the registered property fades it back out. */
+[data-scrolling] { transition: --scrollbar-thumb 500ms ease; }
+[data-scrolling="on"] { --scrollbar-thumb: var(--border-strong); }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-3); background-clip: padding-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
 

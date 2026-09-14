@@ -7,6 +7,14 @@ import { installBenchHook } from "./bench";
 
 installBenchHook();
 
+const scrollTimers = new WeakMap<Element, ReturnType<typeof setTimeout>>();
+document.addEventListener("scroll", (event) => {
+  const el = event.target instanceof Element ? event.target : document.documentElement;
+  el.setAttribute("data-scrolling", "on");
+  clearTimeout(scrollTimers.get(el));
+  scrollTimers.set(el, setTimeout(() => el.setAttribute("data-scrolling", "off"), 800));
+}, true);
+
 export class RootBoundary extends Component<{ children: ReactNode }, { failed: string }> {
   state = { failed: "" };
   static getDerivedStateFromError(error: unknown): { failed: string } {

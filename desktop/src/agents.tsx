@@ -7,6 +7,7 @@ import { isThinkingLevel, THINKING_LABELS } from "../shared/settings";
 import { CaretIcon } from "./icons";
 import { plural } from "./plural";
 import { OpenIn } from "./editors";
+import { openFilePane } from "./files";
 import { ReadMarkdown } from "./preview";
 import type { Spawned } from "./threads";
 import { reasonText } from "./errors";
@@ -353,7 +354,7 @@ export function ChangesPanel({ changes, busy, onReverted }: { changes: FileChang
       {!changes.length && <p className="waiting">Nothing has been written from this thread yet.</p>}
       {[...changes].reverse().map((change) => <article className="change-file" key={`${change.folderId}:${change.path}`}>
         <header>
-          <strong>{change.path}</strong>
+          <button type="button" className="change-path" title={`Open ${change.path}`} onClick={() => openFilePane({ folderId: change.folderId, path: change.path })}>{change.path}</button>
           <ChangeCount stat={diffStat([change])} />
           <OpenIn folderId={change.folderId} path={change.path} />
           <ReadMarkdown folderId={change.folderId} path={change.path} />
