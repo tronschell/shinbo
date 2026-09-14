@@ -1528,6 +1528,7 @@ function connectVault(vault: VaultChoice) {
   try {
     const root = realpathSync(vault.root);
     vaultFolderId = folders!.add(root, true).find((grant) => samePath(grant.path, root))?.id;
+    if (!previous && vaultFolderId) folders!.markVault(vaultFolderId);
   } catch (error) {
     console.error("Shinbo: could not connect the vault folder", error);
     return;

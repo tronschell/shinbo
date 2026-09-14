@@ -57,5 +57,8 @@ test("the in-flight turn finds its files before its message exists", () => {
   store.clear();
   rememberTurnAttachments("t4", 0, "look at this", shot("shot.png"));
   assert.deepEqual(pendingAttachments("t4", 0, "look at this"), shot("shot.png"));
-  assert.deepEqual(pendingAttachments("t4", 2, "look at this"), []);
+  assert.deepEqual(pendingAttachments("t4", 2, "look at this"), shot("shot.png"));
+  assert.deepEqual(pendingAttachments("t4", 0, "look at that"), []);
+  rememberTurnAttachments("t4", 4, "look at this", shot("later.png"));
+  assert.deepEqual(pendingAttachments("t4", 6, "look at this"), shot("later.png"));
 });

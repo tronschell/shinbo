@@ -122,7 +122,7 @@ export function rememberTurnAttachments(threadId: string, after: number, content
 }
 
 export function pendingAttachments(threadId: string, after: number, content: string): TurnAttachment[] {
-  return storedAttachments(threadId).find((turn) => turn.after === after && turn.content === content)?.items ?? [];
+  return [...storedAttachments(threadId)].reverse().find((turn) => turn.after <= after && turn.content === content)?.items ?? [];
 }
 
 export function turnAttachments(threadId: string, messages: Message[]): Record<number, TurnAttachment[]> {

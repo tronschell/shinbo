@@ -41,6 +41,13 @@ export class FolderStore {
     return this.list();
   }
 
+  markVault(id: string): void {
+    const grant = this.grants.find((item) => item.id === id);
+    if (!grant || grant.vault) return;
+    grant.vault = true;
+    this.save();
+  }
+
   remove(id: string): FolderGrant[] {
     const kept = this.grants.filter((grant) => grant.id !== id);
     if (kept.length !== this.grants.length) { this.grants = kept; this.save(); }

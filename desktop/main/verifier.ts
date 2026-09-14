@@ -4,7 +4,7 @@ import { localDevice } from "../shared/platform-copy";
 
 export { PROHIBITED, defaultVerifierSystem } from "../shared/settings";
 
-const MAX_DETAIL_CHARS = 2_000;
+const MAX_DETAIL_CHARS = 4_096;
 const MAX_REASON_CHARS = 300;
 const VERIFIER_TIMEOUT = 20_000;
 const VERIFIER_MAX_TOKENS = 700;

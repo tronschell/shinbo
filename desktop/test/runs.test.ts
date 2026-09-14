@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { appendText, arrived, dropQueued, fallbackNotice, groupBlocks, joinPartial, mergeStep, pairBlocks, releaseHeld, restoreBlocks, runOf, sendTurn, turnToRetry, stopTurn, thinkingOf, tracedBlocks, wire, withoutThinking, wrote, type Block } from "../src/runs";
+import { appendText, arrived, dropQueued, fallbackNotice, groupBlocks, joinPartial, mergeStep, pairBlocks, pairingFrom, releaseHeld, restoreBlocks, runOf, sendTurn, turnToRetry, stopTurn, thinkingOf, tracedBlocks, wire, withoutThinking, wrote, type Block } from "../src/runs";
 import type { LiveAgent, ThreadStep } from "../shared/agents";
 import { compactionNotice, decodeSpans, type TraceSpan } from "../shared/trace";
 import { cachedBlocks, rememberBlocks, setThreadFolders, threadFolders, threadBreakdown, recordBreakdown } from "../src/context";
@@ -22,7 +22,7 @@ let request: (method: string, params: { content: string }) => Promise<unknown> =
   return new Promise<void>((resolve) => { release = resolve; });
 };
 const stopped: string[] = [];
-let savedThread: { messages: unknown[] } | null = null;
+let savedThread: { messages: unknown[] } | Promise<{ messages: unknown[] }> | null = null;
 let liveSpans: Record<string, TraceSpan[]> = {};
 let livePartials: Record<string, { text: string; thinking: string }> = {};
 let pushDelta: (value: { threadId: string; delta: string; thinking?: boolean; recovery?: boolean }) => void = () => undefined;
@@ -392,20 +392,42 @@ test("a repeated short answer lands on the turn that just ran, not the first tha
   assert.deepEqual(pairBlocks(messages, [blocks], {}, 2), [undefined, undefined, undefined, blocks]);
 });
 
-test("a turn that waited behind another is sent against the messages that exist by then", async () => {
+test("a turn that waited behind another is sent against the messages that exist by then, and the landed turns keep their origin", async () => {
   sent.length = 0;
+  wire();
   savedThread = { messages: [] };
   sendTurn("queued", { content: "first", after: 2, params: {} }, () => undefined);
   sendTurn("queued", { content: "second", after: 2, params: {} }, () => undefined);
   assert.equal(runOf("queued").pending?.after, 2);
+  pushDelta({ threadId: "queued", delta: "the first answer" });
   savedThread = { messages: [1, 2, 3, 4] };
   release!();
   await settle();
   await settle();
   assert.deepEqual(sent, ["first", "second"]);
   assert.equal(runOf("queued").pending?.after, 4);
+  assert.equal(runOf("queued").landed.length, 1);
+  assert.equal(pairingFrom("queued"), 2);
   release!();
   await settle();
+  savedThread = null;
+});
+
+test("a stop while a queued turn is still counting messages holds it instead of sending it", async () => {
+  sent.length = 0;
+  let counted!: (thread: { messages: unknown[] }) => void;
+  savedThread = new Promise((resolve) => { counted = resolve; });
+  sendTurn("stopped-early", { content: "first", after: 0, params: {} }, () => undefined);
+  sendTurn("stopped-early", { content: "second", after: 0, params: {} }, () => undefined);
+  release!();
+  await settle();
+  stopTurn("stopped-early", undefined, () => undefined);
+  counted({ messages: [1, 2] });
+  await settle();
+  await settle();
+  assert.deepEqual(sent, ["first"]);
+  assert.equal(runOf("stopped-early").held[0]?.content, "second");
+  assert.equal(runOf("stopped-early").held[0]?.cancelled, undefined);
   savedThread = null;
 });
 
