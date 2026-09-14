@@ -314,6 +314,11 @@ test("the note body cannot become an instruction to the tagger", () => {
 test("a note's frontmatter reads back as fields the preview can show", () => {
   assert.deepEqual(parseFrontmatter('---\ntitle: "Zig 0.16"\nkind: "page"\ntags: ["zig", "build"]\n---\nBody'), { title: "Zig 0.16", kind: "page", tags: ["zig", "build"] });
   assert.equal(parseFrontmatter("Body only"), null);
+  assert.deepEqual(
+    parseFrontmatter('---\ntitle: Edited\ntags:\n  - zig\n  - "build"\nkind: page\nsource:\n---\nBody'),
+    { title: "Edited", tags: ["zig", "build"], kind: "page", source: "" },
+    "a block list, as Obsidian writes edited properties, reads back as the same array",
+  );
 });
 
 test("a highlight whose quoting exceeds the note limit is rejected instead of silently truncated", async () => {

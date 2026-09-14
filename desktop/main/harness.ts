@@ -439,10 +439,12 @@ export function explainFailure(detail: string): string {
   return `${detail.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase()} — the agent gave up on this turn. Send Continue to pick it back up`;
 }
 
+const UNRESUMABLE_MESSAGES = new Set(["Session not found", "Invalid session ID", "Session is corrupt"]);
+
 const unresumable = (error: unknown) => {
   if (!(error instanceof Error)) return false;
   const code = (error as Error & { code?: unknown }).code;
-  return code === -32602 || code === -32603 && error.message === "Session could not be loaded";
+  return code === -32602 && UNRESUMABLE_MESSAGES.has(error.message);
 };
 
 export class Harness {

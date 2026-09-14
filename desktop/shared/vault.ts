@@ -138,9 +138,20 @@ export function parseFrontmatter(text: string): Frontmatter | null {
   const match = FRONTMATTER.exec(text);
   if (!match) return null;
   const fields: Frontmatter = {};
+  let open = "";
   for (const line of match[1].split(/\r?\n/)) {
+    const item = open && /^[ \t]+-[ \t]*(.*)$/.exec(line);
+    if (item) {
+      const value = scalar(item[1]);
+      const held = fields[open];
+      if (typeof value === "string" && value) fields[open] = [...(Array.isArray(held) ? held : []), value];
+      continue;
+    }
+    open = "";
     const pair = /^([A-Za-z][A-Za-z0-9_-]*):[ \t]*(.*)$/.exec(line);
-    if (pair) fields[pair[1]] = scalar(pair[2]);
+    if (!pair) continue;
+    fields[pair[1]] = scalar(pair[2]);
+    if (!pair[2].trim()) open = pair[1];
   }
   return fields;
 }

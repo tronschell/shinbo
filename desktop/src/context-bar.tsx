@@ -25,7 +25,7 @@ import { ColorPicker } from "./color-picker";
 
 const tokenLabel = (chars: number): string => charLabel(Math.round(chars / CHARS_PER_TOKEN));
 const LEGEND_COLLAPSED = 3;
-const KIND_NAMES: Record<ContextUse["kind"], string> = { messages: "Messages", system: "System prompt", tools: "System tools", mcp: "MCP tools", skills: "Skills", memory: "Memory files" };
+const KIND_NAMES: Record<ContextUse["kind"], string> = { messages: "Messages", system: "System prompt", tools: "System tools", mcp: "MCP tools", skills: "Skills", memory: "Project context" };
 
 export function useContextLedger(thread: Thread | undefined, uses: ContextUse[], contextTokens: number, inFlight: LiveAgent[], experiments: ExperimentTally = NO_EXPERIMENTS, landedCalls = 0, breakdown: ContextBreakdown = NO_BREAKDOWN): Ledger {
   return useMemo(() => buildLedger(thread, uses, contextTokens, inFlight, experiments, landedCalls, breakdown), [thread, uses, contextTokens, inFlight, experiments, landedCalls, breakdown]);

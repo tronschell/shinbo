@@ -48,6 +48,10 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
   }
   if (method === "session/resume") {
     if (/^broken_/.test(params.sessionId ?? "")) {
+      send({ jsonrpc: "2.0", id, error: { code: -32602, message: "Session is corrupt" } });
+      return;
+    }
+    if (/^flaky_/.test(params.sessionId ?? "")) {
       send({ jsonrpc: "2.0", id, error: { code: -32603, message: "Session could not be loaded" } });
       return;
     }

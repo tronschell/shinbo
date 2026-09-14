@@ -491,7 +491,7 @@ function MemoriesDialog({ close }: { close: () => void }) {
       <header>
         <div>
           <span>{notes ? `${notes.length} ${plural(notes.length, "file")}` : "Reading…"}</span>
-          <h2 id="memories-title">Memories<InfoDot>Shinbo writes these itself, between conversations, into its own notes directory on this computer. Every turn is handed what is in them. Nothing else reads them and nothing leaves this computer.</InfoDot></h2>
+          <h2 id="memories-title">Memories<InfoDot>Shinbo writes these itself, between conversations, into its own notes directory on this computer. Shinbo reads them with the memory tool when it decides to; they are not sent with every turn. Nothing else reads them and nothing leaves this computer.</InfoDot></h2>
         </div>
         <button type="button" onClick={close} aria-label="Close memories">×</button>
       </header>

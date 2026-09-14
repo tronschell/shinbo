@@ -1489,31 +1489,44 @@ pub const Runtime = struct {
         var descendant_context = context;
         descendant_context.expected_generation = null;
         while (true) {
-            var snapshot = try self.manager.snapshot(alloc, .{ .root_id = lifecycle.id });
-            defer snapshot.deinit(alloc);
-            const tree = switch (snapshot) {
-                .snapshot => |tree| tree,
-                .failure => return,
-            };
             var changed: usize = 0;
-            for (tree.nodes) |node| {
-                const actionable = switch (lifecycle.action) {
-                    .cancel => switch (node.state) {
-                        .queued, .running, .awaiting_approval, .interrupted => true,
-                        else => false,
-                    },
-                    .close => node.state != .archived,
-                    else => false,
+            var cursor: ?[]u8 = null;
+            defer if (cursor) |value| alloc.free(value);
+            while (true) {
+                var snapshot = try self.manager.snapshot(alloc, .{
+                    .root_id = lifecycle.id,
+                    .cursor = cursor,
+                    .limit = domain.max_page_limit,
+                    .hide_terminal_one_off = lifecycle.action == .cancel,
+                });
+                defer snapshot.deinit(alloc);
+                const tree = switch (snapshot) {
+                    .snapshot => |tree| tree,
+                    .failure => return,
                 };
-                if (!actionable) continue;
-                var result = try self.executeAuthorizedCommandOnce(
-                    alloc,
-                    .{ .lifecycle = .{ .id = node.child_id, .action = lifecycle.action } },
-                    descendant_context,
-                    defaults,
-                );
-                defer result.deinit(alloc);
-                if (result == .receipt) changed += 1;
+                for (tree.nodes) |node| {
+                    const actionable = switch (lifecycle.action) {
+                        .cancel => switch (node.state) {
+                            .queued, .running, .awaiting_approval, .interrupted => true,
+                            else => false,
+                        },
+                        .close => node.state != .archived,
+                        else => false,
+                    };
+                    if (!actionable) continue;
+                    var result = try self.executeAuthorizedCommandOnce(
+                        alloc,
+                        .{ .lifecycle = .{ .id = node.child_id, .action = lifecycle.action } },
+                        descendant_context,
+                        defaults,
+                    );
+                    defer result.deinit(alloc);
+                    if (result == .receipt) changed += 1;
+                }
+                const next = tree.next_cursor orelse break;
+                const owned = try alloc.dupe(u8, next);
+                if (cursor) |value| alloc.free(value);
+                cursor = owned;
             }
             if (changed == 0) return;
         }

@@ -26,7 +26,7 @@ to a file in this repo.
 | Threads and jobs | Markdown | The Rust data root, moved by `SHINBO_DATA_DIR` |
 | Traces, task lists, plans, memories, artifacts and settings | Markdown and JSON | Electron's `userData` directory; see [data.md](data.md) for the separate roots |
 | Component `fetch` | The widget's request, with approved `{{NAME}}` placeholders filled in from saved variables | The fixed public HTTPS destination shown in the credential-request approval; keyless widgets can fetch without credential approval |
-| Provider keys | Your API keys | OS-secure-storage-encrypted on disk, child-process environments, and the configured service as authentication |
+| Provider keys | Your API keys | OS-secure-storage-encrypted on disk, the selected profile's key passed to `shinbo-cli` as `SHINBO_PROVIDER_API_KEY`, and the configured service as authentication |
 | Browser, MCP servers and coding CLIs | Pages, prompts, tool arguments and credentials used by those integrations | Their configured services; they are not covered by Private routing |
 
 Shinbo does not configure an analytics service or a crash-report uploader. It does
@@ -197,10 +197,16 @@ rewritten verbatim on the next save, and the list API reports them as
 `readable: false` so Settings and the setup cards can say which key to paste
 again. Replacing or removing that slot is the only thing that clears it.
 
-`applyToEnv(process.env)` decrypts onto Electron's environment, which `shinbo-cli`
-inherits. The Rust host inherits it too but reads no key: nothing in Rust makes a
-network request. An entry Shinbo could not decrypt is never applied to the
-environment. The credential-list API returns masks, not full keys:
+`applyToEnv(process.env)` decrypts onto Electron's own environment so main can
+read `process.env[credentialEnv]` per call. Child processes do not inherit those
+entries: `shinbo-cli`, coding CLIs, the terminal, background commands, the
+`secret` tool's command and written tools are spawned with
+`withoutCredentials(process.env)`, which strips every applied key, and
+`shinbo-cli` receives only the selected profile's key as
+`SHINBO_PROVIDER_API_KEY` and `AI_GATEWAY_API_KEY`. The Rust host inherits
+Electron's environment but reads no key, since nothing in Rust makes a network
+request. An entry Shinbo could not
+decrypt is never applied to the environment. The credential-list API returns masks, not full keys:
 `{ env, masked, readable }`. `maskSecret` shows the first six and last four
 characters of a long key, and an unreadable slot carries an empty mask. Keys are sent to their configured services as authentication; they do
 not remain exclusively on this computer.

@@ -32,7 +32,7 @@ import { mergePlan, parsePlanSteps, planProblems, planProgress, readySteps, rend
 import { flattenTaskListTasks, mergeTaskList, parseTaskListTasks, renderTaskList, taskListProgress, taskListState, updateTaskListStatus, type TaskList } from "../shared/task-list";
 import { VISUAL_CSP, VISUAL_SCHEME, visualMarker, visualPage, type Visual } from "../shared/visualize";
 import { captureVisual, keepVisual, readVisual } from "./visuals";
-import { CredentialStore } from "./credentials";
+import { CredentialStore, withoutCredentials } from "./credentials";
 import { initializeProfile } from "./profile";
 import { FolderStore } from "./folders";
 import { AttachmentStore, attachmentImage, attachmentPreview, convertedPng, convertedPngBytes, isImageAttachment, type Attachment } from "./attachments";
@@ -661,6 +661,7 @@ function sendHoldKeybinds() {
 
 function runOverlayCommand(command: string) {
   if (overlay && !overlay.isDestroyed()) {
+    if (capturing) return;
     closeRadial();
     if (!overlay.isVisible()) showOverlay(overlay);
     if (overlaySurface === "pill") expandPill(overlay);
@@ -1517,12 +1518,21 @@ let tagger: TaggerSettings = defaultTagger;
 let pickedVaultRoot: string | undefined;
 
 function connectVault(vault: VaultChoice) {
+  const previous = vaultFolderId;
   try {
     const root = realpathSync(vault.root);
     vaultFolderId = folders!.add(root).find((grant) => samePath(grant.path, root))?.id;
   } catch (error) {
     console.error("Shinbo: could not connect the vault folder", error);
+    return;
   }
+  if (previous && previous !== vaultFolderId) folders!.remove(previous);
+  if (previous !== vaultFolderId) broadcast("shinbo:folders-changed");
+}
+
+function reconnectVault(): void {
+  const vault = readVault(app.getPath("userData"));
+  if (vault && !vaultFolderId) connectVault(vault);
 }
 
 function visibleFolders() {
@@ -1614,7 +1624,10 @@ async function keepTool(args: Extract<ToolArgs, { name: "keep" }>): Promise<stri
     ...(args.text ? { text: args.text } : {}),
     ...(args.url ? { sourceUrl: args.url } : {}),
   }, false);
-  return `Kept “${note.title}” as ${note.relative}. Its title and tags are being written now, in the background, so do not keep this again. Say what it covers rather than repeating the steps.`;
+  const tagging = !!tagger.model?.trim() && !!tagger.endpoint?.trim() && (!tagger.credentialEnv || !!process.env[tagger.credentialEnv]);
+  return tagging
+    ? `Kept “${note.title}” as ${note.relative}. Its title and tags are being written now, in the background, so do not keep this again. Say what it covers rather than repeating the steps.`
+    : `Kept “${note.title}” as ${note.relative}. No tagger model is configured, so it keeps that title and no tags. Do not keep this again. Say what it covers rather than repeating the steps.`;
 }
 
 async function tagKeptNote(note: KeptNote, body: string) {
@@ -2167,7 +2180,7 @@ async function componentTool(args: Extract<ToolArgs, { name: "component" }>, thr
 function runCommand(cwd: string, command: string, timeoutMs = MAX_COMMAND_MS, signal?: AbortSignal): Promise<string> {
   signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
-    const child = spawn(shellBinary(), shellArguments(command, false), { cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"], detached: !isWindows, windowsHide: true });
+    const child = spawn(shellBinary(), shellArguments(command, false), { cwd, env: withoutCredentials(process.env), stdio: ["ignore", "pipe", "pipe"], detached: !isWindows, windowsHide: true });
     let output = "";
     const collect = (data: Buffer) => { if (output.length < MAX_COMMAND_OUTPUT) output += String(data); };
     child.stdout.on("data", collect);
@@ -2216,7 +2229,7 @@ async function runWrittenTool(cwd: string, file: string, input: string, signal?:
     : interpreter === "powershell" || interpreter === "pwsh"
       ? ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", file, input]
       : [file, input];
-  return runDirectCommand(cwd, binary, args, MAX_COMMAND_MS, false, process.env, signal);
+  return runDirectCommand(cwd, binary, args, MAX_COMMAND_MS, false, withoutCredentials(process.env), signal);
 }
 
 function runDirectCommand(cwd: string, binary: string, args: string[], timeoutMs = MAX_COMMAND_MS, raw = false, commandEnv: NodeJS.ProcessEnv = process.env, signal?: AbortSignal): Promise<string> {
@@ -4159,10 +4172,10 @@ async function resolveMentions(prompt: string): Promise<{ content: string; skill
       }
       continue;
     }
-    const note = vault ? (notes ??= await listNotes(vault)).find((item) => pathName(item.title) === mention) : undefined;
+    const note = vault ? (notes ??= await listNotes(vault).catch(() => [])).find((item) => pathName(item.title) === mention) : undefined;
     if (note && vault) {
-      const file = path.join(notesRoot(vault), noteInVault(vault, note.path));
       try {
+        const file = path.join(notesRoot(vault), noteInVault(vault, note.path));
         if (statSync(file).size > MAX_NOTE_FILE_BYTES) throw new Error("it is too large to attach");
         sections.push({ heading: `Note ${note.title}`, body: readFileSync(file, "utf8") });
       } catch (error) {
@@ -4172,7 +4185,9 @@ async function resolveMentions(prompt: string): Promise<{ content: string; skill
     }
     for (const grant of folders!.list()) {
       let listing = listings.get(grant.id);
-      if (!listing) { listing = await folders!.files(grant.id); listings.set(grant.id, listing); }
+      if (!listing) { listing = await folders!.files(grant.id).catch(() => undefined); }
+      if (!listing) continue;
+      listings.set(grant.id, listing);
       const listed = listing.files.find((file) => pathName(file.path) === mention);
       if (!listed) continue;
       try {
@@ -5157,6 +5172,7 @@ if (primaryInstance) app.whenReady().then(() => {
     }
     const found = namedPath(value);
     if (!found) return null;
+    reconnectVault();
     const { grant, attached } = pathGrant(found);
     if (!grant && !attached) return { path: found, text: null };
     try {
@@ -5474,6 +5490,7 @@ if (primaryInstance) app.whenReady().then(() => {
   ipcMain.handle("shinbo:list-notes", (event) => {
     panelSender(event);
     const vault = readVault(app.getPath("userData"));
+    if (vault && !vaultFolderId) connectVault(vault);
     return vault ? listNotes(vault) : [];
   });
   ipcMain.handle("shinbo:list-note-folders", (event) => {

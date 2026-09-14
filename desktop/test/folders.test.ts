@@ -189,6 +189,7 @@ function pathHandlers() {
     isImageAttachment,
     previewImage: (file: string) => { previewed.push(file); return "data:image/png;base64,MARKER"; },
     mainWindowSender: () => undefined,
+    reconnectVault: () => undefined,
     shell: { showItemInFolder: (file: string) => revealed.push(file) },
     statSync,
     readFileSync,
@@ -344,7 +345,7 @@ test("one prompt reuses folder and note listings but a later prompt refreshes th
     app: { getPath: () => root },
     listArtifacts: async () => [],
     readVault: () => ({}),
-    listNotes: () => { noteScans++; return []; },
+    listNotes: async () => { noteScans++; return []; },
     folders: {
       list: () => store.list(),
       files: (id: string) => { folderScans++; return store.files(id); },

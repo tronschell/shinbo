@@ -838,6 +838,12 @@ fn handleLoadFailure(
             .message = "One-off child sessions cannot accept additional prompts",
         });
     }
+    if (sessionUnusable(err)) {
+        return state.writer.writeError(alloc, msg.id, .{
+            .code = ErrorCode.invalid_params,
+            .message = "Session is corrupt",
+        });
+    }
     if (err != error.SessionNotFound and err != error.FileNotFound) {
         return state.writer.writeError(alloc, msg.id, .{
             .code = ErrorCode.internal_error,
@@ -848,6 +854,29 @@ fn handleLoadFailure(
         .code = ErrorCode.invalid_params,
         .message = "Session not found",
     });
+}
+
+fn sessionUnusable(err: anyerror) bool {
+    return switch (err) {
+        error.InvalidSessionFormat,
+        error.UnsupportedSessionFormat,
+        error.UnsupportedSessionSchema,
+        error.UnsupportedEventSchema,
+        error.SessionRecoveryUnsupportedSchema,
+        error.CorruptSession,
+        error.InvalidEventFrame,
+        error.TruncatedEventFrame,
+        error.TruncatedReplayFrame,
+        error.EventFrameTooLarge,
+        error.InvalidEventFileStat,
+        error.InvalidDurableField,
+        error.InvalidDurableBytes,
+        error.InvalidResumeView,
+        error.MissingSessionStarted,
+        error.NonContiguousSequence,
+        => true,
+        else => false,
+    };
 }
 
 pub fn handleListSessions(state: *server.ServerState, alloc: Allocator, msg: *jsonrpc.Message) !void {
@@ -1366,6 +1395,7 @@ test "ACP load distinguishes missing sessions from access and child ownership fa
             error.OneOffSessionNotResumable,
         );
         try handleLoadFailure(&state, arena, &msg, error.AccessDenied);
+        try handleLoadFailure(&state, arena, &msg, error.InvalidEventFrame);
         try handleLoadFailure(&state, arena, &msg, error.SessionNotFound);
         try std.testing.expect(state.active_session == null);
         try capture.sync(io_mod.getIo());
@@ -1380,6 +1410,7 @@ test "ACP load distinguishes missing sessions from access and child ownership fa
     defer alloc.free(captured);
     try std.testing.expect(std.mem.find(u8, captured, "\"code\":-32602") != null);
     try std.testing.expect(std.mem.find(u8, captured, "\"code\":-32603,\"message\":\"Session could not be loaded\"") != null);
+    try std.testing.expect(std.mem.find(u8, captured, "\"code\":-32602,\"message\":\"Session is corrupt\"") != null);
     try std.testing.expect(std.mem.find(u8, captured, "\"code\":-32602,\"message\":\"Session not found\"") != null);
     try std.testing.expect(std.mem.find(
         u8,

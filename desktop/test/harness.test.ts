@@ -794,6 +794,20 @@ test("a session the harness cannot load is replaced instead of wedging the threa
   }
 });
 
+test("a transient load failure surfaces instead of discarding the thread's session", async () => {
+  const home = mkdtempSync(path.join(tmpdir(), "shinbo-harness-flaky-"));
+  writeFileSync(path.join(home, "shinbo-sessions.json"), JSON.stringify({ "thread-f": "flaky_1" }));
+  const { client } = harness(async () => "allow_once", undefined, async () => "", home);
+  try {
+    await assert.rejects(client.prompt("thread-f", workspace, "hello", "ask"), /Session could not be loaded/);
+    const index = JSON.parse(readFileSync(path.join(home, "shinbo-sessions.json"), "utf8")) as Record<string, string>;
+    assert.equal(index["thread-f"], "flaky_1");
+  } finally {
+    client.close();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("a session forgotten mid-turn still routes the rest of that turn", async () => {
 
   const made = harness(async () => { made.client.forgetSession("thread-4"); return "allow_once"; });

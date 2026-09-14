@@ -342,7 +342,7 @@ export function notesRoot(vault: VaultChoice): string {
 
 export function noteInVault(vault: VaultChoice, value: unknown): string {
   const root = notesRoot(vault);
-  if (typeof value !== "string" || !value || value.length > 256) throw new Error("That note is not in your vault.");
+  if (typeof value !== "string" || !value || value.length > 4096) throw new Error("That note is not in your vault.");
   const full = path.resolve(root, value);
   if (!realPathInside(root, full)) throw new Error("That note is not in your vault.");
   return path.relative(root, full);

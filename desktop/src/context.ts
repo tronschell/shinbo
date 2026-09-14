@@ -320,7 +320,7 @@ const PREFIX_ROWS:{ kind: ContextUse["kind"]; label: string; of: keyof Omit<Cont
   { kind: "tools", label: "System tools", of: "systemToolsBytes", source: "tools" },
   { kind: "mcp", label: "MCP tools", of: "mcpToolsBytes", source: "mcp" },
   { kind: "skills", label: "Skills", of: "skillsBytes", source: "skills" },
-  { kind: "memory", label: "Memory files", of: "memoryBytes", source: "memory" },
+  { kind: "memory", label: "Project context", of: "memoryBytes", source: "memory" },
 ];
 
 const allBreakdowns = storedMap(BREAKDOWN_KEY, (text) => {
@@ -384,7 +384,7 @@ export const SEGMENT_NOTES: Record<SegmentSource, string> = {
   tools: "Shinbo's tools, as switched on in Settings → Tools. The harness adds its own file and terminal tools to this row without naming them.",
   mcp: "MCP servers whose tool catalogue rides every request.",
   skills: "Skills mirrored to the harness. A skill is loaded in full only when it fires; the row is what its description costs every turn.",
-  memory: "Memory files read into every request.",
+  memory: "The AGENTS.md of the thread's folder, sent as one system message on every request. Memory files are not in here; Shinbo reads those with the memory tool when it decides to.",
 };
 
 const MAX_SEGMENT_ITEMS = 200;
@@ -421,10 +421,6 @@ export async function segmentItems(source: SegmentSource, messages: Message[], t
   if (source === "tools") {
     const written = await window.shinbo.listToolTargets().then((targets) => targets.written).catch(() => []);
     return [...toolItems(), ...written.map((tool) => ({ name: tool.name, detail: tool.source }))];
-  }
-  if (source === "memory") {
-    const notes = await window.shinbo.listMemories();
-    return notes.map((note) => ({ name: note.path, chars: note.bytes }));
   }
   return [];
 }
