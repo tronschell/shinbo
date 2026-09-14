@@ -1523,12 +1523,12 @@ let vaultFolderId: string | undefined;
 let tagger: TaggerSettings = defaultTagger;
 let pickedVaultRoot: string | undefined;
 
-function connectVault(vault: VaultChoice) {
+function connectVault(vault: VaultChoice, stored = false) {
   const previous = vaultFolderId;
   try {
     const root = realpathSync(vault.root);
     vaultFolderId = folders!.add(root, true).find((grant) => samePath(grant.path, root))?.id;
-    if (!previous && vaultFolderId) folders!.markVault(vaultFolderId);
+    if (stored && !previous && vaultFolderId) folders!.markVault(vaultFolderId);
   } catch (error) {
     console.error("Shinbo: could not connect the vault folder", error);
     return;
@@ -1539,7 +1539,7 @@ function connectVault(vault: VaultChoice) {
 
 function reconnectVault(): void {
   const vault = readVault(app.getPath("userData"));
-  if (vault && !vaultFolderId) connectVault(vault);
+  if (vault && !vaultFolderId) connectVault(vault, true);
 }
 
 function visibleFolders() {
@@ -4581,7 +4581,7 @@ if (primaryInstance) app.whenReady().then(() => {
   credentials = new CredentialStore(app.getPath("userData"));
   folders = new FolderStore(app.getPath("userData"));
   const storedVault = readVault(app.getPath("userData"));
-  if (storedVault) connectVault(storedVault);
+  if (storedVault) connectVault(storedVault, true);
   attachments = new AttachmentStore(app.getPath("userData"));
   modelCatalog = new CatalogCache(app.getPath("userData"));
   modelMetadata = new ModelMetadataCatalog(app.getPath("userData"));
@@ -5499,7 +5499,7 @@ if (primaryInstance) app.whenReady().then(() => {
   ipcMain.handle("shinbo:list-notes", (event) => {
     panelSender(event);
     const vault = readVault(app.getPath("userData"));
-    if (vault && !vaultFolderId) connectVault(vault);
+    if (vault && !vaultFolderId) connectVault(vault, true);
     return vault ? listNotes(vault) : [];
   });
   ipcMain.handle("shinbo:list-note-folders", (event) => {

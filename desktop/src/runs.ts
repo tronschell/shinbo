@@ -5,7 +5,7 @@ import { visualDrawn } from "../shared/visualize";
 import { charLabel } from "../shared/usage";
 import { splitThinking } from "../shared/thinking";
 import type { Message, Thread } from "./types";
-import { cachedBlocks, rememberBlocks, recordBreakdown, recordCompaction, recordExperiment } from "./context";
+import { cachedBlocks, rememberBlocks, recordBreakdown, recordCompaction, recordExperiment, type TurnAttachment } from "./context";
 import { reasonText } from "./errors";
 
 export type QueuedTurn = {
@@ -14,6 +14,7 @@ export type QueuedTurn = {
   params: Record<string, string>;
   prepare?: () => Promise<Pick<QueuedTurn, "params" | "delivered">>;
   attached?: boolean;
+  attachments?: TurnAttachment[];
   cancelled?: boolean;
   delivered?: () => void;
   notice?: string;
@@ -606,6 +607,7 @@ async function drain(threadId: string, reload: () => unknown) {
         }
       } catch (reason) {
         failed = true;
+        delete next.cancelled;
         const text = reasonText(reason);
         next.failure = text;
         write(threadId, (run) => ({ pending: null, blocks: [], held: [...run.held, next] }));

@@ -431,6 +431,24 @@ test("a stop while a queued turn is still counting messages holds it instead of 
   savedThread = null;
 });
 
+test("a turn stopped while its context failed to build sends on the first release", async () => {
+  sent.length = 0;
+  let fail!: (reason: Error) => void;
+  const building = new Promise<{ params: Record<string, string> }>((_resolve, reject) => { fail = reject; });
+  sendTurn("held-once", { content: "with files", after: 0, params: {}, prepare: () => building }, () => undefined);
+  stopTurn("held-once", undefined, () => undefined);
+  fail(new Error("attachment missing"));
+  await settle();
+  assert.equal(runOf("held-once").held[0]?.content, "with files");
+  runOf("held-once").held[0].prepare = async () => ({ params: {} });
+  releaseHeld("held-once", 0, () => undefined);
+  await settle();
+  await settle();
+  assert.deepEqual(sent, ["with files"]);
+  release!();
+  await settle();
+});
+
 test("the stall swap only resends a turn that is still running", async () => {
   sendTurn("stalling", turn("PING-F"), () => {});
   await settle();

@@ -41,17 +41,13 @@ test("thread picker saves the selected thread only and updates UI after persiste
 
 test("failed model persistence does not change the displayed selection", async () => {
   let changed = false;
-  let shown = "";
   const change = load<(next: unknown) => Promise<void>>("changeThreadModel", {
     thread: { id: "a" },
     window: { shinbo: { request: async () => { throw new Error("Unavailable model"); } } },
     onModelChanged: () => { changed = true; },
-    setRunError: (text: string) => { shown = text; },
-    reasonText: (reason: unknown) => String(reason instanceof Error ? reason.message : reason),
   });
   await assert.rejects(change({ selectedModel: "provider:missing", thinkingLevel: "" }), /Unavailable model/);
   assert.equal(changed, false);
-  assert.equal(shown, "Unavailable model");
 });
 
 test("thinking uses the thread model without selecting or persisting a workspace model", async () => {

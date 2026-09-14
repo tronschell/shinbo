@@ -121,10 +121,6 @@ export function rememberTurnAttachments(threadId: string, after: number, content
   storeEvicting(ATTACHED_KEY, threadId, [text, JSON.stringify(stripped(kept))]);
 }
 
-export function pendingAttachments(threadId: string, after: number, content: string): TurnAttachment[] {
-  return [...storedAttachments(threadId)].reverse().find((turn) => turn.after <= after && turn.content === content)?.items ?? [];
-}
-
 export function turnAttachments(threadId: string, messages: Message[]): Record<number, TurnAttachment[]> {
   const byIndex: Record<number, TurnAttachment[]> = {};
   const claimed = new Set<number>();
