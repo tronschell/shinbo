@@ -579,6 +579,15 @@ pub fn parseAuthorizationMetadata(
     };
 }
 
+fn issuerWithoutTrailingSlash(issuer: []const u8) []const u8 {
+    if (issuer.len > 1 and issuer[issuer.len - 1] == '/') return issuer[0 .. issuer.len - 1];
+    return issuer;
+}
+
+fn authorizationMetadataIssuersEqual(a: []const u8, b: []const u8) bool {
+    return std.mem.eql(u8, issuerWithoutTrailingSlash(a), issuerWithoutTrailingSlash(b));
+}
+
 const AuthorizationMetadataOutcome = union(enum) {
     metadata: AuthorizationMetadata,
     issuer_mismatch: IssuerMismatch,
@@ -594,7 +603,7 @@ fn parseAuthorizationMetadataOutcome(
     if (parsed.value != .object) return error.InvalidAuthorizationMetadata;
     const object = parsed.value.object;
     const issuer = try requiredString(object, "issuer");
-    if (!std.mem.eql(u8, issuer, expected_issuer)) {
+    if (!authorizationMetadataIssuersEqual(issuer, expected_issuer)) {
         return .{ .issuer_mismatch = try IssuerMismatch.init(
             alloc,
             .authorization_metadata,
@@ -1521,6 +1530,7 @@ fn chooseTokenEndpointAuthMethod(
     if (has_secret and metadata.supports(.client_secret_basic)) return "client_secret_basic";
     if (has_secret and metadata.supports(.client_secret_post)) return "client_secret_post";
     if (metadata.supports(.none)) return "none";
+    if (!has_secret and metadata.supports(.s256)) return "none";
     if (metadata.supports(.client_secret_basic)) return "client_secret_basic";
     if (metadata.supports(.client_secret_post)) return "client_secret_post";
     return error.UnsupportedTokenEndpointAuthenticationMethod;
@@ -2341,7 +2351,7 @@ test "authorization metadata mismatch retains exact issuer values and fails clos
     var outcome = try parseAuthorizationMetadataOutcome(
         alloc,
         bytes,
-        "https://login.example.com/",
+        "https://login.evil.example/",
     );
     defer switch (outcome) {
         .metadata => |*metadata| metadata.deinit(alloc),
@@ -2355,7 +2365,7 @@ test "authorization metadata mismatch retains exact issuer values and fails clos
                 mismatch.source,
             );
             try std.testing.expectEqualStrings(
-                "https://login.example.com/",
+                "https://login.evil.example/",
                 mismatch.expected,
             );
             try std.testing.expectEqualStrings(
@@ -2369,8 +2379,58 @@ test "authorization metadata mismatch retains exact issuer values and fails clos
         parseAuthorizationMetadata(
             alloc,
             bytes,
+            "https://login.evil.example/",
+        ),
+    );
+}
+
+test "authorization metadata accepts an issuer that differs only by a trailing slash" {
+    const alloc = std.testing.allocator;
+    var metadata = try parseAuthorizationMetadata(
+        alloc,
+        "{\"issuer\":\"https://login.example.com\",\"authorization_endpoint\":\"https://login.example.com/authorize\",\"token_endpoint\":\"https://login.example.com/token\"}",
+        "https://login.example.com/",
+    );
+    defer metadata.deinit(alloc);
+    try std.testing.expectEqualStrings("https://login.example.com", metadata.issuer);
+
+    var reverse = try parseAuthorizationMetadata(
+        alloc,
+        "{\"issuer\":\"https://login.example.com/\",\"authorization_endpoint\":\"https://login.example.com/authorize\",\"token_endpoint\":\"https://login.example.com/token\"}",
+        "https://login.example.com",
+    );
+    defer reverse.deinit(alloc);
+    try std.testing.expectEqualStrings("https://login.example.com/", reverse.issuer);
+}
+
+test "authorization metadata rejects an issuer whose path differs" {
+    const alloc = std.testing.allocator;
+    try std.testing.expectError(
+        error.AuthorizationMetadataIssuerMismatch,
+        parseAuthorizationMetadata(
+            alloc,
+            "{\"issuer\":\"https://login.example.com/tenant\",\"authorization_endpoint\":\"https://login.example.com/authorize\",\"token_endpoint\":\"https://login.example.com/token\"}",
             "https://login.example.com/",
         ),
+    );
+}
+
+test "authorization metadata chooses none for secretless clients when S256 PKCE is supported" {
+    const alloc = std.testing.allocator;
+    var metadata = try parseAuthorizationMetadata(
+        alloc,
+        "{\"issuer\":\"https://mcp.slack.com\",\"authorization_endpoint\":\"https://slack.com/oauth/v2_user/authorize\",\"token_endpoint\":\"https://slack.com/api/oauth.v2.user.access\",\"token_endpoint_auth_methods_supported\":[\"client_secret_post\"],\"code_challenge_methods_supported\":[\"S256\"]}",
+        "https://mcp.slack.com",
+    );
+    defer metadata.deinit(alloc);
+
+    try std.testing.expectEqualStrings(
+        "none",
+        try chooseTokenEndpointAuthMethod(metadata, false),
+    );
+    try std.testing.expectEqualStrings(
+        "client_secret_post",
+        try chooseTokenEndpointAuthMethod(metadata, true),
     );
 }
 

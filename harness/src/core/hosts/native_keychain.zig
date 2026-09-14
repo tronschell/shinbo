@@ -38,6 +38,31 @@ pub fn isDisabled() bool {
     return std.mem.eql(u8, value, "1") or std.ascii.eqlIgnoreCase(value, "true");
 }
 
+pub fn userDefaultKeychainAvailable(alloc: std.mem.Allocator) Error!bool {
+    if (!isAvailable()) return false;
+    const result = std.process.run(alloc, io_mod.getIo(), .{
+        .argv = &.{ "/usr/bin/security", "default-keychain", "-d", "user" },
+        .stdout_limit = .limited(4096),
+        .stderr_limit = .limited(4096),
+        .timeout = keychain_process_timeout,
+    }) catch |err| {
+        debug_trace.logf("keychain", "availability failed step=spawn err={s}", .{@errorName(err)});
+        return error.KeychainReadFailed;
+    };
+    defer alloc.free(result.stdout);
+    defer alloc.free(result.stderr);
+    switch (result.term) {
+        .exited => |code| {
+            if (code == 0) return true;
+            debug_trace.logf("keychain", "availability unavailable exit_code={d}", .{code});
+            return false;
+        },
+        else => {},
+    }
+    debug_trace.logf("keychain", "availability failed step=default term={t}", .{result.term});
+    return error.KeychainReadFailed;
+}
+
 fn accountName(buf: *AccountBuffer) Error![]const u8 {
     if (io_mod.getenv("USER")) |user| {
         if (user.len > 0 and user.len <= buf.len) {

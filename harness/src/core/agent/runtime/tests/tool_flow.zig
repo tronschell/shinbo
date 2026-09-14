@@ -5844,7 +5844,10 @@ test "parallel permission preflight failure terminalizes its started lifecycle" 
     });
     const terminal = hooks.lifecycle_events.items[9].terminal;
     try std.testing.expectEqual(types.ToolOutcomeKind.failed, terminal.outcome.kind);
-    try std.testing.expect(std.mem.endsWith(u8, terminal.outcome.summary, ": preflight failed"));
+    try std.testing.expectEqualStrings(
+        "Failed file_info: permission preflight failed",
+        terminal.outcome.summary,
+    );
 }
 
 test "web_search denial trace records redacted query without api keys or result bodies" {

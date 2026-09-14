@@ -49,6 +49,7 @@ pub const NetworkFailureCause = enum {
     transport_interrupted,
     system_resumed,
     response_interrupted,
+    provider_stream_timeout,
 };
 
 /// Stable native transport evidence consumed by model recovery policy.
@@ -68,6 +69,7 @@ pub fn responseFailureEvidence(
     delivery: DeliveryCertainty.State,
 ) ?NetworkFailureEvidence {
     return switch (err) {
+        error.StreamSilenceTimeout => .{ .cause = .provider_stream_timeout, .delivery = delivery },
         error.InvalidProviderResponse, error.Timeout => .{ .cause = .response_interrupted, .delivery = delivery },
         else => null,
     };

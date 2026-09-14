@@ -1025,24 +1025,28 @@ fn failureStatusDetail(
     advertised_dynamic_tool_names: []const []const u8,
 ) !?[]const u8 {
     if (result.status_detail) |detail| {
-        if (!std.mem.eql(u8, detail, "preflight failed") or
-            !file_mutation_contract.isToolName(call.name) or
-            !std.mem.startsWith(u8, safe_result, call.name))
+        if (!std.mem.eql(u8, detail, "preflight failed")) return detail;
+
+        if (file_mutation_contract.isToolName(call.name) and
+            std.mem.startsWith(u8, safe_result, call.name))
         {
-            return detail;
+            const failure_prefix = " failed: ";
+            const remainder = safe_result[call.name.len..];
+            if (std.mem.startsWith(u8, remainder, failure_prefix)) {
+                const actionable = remainder[failure_prefix.len..];
+                if (actionable.len > 0 and
+                    std.mem.findScalar(u8, actionable, '\n') == null and
+                    std.mem.findScalar(u8, actionable, '\r') == null)
+                {
+                    return try text_utils.maskSecrets(arena, actionable);
+                }
+            }
         }
 
-        const failure_prefix = " failed: ";
-        const remainder = safe_result[call.name.len..];
-        if (!std.mem.startsWith(u8, remainder, failure_prefix)) return detail;
-        const actionable = remainder[failure_prefix.len..];
-        if (actionable.len == 0 or
-            std.mem.findScalar(u8, actionable, '\n') != null or
-            std.mem.findScalar(u8, actionable, '\r') != null)
-        {
-            return detail;
-        }
-        return actionable;
+        if (safe_result.len == 0) return detail;
+        const masked = try text_utils.maskSecrets(arena, safe_result);
+        const encoded = try text_utils.encodeTerminalSafe(arena, masked, 256);
+        return if (encoded.bytes.len == 0) detail else encoded.bytes;
     }
 
     if (safe_result.len == 0 or
@@ -2224,4 +2228,43 @@ test "cancelled command ignores malformed artifact metadata" {
     const terminal = capture.events.items[0].terminal;
     try std.testing.expectEqual(types.ToolOutcomeKind.cancelled, terminal.outcome.kind);
     try std.testing.expect(terminal.command_artifact_handle == null);
+}
+
+test "failure status detail masks secret-shaped failure output" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const call: ToolCall = .{
+        .id = "call_fail",
+        .name = "mcp__fixture__echo",
+        .arguments_json = "{}",
+    };
+    const result: ToolExecutionResult = .{
+        .model_output = "",
+        .status = .failure,
+        .status_detail = "preflight failed",
+    };
+    const failure_output = "MY_NOTE_" ++ "TOKEN=abcdefgh";
+    const detail = (try failureStatusDetail(arena, call, result, failure_output, &.{})).?;
+    try std.testing.expect(std.mem.find(u8, detail, "[redacted]") != null);
+    try std.testing.expect(std.mem.find(u8, detail, "abcdefgh") == null);
+}
+
+test "failure status detail masks the actionable edit failure reason" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const call: ToolCall = .{
+        .id = "call_edit_fail",
+        .name = "edit_file",
+        .arguments_json = "{}",
+    };
+    const result: ToolExecutionResult = .{
+        .model_output = "",
+        .status = .failure,
+        .status_detail = "preflight failed",
+    };
+    const failure_output = "edit_file failed: MY_NOTE_" ++ "TOKEN=abcdefgh";
+    const detail = (try failureStatusDetail(arena, call, result, failure_output, &.{})).?;
+    try std.testing.expectEqualStrings("MY_NOTE_" ++ "TOKEN=[redacted]", detail);
 }

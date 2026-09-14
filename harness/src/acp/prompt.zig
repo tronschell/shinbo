@@ -409,13 +409,13 @@ const AcpContext = struct {
     }
 
     fn toolRegistry(self: *const AcpContext) tool_dispatch.Registry {
-        return activeToolSet(self.state).registry;
+        return activeToolRegistry(self.state);
     }
 };
 
 const max_raw_input_bytes = 4096;
 
-fn editFilePath(arena: Allocator, call: ToolCall) ?[]const u8 {
+pub fn editFilePath(arena: Allocator, call: ToolCall) ?[]const u8 {
     if (!std.mem.eql(u8, call.name, "write_file") and !std.mem.eql(u8, call.name, "edit_file")) return null;
     const args = std.json.parseFromSliceLeaky(std.json.Value, arena, call.arguments_json, .{}) catch return null;
     if (args != .object) return null;
@@ -424,7 +424,7 @@ fn editFilePath(arena: Allocator, call: ToolCall) ?[]const u8 {
     return value.string;
 }
 
-fn boundedArguments(arguments_json: []const u8) []const u8 {
+pub fn boundedArguments(arguments_json: []const u8) []const u8 {
     if (arguments_json.len <= max_raw_input_bytes) return arguments_json;
     var end: usize = max_raw_input_bytes;
     while (end > 0 and arguments_json[end] & 0xc0 == 0x80) end -= 1;
@@ -458,6 +458,10 @@ test "boundedArguments cuts on a character boundary" {
     const cut = boundedArguments(wide);
     try std.testing.expect(cut.len <= max_raw_input_bytes);
     try std.testing.expect(std.unicode.utf8ValidateSlice(cut));
+}
+
+pub fn activeToolRegistry(state: *const server.ServerState) tool_dispatch.Registry {
+    return activeToolSet(state).registry;
 }
 
 fn activeToolSet(state: *const server.ServerState) tool_set_contract.ToolSet {
@@ -2165,7 +2169,7 @@ fn completeToolCallTransport(
     acp_id: []const u8,
     result: ToolExecutionResult,
 ) ToolExecutionResult {
-    const output_text = toolUpdateContentText(result);
+    const output_text = toolUpdateContentText(result.status == .failure, result.model_output);
     if (result.status == .failure) {
         ctx.sendToolCallErrorWithCommandResult(
             acp_id,
@@ -2263,27 +2267,24 @@ fn recordToolCallRejected(
     const acp_id = ctx.sendToolCallPending(arena, call) catch "call_unknown";
     ctx.sendToolCallErrorWithCommandResult(
         acp_id,
-        toolUpdateContentText(.{
-            .status = .failure,
-            .model_output = model_output,
-        }),
+        toolUpdateContentText(true, model_output),
         command_result_json,
     ) catch {};
 }
 
-fn toolUpdateContentText(result: ToolExecutionResult) []const u8 {
-    if (!text_utils.isModelSafeText(result.model_output)) {
+pub fn toolUpdateContentText(is_failure: bool, output: []const u8) []const u8 {
+    if (!text_utils.isModelSafeText(output)) {
         debug_trace.logf(
             "acp",
             "tool update omitted binary or non-utf8 output bytes={d}",
-            .{result.model_output.len},
+            .{output.len},
         );
         return "binary or non-utf8 tool output omitted";
     }
-    if (result.status == .failure and tool_result_errors.isToolPermissionDeniedOutput(result.model_output)) {
-        return result.model_output;
+    if (is_failure and tool_result_errors.isToolPermissionDeniedOutput(output)) {
+        return output;
     }
-    return text_utils.utf8PrefixByBytes(result.model_output, 200);
+    return text_utils.utf8PrefixByBytes(output, 200);
 }
 
 fn propagateHistoryTurn(raw_ctx: *anyopaque, turn: HistoryTurn) !void {
@@ -3321,7 +3322,7 @@ pub fn mapToolKind(tool_name: []const u8) acp_types.ToolCallKind {
     return .other;
 }
 
-fn describeToolTitle(registry: tool_dispatch.Registry, arena: Allocator, call: ToolCall) ![]const u8 {
+pub fn describeToolTitle(registry: tool_dispatch.Registry, arena: Allocator, call: ToolCall) ![]const u8 {
     return tool_presentation.formatPlainAction(arena, .{
         .tool_registry = registry,
         .call = call,
@@ -3944,17 +3945,11 @@ test "ACP tool notifications preserve UTF-8 for clipped and unsafe output" {
     model_output[200] = 0xa9;
     model_output[201] = 'z';
 
-    const preview = toolUpdateContentText(.{
-        .status = .failure,
-        .model_output = model_output[0..],
-    });
+    const preview = toolUpdateContentText(true, model_output[0..]);
     try std.testing.expectEqual(@as(usize, 199), preview.len);
     try std.testing.expect(std.unicode.utf8ValidateSlice(preview));
 
-    const unsafe_preview = toolUpdateContentText(.{
-        .status = .success,
-        .model_output = "command output: \xff",
-    });
+    const unsafe_preview = toolUpdateContentText(false, "command output: \xff");
     try std.testing.expectEqualStrings(
         "binary or non-utf8 tool output omitted",
         unsafe_preview,
@@ -4219,10 +4214,7 @@ test "ACP tool updates preserve typed permission failures without truncation" {
     const payload = try tool_result_errors.toolPermissionDeniedJson(alloc, "run_command", .permission_required);
     defer alloc.free(payload);
 
-    const output_text = toolUpdateContentText(.{
-        .status = .failure,
-        .model_output = payload,
-    });
+    const output_text = toolUpdateContentText(true, payload);
 
     try std.testing.expectEqualStrings(payload, output_text);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, output_text, .{});

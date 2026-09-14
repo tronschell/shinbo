@@ -4072,6 +4072,65 @@ test "processQueuedPrompt suppresses a repeated confirmed provider tool identity
     );
 }
 
+test "processQueuedPrompt pauses a provider stream timeout without retry" {
+    const alloc = std.testing.allocator;
+    const partial_chunks = [_][]const u8{"partial"};
+    const completions = [_]FakeCompletion{.{
+        .chunks = &partial_chunks,
+        .stream_error_after_chunks = error.StreamSilenceTimeout,
+    }};
+    var gateway = FakeGateway.init(alloc, &completions);
+    defer gateway.deinit();
+    var hooks = FakeAgentRuntimeDeps.init(alloc);
+    hooks.enable_recovery_checkpoint = true;
+    defer hooks.deinit();
+    var fixture = PromptFixture{};
+
+    try runFakePrompt(&gateway, &hooks, fixture.config(), fixture.job());
+
+    try std.testing.expectEqual(@as(usize, 1), gateway.request_models.items.len);
+    try std.testing.expectEqual(types.TurnPresentationOutcome.paused, hooks.finalized_outcome.?);
+    const checkpoint = hooks.recovery_checkpoints.items[hooks.recovery_checkpoints.items.len - 1];
+    try std.testing.expectEqual(
+        types.ModelRecoveryCause.provider_stream_timeout,
+        checkpoint.cause,
+    );
+    try expectRouteStatus(
+        &hooks,
+        0,
+        .terminal_provider_error,
+        "\u{26a0} Provider stream timed out \u{b7} StreamSilenceTimeout \u{b7} recovery paused after 1/10 attempts",
+    );
+}
+
+test "processQueuedPrompt validates a malformed provider replay before suppressing it" {
+    const alloc = std.testing.allocator;
+    const calls = [_]ToolCall{.{
+        .id = "provider_search_replay",
+        .name = "perplexity_search",
+        .arguments_json = "{\"query\":\"zig\"}",
+        .provider_result = "{\"content\":\"one provider result\"}",
+        .provenance = .provider_executed,
+    }};
+    const completions = [_]FakeCompletion{
+        .{ .tool_calls = &calls, .finish_reason = .provider_error },
+        .{ .tool_calls = &calls, .provider_result_identity_failure = .ambiguous },
+    };
+    var gateway = FakeGateway.init(alloc, &completions);
+    defer gateway.deinit();
+    var hooks = FakeAgentRuntimeDeps.init(alloc);
+    defer hooks.deinit();
+    var fixture = PromptFixture{};
+    var config = fixture.config();
+    config.max_provider_attempts = 3;
+
+    try std.testing.expectError(
+        error.MalformedProviderResultIdentity,
+        runFakePrompt(&gateway, &hooks, config, fixture.job()),
+    );
+    try std.testing.expectEqual(@as(usize, 0), hooks.executed_names.items.len);
+}
+
 test "processQueuedPrompt rejects content filter before tool execution" {
     const alloc = std.testing.allocator;
     const calls = [_]ToolCall{toolCall("call_write", "write_file", "{\"path\":\"a.txt\",\"content\":\"x\"}")};

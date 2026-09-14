@@ -2648,6 +2648,18 @@ pub fn permissionTargetResolutionFailureMessage(
             "{s} was given a malformed path. This is not a permission denial. Retry with a plain path, absolute or relative to the workspace root, without empty or null-byte segments.",
             .{tool_name},
         ),
+        error.NotDir,
+        error.SymLinkLoop,
+        error.AccessDenied,
+        error.PermissionDenied,
+        error.NameTooLong,
+        error.BadPathName,
+        error.InputOutput,
+        => try std.fmt.allocPrint(
+            arena,
+            "{s} could not resolve that path ({s}). This is not a permission denial, so retrying the same path will fail again. Confirm the path with list_files or glob_files first.",
+            .{ tool_name, @errorName(err) },
+        ),
         else => null,
     };
 }
@@ -2815,6 +2827,35 @@ test "permission target resolution failures name the real cause instead of blami
     try std.testing.expect(
         (try permissionTargetResolutionFailureMessage(std.testing.allocator, "file_info", error.OutOfMemory)) == null,
     );
+}
+
+test "permission target failures preserve filesystem causes without hiding runtime errors" {
+    const filesystem_errors = [_]anyerror{
+        error.NotDir,
+        error.SymLinkLoop,
+        error.AccessDenied,
+        error.PermissionDenied,
+        error.NameTooLong,
+        error.BadPathName,
+        error.InputOutput,
+    };
+    for (filesystem_errors) |err| {
+        const failure = (try permissionTargetResolutionFailureMessage(
+            std.testing.allocator,
+            "grep_files",
+            err,
+        )) orelse return error.TestExpectedToolFailure;
+        defer std.testing.allocator.free(failure);
+        try std.testing.expect(std.mem.startsWith(u8, failure, "grep_files "));
+        try std.testing.expect(std.mem.find(u8, failure, @errorName(err)) != null);
+        try std.testing.expect(std.mem.find(u8, failure, "not a permission denial") != null);
+    }
+    for ([_]anyerror{ error.OutOfMemory, error.Cancelled }) |err| {
+        try std.testing.expectEqual(
+            @as(?[]const u8, null),
+            try permissionTargetResolutionFailureMessage(std.testing.allocator, "grep_files", err),
+        );
+    }
 }
 
 test "interactive terminal exec approval permits command amendments" {
