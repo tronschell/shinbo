@@ -56,7 +56,7 @@ test("thinking uses the thread model without selecting or persisting a workspace
   const useThinking = load<(act: unknown, changed: (next: unknown) => void, model: string) => { setLevel(next: string): Promise<void> }>("useThinking", {
     useState: () => [undefined, () => undefined], useEffect: () => undefined,
     loadSettings: () => workspace,
-    reasoningFor: (_settings: unknown, _catalog: unknown, model: string) => { assert.equal(model, "provider:thread"); return {}; },
+    reasoningFor: (_catalog: unknown, model: string) => { assert.equal(model, "provider:thread"); return {}; },
     thinkingStops: () => ["", "high"],
     selectModelKey: () => { throw new Error("Global selection must not change"); },
     persistSettings: () => { throw new Error("Global settings must not change"); },

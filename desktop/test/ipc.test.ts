@@ -49,6 +49,8 @@ test("IPC accepts only exact allowlisted payloads", () => {
   assert.equal(validateRequest({ method: "sendMessage", params: { threadId: "thread-123456789", content: "hello", attachedImages: "[\"a\",\"b\"]" } }).params.attachedImages, "[\"a\",\"b\"]");
   assert.throws(() => validateRequest({ method: "sendMessage", params: { threadId: "thread-123456789", content: "hello", screenContext: "data:image/jpeg;base64,/9j/" } }), /Invalid parameters/);
   assert.throws(() => validateRequest({ method: "sendMessage", params: { threadId: "thread-123456789", content: "x".repeat(65_537) } }), /65,537 characters; Shinbo sends at most 65,536/);
+  assert.equal(validateRequest({ method: "renameThread", params: { threadId: "thread-123456789", title: "x".repeat(120) } }).params.title.length, 120);
+  assert.throws(() => validateRequest({ method: "renameThread", params: { threadId: "thread-123456789", title: "x".repeat(121) } }), /Invalid parameters/);
   assert.throws(() => validateRequest({ method: "shell", params: {} }), /not allowed/);
   assert.throws(() => validateRequest({ method: "recordTurn", params: { threadId: "thread-123456789", prompt: "p", response: "r" } }), /not allowed/);
   assert.throws(() => validateRequest({ method: "submitToolResult", params: { threadId: "thread-123456789", results: "[]" } }), /not allowed/);

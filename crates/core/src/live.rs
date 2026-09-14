@@ -18,6 +18,7 @@ use crate::{
 use serde::Serialize;
 
 const MAX_AGENT_TITLE_BYTES: usize = 256;
+const MAX_THREAD_TITLE_CHARS: usize = 120;
 const MAX_AGENT_MESSAGE_BYTES: usize = 120 * 1024;
 pub const ARCHIVE_RETENTION_SECONDS: i64 = 30 * 24 * 60 * 60;
 
@@ -1084,19 +1085,29 @@ impl Runtime {
         thread_id: ThreadId,
         archived: bool,
     ) -> Result<Thread, LiveError> {
+        self.stamp_thread_archived(thread_id, archived.then(Timestamp::now))
+    }
+
+    fn stamp_thread_archived(
+        &self,
+        thread_id: ThreadId,
+        archived_at: Option<Timestamp>,
+    ) -> Result<Thread, LiveError> {
         let mut thread = self.threads.load(&thread_id).map_err(|error| {
             LiveError::new(format!("could not load thread {thread_id}: {error}"))
         })?;
-        thread.archived_at = archived.then(Timestamp::now);
+        let previously_archived_at = thread.archived_at;
+        thread.archived_at = archived_at;
         self.threads
             .save(&thread)
             .map_err(|error| LiveError::new(format!("could not save archived thread: {error}")))?;
         if let Ok(listing) = self.threads.list_summaries() {
             for child in listing.threads {
                 if child.parent_thread_id.as_ref() == Some(&thread_id)
-                    && child.archived_at.is_some() != archived
+                    && child.archived_at.is_some() != archived_at.is_some()
+                    && (archived_at.is_some() || child.archived_at == previously_archived_at)
                 {
-                    let _ = self.set_thread_archived(child.id.clone(), archived);
+                    let _ = self.stamp_thread_archived(child.id.clone(), archived_at);
                 }
             }
         }
@@ -1110,7 +1121,11 @@ impl Runtime {
         expected_title: Option<String>,
     ) -> Result<Thread, LiveError> {
         let title: String = title.split_whitespace().collect::<Vec<_>>().join(" ");
-        let title: String = title.chars().take(120).collect();
+        if title.chars().count() > MAX_THREAD_TITLE_CHARS {
+            return Err(LiveError::new(format!(
+                "thread title is invalid: it holds more than {MAX_THREAD_TITLE_CHARS} characters"
+            )));
+        }
         validate_text("thread title", &title, true)
             .map_err(|error| LiveError::new(format!("thread title is invalid: {error}")))?;
         let mut thread = self.threads.load(&thread_id).map_err(|error| {
@@ -1178,13 +1193,16 @@ impl Runtime {
                 input_tokens,
                 model,
             )
-            .and_then(|generation| {
-                generation.with_provider_usage(
-                    cache_read_tokens,
-                    cache_input_tokens,
-                    cache_write_tokens,
-                    cost_micro_usd,
-                )
+            .map(|generation| {
+                generation
+                    .clone()
+                    .with_provider_usage(
+                        cache_read_tokens,
+                        cache_input_tokens,
+                        cache_write_tokens,
+                        cost_micro_usd,
+                    )
+                    .unwrap_or(generation)
             })
             .ok();
             thread
@@ -1575,6 +1593,11 @@ mod tests {
                 .rename_thread(thread.id.clone(), "   ".into(), None)
                 .is_err()
         );
+        assert!(
+            runtime
+                .rename_thread(thread.id.clone(), "x".repeat(121), None)
+                .is_err()
+        );
         assert_eq!(
             runtime.threads.load(&thread.id).unwrap().title,
             "Trip plans"
@@ -1661,6 +1684,44 @@ mod tests {
     }
 
     #[test]
+    fn unarchiving_a_parent_leaves_separately_archived_children_archived() {
+        let root = temp_child();
+        let runtime = Runtime::new(root.join("threads"), root.join("scheduled"), no_jobs());
+        let parent = runtime.create_thread(None, None, ThreadKind::Main).unwrap();
+        let review = runtime
+            .create_thread(None, Some(parent.id.clone()), ThreadKind::Main)
+            .unwrap();
+        let child = runtime
+            .create_thread(None, Some(parent.id.clone()), ThreadKind::Subagent)
+            .unwrap();
+        runtime
+            .set_thread_archived(review.id.clone(), true)
+            .unwrap();
+        let mut stale = runtime.threads.load(&review.id).unwrap();
+        stale.archived_at = Some(Timestamp::from_unix_seconds(1_700_000_000));
+        runtime.threads.save(&stale).unwrap();
+        runtime
+            .set_thread_archived(parent.id.clone(), true)
+            .unwrap();
+        runtime
+            .set_thread_archived(parent.id.clone(), false)
+            .unwrap();
+        assert!(
+            runtime
+                .threads
+                .load(&child.id)
+                .unwrap()
+                .archived_at
+                .is_none()
+        );
+        assert_eq!(
+            runtime.threads.load(&review.id).unwrap().archived_at,
+            stale.archived_at
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn a_subagent_spawned_under_an_archived_parent_starts_archived() {
         let root = temp_child();
         let runtime = Runtime::new(root.join("threads"), root.join("scheduled"), no_jobs());
@@ -1676,6 +1737,39 @@ mod tests {
             runtime.threads.load(&child.id).unwrap().archived_at,
             archived.archived_at
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn inconsistent_provider_cache_usage_keeps_the_measured_generation() {
+        let root = temp_child();
+        let mut runtime = Runtime::new(root.join("threads"), root.join("scheduled"), no_jobs());
+        let thread = runtime.create_thread(None, None, ThreadKind::Main).unwrap();
+        runtime
+            .record_turn(
+                thread.id.clone(),
+                "compact and continue".into(),
+                "Done.".into(),
+                String::new(),
+                42,
+                1_500,
+                1_000,
+                None,
+                None,
+                Some(5_000),
+                Some(12_345),
+                "claude-opus-4".into(),
+                None,
+                None,
+            )
+            .unwrap();
+        let saved = runtime.threads.load(&thread.id).unwrap();
+        let generation = saved.messages[1].generation.as_ref().unwrap();
+        assert_eq!(generation.output_tokens, 42);
+        assert_eq!(generation.input_tokens, 1_000);
+        assert_eq!(generation.model, "claude-opus-4");
+        assert_eq!(generation.cache_write_tokens, None);
+        assert_eq!(generation.cost_micro_usd, None);
         fs::remove_dir_all(root).unwrap();
     }
 

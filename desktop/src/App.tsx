@@ -1317,7 +1317,7 @@ function Workspace() {
           <span className="sidebar-label">Projects<span className="sidebar-label-actions"><button type="button" className={`project-new ${layout.projectSort === "priority" ? "on" : ""}`} aria-label="Group threads" title="Group threads" aria-haspopup="menu" aria-expanded={sortMenu !== null} onClick={(event) => { const box = event.currentTarget.getBoundingClientRect(); setSortMenu({ x: box.left, y: box.bottom + 2 }); }}><FilterIcon /></button><button type="button" className="project-new" disabled={uiBusy} aria-label="Connect a folder" title="Connect a folder" onClick={connectProject}>＋</button></span></span>
           {selection.length > 0 && <div className="thread-selection"><span className="nav-label">{selection.length} selected</span><button type="button" disabled={uiBusy} onClick={() => void archiveThreads(selection)}>Archive</button><button type="button" onClick={() => setSelection([])} aria-label="Clear selection">×</button></div>}
           {visibleProjects.map((group) => { const limit = threadLimits[group.id] ?? Math.max(THREAD_PAGE, Math.floor((listRows - visibleProjects.length - 1) / visibleProjects.length)); return <Sortable key={group.id} id={group.id} className="project-sort" disabled={virtualGroup(group.id) || group.id === "unfiled"}>{(handle) => <details className={`project-group ${virtualGroup(group.id) ? "flat" : ""}`} open><summary {...handle} onContextMenu={(event) => { event.preventDefault(); setProjectMenu({ id: group.id, x: event.clientX, y: event.clientY }); }}>{!virtualGroup(group.id) && group.id !== "unfiled" && <FolderIcon />}<span className="nav-label">{group.name}</span>{group.id !== "pinned" && <button type="button" className="project-new" disabled={uiBusy} aria-label={group.id === "priority" ? "New thread" : `New thread in ${group.name}`} title={group.id === "priority" ? "New thread" : `New thread in ${group.name}`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setError(""); void createThread(group.id === "priority" ? undefined : group.id === "unfiled" ? "" : group.id); }}>＋</button>}<b>{group.threads.length}</b></summary>{group.threads.slice(0, limit).map((item) => renaming?.id === item.id
-            ? <form key={item.id} className="project-thread renaming" onSubmit={(event) => { event.preventDefault(); void renameThread(item.id, renaming.value); }}><input autoFocus value={renaming.value} aria-label="Thread name" onChange={(event) => setRenaming({ id: item.id, value: event.target.value })} onBlur={() => void renameThread(item.id, renaming.value)} onKeyDown={(event) => { if (event.key === "Escape") { renameDone.current = true; setRenaming(null); } }} /><ThreadStatus live={threadStatus.get(item.id)} unseen={unseen(item.id)} /></form>
+            ? <form key={item.id} className="project-thread renaming" onSubmit={(event) => { event.preventDefault(); void renameThread(item.id, renaming.value); }}><input autoFocus value={renaming.value} maxLength={THREAD_NAME_MAX} aria-label="Thread name" onChange={(event) => setRenaming({ id: item.id, value: event.target.value })} onBlur={() => void renameThread(item.id, renaming.value)} onKeyDown={(event) => { if (event.key === "Escape") { renameDone.current = true; setRenaming(null); } }} /><ThreadStatus live={threadStatus.get(item.id)} unseen={unseen(item.id)} /></form>
             : <div className={`project-row ${threadMenu?.id === item.id ? "menu-open" : ""}`} key={item.id}><button type="button" style={{ "--thread-depth": threadDepth(group.threads, item) } as CSSProperties} className={`project-thread ${item.id === thread?.id && view === "threads" && !selection.length ? "active" : ""} ${selection.includes(item.id) ? "selected" : ""}`} title={threadLabel(item)} disabled={uiBusy} onClick={(event) => clickThread(event, group, item.id)} onDoubleClick={() => startRename(item.id, threadLabel(item))} onContextMenu={(event) => { event.preventDefault(); showThreadMenu(item.id, event.clientX, event.clientY); }}><span className="thread-copy"><span className="nav-label">{threadLabel(item)}</span>{virtualGroup(group.id) && <span className="thread-home"><FolderIcon /><span>{projectName(item) || "Unfiled"}</span></span>}</span><span className="thread-indicators">{phone.threads.includes(item.id) && <Smartphone size={14} strokeWidth={1.6} role="img" aria-label="Started from phone" />}<ThreadGitStatus snapshot={threadRepos[projectOf(item)]} /><ThreadStatus live={threadStatus.get(item.id)} unseen={unseen(item.id)} /></span>{tags[item.id] && <em className={`thread-tag ${tags[item.id].auto ? "auto" : ""}`} title={tags[item.id].auto ? `${tags[item.id].tag} · Shinbo’s guess, right-click to change it` : tags[item.id].tag}>{tags[item.id].tag}</em>}</button><button type="button" className={`thread-pin ${pins.includes(item.id) ? "on" : ""}`} title={pins.includes(item.id) ? "Unpin thread" : "Pin thread"} aria-label={`${pins.includes(item.id) ? "Unpin" : "Pin"} ${threadLabel(item)}`} aria-pressed={pins.includes(item.id)} disabled={uiBusy} onClick={() => setThreadPinned(item.id, !pins.includes(item.id))}><Pin size={14} strokeWidth={1.6} fill={pins.includes(item.id) ? "currentColor" : "none"} aria-hidden="true" /></button><button type="button" className="thread-actions" title="Thread options" aria-label={`Options for ${threadLabel(item)}`} aria-haspopup="menu" aria-expanded={threadMenu?.id === item.id} disabled={uiBusy} onClick={(event) => { const box = event.currentTarget.getBoundingClientRect(); showThreadMenu(item.id, box.left, box.bottom + 2); }}><DotsIcon /></button></div>)}{group.threads.length > limit && <button type="button" className="project-more" onClick={() => setThreadLimits((current) => ({ ...current, [group.id]: limit + Math.max(THREAD_PAGE, listRows, limit) }))}>Load more ({group.threads.length - limit})</button>}{!group.threads.length && <p className="project-empty">No threads yet</p>}</details>}</Sortable>; })}
           {search && !visibleProjects.length && <p className="project-empty">No threads match that search</p>}
         </div>
@@ -1560,7 +1560,7 @@ function TaskModelPicker({ model, onChange, busy, label = "The model this task r
 function BenchRunPicker({ model, effort, onPick, onSettingsChanged, busy }: { model: string; effort: string; onPick: (next: { model: string; effort: string }) => void; onSettingsChanged: (settings: UserSettings) => void; busy: boolean }) {
   const [catalog, setCatalog] = useState<OpenRouterCatalog>();
   useEffect(() => { void window.shinbo.request<OpenRouterCatalog>("listOpenRouterModels").then(setCatalog).catch(() => undefined); }, []);
-  const stops = thinkingStops(reasoningFor(loadSettings(), catalog, model));
+  const stops = thinkingStops(reasoningFor(catalog, model));
   return <>
     <TaskModelPicker model={model} busy={busy} label="The model the cases are replayed under" inherit="Pick a model" onChange={(next, current) => { onSettingsChanged(current); onPick({ model: next, effort: "" }); }} />
     {stops.length > 1 && <select aria-label="Thinking level for this run" value={stops.includes(effort) ? effort : ""} disabled={busy} onChange={(event) => onPick({ model, effort: event.target.value })}>
@@ -2204,7 +2204,7 @@ function SelectionQuote({ scroller, onQuote, onThread }: { scroller: RefObject<H
   </div>;
 }
 
-const THREAD_NAME_MAX = 128;
+const THREAD_NAME_MAX = 120;
 const threadName = (thread: Thread) => threadLabel(thread, THREAD_NAME_MAX);
 
 const COMPOSER_MAX = 65_536;
@@ -3069,21 +3069,16 @@ function useSelectedModel(settings: UserSettings, selectedModel: string): { cont
   return { contextTokens: profile?.contextWindow || windows[selectedModel] || 0 };
 }
 
-function reasoningFor(settings: UserSettings, catalog: OpenRouterCatalog | undefined, key: string): { reasoningEfforts?: string[]; reasoningMandatory?: boolean } | undefined {
-  const routed = catalog?.routes?.[key];
-  if (key.startsWith(CODEX_PREFIX)) return routed;
+function reasoningFor(catalog: OpenRouterCatalog | undefined, key: string): { reasoningEfforts?: string[]; reasoningMandatory?: boolean } | undefined {
   if (key.startsWith("openrouter:")) return catalog?.models.find((model) => model.id === key.slice("openrouter:".length));
-  const profile = key.startsWith("provider:") ? settings.providers.find((item) => item.id === key.slice("provider:".length)) : undefined;
-  const plan = profile && planForProfile(profile);
-  const listed = plan && catalog?.models.find((model) => planForModel(model.id)?.id === plan.id && planModelId(plan, model.id) === profile.modelId);
-  return routed?.reasoningEfforts ? { ...listed, reasoningEfforts: routed.reasoningEfforts } : listed;
+  return catalog?.routes?.[key];
 }
 
 function useThinking(act: (method: string, params?: Record<string, string>) => Promise<unknown>, onSettingsChanged: (settings: UserSettings) => void | Promise<void>, modelKey?: string) {
   const [catalog, setCatalog] = useState<OpenRouterCatalog>();
   useEffect(() => { void window.shinbo.request<OpenRouterCatalog>("listOpenRouterModels").then(setCatalog).catch(() => undefined); }, []);
   const settings = loadSettings();
-  const stops = thinkingStops(reasoningFor(settings, catalog, modelKey ?? settings.selectedModel));
+  const stops = thinkingStops(reasoningFor(catalog, modelKey ?? settings.selectedModel));
   const setLevel = async (next: ThinkingLevel) => {
     if (modelKey !== undefined) {
       await onSettingsChanged({ ...settings, selectedModel: modelKey, thinkingLevel: next });

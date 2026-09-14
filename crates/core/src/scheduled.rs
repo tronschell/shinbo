@@ -651,7 +651,11 @@ impl ScheduledJobStore {
                 Err(ScheduledJobStoreError::Malformed(path, reason)) => {
                     listing.malformed.push((path, reason))
                 }
-                Err(error) => return Err(error),
+                Err(ScheduledJobStoreError::Io(error))
+                    if error.kind() == io::ErrorKind::NotFound => {}
+                Err(ScheduledJobStoreError::Io(error)) => {
+                    listing.malformed.push((path, error.to_string()))
+                }
             }
         }
         let present: HashSet<_> = listing.jobs.iter().map(|job| &job.id).collect();
@@ -793,6 +797,22 @@ mod tests {
         store.delete(&saved.id).unwrap();
         assert!(store.parsed.borrow().is_empty());
         assert!(store.list().unwrap().jobs.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_unreadable_job_file_is_skipped_like_a_malformed_one() {
+        let root =
+            std::env::temp_dir().join(format!("shinbo-unreadable-job-{}", std::process::id()));
+        let store = ScheduledJobStore::new(root.clone());
+        let healthy = job("manual");
+        store.save(&healthy).unwrap();
+        let unreadable = job("manual");
+        fs::create_dir_all(store.path_for(&unreadable.id)).unwrap();
+        let listing = store.list().unwrap();
+        assert_eq!(listing.jobs, vec![healthy]);
+        assert_eq!(listing.malformed.len(), 1);
+        assert_eq!(listing.malformed[0].0, store.path_for(&unreadable.id));
         fs::remove_dir_all(root).unwrap();
     }
 

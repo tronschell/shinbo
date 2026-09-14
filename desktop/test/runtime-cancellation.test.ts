@@ -347,7 +347,7 @@ test("setThreadModel puts the phone's pick on the thread, keyed the way the harn
 
 test("setThreadContext keeps a thread's effort only while its model is unchanged", () => {
   const threadContexts = new Map<string, Record<string, unknown>>();
-  const keepThreadContext = lifted("keepThreadContext", { threadContexts });
+  const keepThreadContext = lifted("keepThreadContext", { threadContexts, selectedModel: "", selectedEffort: "" });
   const held = { folderIds: [], mode: "ask", model: "openrouter:anthropic/claude-x" };
 
   threadContexts.set("t", { ...held, effort: "high" });
@@ -375,7 +375,7 @@ for (const channel of ["desktop", "mobile"] as const) {
     const context = { threadId: "t", folderIds: [], mode: "ask", model: "" };
     const threadContexts = new Map<string, Record<string, unknown>>();
     const set = runInNewContext(ts.transpileModule(`(${setter})`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, {
-      agents: f.agents, threadContexts, keepThreadContext: lifted("keepThreadContext", { threadContexts }),
+      agents: f.agents, threadContexts, keepThreadContext: lifted("keepThreadContext", { threadContexts, selectedModel: "", selectedEffort: "" }),
       threadContextRequest: () => context, mainWindowSender() {}, overlay: undefined,
     });
     if (channel === "desktop") set({ sender: { mainFrame: {} } }, context);

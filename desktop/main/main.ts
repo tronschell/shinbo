@@ -1347,7 +1347,8 @@ const threadContext = (threadId: string) => threadContexts.get(threadId) ?? { fo
 
 function keepThreadContext(threadId: string, next: { folderIds: string[]; mode: PermissionMode; model: string; effort?: ThinkingLevel; subagent?: SubagentRoute; review?: boolean; stepLimit?: number }) {
   const held = threadContexts.get(threadId);
-  rememberThreadContext(threadId, { ...next, effort: next.effort ?? (held?.model === next.model ? held.effort : ""), review: next.review ?? held?.review, stepLimit: next.stepLimit ?? held?.stepLimit });
+  const effort = next.effort ?? (held?.model === next.model ? held.effort : next.model === selectedModel ? selectedEffort : "");
+  rememberThreadContext(threadId, { ...next, effort, review: next.review ?? held?.review, stepLimit: next.stepLimit ?? held?.stepLimit });
 }
 const threadSubagent = (threadId: string) => threadContexts.get(threadId)?.subagent;
 

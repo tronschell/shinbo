@@ -10,6 +10,7 @@ import { validateJudge, type VerifierSettings } from "../shared/settings";
 const MAX_HOST_REQUEST_BYTES = 128 * 1024;
 export const MAX_ANNOTATION_INPUT_CHARS = 16 * 1024 * 1024;
 export const MAX_SCREEN_CONTEXT_CHARS = 96 * 1024;
+export const MAX_THREAD_TITLE_CHARS = 120;
 
 export const methods = [
   "snapshot",
@@ -89,7 +90,7 @@ export function validateRequest(value: unknown): Request {
   for (const key of [...expected, ...optional.filter((key) => key in params)]) {
     const text = params[key] as string;
     const optionalCredential = key === "effort" || (method === "setThreadModel" && key === "modelId") || (method === "saveScheduledJob" && key === "model");
-    const maxLength = ["screenContextId", "skillAttachmentId"].includes(key) ? 256 : key === "attachedContext" ? MAX_ATTACHED_CONTEXT_CHARS : 65_536;
+    const maxLength = ["screenContextId", "skillAttachmentId"].includes(key) ? 256 : key === "attachedContext" ? MAX_ATTACHED_CONTEXT_CHARS : method === "renameThread" && key === "title" ? MAX_THREAD_TITLE_CHARS : 65_536;
     if (key === "content" && text.length > maxLength) {
       throw new Error(`This message is ${text.length.toLocaleString("en-US")} characters; Shinbo sends at most ${maxLength.toLocaleString("en-US")}. Trim it, or attach the text as a file.`);
     }
