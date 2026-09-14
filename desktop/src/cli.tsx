@@ -206,7 +206,7 @@ export function CliComposer({ run, onOpenRun }: { run: CliRun; onOpenRun?: (id: 
         setError(reasonText(reason));
       });
   };
-  const attach = () => void window.shinbo.attachFiles().then(hold).catch((reason: unknown) => setError(reasonText(reason)));
+  const attach = () => void window.shinbo.attachFiles().then(({ picked, failed }) => { hold(picked); if (failed.length) setError(failed.join("\n")); }).catch((reason: unknown) => setError(reasonText(reason)));
   const drop = (event: ReactDragEvent<HTMLFormElement>) => {
     event.preventDefault();
     for (const file of event.dataTransfer.files) {
@@ -251,7 +251,7 @@ function CliHandoff({ run, onOpenRun }: { run: CliRun; onOpenRun?: (id: string) 
   useEffect(() => {
     if (!open) return;
     dialog.current?.showModal();
-    void window.shinbo.installedClis().then(setInstalled).catch((reason: unknown) => setError(reasonText(reason)));
+    void window.shinbo.installedClis().then(setInstalled).catch((reason: unknown) => { setInstalled([]); setError(reasonText(reason)); });
   }, [open]);
   const eligible = runs.filter((other) => other.threadId === run.threadId && other.id !== run.id && other.status !== "running");
   const destination = target.startsWith("cli:") ? installed?.find((cli) => cli.id === target.slice(4)) : eligible.find((other) => other.id === target.slice(4));

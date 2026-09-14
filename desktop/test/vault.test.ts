@@ -133,24 +133,23 @@ test("a vault that has moved is said out loud, never recreated underneath the us
   assert.deepEqual((await listNotes(moved)).map((item) => item.title), ["Kept"]);
 });
 
-test("a knowledge folder deleted under a vault that is still there is said out loud, never recreated", async () => {
+test("a knowledge folder deleted under a vault that is still there is created again on demand", async () => {
   const vault = workspace();
-  const note = await keepNote(vault, { kind: "note", title: "Kept", text: "body" });
+  await keepNote(vault, { kind: "note", title: "Kept", text: "body" });
   rmSync(noteFolder(vault), { recursive: true });
-  await assert.rejects(listNotes(vault), /is not at .* any more/);
-  assert.throws(() => listNoteFolders(vault), /is not at .* any more/);
-  assert.throws(() => noteInVault(vault, note.relative), /is not at .* any more/);
-  await assert.rejects(keepNote(vault, { kind: "note", title: "Later", text: "body" }), /is not at .* any more/);
-  assert.equal(vaultWritable(vault), false);
-  assert.equal(existsSync(noteFolder(vault)), false);
-  assert.deepEqual(readdirSync(vault.root), []);
+  assert.deepEqual(await listNotes(vault), []);
+  assert.equal(existsSync(noteFolder(vault)), true);
+  assert.deepEqual(listNoteFolders(vault), []);
+  assert.equal(vaultWritable(vault), true);
+  const later = await keepNote(vault, { kind: "note", title: "Later", text: "body" });
+  assert.deepEqual((await listNotes(vault)).map((item) => item.relative), [later.relative]);
 });
 
 test("a note is named relative to the guarded folder, and nothing outside it is a note", async () => {
   const vault = workspace();
   const note = await keepNote(vault, { kind: "note", title: "Kept", text: "body" });
   assert.equal(noteInVault(vault, note.relative), note.relative);
-  for (const value of ["../../etc/passwd", "/etc/passwd", "", 7, undefined, "x".repeat(300)]) {
+  for (const value of ["../../etc/passwd", "/etc/passwd", "", 7, undefined, "x".repeat(5000)]) {
     assert.throws(() => noteInVault(vault, value), /not in your vault/, `accepted ${JSON.stringify(value)}`);
   }
 });
@@ -315,6 +314,11 @@ test("the note body cannot become an instruction to the tagger", () => {
 test("a note's frontmatter reads back as fields the preview can show", () => {
   assert.deepEqual(parseFrontmatter('---\ntitle: "Zig 0.16"\nkind: "page"\ntags: ["zig", "build"]\n---\nBody'), { title: "Zig 0.16", kind: "page", tags: ["zig", "build"] });
   assert.equal(parseFrontmatter("Body only"), null);
+  assert.deepEqual(
+    parseFrontmatter('---\ntitle: Edited\ntags:\n  - zig\n  - "build"\nkind: page\nsource:\n---\nBody'),
+    { title: "Edited", tags: ["zig", "build"], kind: "page", source: "" },
+    "a block list, as Obsidian writes edited properties, reads back as the same array",
+  );
 });
 
 test("a highlight whose quoting exceeds the note limit is rejected instead of silently truncated", async () => {

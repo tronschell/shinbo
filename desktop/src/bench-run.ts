@@ -41,7 +41,9 @@ export function benchBlocker(cases: readonly BenchCase[], mode: string, folders:
   return "";
 }
 
-const tick = () => new Promise<void>((resolve) => { setTimeout(resolve, TRACE_RETRY_MS); });
+const MAX_TICK_MS = 2000;
+
+const tick = (ms = TRACE_RETRY_MS) => new Promise<void>((resolve) => { setTimeout(resolve, ms); });
 
 const SHELL_MS = 10 * 60_000;
 const STOPPED_TRACE_MS = 60_000;
@@ -50,23 +52,23 @@ async function runShell(command: string, folderId: string): Promise<{ code: numb
   const task = await window.shinbo.runCommand({ command, folderId }).catch(() => undefined);
   if (!task) return { code: 1, note: "That command could not start." };
   const deadline = Date.now() + SHELL_MS;
-  for (;;) {
+  for (let wait = TRACE_RETRY_MS; ; wait = Math.min(wait * 2, MAX_TICK_MS)) {
     const found = await window.shinbo.readBackground(task.id).catch(() => null);
     if (found?.task.status === "exited") return { code: found.task.exitCode ?? 1, note: lastLine(found.output) };
     if (Date.now() >= deadline) {
       void window.shinbo.stopBackground(task.id);
       return { code: 1, note: `That command was still running after ${SHELL_MS / 60_000} minutes.` };
     }
-    await tick();
+    await tick(wait);
   }
 }
 
 async function lastTrace(threadId: string, waitMs = TRACE_RETRY_MS) {
   const deadline = Date.now() + waitMs;
-  for (;;) {
+  for (let wait = TRACE_RETRY_MS; ; wait = Math.min(wait * 2, MAX_TICK_MS)) {
     const traces = await window.shinbo.threadTraces(threadId);
     if (traces.length || Date.now() >= deadline) return traces.at(-1);
-    await tick();
+    await tick(wait);
   }
 }
 

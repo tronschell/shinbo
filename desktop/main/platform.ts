@@ -301,3 +301,18 @@ function escapeWindowsArgument(value: string, doubleEscape: boolean): string {
 function assertWindowsValue(value: string): void {
   if (value.includes("\0") || value.includes("\r") || value.includes("\n")) throw new TypeError("Windows process arguments cannot contain NUL or line breaks");
 }
+
+let loginPath: Promise<string> | undefined;
+
+export function loginShellPath(): Promise<string> {
+  loginPath ??= isWindows ? Promise.resolve(process.env.PATH || "") : new Promise((resolve) => {
+    const child = spawn(shellBinary(), shellArguments('printf %s "$PATH"', false), { stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+    let out = "";
+    child.stdout.on("data", (data: Buffer) => { if (out.length < 8192) out += String(data); });
+    const timer = setTimeout(() => { if (child.pid !== undefined) void terminateProcessTree(child.pid, "SIGKILL", false); }, 5000);
+    timer.unref();
+    child.once("error", () => { clearTimeout(timer); resolve(process.env.PATH || ""); });
+    child.once("close", () => { clearTimeout(timer); resolve(out.trim().split("\n")[0] || process.env.PATH || ""); });
+  });
+  return loginPath;
+}

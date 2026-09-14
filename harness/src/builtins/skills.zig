@@ -57,6 +57,8 @@ const ParsedSource = struct {
 };
 
 const clone_output_capture_limit: usize = 64 * 1024;
+const clone_timeout_ms: i64 = 5 * std.time.ms_per_min;
+const clone_poll_ms: i64 = 250;
 
 const SkillInfo = skill_commands.SkillInfo;
 const CommandRequest = skill_commands.CommandRequest;
@@ -129,7 +131,7 @@ fn focusSkillResult(alloc: Allocator, name: []const u8, request: CommandRequest)
 }
 
 fn installCommandResult(alloc: Allocator, skills_dir: []const u8, install: InstallCommand) !CommandResult {
-    var result = installFromSource(alloc, skills_dir, install.source, install.filter) catch |err| switch (err) {
+    var result = installFromSource(alloc, skills_dir, install.source, install.filter, null) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return noticeLiteral(alloc, "Failed to install. Check the source path or URL and try again.", false),
     };
@@ -177,7 +179,13 @@ fn noticeFmt(alloc: Allocator, comptime fmt: []const u8, args: anytype, reload: 
     return .{ .notice = .{ .text = try std.fmt.allocPrint(alloc, fmt, args), .reload = reload } };
 }
 
-pub fn installFromSource(alloc: Allocator, skills_dir: []const u8, source: []const u8, filter: ?[]const u8) !InstallResult {
+pub fn installFromSource(
+    alloc: Allocator,
+    skills_dir: []const u8,
+    source: []const u8,
+    filter: ?[]const u8,
+    cancel_flag: ?*std.atomic.Value(bool),
+) !InstallResult {
     var request = try normalizeInstallRequest(alloc, source, filter);
     defer request.deinit(alloc);
 
@@ -185,7 +193,7 @@ pub fn installFromSource(alloc: Allocator, skills_dir: []const u8, source: []con
         return result;
     }
 
-    return installFromGitHub(alloc, skills_dir, request.source, request.filter);
+    return installFromGitHub(alloc, skills_dir, request.source, request.filter, cancel_flag);
 }
 
 fn normalizeInstallRequest(alloc: Allocator, raw_source: []const u8, explicit_filter: ?[]const u8) !InstallRequest {
@@ -241,7 +249,13 @@ pub fn createSkillTemplate(alloc: Allocator, skills_dir: []const u8, name: []con
     return skill_file_path;
 }
 
-fn installFromGitHub(alloc: Allocator, skills_dir: []const u8, url: []const u8, filter: ?[]const u8) !InstallResult {
+fn installFromGitHub(
+    alloc: Allocator,
+    skills_dir: []const u8,
+    url: []const u8,
+    filter: ?[]const u8,
+    cancel_flag: ?*std.atomic.Value(bool),
+) !InstallResult {
     try ensureDir(skills_dir);
 
     const temp_root = try io_mod.runtimeTempPathAlloc(alloc);
@@ -265,8 +279,13 @@ fn installFromGitHub(alloc: Allocator, skills_dir: []const u8, url: []const u8, 
     else
         "git";
     const argv = [_][]const u8{ git_executable, "clone", "--depth", "1", git_url, tmp_dir };
+    var environment = try io_mod.cloneEnvironMap(alloc);
+    defer environment.deinit();
+    try environment.put("GIT_TERMINAL_PROMPT", "0");
     var child = try std.process.spawn(io_mod.getIo(), .{
         .argv = &argv,
+        .environ_map = &environment,
+        .stdin = .ignore,
         .stderr = .pipe,
         .stdout = .pipe,
     });
@@ -274,7 +293,7 @@ fn installFromGitHub(alloc: Allocator, skills_dir: []const u8, url: []const u8, 
     var child_needs_cleanup = true;
     errdefer if (child_needs_cleanup) child.kill(io_mod.getIo());
 
-    try drainCloneOutput(alloc, &child);
+    try drainCloneOutput(alloc, &child, cancel_flag, io_mod.milliTimestamp() + clone_timeout_ms);
     const term = try child.wait(io_mod.getIo());
     child_needs_cleanup = false;
 
@@ -546,7 +565,12 @@ fn cloneUrlForSource(alloc: Allocator, url: []const u8) ![]u8 {
     return std.fmt.allocPrint(alloc, "https://github.com/{s}.git", .{url});
 }
 
-fn drainCloneOutput(alloc: Allocator, child: *std.process.Child) !void {
+fn drainCloneOutput(
+    alloc: Allocator,
+    child: *std.process.Child,
+    cancel_flag: ?*std.atomic.Value(bool),
+    deadline_ms: i64,
+) !void {
     var stdout_capture: std.ArrayList(u8) = .empty;
     defer stdout_capture.deinit(alloc);
     var stderr_capture: std.ArrayList(u8) = .empty;
@@ -560,11 +584,18 @@ fn drainCloneOutput(alloc: Allocator, child: *std.process.Child) !void {
     const stdout_reader = multi_reader.reader(0);
     const stderr_reader = multi_reader.reader(1);
 
+    const poll_timeout = std.Io.Timeout{ .duration = .{
+        .clock = .awake,
+        .raw = .{ .nanoseconds = @as(i96, clone_poll_ms) * std.time.ns_per_ms },
+    } };
     while (true) {
-        const keep_reading = if (multi_reader.fill(4096, .none))
+        if (cancel_flag) |flag| if (flag.load(.seq_cst)) return error.SkillInstallCancelled;
+        if (io_mod.milliTimestamp() >= deadline_ms) return error.SkillInstallTimedOut;
+        const keep_reading = if (multi_reader.fill(4096, poll_timeout))
             true
         else |err| switch (err) {
             error.EndOfStream => false,
+            error.Timeout => true,
             else => |e| return e,
         };
 
@@ -1331,7 +1362,7 @@ test "installFromSource installs from a local directory" {
     const dest_dir = try io_mod.dirRealpathAlloc(alloc, tmp.dir, "dest");
     defer alloc.free(dest_dir);
 
-    var result = try installFromSource(alloc, dest_dir, pack_dir, null);
+    var result = try installFromSource(alloc, dest_dir, pack_dir, null, null);
     defer result.deinit(alloc);
 
     try std.testing.expectEqual(@as(usize, 1), result.installed.items.len);
@@ -1372,7 +1403,7 @@ test "installFromSource skips malformed metadata and installs a valid neighbor" 
     const dest_dir = try io_mod.dirRealpathAlloc(alloc, tmp.dir, "dest");
     defer alloc.free(dest_dir);
 
-    var result = try installFromSource(alloc, dest_dir, pack_dir, null);
+    var result = try installFromSource(alloc, dest_dir, pack_dir, null, null);
     defer result.deinit(alloc);
 
     try std.testing.expectEqual(@as(usize, 1), result.installed.items.len);
@@ -1401,7 +1432,7 @@ test "installFromSource installs root skill using fallback name without frontmat
     const dest_dir = try io_mod.dirRealpathAlloc(alloc, tmp.dir, "dest");
     defer alloc.free(dest_dir);
 
-    var result = try installFromSource(alloc, dest_dir, pack_dir, null);
+    var result = try installFromSource(alloc, dest_dir, pack_dir, null, null);
     defer result.deinit(alloc);
 
     try std.testing.expectEqual(@as(usize, 1), result.installed.items.len);
@@ -1430,9 +1461,9 @@ test "installFromSource filters root skill by parsed or fallback name" {
     const fallback_dest = try io_mod.dirRealpathAlloc(alloc, tmp.dir, "dest-fallback");
     defer alloc.free(fallback_dest);
 
-    var parsed_result = try installFromSource(alloc, parsed_dest, pack_dir, "parsed-root");
+    var parsed_result = try installFromSource(alloc, parsed_dest, pack_dir, "parsed-root", null);
     defer parsed_result.deinit(alloc);
-    var fallback_result = try installFromSource(alloc, fallback_dest, pack_dir, "pack");
+    var fallback_result = try installFromSource(alloc, fallback_dest, pack_dir, "pack", null);
     defer fallback_result.deinit(alloc);
 
     try std.testing.expectEqual(@as(usize, 1), parsed_result.installed.items.len);
@@ -1455,7 +1486,7 @@ test "installFromSource returns empty result when filter matches no skills" {
     const dest_dir = try io_mod.dirRealpathAlloc(alloc, tmp.dir, "dest");
     defer alloc.free(dest_dir);
 
-    var result = try installFromSource(alloc, dest_dir, pack_dir, "missing");
+    var result = try installFromSource(alloc, dest_dir, pack_dir, "missing", null);
     defer result.deinit(alloc);
 
     try std.testing.expectEqual(@as(usize, 0), result.installed.items.len);
@@ -1476,7 +1507,7 @@ test "installFromSource installs nested skills and preserves nested assets" {
     const dest_dir = try io_mod.dirRealpathAlloc(alloc, tmp.dir, "dest");
     defer alloc.free(dest_dir);
 
-    var result = try installFromSource(alloc, dest_dir, pack_dir, null);
+    var result = try installFromSource(alloc, dest_dir, pack_dir, null, null);
     defer result.deinit(alloc);
 
     try std.testing.expectEqual(@as(usize, 1), result.installed.items.len);
@@ -1509,7 +1540,7 @@ test "installFromSource copies root and nested skill bodies beyond the former co
     const dest_dir = try io_mod.dirRealpathAlloc(alloc, tmp.dir, "dest");
     defer alloc.free(dest_dir);
 
-    var result = try installFromSource(alloc, dest_dir, pack_dir, null);
+    var result = try installFromSource(alloc, dest_dir, pack_dir, null, null);
     defer result.deinit(alloc);
 
     try std.testing.expectEqual(@as(usize, 2), result.installed.items.len);
@@ -1547,7 +1578,7 @@ test "installFromSource skips a symlinked root skill and installs a valid nested
     const dest_dir = try io_mod.dirRealpathAlloc(alloc, tmp.dir, "dest");
     defer alloc.free(dest_dir);
 
-    var result = try installFromSource(alloc, dest_dir, pack_dir, null);
+    var result = try installFromSource(alloc, dest_dir, pack_dir, null, null);
     defer result.deinit(alloc);
 
     try std.testing.expectEqual(@as(usize, 1), result.installed.items.len);
@@ -1578,7 +1609,7 @@ test "installFromSource skips an unsafe root destination and installs a valid ne
     const dest_dir = try io_mod.dirRealpathAlloc(alloc, tmp.dir, "dest");
     defer alloc.free(dest_dir);
 
-    var result = try installFromSource(alloc, dest_dir, source_dir, null);
+    var result = try installFromSource(alloc, dest_dir, source_dir, null, null);
     defer result.deinit(alloc);
 
     try std.testing.expectEqual(@as(usize, 1), result.installed.items.len);
@@ -1600,7 +1631,7 @@ test "installFromSource skips an unsafe nested destination and installs a valid 
     const dest_dir = try io_mod.dirRealpathAlloc(alloc, tmp.dir, "dest");
     defer alloc.free(dest_dir);
 
-    var result = try installFromSource(alloc, dest_dir, pack_dir, null);
+    var result = try installFromSource(alloc, dest_dir, pack_dir, null, null);
     defer result.deinit(alloc);
 
     try std.testing.expectEqual(@as(usize, 1), result.installed.items.len);
@@ -1724,7 +1755,7 @@ test "install_skill clone output drain consumes stdout and stderr" {
     var child_needs_cleanup = true;
     errdefer if (child_needs_cleanup) child.kill(io_mod.getIo());
 
-    try drainCloneOutput(std.testing.allocator, &child);
+    try drainCloneOutput(std.testing.allocator, &child, null, io_mod.milliTimestamp() + clone_timeout_ms);
     const term = try child.wait(io_mod.getIo());
     child_needs_cleanup = false;
 
@@ -1732,6 +1763,26 @@ test "install_skill clone output drain consumes stdout and stderr" {
         .exited => |code| try std.testing.expectEqual(@as(u8, 0), code),
         else => return error.TestExpectedEqual,
     }
+}
+
+test "install_skill clone output drain stops at the deadline and honours cancellation" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
+    const argv = [_][]const u8{ "/bin/sh", "-c", "sleep 30" };
+
+    var timed_out = try std.process.spawn(io_mod.getIo(), .{ .argv = &argv, .stderr = .pipe, .stdout = .pipe });
+    defer timed_out.kill(io_mod.getIo());
+    try std.testing.expectError(
+        error.SkillInstallTimedOut,
+        drainCloneOutput(std.testing.allocator, &timed_out, null, io_mod.milliTimestamp() + 300),
+    );
+
+    var cancelled = try std.process.spawn(io_mod.getIo(), .{ .argv = &argv, .stderr = .pipe, .stdout = .pipe });
+    defer cancelled.kill(io_mod.getIo());
+    var cancel_flag = std.atomic.Value(bool).init(true);
+    try std.testing.expectError(
+        error.SkillInstallCancelled,
+        drainCloneOutput(std.testing.allocator, &cancelled, &cancel_flag, io_mod.milliTimestamp() + clone_timeout_ms),
+    );
 }
 
 test "normalizeInstallRequest rejects blank input" {

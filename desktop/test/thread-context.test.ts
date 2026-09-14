@@ -19,14 +19,14 @@ const liftConst = (name: string) => source.statements.find((node) => ts.isVariab
   && node.declarationList.declarations.some((one) => one.name.getText(source) === name))!.getText(source);
 
 const persistence = ts.transpileModule([
-  liftConst("threadContextsFile"), lift("loadThreadContexts"), lift("rememberThreadContext"),
-  "({ loadThreadContexts, rememberThreadContext });",
+  liftConst("threadContextsFile"), lift("loadThreadContexts"), lift("rememberThreadContext"), lift("pruneThreadContexts"), lift("writeThreadContexts"),
+  "({ loadThreadContexts, rememberThreadContext, pruneThreadContexts });",
 ].join("\n"), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
 const on = (dir: string, threadContexts: Map<string, unknown>) => runInNewContext(persistence, {
   app: { getPath: () => dir }, path, readFileSync, writeFileSync, renameSync, rmSync, randomUUID,
   threadContexts, asPermissionMode, isThinkingLevel,
-}) as { loadThreadContexts(): void; rememberThreadContext(id: string, record: unknown): void };
+}) as { loadThreadContexts(): void; rememberThreadContext(id: string, record: unknown): void; pruneThreadContexts(ids: Set<string>): void };
 
 
 
@@ -39,6 +39,23 @@ test("a thread's folder and permission mode survive a restart", () => {
   const after = new Map();
   on(dir, after).loadThreadContexts();
   assert.deepEqual(plain(after.get("t1")), { folderIds: ["f-shinbo"], mode: "acceptEdits", model: "openrouter:x" });
+});
+
+test("an unchanged record is not rewritten and threads the host no longer lists are pruned", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "shinbo-thread-context-"));
+  const file = path.join(dir, "thread-contexts.json");
+  const held = new Map();
+  const store = on(dir, held);
+  store.rememberThreadContext("t1", { folderIds: [], mode: "ask", model: "" });
+  store.rememberThreadContext("t2", { folderIds: [], mode: "ask", model: "" });
+  writeFileSync(file, "untouched");
+  store.rememberThreadContext("t1", { folderIds: [], mode: "ask", model: "" });
+  assert.equal(readFileSync(file, "utf8"), "untouched");
+  store.pruneThreadContexts(new Set(["t1", "t2"]));
+  assert.equal(readFileSync(file, "utf8"), "untouched");
+  store.pruneThreadContexts(new Set(["t2"]));
+  assert.deepEqual([...held.keys()], ["t2"]);
+  assert.deepEqual(Object.keys(JSON.parse(readFileSync(file, "utf8")) as object), ["t2"]);
 });
 
 test("a thread-contexts file that will not read leaves the map empty rather than failing the boot", () => {

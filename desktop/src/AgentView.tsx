@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import WorktreesView from "./WorktreesView";
 import { additionValid, compare, distinctTurns, draftProposal, frictionOf, heldBack, lessonShaped, leverNames, levers, lineageOf, metricNames, readTurns, retryDraft, revertLine, room, spendOf, startTrial, toolOf, turnsInScope, MAX_ADDITION_CHARS, MAX_IMPROVEMENTS, MAX_KEPT, MIN_ARM_TURNS, type Comparison, type Draft as Proposal, type Friction, type Improvement, type Lever, type Spend, type Stat, type Turn } from "../shared/improvement";
 import { familyLabel, scopeLabel, MODEL_FAMILIES } from "../shared/prompts";
@@ -6,8 +6,8 @@ import { readImprovements, readQueue, saveImprovements, saveQueue } from "./impr
 import { Bars } from "./bars";
 import { brandForModel, brandForProvider } from "./brands";
 import BenchPanel, { type BenchPickers } from "./BenchPanel";
-import { readBench } from "./bench";
-import { benchKin } from "./bench-run";
+import { readBench, subscribeBench } from "./bench";
+import { benchKin, benchLive } from "./bench-run";
 import { plural } from "./plural";
 import { BrandIcon, InfoDot, Mark, ToolMark, TrashIcon } from "./icons";
 import { reasonText } from "./errors";
@@ -129,7 +129,7 @@ export default function AgentView({ snapshot, act, busy, openThread, projectName
   const [draft, setDraft] = useState<Draft | null>(pending);
   useEffect(() => { pending = draft; }, [draft]);
   const [error, setError] = useState("");
-  const [benched, setBenched] = useState(false);
+  const benched = useSyncExternalStore(subscribeBench, () => readBench().runs.some((run) => run.state === "running" && run.id === benchLive()));
   const [days, setDays] = useState(30);
   const [scope, setScope] = useState("");
   const [proposals, setProposals] = useState<Record<string, Proposal>>({});
@@ -197,20 +197,27 @@ export default function AgentView({ snapshot, act, busy, openThread, projectName
   const filter = (next: string) => { setScope(next); setTicked([]); };
 
   const retry = (item: Improvement) => { setError(""); setDraft({ key: item.id, ...retryDraft(item) }); };
+  const tryStart = (items: Improvement[], proposal: Proposal, at: number): Improvement[] | null => {
+    const next = startTrial(items, proposal, at);
+    if (next.length > items.length) return next;
+    setError(room(items) <= 0 ? "The store is full. Stop using a kept change first."
+      : items.some((row) => row.state === "trial" && row.lever === proposal.lever) ? `A ${leverNames[proposal.lever]} trial is already running.`
+        : "That change is not a valid addition.");
+    return null;
+  };
   const start = () => {
     if (!draft?.addition.trim()) return;
-    save(startTrial(store.items, draft, Date.now()));
+    const next = tryStart(store.items, draft, Date.now());
+    if (!next) return;
+    save(next);
     setDraft(null);
   };
   const decide = (item: Improvement, state: Improvement["state"], result: string) => {
     const items = store.items.map((row) => row.id === item.id ? { ...row, state, decidedAt: Date.now(), result } : row);
     const [next, ...rest] = queue;
-    if (next && item.id === trial?.id) {
-      setQueue(saveQueue(rest));
-      save(startTrial(items, next, Date.now()));
-      return;
-    }
-    save(items);
+    const started = next && item.id === trial?.id ? tryStart(items, next, Date.now()) : null;
+    if (started) setQueue(saveQueue(rest));
+    save(started ?? items);
   };
 
   const tick = (key: string) => setTicked(ticked.includes(key) ? ticked.filter((row) => row !== key) : [...ticked, key]);
@@ -218,8 +225,9 @@ export default function AgentView({ snapshot, act, busy, openThread, projectName
     setError("");
     const drafts = picked.map((item) => proposalOf(item));
     const [first, ...rest] = drafts;
-    if (!trial && first) save(startTrial(store.items, first, nowMs()));
-    setQueue(saveQueue([...queue, ...(trial ? drafts : rest)]));
+    const started = !trial && first ? tryStart(store.items, first, nowMs()) : null;
+    if (started) save(started);
+    setQueue(saveQueue([...queue, ...(started ? rest : drafts)]));
     setTicked([]);
   };
 
@@ -267,7 +275,7 @@ export default function AgentView({ snapshot, act, busy, openThread, projectName
 
     {memories && <MemoriesDialog close={() => setMemories(false)} />}
 
-    {tab === "bench" && <BenchPanel snapshot={snapshot} busy={busy} openThread={openThread} mode={mode} model={model} pickers={pickers} trial={trial} onLive={setBenched} onDecide={decide} />}
+    {tab === "bench" && <BenchPanel snapshot={snapshot} busy={busy} openThread={openThread} mode={mode} model={model} pickers={pickers} trial={trial} onDecide={decide} />}
 
     {tab === "worktrees" && <WorktreesView />}
 
@@ -456,9 +464,11 @@ export default function AgentView({ snapshot, act, busy, openThread, projectName
 }
 
 function MemoriesDialog({ close }: { close: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
   const [notes, setNotes] = useState<MemoryNote[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  useEffect(() => { if (!dialog.current?.open) dialog.current?.showModal(); }, []);
   useEffect(() => {
     let live = true;
     void window.shinbo.listMemories()
@@ -475,13 +485,13 @@ function MemoriesDialog({ close }: { close: () => void }) {
       .catch((reason: unknown) => setError(reasonText(reason)))
       .finally(() => setBusy(false));
   };
-  return <dialog className="modal-backdrop" open aria-labelledby="memories-title"
+  return <dialog ref={dialog} className="modal-backdrop" aria-labelledby="memories-title" onClose={close} onCancel={close}
     onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
     <section className="agent-dialog memories-dialog">
       <header>
         <div>
           <span>{notes ? `${notes.length} ${plural(notes.length, "file")}` : "Reading…"}</span>
-          <h2 id="memories-title">Memories<InfoDot>Shinbo writes these itself, between conversations, into its own notes directory on this computer. Every turn is handed what is in them. Nothing else reads them and nothing leaves this computer.</InfoDot></h2>
+          <h2 id="memories-title">Memories<InfoDot>Shinbo writes these itself, between conversations, into its own notes directory on this computer. Shinbo reads them with the memory tool when it decides to; they are not sent with every turn. Nothing else reads them and nothing leaves this computer.</InfoDot></h2>
         </div>
         <button type="button" onClick={close} aria-label="Close memories">×</button>
       </header>

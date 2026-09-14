@@ -38,14 +38,16 @@ export default function WorktreesView() {
 
   useEffect(() => {
     let live = true;
-    void window.shinbo.listFolders()
+    const load = () => void window.shinbo.listFolders()
       .then((grants) => {
         if (!live) return;
         setFolders(grants);
         setFolderId((current) => (grants.some((grant) => grant.id === current) ? current : grants[0]?.id ?? ""));
       })
       .catch((reason: unknown) => { if (live) { setError(reasonText(reason)); setFolders([]); } });
-    return () => { live = false; };
+    load();
+    const stop = window.shinbo.onFoldersChanged(load);
+    return () => { live = false; stop(); };
   }, []);
 
   const prefix = readPrefix(folderId);

@@ -1720,6 +1720,38 @@ pub fn isLoopbackHttpUrl(url: []const u8) bool {
         std.mem.eql(u8, host, "[::1]");
 }
 
+pub fn isPrivateHttpUrl(url: []const u8) bool {
+    const uri = std.Uri.parse(url) catch return false;
+    if (!std.ascii.eqlIgnoreCase(uri.scheme, "http") or
+        uri.user != null or
+        uri.password != null)
+    {
+        return false;
+    }
+    const host_component = uri.host orelse return false;
+    var host_buf: [std.Io.net.HostName.max_len]u8 = undefined;
+    const host = host_component.toRaw(&host_buf) catch return false;
+    return isPrivateHost(host);
+}
+
+fn isPrivateHost(host: []const u8) bool {
+    if (std.ascii.eqlIgnoreCase(host, "localhost") or std.mem.eql(u8, host, "[::1]")) return true;
+    if (std.Io.net.Ip4Address.parse(host, 0)) |ip| {
+        const b = ip.bytes;
+        return b[0] == 127 or
+            b[0] == 10 or
+            (b[0] == 192 and b[1] == 168) or
+            (b[0] == 172 and b[1] >= 16 and b[1] <= 31) or
+            (b[0] == 100 and b[1] >= 64 and b[1] <= 127);
+    } else |_| {}
+    const suffix = ".local";
+    if (host.len <= suffix.len or !std.ascii.endsWithIgnoreCase(host, suffix)) return false;
+    for (host[0 .. host.len - suffix.len]) |c| {
+        if (!std.ascii.isAlphanumeric(c) and c != '-' and c != '.') return false;
+    }
+    return true;
+}
+
 const HeaderMatch = struct {
     name: []const u8,
     value: []const u8,
@@ -2571,12 +2603,13 @@ pub const SseEventReader = struct {
 
         if (std.mem.eql(u8, trimmed, "DONE")) return .done;
 
-        const data_prefix = "data: ";
+        const data_prefix = "data:";
         if (!std.mem.startsWith(u8, trimmed, data_prefix)) {
             return if (trimmed[0] == '{') .{ .data = trimmed } else .ignored;
         }
 
-        const json_text = trimmed[data_prefix.len..];
+        var json_text = trimmed[data_prefix.len..];
+        if (json_text.len > 0 and json_text[0] == ' ') json_text = json_text[1..];
         if (std.mem.eql(u8, json_text, "[DONE]")) return .done;
         return .{ .data = json_text };
     }
@@ -5000,6 +5033,23 @@ test "SseEventReader rejects an over-limit event explicitly" {
         error.GatewaySseEventTooLarge,
         event_reader.next(alloc, &buffered.interface),
     );
+}
+
+test "SseEventReader accepts data lines with or without the optional space" {
+    const alloc = std.testing.allocator;
+    const payload = "data:{\"a\":1}\n" ++ "data: {\"b\":2}\n" ++ "data:[DONE]\n";
+
+    var source = std.Io.Reader.fixed(payload);
+    var transfer_buffer: [64]u8 = undefined;
+    var buffered = source.limited(.unlimited, &transfer_buffer);
+    var event_reader = SseEventReader{ .max_line_bytes = 512 };
+    defer event_reader.deinit(alloc);
+
+    const first = try event_reader.next(alloc, &buffered.interface);
+    try std.testing.expectEqualStrings("{\"a\":1}", first.data);
+    const second = try event_reader.next(alloc, &buffered.interface);
+    try std.testing.expectEqualStrings("{\"b\":2}", second.data);
+    try std.testing.expectEqual(SseEventRead.done, try event_reader.next(alloc, &buffered.interface));
 }
 
 test "consumeSseStream replaces preliminary results and preserves the first final result" {

@@ -7,10 +7,9 @@ import { defaultVerifier, defaultVerifierSystem, OPENROUTER_CHAT_ENDPOINT, route
 import { toolGate } from "../shared/permissions";
 import { decodeSpans, type TraceSpan } from "../shared/trace";
 import { AgentRuntime } from "../main/agent-loop";
-import { chatCompletion, PROHIBITED, review, screen, verifierPrompt, type VerifierRequest, type VerifierReview } from "../main/verifier";
+import { chatCompletion, parseVerdict, PROHIBITED, review, screen, verifierPrompt, type VerifierRequest, type VerifierReview } from "../main/verifier";
 
 const settings = { model: "small/model", endpoint: "https://example.test/v1/chat/completions", credentialEnv: "", system: defaultVerifierSystem };
-
 
 test("every prohibited rule is enforced by a pattern, and a plain command is cleared", () => {
   const against = (detail: string) => screen({ ...request(), detail });
@@ -37,15 +36,17 @@ test("every prohibited rule is enforced by a pattern, and a plain command is cle
 });
 
 test("the screen reads the command, and falls back to the summary when there is none", async () => {
-  const cleared = await review({ ...request(), detail: "npm test" });
-  assert.equal(cleared.verdict?.allow, true);
-  assert.equal(cleared.model, "prohibited-list");
-  assert.equal(cleared.attempts, 1);
-  assert.equal(cleared.error, undefined);
+  const ask = async () => '{"allow": true, "reason": "runs the tests"}';
+  const cleared = await review(settings, { ...request(), detail: "npm test" }, ask);
+  assert.equal(cleared?.verdict?.allow, true);
+  assert.equal(cleared?.model, settings.model);
+  assert.equal(cleared?.attempts, 1);
+  assert.equal(cleared?.error, undefined);
 
-  const blocked = await review(request());
-  assert.equal(blocked.verdict?.allow, false);
-  assert.match(blocked.verdict!.reason, /recursive delete/);
+  const blocked = await review(settings, request(), ask);
+  assert.equal(blocked?.verdict?.allow, false);
+  assert.equal(blocked?.model, "prohibited-list");
+  assert.match(blocked!.verdict!.reason, /recursive delete/);
 
   assert.equal(screen({ ...request(), detail: "", summary: "sudo rm everything" }).allow, false);
   assert.equal(screen({ ...request(), detail: "", summary: "reads a file" }).allow, true);
@@ -92,7 +93,6 @@ test("picking a catalogued model is picking a route, and only a stranger needs t
   assert.equal(verifierFromKey("", profiles, "rules").model, "");
   assert.equal(verifierKey(verifierFromKey("", profiles, "rules"), profiles), "");
   assert.equal(verifierKey({ model: "x", endpoint: "https://elsewhere.test/v1/chat/completions", credentialEnv: "", system: "" }, profiles), "custom");
-
 
   const routers = [{ id: "free", name: "Free", models: ["a/one:free", "b/two:free"] }];
   const chained = verifierFromKey(routerKey("free"), profiles, "rules", routers);
@@ -196,12 +196,7 @@ function request(): VerifierRequest {
   return { goal: "run the tests", title: "This thread", activity: "running npm test", tool: "terminal", summary: "running npm test", detail: "rm -rf /tmp/build && npm test" };
 }
 
-
-
-
-
-
-function harness({ verify, answer }: { verify: (request: VerifierRequest) => Promise<VerifierReview>; answer?: boolean }) {
+function harness({ verify, answer }: { verify: (request: VerifierRequest) => Promise<VerifierReview | undefined>; answer?: boolean }) {
   const asked: PermissionAsk[] = [];
   const live: ThreadStep[] = [];
   const traced: TraceSpan[] = [];
@@ -229,4 +224,32 @@ test("a second model picker never offers the ChatGPT plan, which it cannot expre
   assert.match(app, /onPick=\{pick\} codex=\{false\}/);
   assert.doesNotMatch(app, /<ModelRow(?![^>]*codex=)[^>]*\/>/);
   assert.equal(verifierFromKey("codex:gpt-5.6-luna", [], "rules").model, "");
+});
+
+const screened: VerifierRequest = { goal: "list the files", title: "Test", activity: "working", tool: "cli", summary: "ls", detail: "ls -la" };
+
+test("parseVerdict reads JSON, bare words, and refuses the rest", () => {
+  assert.deepEqual(parseVerdict('<think>hmm</think>\n```json\n{"allow": true, "reason": "read only"}\n```'), { allow: true, reason: "read only" });
+  assert.equal(parseVerdict("BLOCK — this is unrelated")?.allow, false);
+  assert.equal(parseVerdict("No idea what you mean"), undefined);
+  assert.equal(parseVerdict("<think>never finished"), undefined);
+});
+
+test("review asks nobody without a verifier and screens before the model", async () => {
+  assert.equal(await review({ ...defaultVerifier, model: "" }, screened), undefined);
+  let calls = 0;
+  const ask = async () => { calls += 1; return '{"allow": true, "reason": "fine"}'; };
+  const keyless = { ...defaultVerifier, credentialEnv: "" };
+  const blocked = await review(keyless, { ...screened, detail: "rm -rf /" }, ask);
+  assert.equal(blocked?.verdict?.allow, false);
+  assert.equal(calls, 0);
+  const cleared = await review(keyless, screened, ask);
+  assert.equal(cleared?.verdict?.allow, true);
+  assert.equal(calls, 1);
+  const unreadable = await review(keyless, screened, async () => "maybe?");
+  assert.equal(unreadable?.verdict, undefined);
+  assert.ok(unreadable?.error);
+  const missing = await review({ ...defaultVerifier, credentialEnv: "SHINBO_TEST_MISSING_KEY" }, screened, ask);
+  assert.equal(missing?.verdict, undefined);
+  assert.equal(calls, 1);
 });

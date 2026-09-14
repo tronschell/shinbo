@@ -65,17 +65,22 @@ export function elided(text: string, room: number): string {
 }
 
 export function recordedTurn({ thinking, answer, ...rest }: RecordedTurn): Record<string, string> {
-  const fitted = (room: number) => ({
+  const fitted = (room: number, thinkingRoom: number) => ({
     ...rest,
     prompt: elided(rest.prompt, room),
-    response: answer.trim() ? withThinking(elided(thinking ?? "", room), elided(answer, room)) : "",
+    response: answer.trim() ? withThinking(elided(thinking ?? "", thinkingRoom), elided(answer, room)) : "",
   });
   const sized = (params: Record<string, string>) => Buffer.byteLength(JSON.stringify(params));
   let room = MAX_RECORDED_TURN_BYTES;
-  let params = fitted(room);
+  let thinkingRoom = MAX_RECORDED_TURN_BYTES;
+  let params = fitted(room, thinkingRoom);
+  for (let size = sized(params); size > MAX_RECORDED_TURN_BYTES && thinkingRoom > 512; size = sized(params)) {
+    thinkingRoom = Math.floor((thinkingRoom * MAX_RECORDED_TURN_BYTES * 0.9) / size);
+    params = fitted(room, thinkingRoom);
+  }
   for (let size = sized(params); size > MAX_RECORDED_TURN_BYTES && room > 512; size = sized(params)) {
     room = Math.floor((room * MAX_RECORDED_TURN_BYTES * 0.9) / size);
-    params = fitted(room);
+    params = fitted(room, thinkingRoom);
   }
   return params;
 }

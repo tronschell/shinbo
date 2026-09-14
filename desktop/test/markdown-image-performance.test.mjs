@@ -89,7 +89,7 @@ test("historical Markdown pictures request previews only near the viewport", asy
     assert.equal(calls, baseline ? 100 : 6);
     views.slice(0, 6).forEach((view, index) => {
       const image = view.image(view.render(props[index]));
-      assert.equal(image.type, "img"); assert.equal(image.props.alt, props[index].alt); assert.equal(image.props.title, props[index].path);
+      assert.equal(image.type, "button"); assert.equal(image.props.children.props.alt, props[index].alt); assert.equal(image.props.title, props[index].path);
       view.observers[0]?.intersect(false); view.observers[0]?.intersect(); view.render(props[index]);
     });
     assert.equal(calls, baseline ? 100 : 6);
@@ -121,7 +121,7 @@ test("deferred pictures retain fallback actions and reject stale path responses"
   assert.equal(view.updates(), 0);
   view.observers[1].intersect(); view.advance(100); requested[1].resolve({ image: "new" }); await settle();
   const image = view.image(view.render(props));
-  assert.equal(image.props.src, "new"); image.props.onClick(); assert.deepEqual(opened.at(-1), [props.path, props.alt]);
+  assert.equal(image.props.children.props.src, "new"); assert.equal(image.props["aria-label"], "Open /photo-b.jpg"); image.props.onClick(); assert.deepEqual(opened.at(-1), [props.path, props.alt]);
   props = { path: "/missing.jpg", alt: "Missing" };
   assert.equal(view.path(view.render(props)).props.title, "Open /missing.jpg");
   view.observers[2].intersect(); view.advance(100); requested[2].reject(new Error("missing")); await settle();
@@ -129,7 +129,7 @@ test("deferred pictures retain fallback actions and reject stale path responses"
   props = { path: "/unmounted.jpg", alt: "" }; view.render(props); view.observers[3].intersect(); view.advance(100);
   const updates = view.updates(); view.unmount(); requested[3].resolve({ image: "late" }); await settle(); assert.equal(view.updates(), updates);
   const eager = picture(currentFile, async () => ({ image: "eager" }), () => undefined, false);
-  eager.render(props); await settle(); assert.equal(eager.image(eager.render(props)).props.src, "eager"); eager.unmount();
+  eager.render(props); await settle(); assert.equal(eager.image(eager.render(props)).props.children.props.src, "eager"); eager.unmount();
   let pendingCalls = 0;
   const pending = picture(currentFile, async () => { pendingCalls++; return null; }, () => undefined);
   pending.render(props); pending.observers[0].intersect(); pending.advance(50);

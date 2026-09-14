@@ -442,11 +442,7 @@ fn fetchCliModelCatalog(
     };
 }
 
-pub fn resolveChatUrl(fallback: []const u8, override: ?[]const u8) []const u8 {
-    const candidate = override orelse return fallback;
-    if (!gateway_client.isLoopbackHttpUrl(candidate) and !gateway_client.isHttpsUrl(candidate)) return fallback;
-    return candidate;
-}
+pub const resolveChatUrl = shinbo_openai.resolveChatUrl;
 
 pub const StreamFn = *const fn (
     *anyopaque,
@@ -1470,17 +1466,36 @@ test "built-in gateway chat url honors https overrides for provider routes" {
     );
 }
 
-test "built-in gateway chat url ignores untrusted overrides and falls back" {
+test "built-in gateway chat url accepts private-network http overrides" {
+    for ([_][]const u8{
+        "http://127.0.0.1:1234/v1/chat/completions",
+        "http://localhost/v1/chat/completions",
+        "http://[::1]:8080/v1/chat/completions",
+        "http://192.168.1.20:8080/v1/chat/completions",
+        "http://10.0.0.5:11434/v1/chat/completions",
+        "http://172.20.0.5:8080/v1/chat/completions",
+        "http://100.64.3.9:8080/v1/chat/completions",
+        "http://studio.local:1234/v1/chat/completions",
+    }) |good| {
+        try std.testing.expectEqualStrings(good, resolveChatUrl("https://fallback.test/chat", good));
+    }
+}
+
+test "built-in gateway chat url refuses untrusted overrides without falling back to another host" {
     const fallback = "https://openrouter.ai/api/v1/chat/completions";
+    try std.testing.expectEqualStrings(fallback, resolveChatUrl(fallback, null));
+    try std.testing.expectEqualStrings(fallback, resolveChatUrl(fallback, ""));
     for ([_][]const u8{
         "http://evil.example/chat",
+        "http://172.32.0.1/chat",
+        "http://100.128.0.1/chat",
+        "http://8.8.8.8:8080/chat",
         "https://user:pass@evil.example/chat",
         "http://127.0.0.1:8080@evil.example/chat",
         "ftp://evil.example/chat",
         "not a url",
-        "",
     }) |bad| {
-        try std.testing.expectEqualStrings(fallback, resolveChatUrl(fallback, bad));
+        try std.testing.expectEqualStrings("", resolveChatUrl(fallback, bad));
     }
 }
 

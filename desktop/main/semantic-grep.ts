@@ -59,7 +59,7 @@ export function embeddingProxy(model: HostedEmbeddingModel, token: string, key: 
       if (!secret) return fail(401, `Needs ${model.credentialEnv}`);
       controller.signal.throwIfAborted();
       const upstream = await fetch(model.endpoint, {
-        signal: controller.signal,
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)]),
         method: "POST",
         headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
         body: JSON.stringify({ model: model.model, input: body.input, encoding_format: "float", ...(model.acceptsDimensions ? { dimensions: DIMENSIONS } : {}) }),
@@ -94,6 +94,7 @@ export async function verifyEmbeddingKey(model: HostedEmbeddingModel, key: strin
   if (!key) return { ok: false, detail: `Add ${model.credentialEnv} first.` };
   try {
     const response = await fetch(model.endpoint, {
+      signal: AbortSignal.timeout(15_000),
       method: "POST",
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
       body: JSON.stringify({ model: model.model, input: ["shinbo"], encoding_format: "float", ...(model.acceptsDimensions ? { dimensions: DIMENSIONS } : {}) }),

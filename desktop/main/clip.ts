@@ -11,6 +11,7 @@ const MAX_CLIP_IMAGES = 4;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_IMAGE_FETCHES = 6;
 const MAX_HELPER_OUTPUT = 4096;
+const SCRIPT_TIMEOUT_MS = 5000;
 
 export type FrontPage = { application: string; url: string; title?: string };
 export type PageClip = FrontPage & { title: string; text: string; images: string[] };
@@ -32,13 +33,16 @@ function scriptFailure(stderr: string): string {
 
 function osascript(script: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn("/usr/bin/osascript", ["-e", script], { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("/usr/bin/osascript", ["-e", script], { stdio: ["ignore", "pipe", "pipe"], timeout: SCRIPT_TIMEOUT_MS, killSignal: "SIGKILL" });
     let output = "";
     let failure = "";
     child.stdout.on("data", (data: Buffer) => { output += data; if (output.length > MAX_HELPER_OUTPUT) child.kill(); });
     child.stderr.on("data", (data: Buffer) => { failure = `${failure}${data}`.slice(0, 512); });
     child.once("error", reject);
-    child.once("exit", (code) => code === 0 ? resolve(output.trim()) : reject(new Error(scriptFailure(failure.trim()))));
+    child.once("exit", (code, signal) => {
+      if (code === 0) return resolve(output.trim());
+      reject(new Error(signal === "SIGKILL" ? "The front application did not answer in time" : scriptFailure(failure.trim())));
+    });
   });
 }
 

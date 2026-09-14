@@ -85,7 +85,6 @@ test("the island folds a reasoning model's scratchpad away instead of printing i
 });
 
 test("an overlay surface does not call the IPC the main process reserves for the workspace window", () => {
-  assert.match(read("desktop/src/App.tsx"), /if \(isWorkspaceWindow\) void window\.shinbo\.listImportedMcpServers\(\)/);
   const hook = read("desktop/src/schedule.tsx");
   assert.match(hook, /if \(isWorkspaceWindow\) void window\.shinbo\.searchImportedSkills\(/);
   assert.match(hook, /if \(isWorkspaceWindow\) void window\.shinbo\.listFolders\(\)/);

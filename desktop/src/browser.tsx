@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { blankPage, browserDestination } from "../shared/browser";
 import type { LocalServer } from "../shared/browser";
+import { reasonText } from "./errors";
 import type { PipWindow } from "./pip";
 import type { BrowserStatus, BrowserTab } from "./types";
 
@@ -122,6 +123,7 @@ export function BrowserPane({ threadId, onHide, onClose, wide, onToggleWide, onF
   const [known, setKnown] = useState<{ threadId: string; status: BrowserStatus }>();
   const [typed, setTyped] = useState<{ threadId: string; url: string }>();
   const [clips, setClips] = useState<string[]>();
+  const [failed, setFailed] = useState<{ threadId: string; text: string }>();
   const stage = useRef<HTMLDivElement>(null);
   const sent = useRef("");
   const showing = useRef(threadId);
@@ -130,7 +132,7 @@ export function BrowserPane({ threadId, onHide, onClose, wide, onToggleWide, onF
     showing.current = threadId;
     let alive = true;
     const read = () => void window.shinbo.browserStatus(threadId)
-      .then((status) => { if (alive) setKnown({ threadId, status }); })
+      .then((status) => { if (!alive) return; setKnown({ threadId, status }); if (!status.error) setFailed((current) => current?.threadId === threadId ? undefined : current); })
       .catch(() => { if (alive) setKnown({ threadId, status: BLANK }); });
     read();
     const stop = window.shinbo.onBrowser(read);
@@ -224,12 +226,18 @@ export function BrowserPane({ threadId, onHide, onClose, wide, onToggleWide, onF
   }, [threadId, place]);
 
   const status = known?.threadId === threadId ? known.status : BLANK;
-  const apply = (next: BrowserStatus) => { if (showing.current === threadId) setKnown({ threadId, status: next }); };
+  const apply = (next: BrowserStatus) => {
+    if (showing.current !== threadId) return;
+    setFailed(undefined);
+    setKnown({ threadId, status: next });
+  };
+  const fail = (reason: unknown) => { if (showing.current === threadId) setFailed({ threadId, text: reasonText(reason) }); };
+  const alert = failed?.threadId === threadId ? failed.text : status.error;
   const nav = (action: "back" | "forward" | "reload") =>
-    void window.shinbo.browserNav({ threadId, action }).then(apply).catch(() => undefined);
+    void window.shinbo.browserNav({ threadId, action }).then(apply).catch(fail);
 
   const draft = typed?.threadId === threadId ? typed.url : undefined;
-  const open = (url: string) => void window.shinbo.browserOpen({ threadId, url }).then(apply).catch(() => undefined);
+  const open = (url: string) => void window.shinbo.browserOpen({ threadId, url }).then(apply).catch(fail);
   const go = () => {
     const url = browserDestination(draft ?? "");
     setTyped(undefined);
@@ -242,7 +250,7 @@ export function BrowserPane({ threadId, onHide, onClose, wide, onToggleWide, onF
   };
   const reuseClip = (index: number) => {
     setClips(undefined);
-    void window.shinbo.browserClipUse({ threadId, index }).catch(() => undefined);
+    void window.shinbo.browserClipUse({ threadId, index }).catch(fail);
   };
 
   return <section className="browser-pane" aria-label="Browser">
@@ -250,20 +258,20 @@ export function BrowserPane({ threadId, onHide, onClose, wide, onToggleWide, onF
       <div className="browser-tab-strip" role="tablist" aria-label="Browser tabs">
         {status.tabs.map((tab) => <div key={tab.id} className="browser-tab" data-active={tab.id === status.activeTab}>
           <button type="button" role="tab" aria-selected={tab.id === status.activeTab} title={tab.url || tabName(tab)}
-            onClick={() => void window.shinbo.browserSelectTab({ threadId, tabId: tab.id }).then(apply).catch(() => undefined)}>
+            onClick={() => void window.shinbo.browserSelectTab({ threadId, tabId: tab.id }).then(apply).catch(fail)}>
             {tab.favicon ? <img className="browser-favicon" src={tab.favicon} alt="" /> : <i className="browser-favicon browser-favicon-blank" aria-hidden="true" />}
             <span>{tabName(tab)}</span>
           </button>
           <button type="button" className="browser-tab-close" aria-label={`Close ${tabName(tab)}`}
-            onClick={() => void window.shinbo.browserCloseTab({ threadId, tabId: tab.id }).then(apply).catch(() => undefined)}><NavIcon path={CLOSE} size={11} /></button>
+            onClick={() => void window.shinbo.browserCloseTab({ threadId, tabId: tab.id }).then(apply).catch(fail)}><NavIcon path={CLOSE} size={11} /></button>
         </div>)}
         <button type="button" className="browser-icon browser-new-tab" aria-label="New tab" title="New tab"
-          onClick={() => void window.shinbo.browserNewTab({ threadId }).then(apply).catch(() => undefined)}><NavIcon path={PLUS} size={13} /></button>
+          onClick={() => void window.shinbo.browserNewTab({ threadId }).then(apply).catch(fail)}><NavIcon path={PLUS} size={13} /></button>
       </div>
       <div className="browser-window-controls">
         {(onToggleWide || onFloat) && <ViewMenu wide={wide} floating={floating} onToggleWide={onToggleWide} onFloat={onFloat} />}
-        {onHide && <button type="button" className="browser-icon" aria-label="Hide the browser" title="Hide — keeps the page and its cookies" onClick={onHide}><NavIcon path={HIDE} size={13} /></button>}
-        <button type="button" className="browser-icon" aria-label="Close the browser" title="Close — frees what it holds" onClick={onClose}><NavIcon path={CLOSE} size={12} /></button>
+        {onHide && <button type="button" className="browser-icon" aria-label="Hide the browser" title="Hide — keeps the page open; cookies are shared across threads" onClick={onHide}><NavIcon path={HIDE} size={13} /></button>}
+        <button type="button" className="browser-icon" aria-label="Close the browser" title="Close — frees the page; cookies stay shared across threads" onClick={onClose}><NavIcon path={CLOSE} size={12} /></button>
       </div>
     </header>
     <nav className="browser-bar" aria-label="Page">
@@ -284,10 +292,11 @@ export function BrowserPane({ threadId, onHide, onClose, wide, onToggleWide, onF
             }} />}
       <button type="button" className="browser-icon" aria-label="Clipboard history" title="Clipboard history" aria-expanded={!!clips} onClick={showClips}><NavIcon path={CLIPS} size={13} /></button>
       <button type="button" className="browser-icon" aria-label="Open in a new tab" title="New tab"
-        onClick={() => void window.shinbo.browserNewTab({ threadId }).then(apply).catch(() => undefined)}><NavIcon path={PLUS} size={13} /></button>
+        onClick={() => void window.shinbo.browserNewTab({ threadId }).then(apply).catch(fail)}><NavIcon path={PLUS} size={13} /></button>
       <button type="button" className="browser-icon" aria-label="Open this page in your default browser" title="Open in your browser" disabled={!status.url}
-        onClick={() => { if (status.url) void window.shinbo.openLink(status.url).catch(() => undefined); }}><NavIcon path={MORE} size={14} /></button>
+        onClick={() => { if (status.url) void window.shinbo.openLink(status.url).catch(fail); }}><NavIcon path={MORE} size={14} /></button>
     </nav>
+    {alert && <p className="capability-error browser-error" role="alert">{alert}</p>}
     {clips && <ul className="browser-clips" aria-label="Clipboard history">
       {clips.length === 0
         ? <li className="browser-clips-empty">Nothing copied here yet</li>
@@ -299,7 +308,7 @@ export function BrowserPane({ threadId, onHide, onClose, wide, onToggleWide, onF
       {!status.running
         ? <div className="browser-empty">
             <p>Nothing open</p>
-            <button type="button" onClick={() => void window.shinbo.browserNewTab({ threadId }).then(apply).catch(() => undefined)}>New tab</button>
+            <button type="button" onClick={() => void window.shinbo.browserNewTab({ threadId }).then(apply).catch(fail)}>New tab</button>
           </div>
         : blankPage(status.url) ? <BrowserStart onOpen={open} /> : null}
     </div>

@@ -10,7 +10,7 @@ import { artifactWritten } from "../shared/artifacts";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { defaultHarnessExperiments, validateHarnessExperiments } from "../shared/settings";
 import { CLOSED_BY_SHINBO, fixPrompt, harnessHealth, STALL_MS, stoppedReason, type HarnessLogLine, type HarnessState } from "../shared/harness-log";
-import { Harness, HARNESS_MODE_ID, INTERRUPTED_CALL, RESTARTED_BY_YOU, explainFailure, callEscapesWorkspace, compactionReported, contextBreakdownReported, contextExperimentFired, describePath, effortOption, escapesRoot, experimentOption, failedTurn, harnessKey, recoveredSessionTraces, toolCallText, toolOutput, turnUsageReported, unwrapMcpResult, type HarnessToolCall, type PermissionAsk, type PermissionContext, type PermissionOption } from "../main/harness";
+import { Harness, HARNESS_MODE_ID, INTERRUPTED_CALL, RESTARTED_BY_YOU, boundedOutput, explainFailure, callEscapesWorkspace, compactionReported, contextBreakdownReported, contextExperimentFired, describePath, effortOption, escapesRoot, experimentOption, failedTurn, harnessKey, recoveredSessionTraces, toolCallText, toolOutput, turnUsageReported, unwrapMcpResult, type HarnessToolCall, type PermissionAsk, type PermissionContext, type PermissionOption } from "../main/harness";
 import { decodeSpans, encodeSpans } from "../shared/trace";
 
 const fakeAgent = path.join(process.cwd(), "test", "fake-acp-agent.mjs");
@@ -418,6 +418,33 @@ test("a subagent paused by a terminal provider failure ends with that reason", a
   client.close();
 });
 
+test("a persistent subagent that ended can run again under a fresh thread", async () => {
+  const { client, deltas, children, ended } = harness(async () => "allow_once");
+  const inner = client as unknown as { threadsBySession: Map<string, string>; handleUpdate: (params: Record<string, unknown>) => void; cancelledChildren: Set<string> };
+  inner.threadsBySession.set("session-child", "thread-parent");
+  const say = (state: string, text: string) => inner.handleUpdate({
+    sessionId: "session-child",
+    update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text }, _meta: { fx: { child: { id: "child_1", title: "read the docs", state } } } },
+  });
+
+  say("running", "first");
+  inner.cancelledChildren.add("child_1");
+  say("ended", "");
+  await Promise.resolve();
+  assert.equal(children.length, 1);
+  assert.deepEqual(ended, [{ threadId: "thread_for_child_1", reason: undefined }]);
+
+  say("running", "second");
+  await Promise.resolve();
+  assert.equal(children.length, 2);
+  assert.equal(inner.cancelledChildren.has("child_1"), false);
+  assert.deepEqual(deltas.filter((entry) => entry.threadId === "thread_for_child_1").map((entry) => entry.delta), ["first", "", "second"]);
+  say("ended", "");
+  await Promise.resolve();
+  assert.equal(ended.length, 2);
+  client.close();
+});
+
 test("a subagent left running when its process dies is told, not left spinning", async () => {
   const { client, children, ended } = harness(async () => "allow_once");
   await client.prompt("thread-parent", workspace, "orphan a subagent", "ask");
@@ -733,6 +760,52 @@ test("a thread keeps its harness session across a restart", async () => {
     second.client.close();
   }
   assert.equal(index(alias)["thread-b"], before);
+});
+
+test("a recovery replay sent before the resume reply never lands in the live turn", async () => {
+  const home = mkdtempSync(path.join(tmpdir(), "shinbo-harness-replay-"));
+  writeFileSync(path.join(home, "shinbo-sessions.json"), JSON.stringify({ "thread-r": "sess_1_x" }));
+  const { client, text, calls } = harness(async () => "allow_once", undefined, async () => "", home);
+  try {
+    const { stopReason } = await client.prompt("thread-r", workspace, "again", "ask");
+    assert.equal(stopReason, "end_turn");
+    assert.ok(!text().join("").includes("replayed"), text().join(""));
+    assert.equal(calls.some((call) => call.toolCallId === "replayed_call"), false);
+    assert.ok(text().join("").endsWith("done"), text().join(""));
+  } finally {
+    client.close();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("a session the harness cannot load is replaced instead of wedging the thread", async () => {
+  const home = mkdtempSync(path.join(tmpdir(), "shinbo-harness-unloadable-"));
+  writeFileSync(path.join(home, "shinbo-sessions.json"), JSON.stringify({ "thread-u": "broken_1" }));
+  const { client, text } = harness(async () => "allow_once", undefined, async () => "", home);
+  try {
+    const { stopReason } = await client.prompt("thread-u", workspace, "hello", "ask");
+    assert.equal(stopReason, "end_turn");
+    assert.ok(text().join("").endsWith("done"), text().join(""));
+    const index = JSON.parse(readFileSync(path.join(home, "shinbo-sessions.json"), "utf8")) as Record<string, string>;
+    assert.ok(index["thread-u"]?.startsWith("sess_1_"), index["thread-u"]);
+  } finally {
+    client.close();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("a transient load failure surfaces instead of discarding the thread's session", async () => {
+  const home = mkdtempSync(path.join(tmpdir(), "shinbo-harness-flaky-"));
+  writeFileSync(path.join(home, "shinbo-sessions.json"), JSON.stringify({ "thread-f": "flaky_1" }));
+  const { client } = harness(async () => "allow_once", undefined, async () => "", home);
+  try {
+    await assert.rejects(client.prompt("thread-f", workspace, "hello", "ask"), /Session could not be loaded/);
+    const index = JSON.parse(readFileSync(path.join(home, "shinbo-sessions.json"), "utf8")) as Record<string, string>;
+    assert.equal(index["thread-f"], "flaky_1");
+  } finally {
+    client.close();
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test("a session forgotten mid-turn still routes the rest of that turn", async () => {
@@ -1219,4 +1292,18 @@ for (const control of ["cancel", "steer"] as const) test(`R7-4 clearing the next
   } finally {
     await run.client.close();
   }
+});
+
+test("a truncated tool reply never splits an emoji, so the harness can still parse it", () => {
+  const limit = 64 * 1024;
+  for (const offset of [0, 1, 2, 3]) {
+    const output = `${"a".repeat(limit - 120 + offset)}${"\u{1F600}".repeat(200)}`;
+    const cut = boundedOutput(output);
+    assert.ok(Buffer.byteLength(cut) <= limit);
+    assert.equal(cut, Buffer.from(cut).toString("utf8"));
+    assert.doesNotThrow(() => JSON.parse(JSON.stringify({ output: cut })));
+    assert.match(cut, /\[truncated — \d+ more bytes; ask for a narrower range\]$/);
+    assert.ok(!cut.includes("\uFFFD"));
+  }
+  assert.equal(boundedOutput("short"), "short");
 });

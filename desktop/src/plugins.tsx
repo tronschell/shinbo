@@ -17,8 +17,8 @@ export function PluginsView({ busy, tools, onTools }: { busy: boolean; tools: To
   const [tab, setTab] = useState<"plugins" | "skills" | "servers">("plugins");
   const [catalog, setCatalog] = useState<PluginCatalog>(empty);
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("");
-  const [source, setSource] = useState("");
+  const [categoryPick, setCategory] = useState("");
+  const [sourcePick, setSource] = useState("");
   const [adding, setAdding] = useState(false);
   const [pending, setPending] = useState("");
   const [error, setError] = useState("");
@@ -44,6 +44,8 @@ export function PluginsView({ busy, tools, onTools }: { busy: boolean; tools: To
   }, []);
 
   const categories = pluginCategories(catalog);
+  const category = categories.includes(categoryPick) ? categoryPick : "";
+  const source = catalog.marketplaces.some((entry) => entry.id === sourcePick) ? sourcePick : "";
   const sources = catalog.marketplaces.filter((entry) => !source || entry.id === source);
   const installedById = new Map(catalog.installed.map((entry) => [entry.id, entry]));
   const review = catalog.installed.find((entry) => entry.id === reviewing);
@@ -52,7 +54,7 @@ export function PluginsView({ busy, tools, onTools }: { busy: boolean; tools: To
     plugins: marketplace.plugins.filter((plugin) => (!category || plugin.category === category) && matchesPluginQuery(plugin, query)),
   }));
   const matched = listings.reduce((sum, listing) => sum + listing.plugins.length, 0);
-  const working = busy || !!pending;
+  const working = busy || loading || !!pending;
 
   return <section className="plugins-view">
     <header>

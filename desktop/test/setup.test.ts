@@ -39,10 +39,10 @@ test("readiness is answered by writing, so a vault Shinbo cannot write reads as 
   assert.equal(vaultReady(null), true, "nothing is denied before a vault is chosen");
 });
 
-test("readiness never conjures a knowledge folder the user has deleted", () => {
+test("readiness recreates a deleted knowledge folder inside a vault that is still there", () => {
   const root = path.join(workspace(), "Second Brain");
   mkdirSync(root, { recursive: true });
   const vault: VaultChoice = { root, folder: DEFAULT_VAULT_FOLDER, kind: "folder", name: "Second Brain" };
-  assert.equal(vaultReady(vault), false);
-  assert.deepEqual(readdirSync(root), []);
+  assert.equal(vaultReady(vault), true);
+  assert.deepEqual(readdirSync(root), [DEFAULT_VAULT_FOLDER]);
 });

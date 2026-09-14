@@ -77,7 +77,7 @@ pub struct ScheduledJob {
 }
 
 pub const MAX_SCHEDULED_SOURCE_DOMAINS: usize = 32;
-pub const PERMISSION_MODES: [&str; 3] = ["ask", "acceptEdits", "full"];
+pub const PERMISSION_MODES: [&str; 4] = ["ask", "acceptEdits", "auto", "full"];
 pub const MAX_SCHEDULED_MODEL_LEN: usize = 128;
 pub const MAX_WORKFLOW_NODE_BYTES: usize = 32 * 1024;
 pub const MAX_WORKFLOW_OUTPUT_BYTES: usize = 16 * 1024;
@@ -130,7 +130,7 @@ impl ScheduledJob {
         validate_text("scheduled job title", &title, true)?;
         validate_text("scheduled job prompt", &prompt, true)?;
         validate_text("scheduled job nodes", &nodes, false)?;
-        if title.len() > 128 || prompt.len() > 8 * 1024 {
+        if title.chars().count() > 128 || prompt.len() > 8 * 1024 {
             return Err(ValidationError::new("scheduled job text is too long"));
         }
         if nodes.len() > MAX_WORKFLOW_NODE_BYTES {
@@ -651,7 +651,11 @@ impl ScheduledJobStore {
                 Err(ScheduledJobStoreError::Malformed(path, reason)) => {
                     listing.malformed.push((path, reason))
                 }
-                Err(error) => return Err(error),
+                Err(ScheduledJobStoreError::Io(error))
+                    if error.kind() == io::ErrorKind::NotFound => {}
+                Err(ScheduledJobStoreError::Io(error)) => {
+                    listing.malformed.push((path, error.to_string()))
+                }
             }
         }
         let present: HashSet<_> = listing.jobs.iter().map(|job| &job.id).collect();
@@ -793,6 +797,22 @@ mod tests {
         store.delete(&saved.id).unwrap();
         assert!(store.parsed.borrow().is_empty());
         assert!(store.list().unwrap().jobs.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_unreadable_job_file_is_skipped_like_a_malformed_one() {
+        let root =
+            std::env::temp_dir().join(format!("shinbo-unreadable-job-{}", std::process::id()));
+        let store = ScheduledJobStore::new(root.clone());
+        let healthy = job("manual");
+        store.save(&healthy).unwrap();
+        let unreadable = job("manual");
+        fs::create_dir_all(store.path_for(&unreadable.id)).unwrap();
+        let listing = store.list().unwrap();
+        assert_eq!(listing.jobs, vec![healthy]);
+        assert_eq!(listing.malformed.len(), 1);
+        assert_eq!(listing.malformed[0].0, store.path_for(&unreadable.id));
         fs::remove_dir_all(root).unwrap();
     }
 

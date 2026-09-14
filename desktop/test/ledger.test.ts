@@ -70,7 +70,7 @@ test("the harness prefix is named category by category, and never invented", () 
   const named = buildLedger(thread(1), [], 200_000, [], NO_EXPERIMENTS, 0, BREAKDOWN);
   assert.deepEqual(
     named.rows.filter((row) => row.kind !== "messages").map((row) => [row.kind, row.label, row.chars]),
-    [["system", "System prompt", 4_000], ["tools", "System tools", 2_000], ["skills", "Skills", 1_000], ["memory", "Memory files", 1_000]],
+    [["system", "System prompt", 4_000], ["tools", "System tools", 2_000], ["skills", "Skills", 1_000], ["memory", "Project context", 1_000]],
     "a workspace with no MCP server gets no MCP row rather than a zero one",
   );
   assert.deepEqual([...named.rows].sort((a, b) => b.chars - a.chars), named.rows, "the ledger is ordered biggest first, whatever a segment is");
@@ -93,7 +93,7 @@ test("every row says which list it drills into", () => {
     ledger.rows.map((row) => [row.label, row.source]).sort(),
     [
       ["2 messages", "messages"],
-      ["Memory files", "memory"],
+      ["Project context", "memory"],
       ["Skills", "skills"],
       ["System prompt", "prompt"],
       ["System tools", "tools"],

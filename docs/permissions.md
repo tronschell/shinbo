@@ -53,15 +53,22 @@ its implementation asks for the resolved app rather than each individual call.
 | `secret` | ask | ask | verifier | auto |
 | `install_mcp` | ask | ask | verifier | auto |
 | `workflow` | ask | ask | verifier | auto |
-| `artifact` | auto | auto | auto | auto |
-| `component` | auto | auto | auto | auto |
+| `artifact` | ask | ask | verifier | auto |
+| `component` | ask | ask | verifier | auto |
 | `visualize` | auto | auto | auto | auto |
 
-Seven tools use the ordinary gate: `browser`, `cli`, `run_tool`, `secret`,
+Six tools use the ordinary gate: `browser`, `cli`, `run_tool`, `secret`,
 `install_mcp`, `workflow`. `computer` requires a human app grant;
 its `list_apps` action returns only running-app metadata without that grant.
 
-Creating a component uses its ordinary tool gate, but sending a widget request
+`artifact` and `component` gate only the calls that mount model-written code
+into the app renderer, where it runs with the full `window.shinbo` bridge:
+`component` create and rewrite, and an `artifact` write that sets a `surface`
+or touches an artifact already mounted in one. Listing, reading, plain
+document writes and `surface: "none"` stay `auto`; the question is asked
+before the module is saved, so nothing is mounted on a refusal.
+
+Creating a component asks through that gate, but sending a widget request
 with credentials requires a separate native approval of the exact request
 template in every mode. This is not approval of all future widget requests.
 See [components.md](components.md).
@@ -85,16 +92,21 @@ small — a 2.6B on a free route by default — configured in Settings → Model
 its rules in `defaultVerifierSystem` and `PROHIBITED`
 ([settings.ts](../desktop/shared/settings.ts)).
 
+With no verifier model set, `review()` returns nothing and `auto` asks you for
+every gated call, exactly like `ask`. Otherwise `screen()` runs the command
+against the prohibited list first, without a model call; a hit is a block. Only
+what passes that goes to the model.
+
 It is shown the thread title, what the user asked, what the agent is doing, the
 tool, the same summary a human would have seen, and the exact arguments
 (`verifierPrompt`). Ceilings: `VERIFIER_TIMEOUT` 20 s, `VERIFIER_MAX_TOKENS` 700,
-`MAX_ATTEMPTS` 3, `MAX_DETAIL_CHARS` 2 000. A normal OpenAI-shaped completion at
+`MAX_DETAIL_CHARS` 2 000, one attempt. A normal OpenAI-shaped completion at
 `temperature: 0`, `stream: false`; an empty `content` falls back to
 `message.reasoning`, which is where a reasoning model on a free route leaves it.
 
-`parseVerdict` strips `<think>` blocks, then takes a JSON object keyed on any of
-`allow`, `allowed`, `safe`, `approve`, `approved`, `verdict`, `decision`,
-`answer` — failing that, a bare leading word. `review()` never throws.
+`parseVerdict` strips `<think>` blocks, then takes a JSON `allow`, `allowed`,
+`safe`, `approve` or `approved` boolean — failing that, a bare leading word.
+`review()` never throws.
 
 **A refusal is not a veto.** In `AgentRuntime.question`
 ([agent-loop.ts](../desktop/main/agent-loop.ts)) only `verdict.allow` runs the
@@ -162,9 +174,9 @@ characters on both the Shinbo and harness paths. `install_mcp` renders its whole
 The dialog is `PermissionPrompt` ([agents.tsx](../desktop/src/agents.tsx)): a real
 `<dialog>`, one question at a time, **Don't** and **Allow once**. Computer prompts
 show the resolved app identity and **Allow for this turn**, with **Don't** focused
-by default. Escape answers `false`. If neither the main window nor a paired
-permission channel can receive the question, it is denied immediately.
-`MAX_ASK_MS` is 10 minutes. `AgentRuntime.approval` answers `allowed`, `denied` or
+by default. Escape answers `false`. If no paired phone can receive the question
+and the main window is closed, it is opened so the question can be shown;
+unanswered, the question lapses after `MAX_ASK_MS`, 10 minutes. `AgentRuntime.approval` answers `allowed`, `denied` or
 `lapsed`: only the 10-minute expiry lapses, while cancellation, ended or replaced
 turns and **Don't** all deny. `question` is the same call flattened to a boolean
 for the tools that only need to know whether they may run. A late answer cannot
@@ -183,17 +195,19 @@ looking at the payload, ids are `randomUUID()` and are deleted on first settle.
 
 ## Unattended runs carry their saved mode
 
-A scheduled task stores its own `permissionMode`. `workflow`
-offers three values, not four — `auto` needs a verifier the unattended path does
-not run:
+A scheduled task stores its own `permissionMode`. `workflow` offers the same
+four values as the composer; an unattended `auto` run asks the verifier exactly
+as an interactive thread does, and falls back to the dialog when it blocks or
+cannot answer:
 
 ```
-enum: ["ask", "acceptEdits", "full"]
+enum: ["ask", "acceptEdits", "auto", "full"]
 ```
 
 Normalised through `asPermissionMode` on save and again at execution, which falls
-back to `ask`. Nobody answers a question there, so `ask` declines every gated
-call. See [jobs.md](jobs.md).
+back to `ask`. A gated call under `ask` still raises the dialog in the main
+window, opening it if needed, and lapses as a refusal after 10 minutes.
+See [jobs.md](jobs.md).
 
 Saving Full access does not preapprove computer use. Unattended work cannot read
 or control an app unless a user explicitly answers that turn's app prompt.

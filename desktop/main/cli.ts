@@ -6,8 +6,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { CLI_HARNESSES, cliHarness, terminalText, type CliRun, cliInputIds, type CliInput, type CliOptions, validateCliOptions } from "../shared/cli";
 import { validateCatalogEffort } from "./cli-models";
+import { withoutCredentials } from "./credentials";
 import { cliPlan } from "../shared/settings";
-import { findExecutable, isWindows, shellArguments, shellBinary, spawnCommand, terminateProcessTree, windowsShimTarget } from "./platform";
+import { findExecutable, isWindows, loginShellPath, spawnCommand, terminateProcessTree, windowsShimTarget } from "./platform";
 
 const MAX_OUTPUT = 256 * 1024;
 const MAX_RUNS = 12;
@@ -44,8 +45,7 @@ export class CliRuns {
   private counter = 0;
   private notifyAt = 0;
   private pending?: NodeJS.Timeout;
-  private paths = new Map<string, string | null>();
-  private loginPath?: Promise<string>;
+  private paths = new Map<string, string>();
   private cachedPath?: string;
 
   constructor(private readonly onChange: () => void) {}
@@ -121,6 +121,7 @@ export class CliRuns {
     if (!binary) throw new Error(`${harness.label} is no longer on the PATH.`);
     const selected = validateCliOptions(entry.cli, { model: entry.model, effort: entry.effort, ...options });
     await validateCatalogEffort(entry.cli, selected);
+    if (this.runs.get(id) !== entry || this.get(id)?.status === "running") throw new Error(`${id} changed while its turn was being prepared. Read it until it goes idle, then send again.`);
     const handoff = this.handoff(entry.threadId, prompt, fromRuns, id);
     this.available(entry.cwd);
     if (!harness.ownsSession && [...this.runs.values()].reverse().find((run) => run.cli === entry.cli && run.cwd === entry.cwd)?.id !== id) throw new Error("This CLI resumes the newest session in this folder. Continue its newest run instead.");
@@ -203,24 +204,38 @@ export class CliRuns {
     this.append(entry, `\n$ ${[binary.split(/[\\/]/).pop(), ...argv].join(" ")}\n`);
     const shim = await windowsShimTarget(binary);
     return new Promise((resolve) => {
-      const child = spawnCommand(shim?.command ?? binary, shim ? [...shim.args, ...argv] : argv, {
-        cwd: entry.cwd,
-        env: { ...process.env, PATH: this.cachedPath ?? process.env.PATH ?? "", ...(entry.cli === "claude" && entry.effort ? { CLAUDE_CODE_EFFORT_LEVEL: entry.effort } : {}) },
-        stdio: ["ignore", "pipe", "pipe"],
-        detached: !isWindows,
-        windowsHide: true,
-      });
+      let child: ChildProcess;
+      try {
+        child = spawnCommand(shim?.command ?? binary, shim ? [...shim.args, ...argv] : argv, {
+          cwd: entry.cwd,
+          env: { ...withoutCredentials(process.env), PATH: this.cachedPath ?? process.env.PATH ?? "", ...(entry.cli === "claude" && entry.effort ? { CLAUDE_CODE_EFFORT_LEVEL: entry.effort } : {}) },
+          stdio: ["ignore", "pipe", "pipe"],
+          detached: !isWindows,
+          windowsHide: true,
+        });
+      } catch (error) {
+        entry.status = "failed";
+        entry.endedAt = Date.now();
+        this.append(entry, `\n[could not start: ${error instanceof Error ? error.message : String(error)}]\n`);
+        this.onChange();
+        resolve();
+        return;
+      }
       entry.child = child;
-      const collect = (data: Buffer) => this.append(entry, String(data));
+      const deadline = setTimeout(() => {
+        this.append(entry, "\n[stopped: no output for 30 minutes]\n");
+        this.stop(entry.id);
+      }, MAX_TURN_MS);
+      deadline.unref();
       child.stdout?.setEncoding("utf8");
       child.stdout?.on("data", (text: string) => {
         entry.resultTruncated ||= entry.result.length + text.length > MAX_OUTPUT;
         entry.result = (entry.result + text).slice(-MAX_OUTPUT);
         this.append(entry, text);
+        deadline.refresh();
       });
-      child.stderr?.on("data", collect);
-      const deadline = setTimeout(() => this.stop(entry.id), MAX_TURN_MS);
-      deadline.unref();
+      child.stderr?.setEncoding("utf8");
+      child.stderr?.on("data", (text: string) => { this.append(entry, text); deadline.refresh(); });
       const finish = (note: string, code: number | null, failed: boolean) => {
         if (entry.child !== child || entry.status !== "running") return;
         clearTimeout(deadline);
@@ -285,28 +300,12 @@ export class CliRuns {
   private async resolve(bin: string): Promise<string | null> {
     const known = this.paths.get(bin);
     if (known !== undefined) return known;
-    this.cachedPath ??= await this.path();
+    this.cachedPath ??= await loginShellPath();
     const resolved = await findExecutable(bin, this.cachedPath);
-    this.paths.set(bin, resolved);
+    if (resolved) this.paths.set(bin, resolved);
+    else this.paths.delete(bin);
     return resolved;
   }
-
-  private path(): Promise<string> {
-    this.loginPath ??= isWindows ? Promise.resolve(process.env.PATH || "") : shell("printf %s \"$PATH\"").then((value) => value || process.env.PATH || "");
-    return this.loginPath;
-  }
-}
-
-function shell(command: string): Promise<string> {
-  return new Promise((resolve) => {
-    const child = spawn(shellBinary(), shellArguments(command, false), { stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
-    let out = "";
-    child.stdout.on("data", (data: Buffer) => { if (out.length < 8192) out += String(data); });
-    const timer = setTimeout(() => { if (child.pid !== undefined) terminateProcessTree(child.pid, "SIGKILL", false); }, 5000);
-    timer.unref();
-    child.once("error", () => { clearTimeout(timer); resolve(""); });
-    child.once("close", () => { clearTimeout(timer); resolve(out.trim().split("\n")[0] ?? ""); });
-  });
 }
 
 function snapshot(entry: Entry): CliRun {

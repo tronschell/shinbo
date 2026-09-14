@@ -619,7 +619,7 @@ Read these before quoting a verdict at anyone.
   but not yet archived. Each is archived before it is prompted, and the sweep when
   this page next opens stops and archives whatever a crash or a mid-run reload left
   running. There is no delete on the host; archived threads are hard-deleted 30
-  days later by the snapshot sweep.
+  days later by the runtime's 30-second retention sweep.
 - **A sample whose trace header does not name the arm it was driven under is
   dropped**, rather than counted under the arm it was meant to have — and one
   dropped case-arm is enough to leave the whole run `stopped` with no verdict.
@@ -645,6 +645,6 @@ Read these before quoting a verdict at anyone.
   record made under a different title will not be offered there, and starting a
   new line by not finding an old one is a click away from being wrong. **Try it
   again** on the record itself, in Decided, always reaches the right line.
-- **Traces are capped.** A thread keeps 64 of them at 16 KB each, and an
+- **Traces are capped.** A thread keeps 64 of them at 1 MiB each, and an
   oversized trace loses its middle. A case whose turn is enormous is scored off
   what survived the clamp.

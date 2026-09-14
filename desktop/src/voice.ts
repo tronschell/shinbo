@@ -16,6 +16,7 @@ export function voiceSettings(settings: UserSettings): VoiceSettings {
 }
 
 const SAMPLE_RATE = 16_000;
+const MAX_DICTATION_MS = 6 * 60_000;
 
 function mono(buffer: AudioBuffer): Float32Array {
   if (buffer.numberOfChannels === 1) return buffer.getChannelData(0);
@@ -94,33 +95,15 @@ export function useDictation(settings: UserSettings, onText: (text: string) => v
   const recording = useRef<Recording | null>(null);
   const starting = useRef<object | null>(null);
   const processing = useRef<AbortController | null>(null);
-  const refresh = useCallback(() => window.shinbo.voiceStatus(voiceSettings(settings))
-    .catch(() => unknownVoiceStatus)
-    .then((next) => { setStatus(next); return next; }), [settings]);
+  const ceiling = useRef<number | undefined>(undefined);
+  const enabled = settings.transcriptionEnabled;
+  const voice = JSON.stringify(voiceSettings(settings));
+  const refresh = useCallback(() => (enabled ? window.shinbo.voiceStatus(JSON.parse(voice) as VoiceSettings).catch(() => unknownVoiceStatus) : Promise.resolve(unknownVoiceStatus))
+    .then((next) => { setStatus(next); return next; }), [enabled, voice]);
   useEffect(() => { void refresh(); }, [refresh]);
-  useEffect(() => () => { processing.current?.abort(); starting.current = null; recording.current?.cancel(); recording.current = null; }, []);
-  const start = useCallback(async () => {
-    if (starting.current || recording.current || processing.current || working) return false;
-    const attempt = {};
-    starting.current = attempt;
-    setError("");
-    try {
-      const active = await record();
-      if (starting.current !== attempt) { active.cancel(); return false; }
-      starting.current = null;
-      recording.current = active;
-      setListening(true);
-      return true;
-    } catch {
-      if (starting.current !== attempt) return false;
-      starting.current = null;
-      recording.current = null;
-      setError("Shinbo could not open the microphone. Grant it in Settings → Voice.");
-      void refresh();
-      return false;
-    }
-  }, [refresh, working]);
+  useEffect(() => () => { clearTimeout(ceiling.current); processing.current?.abort(); starting.current = null; recording.current?.cancel(); recording.current = null; }, []);
   const stop = useCallback(async () => {
+    clearTimeout(ceiling.current);
     starting.current = null;
     const active = recording.current;
     if (!active) return;
@@ -143,7 +126,29 @@ export function useDictation(settings: UserSettings, onText: (text: string) => v
       setWorking(false);
     }
   }, [onText, settings]);
-  const cancel = useCallback(() => { processing.current?.abort(); starting.current = null; recording.current?.cancel(); recording.current = null; setListening(false); }, []);
+  const start = useCallback(async () => {
+    if (starting.current || recording.current || processing.current || working) return false;
+    const attempt = {};
+    starting.current = attempt;
+    setError("");
+    try {
+      const active = await record();
+      if (starting.current !== attempt) { active.cancel(); return false; }
+      starting.current = null;
+      recording.current = active;
+      ceiling.current = window.setTimeout(() => { void stop(); }, MAX_DICTATION_MS);
+      setListening(true);
+      return true;
+    } catch {
+      if (starting.current !== attempt) return false;
+      starting.current = null;
+      recording.current = null;
+      setError("Shinbo could not open the microphone. Grant it in Settings → Voice.");
+      void refresh();
+      return false;
+    }
+  }, [refresh, stop, working]);
+  const cancel = useCallback(() => { clearTimeout(ceiling.current); processing.current?.abort(); starting.current = null; recording.current?.cancel(); recording.current = null; setListening(false); }, []);
   return {
     status, listening, working, error, setError, refresh, start, stop, cancel,
     ready: voiceReady(status, settings),

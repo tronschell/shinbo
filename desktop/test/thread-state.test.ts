@@ -67,7 +67,7 @@ test("agent tabs wait for their targeted transcript instead of showing a compact
 test("settled rich blocks are cached before the transient run is released", () => {
   const source = readFileSync(resolve(__dirname, "../../src/App.tsx"), "utf8");
   assert.match(source, /useMemo\(\(\) => \{ void run\.landed; return cachedBlocks\(thread\.id\); \}, \[thread\.id, run\.landed\]\)/);
-  assert.match(source, /rememberBlocks\(thread\.id, turns\);\s+settleRun\(thread\.id, thread\.messages, cachedBlocks\(thread\.id\)\);/);
+  assert.match(source, /rememberBlocks\(thread\.id, turns\);\s+settleRun\(thread\.id, thread\.messages, cachedBlocks\(thread\.id\), from\);/);
 });
 
 test("desktop refreshes summaries and keeps targeted reads read-only", () => {
@@ -75,7 +75,7 @@ test("desktop refreshes summaries and keeps targeted reads read-only", () => {
   const main = readFileSync(resolve(__dirname, "../../main/main.ts"), "utf8");
   assert.match(app, /const SNAPSHOT_REFRESH_MS = 60_000/);
   assert.match(app, /setInterval\(refreshVisible, SNAPSHOT_REFRESH_MS\)/);
-  assert.match(main, /if \(request\.method === "thread" \|\| request\.method === "readTrace"\) return this\.send\(request\);/);
+  assert.match(main, /if \(request\.method === "thread" \|\| request\.method === "readTrace" \|\| request\.method === "checkTurnCapacity"\) return this\.send\(request\);/);
   assert.match(main, /new Set\(\["snapshot", "threadSummaries", "thread", "listOpenRouterModels"\]\)/);
 });
 

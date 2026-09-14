@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { writeAtomicSync } from "./write-atomic";
+import { withoutCredentials } from "./credentials";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { BoundedLines } from "./ndjson";
@@ -20,6 +21,14 @@ const PROTOCOL_VERSION = 1;
 
 const MAX_TOOL_OUTPUT_BYTES = 64 * 1024;
 
+export const boundedOutput = (output: string) => {
+  const bytes = Buffer.byteLength(output);
+  if (bytes <= MAX_TOOL_OUTPUT_BYTES) return output;
+  const notice = `\n[truncated — ${bytes - MAX_TOOL_OUTPUT_BYTES} more bytes; ask for a narrower range]`;
+  const kept = Buffer.from(output).subarray(0, MAX_TOOL_OUTPUT_BYTES - Buffer.byteLength(notice)).toString("utf8");
+  return `${kept.replace(/\uFFFD$/, "")}${notice}`;
+};
+
 export const MAX_IDLE_MS = 30 * 60 * 1000;
 const MAX_STDERR_TAIL = 4 * 1024;
 const CLOSE_GRACE_MS = 2000;
@@ -32,7 +41,7 @@ export type TurnUsage = { inputTokens: number; outputTokens: number; cacheInputT
 
 const mediaType =(file: string) => `image/${path.extname(file).slice(1).toLowerCase().replace("jpg", "jpeg")}`;
 
-export type TurnExtras = { skillContext?: string; toolHints?: Record<string, string>; preselect?: string[]; stepLimit?: number; contextWindow?: number; effort?: ThinkingRoute; experiments?: HarnessExperiments; semanticGrep?: string; imageInput?: boolean; compact?: boolean; handoff?: string; images?: string[]; continueRecovery?: boolean };
+export type TurnExtras = { skillContext?: string; toolHints?: Record<string, string>; preselect?: string[]; stepLimit?: number; contextWindow?: number; effort?: ThinkingRoute; experiments?: HarnessExperiments; semanticGrep?: string; imageInput?: boolean; compact?: boolean; handoff?: string; images?: string[]; continueRecovery?: boolean; prepare?: () => void };
 
 export type ThinkingRoute = { level: string; published: string[] };
 
@@ -417,15 +426,26 @@ export const RESTARTED_BY_YOU = "Harness restarted";
 const FAILURE_EXPLANATIONS: Record<string, string> = {
   [CLOSED_BY_SHINBO]: "Shinbo was closed while it was in flight. Send Continue to pick it back up",
   [RESTARTED_BY_YOU]: "You restarted the agent while this run was in flight. Send Continue to pick it back up",
-  RequestTooLarge: "the conversation outgrew what this model accepts, even after older tool results were pruned. Shinbo will compact it on your next message; send Continue",
+  RequestTooLarge: "the conversation outgrew what this model accepts, even after older tool results were pruned, so Shinbo compacted it. Send Continue to pick up where it left off",
 };
+
+export const MISSING_CREDENTIAL = "no model is signed in. Add a provider key under Settings → Models, then send Continue";
 
 export function explainFailure(detail: string): string {
   const known = FAILURE_EXPLANATIONS[detail];
   if (known) return known;
+  if (detail.includes("has no provider credential")) return MISSING_CREDENTIAL;
   if (!/^[A-Z][A-Za-z0-9]*$/.test(detail)) return detail;
   return `${detail.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase()} — the agent gave up on this turn. Send Continue to pick it back up`;
 }
+
+const UNRESUMABLE_MESSAGES = new Set(["Session not found", "Invalid session ID", "Session is corrupt"]);
+
+const unresumable = (error: unknown) => {
+  if (!(error instanceof Error)) return false;
+  const code = (error as Error & { code?: unknown }).code;
+  return code === -32602 && UNRESUMABLE_MESSAGES.has(error.message);
+};
 
 export class Harness {
   private child: ChildProcessWithoutNullStreams | undefined;
@@ -453,6 +473,7 @@ export class Harness {
   readonly paused = new Map<string, { message: string; cause?: string; requiredAction?: string }>();
   private readonly permissionChecks = new Set<{ threadId: string; childId?: string; cancelled: boolean }>();
   private failure: Error | undefined;
+  private readonly deliveredTurns = new Set<string>();
 
   private heardAt = 0;
 
@@ -460,6 +481,10 @@ export class Harness {
 
   get running() {
     return this.child !== undefined && this.failure === undefined;
+  }
+
+  delivered(threadId: string) {
+    return this.deliveredTurns.has(threadId);
   }
 
   get busy() {
@@ -489,6 +514,7 @@ export class Harness {
   }
 
   async start() {
+    if (this.failure) throw this.failure;
     if (this.child) return;
     if (!exists(this.deps.cwd)) {
       const gone = new Error(missingFolderMessage(path.basename(this.deps.cwd) || this.deps.cwd, this.deps.cwd));
@@ -507,7 +533,7 @@ export class Harness {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: process.platform === "win32",
       env: {
-        ...process.env,
+        ...withoutCredentials(process.env),
         HOME: this.deps.home,
         ...(process.platform === "win32" ? {
           USERPROFILE: this.deps.home,
@@ -526,6 +552,7 @@ export class Harness {
         for (const line of this.lines.push(data)) this.receive(line);
       } catch (error) {
         this.fail(error as Error);
+        void this.close();
       }
     });
     child.stderr.on("data", (data) => {
@@ -555,6 +582,7 @@ export class Harness {
     if (cwd !== this.deps.cwd) throw new Error(`Harness is bound to ${this.deps.cwd}, not ${cwd}`);
     this.cancelled.delete(threadId);
     this.paused.delete(threadId);
+    this.deliveredTurns.delete(threadId);
     if (this.busy) this.phase(threadId, "waiting for the turn ahead of this one");
 
     const turn = this.turns.catch(() => undefined).then(() => this.runPrompt(threadId, cwd, text, mode, model, extra));
@@ -612,6 +640,7 @@ export class Harness {
       this.phase(threadId, "compacting the context");
       await this.request("session/compact", { sessionId, ...(extra.handoff ? { handoff: extra.handoff } : {}) }).catch((error: unknown) => console.error("Shinbo: the harness would not compact", error));
     }
+    extra.prepare?.();
     const prompt = extra.continueRecovery ? [] : [
       { type: "text", text },
       ...(extra.skillContext ? [{ type: "text", text: extra.skillContext }] : []),
@@ -623,6 +652,7 @@ export class Harness {
     await this.lifecycle("UserPromptSubmit", threadId, sessionId, mode, model, { prompt: text });
     if (this.cancelled.has(threadId)) throw new Error("This turn was stopped before it reached the model.");
     this.phase(threadId, "waiting for the model");
+    this.deliveredTurns.add(threadId);
     const result = (await this.request("session/prompt", {
       sessionId,
       prompt,
@@ -739,26 +769,24 @@ export class Harness {
   private async activeSession(threadId: string, cwd: string) {
     const sessionId = await this.session(threadId, cwd);
     if (this.active === sessionId && !this.rebind) return sessionId;
+    this.threadsBySession.delete(sessionId);
     try {
       await this.request("session/resume", { sessionId, mcpServers: await this.servers(threadId) });
+      this.threadsBySession.set(sessionId, threadId);
       this.active = sessionId;
       this.rebind = false;
       return sessionId;
     } catch (error) {
-      if (!(error instanceof Error) || error.message !== "Session not found" || (error as Error & { code?: number }).code !== -32602) throw error;
+      if (!unresumable(error)) throw error;
       console.error("Shinbo: could not resume the harness session for this thread, starting a new one", error);
       this.forgetSession(threadId);
-      this.threadsBySession.delete(sessionId);
       return await this.session(threadId, cwd);
     }
   }
 
   private async session(threadId: string, cwd: string) {
     const existing = this.sessions.get(threadId);
-    if (existing) {
-      this.threadsBySession.set(existing, threadId);
-      return existing;
-    }
+    if (existing) return existing;
     const result = await this.request("session/new", { cwd, mcpServers: await this.servers(threadId) });
     const sessionId = (result as { sessionId?: unknown } | null)?.sessionId;
     if (typeof sessionId !== "string" || sessionId.length === 0) throw new Error("Harness returned no session id");
@@ -896,7 +924,8 @@ export class Harness {
   private childThread(parentThreadId: string, child: ChildTag): Promise<string> {
     const key = `${parentThreadId}/${child.id}`;
     const known = this.children.get(key);
-    if (known) return known.thread;
+    if (known && (!known.ended || child.ended)) return known.thread;
+    this.cancelledChildren.delete(child.id);
     const created = this.deps.onChildStart({ parentThreadId, childId: child.id, title: child.title });
     this.children.set(key, { thread: created, ended: false });
     return created;
@@ -1058,7 +1087,7 @@ export class Harness {
       if (name === "_model_context") {
         const { model, title, skills } = args;
         if (!this.deps.onModelContext || typeof model !== "string" || !model.trim() || model.length > 256 || /[\s\0]/.test(model) || typeof childId !== "string" || args.childId !== childId || typeof skills !== "string" || skills.length > 128 * 1024 || this.cancelled.has(threadId)) throw new Error("Invalid model context request");
-        if (this.children.get(`${threadId}/${childId}`)?.ended || this.cancelledChildren.has(childId)) throw new Error("This subagent is no longer running.");
+        if (this.children.get(`${threadId}/${childId}`)?.ended === false && this.cancelledChildren.has(childId)) throw new Error("This subagent is no longer running.");
         const childThreadId = await this.childThread(threadId, { id: childId, title: typeof title === "string" ? title.slice(0, 120) : "Subagent", ended: false });
         if (this.cancelled.has(threadId) || this.children.get(`${threadId}/${childId}`)?.ended || this.cancelledChildren.has(childId)) throw new Error("This subagent is no longer running.");
         output = JSON.stringify(this.deps.onModelContext(threadId, childThreadId, model, skills));
@@ -1081,7 +1110,7 @@ export class Harness {
       output = error instanceof Error ? error.message : String(error);
       isError = true;
     }
-    this.send({ jsonrpc: "2.0", id, result: { output: output.slice(0, MAX_TOOL_OUTPUT_BYTES), isError } });
+    this.send({ jsonrpc: "2.0", id, result: { output: boundedOutput(output), isError } });
   }
 
   private fail(error: Error) {

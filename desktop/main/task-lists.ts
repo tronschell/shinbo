@@ -16,11 +16,18 @@ function taskListPath(userData: string, id: unknown): string {
   return resolved;
 }
 
+const parsed = new Map<string, { stamp: string; list: TaskList }>();
+
 export async function readTaskList(userData: string, id: string): Promise<TaskList> {
   const file = taskListPath(userData, id);
   const information = await stat(file).catch(() => undefined);
   if (!information?.isFile() || information.size > MAX_TASK_LIST_BYTES) throw new Error(`There is no task list called "${id}".`);
-  return parseTaskList(id, await readFile(file, "utf8"), information.mtime.toISOString());
+  const stamp = `${information.mtimeMs}:${information.size}`;
+  const held = parsed.get(file);
+  if (held?.stamp === stamp) return held.list;
+  const list = parseTaskList(id, await readFile(file, "utf8"), information.mtime.toISOString());
+  parsed.set(file, { stamp, list });
+  return list;
 }
 
 export async function listTaskLists(userData: string): Promise<TaskList[]> {
@@ -58,11 +65,13 @@ export async function saveTaskList(userData: string, list: Omit<TaskList, "id" |
   if (Buffer.byteLength(markdown, "utf8") > MAX_TASK_LIST_BYTES) throw new Error(`That task list is larger than ${Math.round(MAX_TASK_LIST_BYTES / 1024)}K.`);
   await mkdir(root, { recursive: true, mode: 0o700 });
   await writeAtomic(taskListPath(userData, id), markdown);
+  parsed.delete(taskListPath(userData, id));
   return saved;
 }
 
 export async function deleteTaskList(userData: string, id: string): Promise<void> {
   await rm(taskListPath(userData, id), { force: true });
+  parsed.delete(taskListPath(userData, id));
 }
 
 let queue: Promise<unknown> = Promise.resolve();

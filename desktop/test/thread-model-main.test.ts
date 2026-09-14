@@ -20,7 +20,7 @@ function findGetter(node: ts.Node) {
 }
 findGetter(source);
 const program = ts.transpileModule([
-  ...["threadContextsFile", "loadThreadContexts", "rememberThreadContext", "threadContext", "threadModel", "threadEffort", "threadContextRequest", "keepThreadContext", "subagentRoute", "thinkingLevel", "selectModel", "answerRequest", "runTurn", "driveTurn", "runScheduledWorkflow"].map(lift),
+  ...["threadContextsFile", "loadThreadContexts", "rememberThreadContext", "writeThreadContexts", "threadContext", "threadModel", "threadEffort", "threadContextRequest", "keepThreadContext", "subagentRoute", "thinkingLevel", "selectModel", "answerRequest", "runTurn", "driveTurn", "runScheduledWorkflow"].map(lift),
   `${getter};`,
   "({ loadThreadContexts, rememberThreadContext, threadContextRequest, keepThreadContext, selectModel, answerRequest, runTurn, runScheduledWorkflow });",
 ].join("\n"), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -64,7 +64,7 @@ function setup(t: test.TestContext) {
     runOnHarness: async (_client: unknown, _cwd: string, turn: Turn) => turn,
     changed: () => undefined, refuseBenchTurn: () => undefined, benchThread: () => undefined,
     threadNames: new Map(), runDrivenTurn: async (turn: Turn): Promise<unknown> => turn,
-    parseWorkflow, parseVariables, runWorkflow, packVariables,
+    parseWorkflow, parseVariables, runWorkflow, packVariables, validateWorkflowScripts: async () => undefined,
     resolveMentions: async (content: string) => ({ content }), lastAssistantMessage: () => "done",
   };
   const api = runInNewContext(program, state) as {
@@ -166,6 +166,17 @@ test("visiting a thread or editing folders preserves its model and effort", asyn
   api.keepThreadContext(threadId, context);
   assert.deepEqual(get("workflow"), { model: "openrouter:beta", effort: "low" });
   assert.throws(() => api.threadContextRequest({ threadId: "workflow", model: 42 }));
+});
+
+test("a context set with the workspace model but no effort runs at the workspace effort", async (t) => {
+  const { api, get } = setup(t);
+  const { threadId, ...context } = api.threadContextRequest({ threadId: "quick", folderIds: [], mode: "auto", model: "openrouter:alpha" });
+  api.keepThreadContext(threadId, context);
+  assert.deepEqual(get("quick"), { model: "openrouter:alpha", effort: "high" });
+  assert.equal((await api.runTurn({ threadId: "quick" })).effort, "high");
+  const other = api.threadContextRequest({ threadId: "quick", folderIds: [], mode: "auto", model: "openrouter:beta" });
+  api.keepThreadContext(other.threadId, other);
+  assert.deepEqual(get("quick"), { model: "openrouter:beta", effort: "" });
 });
 
 test("a refused overlapping turn cannot replace the saved selection", async (t) => {

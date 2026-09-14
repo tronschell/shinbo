@@ -53,6 +53,7 @@ test("saving Quick Ask behavior preserves unfinished action edits and saving act
     let stored = { quickActions: ["Saved action"], notchConcurrency: "separate", notchModel: "", providers: [], selectedModel: "workspace" };
     let settings = { ...stored, quickActions: ["Unfinished action"], cursorOrbs: ["0"], cursorOrbsEnabled: true, notchCommandsEnabled: false, notchGap: 180 };
     const readSettings = () => stored;
+    const loadSettings = () => stored;
     const persistSettings = value => stored = value;
     const setSettings = value => settings = typeof value === "function" ? value(settings) : value;
     const setSaved = () => {};

@@ -4,13 +4,14 @@ import path from "node:path";
 import { chatCompletion, type ChatMessage } from "./verifier";
 import { defaultTagger, type TaggerSettings } from "../shared/settings";
 import { fileState, parsePullRequest, parseHistory, parseStatus, parseWorktrees, validateGitArgs, type GitPullRequest, type GitCommandResult, type GitFileEntry, type GitHistory, type GitReady, type GitSnapshot, type WorktreeEntry } from "../shared/git";
-import { findExecutable, isWindows, samePath } from "./platform";
+import { findExecutable, isWindows, realPath, samePath, shellArguments, shellBinary } from "./platform";
 
 const MAX_DIFF_BYTES = 512 * 1024;
 const MAX_BUFFER_BYTES = 16 * 1024 * 1024;
 const MAX_UNTRACKED = 20;
 const MAX_BRANCHES = 200;
 const TIMEOUT_MS = 10_000;
+const SNAPSHOT_GAP_MS = 1_500;
 
 export const MAX_HISTORY = 200;
 export const DEFAULT_HISTORY = 60;
@@ -36,6 +37,14 @@ export function gitFailure(error: unknown): string {
 type Attempt = { error: unknown; stdout: string; stderr: string };
 
 let gitExecutable: { pathValue: string; value: Promise<string | null> } | undefined;
+let loginPath: Promise<string> | undefined;
+
+function shellPath(): Promise<string> {
+  loginPath ??= isWindows ? Promise.resolve(process.env.PATH || "") : new Promise((resolve) => {
+    execFile(shellBinary(), shellArguments('printf %s "$PATH"', false), { timeout: 5_000, maxBuffer: 8_192 }, (error, stdout) => resolve((error ? "" : stdout.trim().split("\n")[0]) || process.env.PATH || ""));
+  });
+  return loginPath;
+}
 
 async function exec(cwd: string, args: string[], timeout = TIMEOUT_MS, maxBuffer = MAX_BUFFER_BYTES): Promise<Attempt> {
   const pathValue = process.env.PATH || "";
@@ -44,6 +53,7 @@ async function exec(cwd: string, args: string[], timeout = TIMEOUT_MS, maxBuffer
   if (!binary) return { error: Object.assign(new Error("spawn git ENOENT"), { code: "ENOENT" }), stdout: "", stderr: "" };
   const gitEnv = {
     ...process.env,
+    PATH: await shellPath(),
     GIT_TERMINAL_PROMPT: "0",
     GCM_INTERACTIVE: "Never",
     GIT_ASKPASS: "",
@@ -61,13 +71,16 @@ async function git(cwd: string, args: string[]): Promise<string> {
 }
 
 export async function gitReady(cwd: string): Promise<GitReady> {
-  const { error } = await exec(cwd, ["rev-parse", "--is-inside-work-tree"]);
+  const { error, stderr } = await exec(cwd, ["rev-parse", "--is-inside-work-tree"]);
   if (!error) return "ready";
-  return (error as NodeJS.ErrnoException).code === "ENOENT" && existsSync(cwd) ? "no-git" : "no-repo";
+  if (!existsSync(cwd) || /not a git repository/i.test(stderr)) return "no-repo";
+  if ((error as NodeJS.ErrnoException).code === "ENOENT" || /xcode-select/.test(stderr)) return "no-git";
+  return { error: gitFailure(error) };
 }
 
 export async function initRepo(cwd: string): Promise<void> {
   await git(cwd, ["init"]);
+  snapshots.clear();
 }
 
 const pullRequests = new Map<string, { at: number; value: Promise<GitPullRequest | undefined> }>();
@@ -79,7 +92,7 @@ async function branchPullRequest(cwd: string, branch: string): Promise<GitPullRe
   const cached = pullRequests.get(key);
   if (cached) return cached.value;
   const value = (async () => {
-    const binary = await findExecutable(isWindows ? "gh.exe" : "gh", process.env.PATH || "");
+    const binary = await findExecutable(isWindows ? "gh.exe" : "gh", await shellPath());
     if (!binary) return;
     return new Promise<GitPullRequest | undefined>((resolve) => {
       execFile(binary, ["pr", "view", branch, "--json", "number,state,isDraft,mergeStateStatus"],
@@ -91,17 +104,22 @@ async function branchPullRequest(cwd: string, branch: string): Promise<GitPullRe
   return value;
 }
 
-const snapshots = new Map<string, Promise<GitSnapshot | null>>();
+const snapshots = new Map<string, { at: number; done: boolean; value: Promise<GitSnapshot | null> }>();
+
+function nextSnapshot(cwd: string, includeDiff: boolean): Promise<GitSnapshot | null> {
+  const key = JSON.stringify([cwd, includeDiff]);
+  const last = snapshots.get(key);
+  if (last && !last.done) return last.value;
+  const now = Date.now();
+  const wait = last ? Math.max(0, last.at + SNAPSHOT_GAP_MS - now) : 0;
+  const entry = { at: now + wait, done: false, value: new Promise<void>((resolve) => setTimeout(resolve, wait)).then(() => readGitSnapshot(cwd, includeDiff)) };
+  void entry.value.finally(() => { entry.done = true; }).catch(() => undefined);
+  snapshots.set(key, entry);
+  return entry.value;
+}
 
 export async function gitSnapshot(cwd: string, includePullRequest = false, includeDiff = true): Promise<GitSnapshot | null> {
-  const key = JSON.stringify([cwd, includeDiff]);
-  let reading = snapshots.get(key);
-  if (!reading) {
-    reading = readGitSnapshot(cwd, includeDiff);
-    snapshots.set(key, reading);
-    void reading.finally(() => { if (snapshots.get(key) === reading) snapshots.delete(key); }).catch(() => undefined);
-  }
-  const snapshot = await reading;
+  const snapshot = await nextSnapshot(cwd, includeDiff);
   if (!snapshot || !includePullRequest || !snapshot.remotes.length || snapshot.branch === "HEAD") return snapshot;
   const pullRequest = await branchPullRequest(cwd, snapshot.branch);
   return pullRequest ? { ...snapshot, pullRequest } : snapshot;
@@ -111,7 +129,7 @@ async function readGitDiff(cwd: string): Promise<{ diff: string; truncated: bool
   const limited = (args: string[]) => exec(cwd, args, TIMEOUT_MS, MAX_DIFF_BYTES + 1);
   const outputLimit = (error: unknown) => (error as NodeJS.ErrnoException | null)?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
   const [tracked, untracked] = await Promise.all([
-    limited(["diff", "--no-color", "HEAD"]).then((result) => result.error && !outputLimit(result.error) ? limited(["diff", "--no-color"]) : result),
+    limited(["diff", "--no-color", "--relative", "HEAD"]).then((result) => result.error && !outputLimit(result.error) ? limited(["diff", "--no-color", "--relative"]) : result),
     git(cwd, ["ls-files", "-z", "--others", "--exclude-standard"]).catch(() => ""),
   ]);
   let whole = tracked.stdout;
@@ -131,14 +149,33 @@ async function readGitDiff(cwd: string): Promise<{ diff: string; truncated: bool
   return { diff, truncated };
 }
 
+async function topLevel(cwd: string): Promise<string> {
+  return nativePath((await git(cwd, ["rev-parse", "--show-toplevel"])).trim()) || cwd;
+}
+
+function folderRelative(cwd: string, top: string, entries: GitFileEntry[]): GitFileEntry[] {
+  const here = realPath(cwd) ?? cwd;
+  const base = realPath(top) ?? top;
+  const rebase = (value: string) => {
+    const relative = path.relative(here, path.join(base, value)).split(path.sep).join("/");
+    return relative && !relative.startsWith("../") && relative !== ".." ? relative : undefined;
+  };
+  return entries.flatMap((entry) => {
+    const moved = rebase(entry.path);
+    if (moved === undefined) return [];
+    const from = entry.from === undefined ? undefined : rebase(entry.from);
+    return [{ ...entry, path: moved, ...(from === undefined ? {} : { from }) }];
+  });
+}
+
 async function readGitSnapshot(cwd: string, includeDiff: boolean): Promise<GitSnapshot | null> {
-  const status = await exec(cwd, ["status", "--porcelain", "-b", "-z"]);
+  const [status, top] = await Promise.all([exec(cwd, ["status", "--porcelain", "-b", "-z"]), topLevel(cwd).catch(() => cwd)]);
   if (status.error) return null;
   const lines = status.stdout.split("\0");
   const header = (lines[0] ?? "").replace(/^## /, "").replace(/^No commits yet on /, "");
   const track = /\[([^\]]+)\]\s*$/.exec(header)?.[1] ?? "";
   const [branch, upstream] = (header.replace(/\s*\[[^\]]*\]\s*$/, "").split(" ")[0] || "HEAD").split("...");
-  const files = parseStatus(lines.slice(1).join("\0"));
+  const files = folderRelative(cwd, top, parseStatus(lines.slice(1).join("\0")));
   const [head, changes, [own, common], branches, remotes] = await Promise.all([
     git(cwd, ["rev-parse", "--short", "HEAD"]).catch(() => ""),
     includeDiff ? readGitDiff(cwd) : { diff: "", truncated: false },
@@ -188,13 +225,14 @@ export function commitPaths(value: unknown): string[] {
   });
 }
 
-export async function commit(cwd: string, { message, paths, amend = false }: { message?: unknown; paths?: unknown; amend?: boolean }): Promise<string> {
+export async function commit(folder: string, { message, paths, amend = false }: { message?: unknown; paths?: unknown; amend?: boolean }): Promise<string> {
   const files = commitPaths(paths);
   const text = typeof message === "string" ? message.trim().slice(0, MAX_COMMIT_MESSAGE_BYTES) : "";
   if (!files.length && !amend) throw new Error("Pick at least one file to commit.");
   if (!text && !amend) throw new Error("Write a commit message first.");
+  const cwd = folder;
   if (files.length) {
-    const pending = parseStatus(await git(cwd, ["status", "--porcelain", "-z", "--", ...files]))
+    const pending = folderRelative(cwd, await topLevel(cwd), parseStatus(await git(cwd, ["status", "--porcelain", "-z", "--", ...files])))
       .filter((entry) => entry.work !== " ")
       .map((entry) => entry.path);
     if (pending.length) await git(cwd, ["add", "-A", "--", ...pending]);
@@ -202,22 +240,26 @@ export async function commit(cwd: string, { message, paths, amend = false }: { m
   const args = ["commit", ...(amend ? ["--amend"] : []), ...(text ? ["-m", text] : ["--no-edit"])];
   if (files.length) args.push("--", ...files);
   await git(cwd, args);
+  snapshots.clear();
   return (await git(cwd, ["rev-parse", "--short", "HEAD"]).catch(() => "")).trim() || "committed";
 }
 
-export async function discard(cwd: string, paths: unknown): Promise<void> {
+export async function discard(folder: string, paths: unknown): Promise<void> {
   const files = commitPaths(paths);
   if (!files.length) throw new Error("Pick at least one file to discard.");
+  const cwd = folder;
   const known = (await git(cwd, ["ls-files", "-z", "--", ...files])).split("\0").filter(Boolean);
   const tracked = files.filter((file) => known.some((entry) => entry === file || entry.startsWith(`${file}/`)));
   const loose = files.filter((file) => !tracked.includes(file));
   if (tracked.length) await git(cwd, ["restore", "--staged", "--worktree", "--", ...tracked]);
   if (loose.length) await git(cwd, ["clean", "-f", "-d", "--", ...loose]);
+  snapshots.clear();
 }
 
 export async function runGit(cwd: string, args: unknown): Promise<GitCommandResult> {
   const checked = validateGitArgs(args);
   const { error, stdout, stderr } = await exec(cwd, checked, COMMAND_TIMEOUT_MS, MAX_COMMAND_BYTES);
+  snapshots.clear();
   const output = [stdout, stderr].filter((part) => part.trim()).join("\n").trim();
   return { ok: !error, output: (output || (error ? gitFailure(error) : "")).slice(0, MAX_COMMAND_BYTES) };
 }
@@ -283,6 +325,7 @@ export async function writeCommitMessage(
 export async function switchBranch(cwd: string, branch: string, create: boolean, from?: string): Promise<void> {
   if (branch.startsWith("-")) throw new Error("A branch name cannot start with “-”.");
   await git(cwd, ["check-ref-format", "--branch", branch]).catch(() => { throw new Error(`“${branch}” is not a name git can use for a branch.`); });
+  snapshots.clear();
   if (!create) { await git(cwd, ["switch", branch]); return; }
   if (!from) { await git(cwd, ["switch", "-c", branch]); return; }
   if (from.startsWith("-")) throw new Error("A branch name cannot start with “-”.");
@@ -310,7 +353,7 @@ async function worktreeRows(cwd: string): Promise<WorktreeEntry[]> {
 }
 
 export async function addWorktree(cwd: string, name: string): Promise<string> {
-  const top = (await git(cwd, ["rev-parse", "--show-toplevel"])).trim();
+  const top = await mainCheckout(cwd);
   const dir = path.join(path.dirname(top), `${path.basename(top)}-worktrees`, name);
   if (existsSync(dir)) {
     if ((await worktreeRows(cwd)).some((row) => samePath(row.path, dir))) return dir;
@@ -334,12 +377,16 @@ export async function listWorktrees(cwd: string): Promise<WorktreeEntry[]> {
 export async function removeWorktrees(cwd: string, targets: string[]): Promise<void> {
   if (!Array.isArray(targets) || !targets.length || targets.length > 32) throw new Error("Pick the worktrees to delete.");
   const known = new Map((await worktreeRows(cwd)).map((row) => [row.path, row]));
-  for (const target of targets) {
+  const rows = targets.map((target) => {
     const row = known.get(target);
     if (!row) throw new Error("That worktree is no longer on this repository's list. Refresh and try again.");
     if (row.primary) throw new Error("The main checkout cannot be deleted from here.");
     if (row.bare) throw new Error("A bare repository cannot be deleted from here.");
     if (row.locked) throw new Error(`Unlock “${path.basename(row.path)}” with git worktree unlock first.`);
-    await git(cwd, ["worktree", "remove", row.path]);
-  }
+    return row;
+  });
+  const failed: string[] = [];
+  for (const row of rows) await git(cwd, ["worktree", "remove", "--force", row.path]).catch((reason: unknown) => { failed.push(`${path.basename(row.path)}: ${reason instanceof Error ? reason.message : String(reason)}`); });
+  snapshots.clear();
+  if (failed.length) throw new Error(failed.join("\n"));
 }

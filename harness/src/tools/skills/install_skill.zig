@@ -68,7 +68,7 @@ pub fn validate(_: tool_dispatch.DispatchContext, _: tool_dispatch.ToolInput) to
 
 pub fn call(ctx: tool_dispatch.DispatchContext, erased: tool_dispatch.ToolInput) tool_dispatch.DispatchError!tool_dispatch.ToolResult {
     const input = erased.as(Input);
-    const output = executeFromSource(ctx.allocator, ctx.skills_dir, input.source, input.skill) catch |err| switch (err) {
+    const output = executeFromSource(ctx.allocator, ctx.skills_dir, input.source, input.skill, ctx.cancel_flag) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return .{ .failure = try std.fmt.allocPrint(ctx.allocator, "install_skill failed: {s}", .{@errorName(err)}) },
     };
@@ -83,7 +83,7 @@ pub fn executeRunCommand(
     ctx: tool_dispatch.DispatchContext,
     command: []const u8,
 ) tool_dispatch.DispatchError!tool_dispatch.ToolResult {
-    const output = executeFromSource(ctx.allocator, ctx.skills_dir, command, null) catch |err| switch (err) {
+    const output = executeFromSource(ctx.allocator, ctx.skills_dir, command, null, ctx.cancel_flag) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return .{ .failure = try tool_result_errors.formatToolExecutionErrorJson(
             ctx.allocator,
@@ -100,13 +100,19 @@ pub fn execute(arena: Allocator, skills_dir: []const u8, args_json: []const u8) 
     const args = try tool_args.parseToolArgsObject(arena, args_json);
     const source = try tool_args.requiredStringArg(args, "source");
     const filter = tool_args.optionalStringArg(args, "skill");
-    return executeFromSource(arena, skills_dir, source, filter);
+    return executeFromSource(arena, skills_dir, source, filter, null);
 }
 
-pub fn executeFromSource(alloc: Allocator, skills_dir: []const u8, source: []const u8, filter: ?[]const u8) ![]u8 {
+pub fn executeFromSource(
+    alloc: Allocator,
+    skills_dir: []const u8,
+    source: []const u8,
+    filter: ?[]const u8,
+    cancel_flag: ?*std.atomic.Value(bool),
+) ![]u8 {
     if (skills_dir.len == 0) return std.fmt.allocPrint(alloc, "Skill installation is unavailable in this runtime.", .{});
 
-    var result = try builtin_skills.installFromSource(alloc, skills_dir, source, filter);
+    var result = try builtin_skills.installFromSource(alloc, skills_dir, source, filter, cancel_flag);
     defer result.deinit(alloc);
 
     if (result.installed.items.len == 0) return formatNoMatchOutput(alloc, source);
@@ -205,7 +211,7 @@ test "install_skill owner installs local skill source" {
 
     var arena_state = std.heap.ArenaAllocator.init(alloc);
     defer arena_state.deinit();
-    const output = try executeFromSource(arena_state.allocator(), skills_dir, repo_root, "workflow");
+    const output = try executeFromSource(arena_state.allocator(), skills_dir, repo_root, "workflow", null);
 
     try expectContains(output, "Installed 1 skill(s) into fx.");
     try expectContains(output, "- workflow\n");
@@ -239,7 +245,7 @@ test "install_skill owner encodes installed names without returning bodies" {
 
     var arena_state = std.heap.ArenaAllocator.init(alloc);
     defer arena_state.deinit();
-    const output = try executeFromSource(arena_state.allocator(), skills_dir, repo_root, "workflow");
+    const output = try executeFromSource(arena_state.allocator(), skills_dir, repo_root, "workflow", null);
 
     try expectContains(output, "- workflow&quot;&lt;injected&gt;\n");
     try std.testing.expect(std.mem.find(u8, output, "<skill") == null);
@@ -272,7 +278,7 @@ test "install_skill owner reports no matching skills" {
 
     var arena_state = std.heap.ArenaAllocator.init(alloc);
     defer arena_state.deinit();
-    const output = try executeFromSource(arena_state.allocator(), skills_dir, repo_root, "missing");
+    const output = try executeFromSource(arena_state.allocator(), skills_dir, repo_root, "missing", null);
 
     const expected = try std.fmt.allocPrint(alloc, "No matching skills were installed into fx from {s}.", .{repo_root});
     defer alloc.free(expected);
@@ -340,7 +346,7 @@ test "install_skill owner keeps an unmatched source inside the status line" {
 
     var arena_state = std.heap.ArenaAllocator.init(alloc);
     defer arena_state.deinit();
-    const output = try executeFromSource(arena_state.allocator(), skills_dir, repo_root, "missing");
+    const output = try executeFromSource(arena_state.allocator(), skills_dir, repo_root, "missing", null);
 
     try expectContains(output, "repo&lt;source&gt;&#x0a;injected_source.");
     try std.testing.expect(std.mem.find(u8, output, "\ninjected_source") == null);
@@ -360,7 +366,7 @@ test "install_skill owner reports status when an unsafe root cannot be installed
     const skills_dir = try io_mod.dirRealpathAlloc(alloc, tmp.dir, "skills");
     defer alloc.free(skills_dir);
 
-    const output = try executeFromSource(alloc, skills_dir, source_dir, null);
+    const output = try executeFromSource(alloc, skills_dir, source_dir, null, null);
     defer alloc.free(output);
     try expectContains(output, "No matching skills were installed into fx from");
 }

@@ -49,6 +49,8 @@ test("IPC accepts only exact allowlisted payloads", () => {
   assert.equal(validateRequest({ method: "sendMessage", params: { threadId: "thread-123456789", content: "hello", attachedImages: "[\"a\",\"b\"]" } }).params.attachedImages, "[\"a\",\"b\"]");
   assert.throws(() => validateRequest({ method: "sendMessage", params: { threadId: "thread-123456789", content: "hello", screenContext: "data:image/jpeg;base64,/9j/" } }), /Invalid parameters/);
   assert.throws(() => validateRequest({ method: "sendMessage", params: { threadId: "thread-123456789", content: "x".repeat(65_537) } }), /65,537 characters; Shinbo sends at most 65,536/);
+  assert.equal(validateRequest({ method: "renameThread", params: { threadId: "thread-123456789", title: "x".repeat(120) } }).params.title.length, 120);
+  assert.throws(() => validateRequest({ method: "renameThread", params: { threadId: "thread-123456789", title: "x".repeat(121) } }), /Invalid parameters/);
   assert.throws(() => validateRequest({ method: "shell", params: {} }), /not allowed/);
   assert.throws(() => validateRequest({ method: "recordTurn", params: { threadId: "thread-123456789", prompt: "p", response: "r" } }), /not allowed/);
   assert.throws(() => validateRequest({ method: "submitToolResult", params: { threadId: "thread-123456789", results: "[]" } }), /not allowed/);
@@ -135,6 +137,10 @@ test("a recorded turn is cut to fit the host's request line", () => {
   assert.match(huge.response, /^<think>thought/);
   assert.match(huge.response, /<\/think>\nanswer/);
   assert.match(huge.response, /characters elided/);
+  const answer = "answer\n".repeat(7_000);
+  const thoughtful = recordedTurn({ ...telemetry, prompt: "hi", thinking: "thought\n".repeat(50_000), answer });
+  assert.ok(Buffer.byteLength(JSON.stringify(thoughtful)) <= MAX_RECORDED_TURN_BYTES);
+  assert.ok(thoughtful.response.endsWith(`</think>\n${answer}`));
   const unbroken = recordedTurn({ ...telemetry, prompt: "hi", answer: `x${"🙂".repeat(200_000)}done` });
   assert.ok(Buffer.byteLength(JSON.stringify(unbroken)) <= MAX_RECORDED_TURN_BYTES);
   assert.ok(unbroken.response.startsWith("x🙂"));
@@ -332,6 +338,8 @@ test("starred models cap at six and drop with their local profile", () => {
   assert.equal(toggleFavoriteModel(full, "openrouter:vendor/a:free").favoriteModels[0], "openrouter:vendor/f:free");
   const starred = toggleFavoriteModel(base, "provider:local-qwen");
   assert.deepEqual(forgetProvider(starred, "local-qwen"), { ...base, providers: [] });
+  assert.equal(forgetProvider({ ...starred, notchModel: "provider:local-qwen" }, "local-qwen").notchModel, "");
+  assert.equal(forgetProvider({ ...starred, notchModel: "provider:other" }, "local-qwen").notchModel, "provider:other");
   assert.throws(() => validateSettings({ ...base, favoriteModels: ["fallback", "fallback"] }), /invalid/);
 });
 

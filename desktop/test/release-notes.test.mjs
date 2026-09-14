@@ -30,6 +30,7 @@ test("release notes collect the published range, preserve summaries, and include
       { tag_name: "v2.0.0-beta.1", prerelease: true, published_at: "2026-09-03T00:00:00Z" },
       { tag_name: "v0.9.0", published_at: "2026-08-01T00:00:00Z" },
       { tag_name: "v1.0.0", published_at: "2026-09-02T00:00:00Z" },
+      { tag_name: "zvec-grep-v0.2.1", published_at: "2026-09-03T12:00:00Z" },
     ],
     [`repos/team/shinbo/compare/v1.0.0...${target}?per_page=100`]: [
       { commits: changes.slice(0, 100) },

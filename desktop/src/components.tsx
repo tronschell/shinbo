@@ -118,7 +118,7 @@ function Frame({ meta }: { meta: ComponentMeta }) {
     <header>
       <span>{meta.title}</span>
       {meta.expands && <button type="button" className="bar-flip" aria-haspopup="dialog" aria-label={`Open ${meta.title} full screen`} title="Open it full screen" onClick={() => setExpanded(true)}><ExpandIcon /></button>}
-      <BuiltMenu meta={meta} />
+      <BuiltMenu meta={meta} onError={report} />
     </header>
     <div className="bar-widget-body">
       {error ? <p className="built-error" role="status">{meta.title} could not run · {error}</p> : body(false)}
@@ -140,20 +140,24 @@ function Reveal() {
   return <pre className="built-reveal" aria-hidden="true" onAnimationEnd={() => setDone(true)}>{glyphs}</pre>;
 }
 
-function BuiltMenu({ meta }: { meta: ComponentMeta }) {
+function BuiltMenu({ meta, onError }: { meta: ComponentMeta; onError: (why: string) => void }) {
   const [open, setOpen] = useState(false);
+  const act = (work: Promise<unknown>) => {
+    setOpen(false);
+    void work.catch((reason: unknown) => onError(reasonText(reason)));
+  };
   const remove = () => {
     setOpen(false);
     if (!confirm(`Delete “${meta.title}”?\n\nShinbo built this into ${COMPONENT_ZONE_LABEL}. It goes for good — only she can build it again.`)) return;
-    void window.shinbo.deleteComponent(meta.id);
+    act(window.shinbo.deleteComponent(meta.id));
   };
   return <span className="built-menu"
     onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false); }}
     onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}>
     <button type="button" className="bar-flip" aria-label={`More for ${meta.title}`} aria-expanded={open} title={`${meta.title} — built by Shinbo`} onClick={() => setOpen((was) => !was)}><MoreIcon /></button>
     {open && <span className="built-menu-list" role="menu">
-      <button type="button" role="menuitem" onClick={() => { setOpen(false); void window.shinbo.expandComponent({ id: meta.id, expands: !meta.expands }); }}>{meta.expands ? "No full screen" : "Allow full screen"}</button>
-      <button type="button" role="menuitem" onClick={() => { setOpen(false); void window.shinbo.enableComponent(meta.id, false); }}>Switch off</button>
+      <button type="button" role="menuitem" onClick={() => act(window.shinbo.expandComponent({ id: meta.id, expands: !meta.expands }))}>{meta.expands ? "No full screen" : "Allow full screen"}</button>
+      <button type="button" role="menuitem" onClick={() => act(window.shinbo.enableComponent(meta.id, false))}>Switch off</button>
       <button type="button" role="menuitem" className="built-danger" onClick={remove}>Delete…</button>
     </span>}
   </span>;

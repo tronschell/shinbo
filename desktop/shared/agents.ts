@@ -130,7 +130,7 @@ export type LiveAgent = {
   model: string;
 
   activity: string;
-  prompt: string;
+  prompt?: string;
 
   tool: boolean;
   startedAt: number;

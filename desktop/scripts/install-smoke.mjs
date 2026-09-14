@@ -28,7 +28,7 @@ async function waitFor(what, timeoutMs, probe) {
 }
 
 const app = spawn(executable, [`--user-data-dir=${profile}`, "--disable-gpu"], {
-  env: { ...process.env, SHINBO_DATA_DIR: dataRoot },
+  env: { ...process.env, SHINBO_DATA_DIR: dataRoot, SHINBO_REMOTE_DEBUG: "1" },
   stdio: ["ignore", "inherit", "inherit"],
 });
 

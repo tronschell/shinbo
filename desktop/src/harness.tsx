@@ -102,7 +102,7 @@ export function HarnessStatus() {
           <em>{lines.length} {plural(lines.length, "message")}</em>
         </div>
         <div className="harness-lines" ref={ref} onScroll={onScroll}>
-          {lines.map((line) => <details key={`${line.at}-${line.label}-${line.body.length}`} data-flow={line.flow}>
+          {lines.map((line, index) => <details key={`${line.at}-${index}`} data-flow={line.flow}>
             <summary><b>{clock(line.at)}</b><i />{line.label}<small>{line.body.length.toLocaleString()} chars</small></summary>
             <pre>{line.body}</pre>
           </details>)}

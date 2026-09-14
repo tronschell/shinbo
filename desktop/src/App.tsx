@@ -2,7 +2,7 @@ import { Accessibility, AppWindow, AudioLines, Bell, Mic, Monitor, Archive, Arro
 import { Fragment, lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import { isCurrentThreadLoad, threadMessageCount, type AgentImportSource, type CompactSnapshot, type CredentialSummary, type HeldAttachment, type ImportedMcpServer, type ImportedSkill, type ToolTarget, type Message, type ModelModality, type OpenRouterCatalog, type OverlaySurface, type ScheduledJob, type Snapshot, type Thread, type ThreadContext } from "./types";
 import { describeRun, describeTrigger, parseVariables, parseWorkflow, runWorkflow, triggerProblem } from "../shared/workflow";
-import { PromptField, ScheduleField, useTaskCommands, WorkflowGraph } from "./schedule";
+import { MAX_SCHEDULED_PROMPT_BYTES, PromptField, ScheduleField, useTaskCommands, WorkflowGraph } from "./schedule";
 import { plural } from "./plural";
 import { ColorPicker } from "./color-picker";
 import { zoned } from "./dates";
@@ -16,7 +16,7 @@ import { DndContext, MeasuringStrategy, PointerSensor, closestCenter, useSensor,
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { hasPersistedPrompt } from "./drafts";
-import { arrived, canSteer, dropHeld, dropQueued, groupBlocks, pairBlocks, settleRun, tracedBlocks, queuedTurns, releaseHeld, RUN_ERROR_EVENT, sendTurn, steerQueued, steerRunning, stopTurn, turnToRetry, thinkingOf, useRun, withoutThinking, wrote, type Block, type RunFailure } from "./runs";
+import { arrived, canSteer, dropHeld, dropQueued, groupBlocks, MAX_STEER_CHARS, pairBlocks, pairingFrom, settleRun, tracedBlocks, queuedTurns, releaseHeld, RUN_ERROR_EVENT, sendTurn, steerQueued, steerRunning, stopTurn, turnToRetry, thinkingOf, useRun, withoutThinking, wrote, type Block, type RunFailure } from "./runs";
 import { splitThinking } from "../shared/thinking";
 import { latestSteps, runActivity, stepActive } from "./tool-activity";
 import { showsUpdate } from "../shared/update";
@@ -25,7 +25,7 @@ import { DEFAULT_SYSTEM_PROMPT, forkPreset, MAX_PROMPTS, MAX_PROMPT_NAME_CHARS, 
 import { validScreenContextId } from "../shared/screen-context";
 import { COUNCIL_SEATS_DEFAULT, COUNCIL_SEATS_MIN } from "../shared/council";
 import { BUILTIN_COMMANDS, highlightSegments, insertCommand, KIND_LABELS, matchCommands, mentions, MENU_MAX, pathName, slashQuery, type SlashCommand } from "../shared/slash";
-import { isImageAttachment, MAX_TURN_IMAGES, pickKey, type ContextPick, type FolderFile, type FolderGrant } from "../shared/folders";
+import { attachmentLimit, isImageAttachment, MAX_TURN_IMAGES, oversizeMessage, pickKey, type ContextPick, type FolderFile, type FolderGrant } from "../shared/folders";
 import { charLabel, CHARS_PER_TOKEN, type ContextUse } from "../shared/usage";
 import { formatDuration } from "../shared/trace";
 import { ContextBarSettings, ContextWidgets, readContextPage, useContextLedger, useThreadCalls, writeContextPage } from "./context-bar";
@@ -39,7 +39,7 @@ import { Region } from "./regions";
 import { Built, BuiltSettings } from "./components";
 import type { ComponentMeta } from "../shared/components";
 import { ARTIFACT_LABELS, artifactWritten, type Artifact, type ArtifactMeta } from "../shared/artifacts";
-import { atCommands, buildAttachedContext, cachedBlocks, clearedAt, contextCommands, handTags, markCleared, modelSwitches, overlayMode, PICK_CONTEXT_EVENT, pickIntoComposer, pickLabel, pendingAttachments, pinnedThreads, recordModelSwitch, recordUses, rememberBlocks, seenRuns as storedSeenRuns, setSeenRuns as storeSeenRuns, rememberTurnAttachments, setOverlayMode, setThreadFolders, setThreadMode, setThreadReview, setThreadDraft, setThreadPinned, setThreadTag, setThreadUnread, threadBreakdown, threadDraft, threadExperiments, threadFolderMap, threadFolders, threadTags, threadUses, toolCommands, turnAttachments, unreadThreads, type ModelSwitch, type TurnAttachment } from "./context";
+import { atCommands, buildAttachedContext, cachedBlocks, clearedAt, contextCommands, handTags, markCleared, modelSwitches, overlayMode, PICK_CONTEXT_EVENT, pickIntoComposer, pickLabel, pinnedThreads, recordModelSwitch, recordUses, rememberBlocks, seenRuns as storedSeenRuns, setSeenRuns as storeSeenRuns, rememberTurnAttachments, setOverlayMode, setThreadFolders, setThreadMode, setThreadReview, setThreadDraft, setThreadPinned, setThreadTag, setThreadUnread, threadBreakdown, threadDraft, threadExperiments, threadFolderMap, threadFolders, threadTags, threadUses, toolCommands, turnAttachments, unreadThreads, type ModelSwitch, type TurnAttachment } from "./context";
 import { AgentPanel, AgentRail, BackgroundRail, ChangeCount, ChangesPanel, ModeMenu, ModePicker, ModeTrigger, PermissionPrompt, usePermissionAsk, SubagentChips, TabStrip, ThreadCard, useAgents, type AgentTab } from "./agents";
 import { ThreadGitStatus, useThreadGit } from "./thread-git";
 import { FileMark, GitPage, GitSetup, useGit } from "./git";
@@ -630,12 +630,30 @@ function ScreenAnnotation() {
   return <main className="screen-annotation"><canvas ref={canvas} aria-label="Draw yellow screen highlights" onPointerDown={begin} onPointerMove={draw} onPointerUp={endStroke} onPointerCancel={endStroke} /><div className="annotation-toolbar"><div><strong>Yellow highlight</strong><span>Draw on your live screen · attaches when you stop · Esc cancels</span></div><button type="button" onClick={() => void window.shinbo.cancelScreenAnnotation()}>Cancel</button></div>{error && <p className="annotation-error" role="alert">{error}</p>}</main>;
 }
 
+const sameMessages = (left: Message[], right: Message[]) =>
+  left.length === right.length && left.every((message, index) => {
+    const other = right[index];
+    return message.timestamp === other.timestamp && message.role === other.role && message.content === other.content
+      && JSON.stringify(message.generation ?? null) === JSON.stringify(other.generation ?? null);
+  });
+
+const sameThread = (left: Thread, right: Thread) => {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]) as Set<keyof Thread>;
+  for (const key of keys) {
+    if (left[key] === right[key]) continue;
+    if (key !== "messages" && key !== "messageDates" && key !== "goal") return false;
+    if (JSON.stringify(left[key]) !== JSON.stringify(right[key])) return false;
+  }
+  return true;
+};
+
 function useSnapshot(onLoad?: (snapshot: Snapshot) => void) {
   const [snapshot, setSnapshot] = useState(empty);
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [revision, setRevision] = useState(0);
   const booted = useRef(takeBootSnapshot());
+  const held = useRef(empty);
   const skipped = useRef(false);
   const owned = useRef(false);
   const latest = useRef(0);
@@ -646,10 +664,22 @@ function useSnapshot(onLoad?: (snapshot: Snapshot) => void) {
       booted.current = undefined;
       const compact = await (inFlight ?? window.shinbo.request<CompactSnapshot>("threadSummaries"));
       if (ticket !== latest.current) return;
+      const previous = held.current;
+      const known = new Map(previous.threads.map((item) => [item.id, item]));
+      let reused = 0;
+      const threads = compact.threads.map(({ messages, ...thread }) => {
+        const fresh: Thread = { ...thread, messages: [], messageCount: messages };
+        const kept = known.get(fresh.id);
+        if (!kept || !sameThread(kept, fresh)) return fresh;
+        reused += 1;
+        return kept;
+      });
       const next: Snapshot = {
         ...compact,
-        threads: compact.threads.map(({ messages, ...thread }) => ({ ...thread, messages: [], messageCount: messages })),
+        threads: reused === threads.length && reused === previous.threads.length ? previous.threads : threads,
+        scheduledJobs: JSON.stringify(compact.scheduledJobs) === JSON.stringify(previous.scheduledJobs) ? previous.scheduledJobs : compact.scheduledJobs,
       };
+      held.current = next;
       setSnapshot(next);
       setRevision((current) => current + 1);
       onLoad?.(next);
@@ -724,6 +754,9 @@ function Workspace() {
   const showThreadMenu = (id: string, x: number, y: number) => { setThreadSubmenu(""); setThreadMenu({ id, x, y }); };
   const [projectMenu, setProjectMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
+  const renameDone = useRef(false);
+  const startRename = (id: string, value: string) => { renameDone.current = false; setRenaming({ id, value }); };
+  const [dismissedWarning, setDismissedWarning] = useState("");
   const [busy, setBusy] = useState(false);
   const [threadQuery, setThreadQuery] = useState("");
   const [threadLimits, setThreadLimits] = useState<Record<string, number>>({});
@@ -753,7 +786,8 @@ function Workspace() {
     addEventListener("shinbo-thread-tags-changed", reload);
     addEventListener("shinbo-thread-pins-changed", reload);
     addEventListener("shinbo-thread-unread-changed", reload);
-    return () => { removeEventListener("shinbo-thread-folders-changed", reload); removeEventListener("shinbo-thread-tags-changed", reload); removeEventListener("shinbo-thread-pins-changed", reload); removeEventListener("shinbo-thread-unread-changed", reload); };
+    const stop = window.shinbo.onFoldersChanged(reload);
+    return () => { stop(); removeEventListener("shinbo-thread-folders-changed", reload); removeEventListener("shinbo-thread-tags-changed", reload); removeEventListener("shinbo-thread-pins-changed", reload); removeEventListener("shinbo-thread-unread-changed", reload); };
   }, []);
   const [setupOpen, setSetupOpen] = useState(() => !localStorage.getItem(SETUP_SEEN_KEY));
   const [importsOpen, setImportsOpen] = useState(() => !localStorage.getItem(IMPORTS_SEEN_KEY));
@@ -789,7 +823,7 @@ function Workspace() {
   const restoredModel = useRef(false);
   const liveThreads = useMemo(() => snapshot.threads.filter((item) => !item.archivedAt && item.kind !== "subagent"), [snapshot.threads]);
   const archivedThreads = useMemo(() => snapshot.threads.filter((item) => item.archivedAt && item.kind !== "subagent"), [snapshot.threads]);
-  const selectedSummary = liveThreads.find((item) => item.id === threadId) ?? snapshot.threads.find((item) => item.id === threadId) ?? liveThreads[0];
+  const selectedSummary = liveThreads.find((item) => item.id === threadId) ?? liveThreads[0];
   const selectedId = selectedSummary?.id ?? "";
   const selectedIdRef = useRef(selectedId);
   const loadedFor = useRef("");
@@ -810,7 +844,11 @@ function Workspace() {
       const [next, context] = await Promise.all([window.shinbo.request<Thread>("thread", { threadId: id }), window.shinbo.getThreadContext(id)]);
       const currentRequest = id === parentId ? parentRequest.current : subthreadRequest.current;
       if (!isCurrentThreadLoad(parentId, selectedIdRef.current, requestId, currentRequest)) return;
-      if (id === parentId) setLoadedThread({ ...next, context });
+      if (id === parentId) setLoadedThread((current) => current?.id !== next.id ? { ...next, context } : {
+        ...next,
+        messages: sameMessages(current.messages, next.messages) ? current.messages : next.messages,
+        context: JSON.stringify(current.context) === JSON.stringify(context) ? current.context : context,
+      });
       else setLoadedSubthread(next);
     } catch (reason) {
       const currentRequest = id === parentId ? parentRequest.current : subthreadRequest.current;
@@ -820,6 +858,7 @@ function Workspace() {
       }
     }
   }, [selectedId]);
+  const selectedGoalKey = JSON.stringify(selectedSummary?.goal ?? null);
   useEffect(() => {
     if (loadedFor.current !== selectedId) {
       loadedFor.current = selectedId;
@@ -832,7 +871,16 @@ function Workspace() {
     let active = true;
     queueMicrotask(() => { if (active) void loadThread(selectedId); });
     return () => { active = false; };
-  }, [loadThread, revision, selectedId, selectedSummary?.messageCount, selectedSummary?.title, selectedSummary?.updatedAt]);
+  }, [loadThread, selectedId, selectedSummary?.messageCount, selectedSummary?.title, selectedSummary?.updatedAt, selectedGoalKey]);
+  useEffect(() => {
+    if (!selectedId) return;
+    let active = true;
+    void window.shinbo.getThreadContext(selectedId).then((context) => {
+      if (!active) return;
+      setLoadedThread((current) => current?.id !== selectedId || JSON.stringify(current.context) === JSON.stringify(context) ? current : { ...current, context });
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [revision, selectedId]);
   const thread = loadedThread?.id === selectedId ? loadedThread : undefined;
   const uiBusy = busy || interactionLocked;
   const threadStatus = useMemo(() => {
@@ -848,7 +896,10 @@ function Workspace() {
   useEffect(() => { storeSeenRuns(seenRuns); }, [seenRuns]);
   const openThreadId = view === "threads" && !selection.length ? thread?.id : undefined;
   const openStamp = openThreadId ? runStamp(threadStatus.get(openThreadId)) : "";
-  if (openThreadId && openStamp && seenRuns[openThreadId] !== openStamp) setSeenRuns({ ...seenRuns, [openThreadId]: openStamp });
+  if (openThreadId && openStamp && seenRuns[openThreadId] !== openStamp) {
+    const known = new Set(snapshot.threads.map((item) => item.id));
+    setSeenRuns({ ...Object.fromEntries(Object.entries(seenRuns).filter(([id]) => known.has(id))), [openThreadId]: openStamp });
+  }
   const unseen = useCallback((id: string) => {
     const stamp = runStamp(threadStatus.get(id));
     return markedUnread.includes(id) || (!!stamp && seenRuns[id] !== stamp);
@@ -857,7 +908,11 @@ function Workspace() {
   const threadModelLabel = modelKeyLabel(settings, threadModelKey);
   const threadModelBrand = modelKeyBrand(settings, threadModelKey);
   const { contextTokens } = useSelectedModel(settings, threadModelKey);
-  useEffect(() => { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); }, [layout]);
+  useEffect(() => {
+    const timer = setTimeout(() => localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)), LAYOUT_SAVE_MS);
+    return () => clearTimeout(timer);
+  }, [layout]);
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   useEffect(() => {
     const reload = () => setSettings(readSettings());
     addEventListener("storage", reload);
@@ -871,14 +926,17 @@ function Workspace() {
       asked = Date.now();
       window.shinbo.resyncWindow();
     };
-    const fit = () => { setLayout((current) => ({ ...current })); resync(); };
+    const fit = () => { setViewportWidth(window.innerWidth); resync(); };
     resync();
     addEventListener("resize", fit);
     addEventListener("focus", resync);
     document.addEventListener("visibilitychange", resync);
     return () => { removeEventListener("resize", fit); removeEventListener("focus", resync); document.removeEventListener("visibilitychange", resync); };
   }, []);
-  const pane = useCallback((change: Partial<PaneLayout>) => setLayout((current) => validatePaneLayout({ ...current, ...change })), []);
+  const pane = useCallback((change: Partial<PaneLayout>) => setLayout((current) => {
+    const next = validatePaneLayout({ ...current, ...change });
+    return JSON.stringify(next) === JSON.stringify(current) ? current : next;
+  }), []);
   const inspectorBefore = useRef<boolean | null>(null);
   const showBrowser = useCallback((open: boolean) => {
     if (open) {
@@ -926,15 +984,16 @@ function Workspace() {
   useEffect(() => window.shinbo.onBrowserShow((shown) => {
     if (shown.threadId === thread?.id) { setArtifactPaneId(""); showBrowser(true); }
   }), [thread?.id, showBrowser]);
-  const fitted = fitPaneLayout(artifactPaneId || reviewPane ? { ...layout, browserOpen: true } : layout, window.innerWidth);
+  const fitted = fitPaneLayout(artifactPaneId || reviewPane ? { ...layout, browserOpen: true } : layout, viewportWidth);
   const shellStyle = {
     "--sidebar-width": `${fitted.sidebarWidth}px`,
     "--inspector-width": `${fitted.inspectorCollapsed ? 0 : fitted.inspectorWidth}px`,
     "--browser-width": `${fitted.browserOpen ? fitted.browserWidth : 0}px`,
     "--terminal-height": `${layout.terminalOpen ? layout.terminalHeight : 0}px`,
   } as CSSProperties;
-  const filedThreads = useMemo(() => liveThreads.filter((item) => !item.scheduledJobId), [liveThreads]);
-  const scheduledThreads = useMemo(() => liveThreads.filter((item) => item.scheduledJobId), [liveThreads]);
+  const jobIds = useMemo(() => new Set(snapshot.scheduledJobs.map((job) => job.id)), [snapshot.scheduledJobs]);
+  const filedThreads = useMemo(() => liveThreads.filter((item) => !item.scheduledJobId || !jobIds.has(item.scheduledJobId)), [liveThreads, jobIds]);
+  const scheduledThreads = useMemo(() => liveThreads.filter((item) => item.scheduledJobId && jobIds.has(item.scheduledJobId)), [liveThreads, jobIds]);
   const threadById = useMemo(() => new Map(liveThreads.map((item) => [item.id, item])), [liveThreads]);
   const projectOf = useCallback((item: Thread) => {
     let at: Thread | undefined = item;
@@ -945,7 +1004,8 @@ function Workspace() {
     }
     return "";
   }, [filedFolders, grants, threadById]);
-  const threadRepos = useThreadGit(JSON.stringify([...new Set(filedThreads.map(projectOf).filter(Boolean))].sort()));
+  const repoKey = useMemo(() => JSON.stringify([...new Set(filedThreads.map(projectOf).filter(Boolean))].sort()), [filedThreads, projectOf]);
+  const threadRepos = useThreadGit(repoKey);
   const projectName = useCallback((item: Thread) => grants.find((grant) => grant.id === projectOf(item))?.name ?? "", [grants, projectOf]);
   const projects = useMemo(() => {
     const filedTo = new Map(filedThreads.map((item) => [item.id, projectOf(item)]));
@@ -959,10 +1019,22 @@ function Workspace() {
     return kept.length ? [{ id: "pinned", name: "Pinned", threads: kept }, ...shown] : shown;
   }, [filedThreads, grants, layout.projectOrder, layout.projectSort, pins, projectOf]);
   const search = threadQuery.trim().toLowerCase();
-  const visibleProjects = search
+  const visibleProjects = useMemo(() => search
     ? projects.map((group) => group.name.toLowerCase().includes(search) ? group : { ...group, threads: group.threads.filter((item) => threadTitle(item).toLowerCase().includes(search) || (tags[item.id]?.tag ?? "").includes(search)) }).filter((group) => group.threads.length)
-    : projects;
-  const openThread = useCallback((id: string) => { if (markedUnread.includes(id)) setThreadUnread(id, false); setThreadId(id); setView("threads"); }, [markedUnread]);
+    : projects, [projects, search, tags]);
+  const queryThreads = (value: string) => { setThreadQuery(value); setThreadLimits({}); };
+  const openThread = useCallback((id: string) => {
+    const byId = new Map(snapshot.threads.map((item) => [item.id, item]));
+    let item = byId.get(id);
+    if (item?.archivedAt) { setView("archive"); return; }
+    for (let hop = 0; item?.kind === "subagent" && item.parentThreadId && hop < 8; hop += 1) item = byId.get(item.parentThreadId);
+    const parentId = item && item.id !== id ? item.id : id;
+    if (markedUnread.includes(parentId)) setThreadUnread(parentId, false);
+    setThreadId(parentId);
+    if (parentId !== id) setTab(id);
+    setView("threads");
+  }, [markedUnread, snapshot.threads]);
+  useEffect(() => window.shinbo.onSelectThread(openThread), [openThread]);
   const attachComponent = (meta: ComponentMeta) => {
     const pick: ContextPick = { kind: "component", id: meta.id, title: meta.title };
     const id = thread?.id;
@@ -990,9 +1062,19 @@ function Workspace() {
     const group = projects.find((item) => item.id === id);
     setProjectMenu(null);
     if (!group) return;
-    if (group.threads.length && !confirm(`Remove ${group.name} from the sidebar? Its ${group.threads.length} thread(s) move to Other.`)) return;
+    if (group.threads.length && !confirm(`Remove ${group.name} from the sidebar? Its ${group.threads.length} thread(s) move to Unfiled.`)) return;
     setError("");
     void window.shinbo.forgetFolder(group.id).then(setGrants).catch((reason: unknown) => setError(reasonText(reason)));
+  };
+  const moveThread = async (id: string, folderIds: string[]) => {
+    setThreadMenu(null);
+    setError("");
+    try {
+      const context = await window.shinbo.getThreadContext(id);
+      const mode = await window.shinbo.setThreadContext({ threadId: id, folderIds, mode: context.mode, review: context.review });
+      setThreadFolders(id, folderIds);
+      setLoadedThread((current) => current?.id === id ? { ...current, context: { ...current.context, folderIds, mode } } : current);
+    } catch (reason) { setError(reasonText(reason)); }
   };
   const setArchived = async (id: string, archived: boolean) => {
     setThreadMenu(null);
@@ -1012,6 +1094,8 @@ function Workspace() {
     openThread(id);
   };
   const renameThread = async (id: string, title: string) => {
+    if (renameDone.current) return;
+    renameDone.current = true;
     setRenaming(null);
     const named = title.trim();
     if (!named || named === liveThreads.find((item) => item.id === id)?.title) return;
@@ -1048,7 +1132,6 @@ function Workspace() {
       let initializationError = "";
       try {
         await syncMainPreferences(settings);
-        await window.shinbo.setZeroRetention(settings.requireZeroRetention);
         if (settings.selectedModel === "fallback") {
           try {
             if ((JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "null") as Partial<UserSettings> | null)?.selectedModel !== "fallback") return;
@@ -1122,10 +1205,12 @@ function Workspace() {
     "What I want changed: ",
   ].join("\n"));
 
+  const shortcut = useRef((_event: KeyboardEvent) => undefined);
   useEffect(() => {
-    const shortcut = (event: KeyboardEvent) => {
+    shortcut.current = (event: KeyboardEvent) => {
       const primary = IS_WINDOWS ? event.ctrlKey && !event.metaKey : event.metaKey && !event.ctrlKey;
       if (!primary || event.altKey || event.shiftKey) return;
+      if (event.target instanceof Element && event.target.closest(".terminal-panel")) return;
       if (event.key === "n") { event.preventDefault(); setError(""); void createThread(); return; }
       if (!/^[1-9]$/.test(event.key)) return;
       const pick = threadAt(projects, thread?.id ?? "", Number(event.key) - 1);
@@ -1134,9 +1219,12 @@ function Workspace() {
       setSelection([]);
       openThread(pick);
     };
-    addEventListener("keydown", shortcut);
-    return () => removeEventListener("keydown", shortcut);
   });
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => shortcut.current(event);
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, []);
 
   const saveBenchCase = async (id: string) => {
     setThreadMenu(null);
@@ -1198,7 +1286,7 @@ function Workspace() {
           <div className="sidebar-search">
             <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5 14 14" strokeLinecap="round" /></svg>
             <label className="sr-only" htmlFor="thread-search">Search threads</label>
-            <input ref={searchInput} id="thread-search" type="search" value={threadQuery} onChange={(event) => setThreadQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") setThreadQuery(""); }} placeholder="Search" />
+            <input ref={searchInput} id="thread-search" type="search" value={threadQuery} onChange={(event) => queryThreads(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") queryThreads(""); }} placeholder="Search" />
           </div>
           <button type="button" className="new-thread" title="New thread" aria-label="New thread" onClick={() => { setError(""); void createThread(); }} disabled={uiBusy}>＋</button>
         </div>
@@ -1224,13 +1312,13 @@ function Workspace() {
           onDragStart={() => setDraggingProject(true)}
           onDragCancel={() => setDraggingProject(false)}
           onDragEnd={(event) => { setDraggingProject(false); dropped(projects, (projectOrder) => pane({ projectOrder }))(event); }}>
-        <SortableContext items={visibleProjects.map((group) => group.id)} strategy={verticalListSortingStrategy}>
+        <SortableContext items={visibleProjects.filter((group) => !virtualGroup(group.id) && group.id !== "unfiled").map((group) => group.id)} strategy={verticalListSortingStrategy}>
         <div className="sidebar-projects" ref={projectList} data-dragging={draggingProject || undefined}>
           <span className="sidebar-label">Projects<span className="sidebar-label-actions"><button type="button" className={`project-new ${layout.projectSort === "priority" ? "on" : ""}`} aria-label="Group threads" title="Group threads" aria-haspopup="menu" aria-expanded={sortMenu !== null} onClick={(event) => { const box = event.currentTarget.getBoundingClientRect(); setSortMenu({ x: box.left, y: box.bottom + 2 }); }}><FilterIcon /></button><button type="button" className="project-new" disabled={uiBusy} aria-label="Connect a folder" title="Connect a folder" onClick={connectProject}>＋</button></span></span>
           {selection.length > 0 && <div className="thread-selection"><span className="nav-label">{selection.length} selected</span><button type="button" disabled={uiBusy} onClick={() => void archiveThreads(selection)}>Archive</button><button type="button" onClick={() => setSelection([])} aria-label="Clear selection">×</button></div>}
-          {visibleProjects.map((group) => { const limit = threadLimits[group.id] ?? Math.max(THREAD_PAGE, Math.floor((listRows - visibleProjects.length - 1) / visibleProjects.length)); return <Sortable key={group.id} id={group.id} className="project-sort">{(handle) => <details className={`project-group ${virtualGroup(group.id) ? "flat" : ""}`} open><summary {...handle} onContextMenu={(event) => { event.preventDefault(); setProjectMenu({ id: group.id, x: event.clientX, y: event.clientY }); }}>{!virtualGroup(group.id) && group.id !== "unfiled" && <FolderIcon />}<span className="nav-label">{group.name}</span>{group.id !== "pinned" && <button type="button" className="project-new" disabled={uiBusy} aria-label={group.id === "priority" ? "New thread" : `New thread in ${group.name}`} title={group.id === "priority" ? "New thread" : `New thread in ${group.name}`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setError(""); void createThread(group.id === "priority" ? undefined : group.id === "unfiled" ? "" : group.id); }}>＋</button>}<b>{group.threads.length}</b></summary>{group.threads.slice(0, limit).map((item) => renaming?.id === item.id
-            ? <form key={item.id} className="project-thread renaming" onSubmit={(event) => { event.preventDefault(); void renameThread(item.id, renaming.value); }}><input autoFocus value={renaming.value} aria-label="Thread name" onChange={(event) => setRenaming({ id: item.id, value: event.target.value })} onBlur={() => void renameThread(item.id, renaming.value)} onKeyDown={(event) => { if (event.key === "Escape") setRenaming(null); }} /><ThreadStatus live={threadStatus.get(item.id)} unseen={unseen(item.id)} /></form>
-            : <div className={`project-row ${threadMenu?.id === item.id ? "menu-open" : ""}`} key={item.id}><button type="button" style={{ "--thread-depth": threadDepth(group.threads, item) } as CSSProperties} className={`project-thread ${item.id === thread?.id && view === "threads" && !selection.length ? "active" : ""} ${selection.includes(item.id) ? "selected" : ""}`} title={threadLabel(item)} disabled={uiBusy} onClick={(event) => clickThread(event, group, item.id)} onDoubleClick={() => setRenaming({ id: item.id, value: threadLabel(item) })} onContextMenu={(event) => { event.preventDefault(); showThreadMenu(item.id, event.clientX, event.clientY); }}><span className="thread-copy"><span className="nav-label">{threadLabel(item)}</span>{virtualGroup(group.id) && <span className="thread-home"><FolderIcon /><span>{projectName(item) || "Unfiled"}</span></span>}</span><span className="thread-indicators">{phone.threads.includes(item.id) && <Smartphone size={14} strokeWidth={1.6} role="img" aria-label="Started from phone" />}<ThreadGitStatus snapshot={threadRepos[projectOf(item)]} /><ThreadStatus live={threadStatus.get(item.id)} unseen={unseen(item.id)} /></span>{tags[item.id] && <em className={`thread-tag ${tags[item.id].auto ? "auto" : ""}`} title={tags[item.id].auto ? `${tags[item.id].tag} · Shinbo’s guess, right-click to change it` : tags[item.id].tag}>{tags[item.id].tag}</em>}</button><button type="button" className={`thread-pin ${pins.includes(item.id) ? "on" : ""}`} title={pins.includes(item.id) ? "Unpin thread" : "Pin thread"} aria-label={`${pins.includes(item.id) ? "Unpin" : "Pin"} ${threadLabel(item)}`} aria-pressed={pins.includes(item.id)} disabled={uiBusy} onClick={() => setThreadPinned(item.id, !pins.includes(item.id))}><Pin size={14} strokeWidth={1.6} fill={pins.includes(item.id) ? "currentColor" : "none"} aria-hidden="true" /></button><button type="button" className="thread-actions" title="Thread options" aria-label={`Options for ${threadLabel(item)}`} aria-haspopup="menu" aria-expanded={threadMenu?.id === item.id} disabled={uiBusy} onClick={(event) => { const box = event.currentTarget.getBoundingClientRect(); showThreadMenu(item.id, box.left, box.bottom + 2); }}><DotsIcon /></button></div>)}{group.threads.length > limit && <button type="button" className="project-more" onClick={() => setThreadLimits((current) => ({ ...current, [group.id]: limit + THREAD_PAGE }))}>Load more ({group.threads.length - limit})</button>}{!group.threads.length && <p className="project-empty">No threads yet</p>}</details>}</Sortable>; })}
+          {visibleProjects.map((group) => { const limit = threadLimits[group.id] ?? Math.max(THREAD_PAGE, Math.floor((listRows - visibleProjects.length - 1) / visibleProjects.length)); return <Sortable key={group.id} id={group.id} className="project-sort" disabled={virtualGroup(group.id) || group.id === "unfiled"}>{(handle) => <details className={`project-group ${virtualGroup(group.id) ? "flat" : ""}`} open><summary {...handle} onContextMenu={(event) => { event.preventDefault(); setProjectMenu({ id: group.id, x: event.clientX, y: event.clientY }); }}>{!virtualGroup(group.id) && group.id !== "unfiled" && <FolderIcon />}<span className="nav-label">{group.name}</span>{group.id !== "pinned" && <button type="button" className="project-new" disabled={uiBusy} aria-label={group.id === "priority" ? "New thread" : `New thread in ${group.name}`} title={group.id === "priority" ? "New thread" : `New thread in ${group.name}`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setError(""); void createThread(group.id === "priority" ? undefined : group.id === "unfiled" ? "" : group.id); }}>＋</button>}<b>{group.threads.length}</b></summary>{group.threads.slice(0, limit).map((item) => renaming?.id === item.id
+            ? <form key={item.id} className="project-thread renaming" onSubmit={(event) => { event.preventDefault(); void renameThread(item.id, renaming.value); }}><input autoFocus value={renaming.value} maxLength={THREAD_NAME_MAX} aria-label="Thread name" onChange={(event) => setRenaming({ id: item.id, value: event.target.value })} onBlur={() => void renameThread(item.id, renaming.value)} onKeyDown={(event) => { if (event.key === "Escape") { renameDone.current = true; setRenaming(null); } }} /><ThreadStatus live={threadStatus.get(item.id)} unseen={unseen(item.id)} /></form>
+            : <div className={`project-row ${threadMenu?.id === item.id ? "menu-open" : ""}`} key={item.id}><button type="button" style={{ "--thread-depth": threadDepth(group.threads, item) } as CSSProperties} className={`project-thread ${item.id === thread?.id && view === "threads" && !selection.length ? "active" : ""} ${selection.includes(item.id) ? "selected" : ""}`} title={threadLabel(item)} disabled={uiBusy} onClick={(event) => clickThread(event, group, item.id)} onDoubleClick={() => startRename(item.id, threadLabel(item))} onContextMenu={(event) => { event.preventDefault(); showThreadMenu(item.id, event.clientX, event.clientY); }}><span className="thread-copy"><span className="nav-label">{threadLabel(item)}</span>{virtualGroup(group.id) && <span className="thread-home"><FolderIcon /><span>{projectName(item) || "Unfiled"}</span></span>}</span><span className="thread-indicators">{phone.threads.includes(item.id) && <Smartphone size={14} strokeWidth={1.6} role="img" aria-label="Started from phone" />}<ThreadGitStatus snapshot={threadRepos[projectOf(item)]} /><ThreadStatus live={threadStatus.get(item.id)} unseen={unseen(item.id)} /></span>{tags[item.id] && <em className={`thread-tag ${tags[item.id].auto ? "auto" : ""}`} title={tags[item.id].auto ? `${tags[item.id].tag} · Shinbo’s guess, right-click to change it` : tags[item.id].tag}>{tags[item.id].tag}</em>}</button><button type="button" className={`thread-pin ${pins.includes(item.id) ? "on" : ""}`} title={pins.includes(item.id) ? "Unpin thread" : "Pin thread"} aria-label={`${pins.includes(item.id) ? "Unpin" : "Pin"} ${threadLabel(item)}`} aria-pressed={pins.includes(item.id)} disabled={uiBusy} onClick={() => setThreadPinned(item.id, !pins.includes(item.id))}><Pin size={14} strokeWidth={1.6} fill={pins.includes(item.id) ? "currentColor" : "none"} aria-hidden="true" /></button><button type="button" className="thread-actions" title="Thread options" aria-label={`Options for ${threadLabel(item)}`} aria-haspopup="menu" aria-expanded={threadMenu?.id === item.id} disabled={uiBusy} onClick={(event) => { const box = event.currentTarget.getBoundingClientRect(); showThreadMenu(item.id, box.left, box.bottom + 2); }}><DotsIcon /></button></div>)}{group.threads.length > limit && <button type="button" className="project-more" onClick={() => setThreadLimits((current) => ({ ...current, [group.id]: limit + Math.max(THREAD_PAGE, listRows, limit) }))}>Load more ({group.threads.length - limit})</button>}{!group.threads.length && <p className="project-empty">No threads yet</p>}</details>}</Sortable>; })}
           {search && !visibleProjects.length && <p className="project-empty">No threads match that search</p>}
         </div>
         </SortableContext>
@@ -1246,22 +1334,22 @@ function Workspace() {
       <main id="content" className="content">
         {view === "threads" ? thread ? <ThreadView key={thread.id} thread={thread} loadedSubthread={loadedSubthread} loadThread={loadThread} threadLoadError={threadLoadError} clearThreadLoadError={() => setThreadLoadError(undefined)} snapshot={snapshot} notes={notes} busy={uiBusy} act={act} reload={load} agents={agents} tab={tab} setTab={setTab} newThread={(seed?: string) => { setError(""); void createThread(undefined, seed); }} onSendingChange={setInteractionLocked} onModelChanged={(next) => { if (selectedIdRef.current === thread.id) parentRequest.current = ""; setLoadedThread((current) => current?.id === thread.id ? { ...current, context: { ...current.context, model: next.selectedModel, effort: next.thinkingLevel } } : current); }} onContextChanged={(context) => { if (selectedIdRef.current === thread.id) parentRequest.current = ""; setLoadedThread((current) => current?.id === thread.id ? { ...current, context } : current); }} onManageModels={() => { setView("settings"); setSettingsPage("models"); }} onManageImports={() => { setView("settings"); setSettingsPage("imports"); }} modelKey={threadModelKey} modelLabel={threadModelLabel} modelBrand={threadModelBrand} thinkingLevel={thread.context.effort} reviewOffered={settings.review.enabled && !!settings.review.model.trim()} contextTokens={contextTokens} contextPages={settings.contextPages} onContextPages={(contextPages) => setSettings(persistSettings({ ...settings, contextPages }))} layout={layout} pane={pane} showBrowser={showBrowser} reviewPane={reviewPane} showReview={showReview} artifactPaneId={artifactPaneId} setArtifactPaneId={showArtifact} editArtifact={editArtifact} /> : <ThreadLoading loading={snapshotLoading || !!selectedSummary} error={threadLoadError?.id === selectedId ? threadLoadError.text : ""} busy={uiBusy} retry={() => { setError(""); setThreadLoadError(undefined); void loadThread(selectedId); }} newThread={() => { setError(""); void createThread(); }} /> : view === "knowledge" ? <NotesView notes={notes} notesError={notesError} busy={uiBusy} reload={reloadNotes} hues={settings.folderHues} setHues={(folderHues) => setSettings(persistSettings({ ...settings, folderHues }))} /> : view === "artifacts" ? <ArtifactsView key={artifactPick.at} busy={uiBusy} select={artifactPick.id} openArtifact={(artifact) => void editArtifact(artifact)} /> : view === "agent" ? <Suspense fallback={<AgentLoading />}><AgentView snapshot={snapshot} act={act} busy={uiBusy} openThread={openThread} projectName={projectName} mode={settings.defaultPermissionMode} model={settings.selectedModel} pickers={{ run: (model, effort, onPick, busy) => <BenchRunPicker model={model} effort={effort} onPick={onPick} onSettingsChanged={setSettings} busy={busy} />, judge: (draft, onChange, busy) => <SecondModelPicker label="Judge model" off="Tagger model · scores with your tagger" draft={draft ?? { ...settings.tagger, model: "" }} providers={settings.providers} routers={settings.routers} busy={busy} onChange={(next) => onChange(next.model ? next : undefined)} />, describe: (key) => ({ label: modelKeyLabel(settings, key), brand: modelKeyBrand(settings, key)?.id ?? "" }) }} /></Suspense> : view === "scheduled" ? <ScheduledView snapshot={snapshot} act={act} busy={uiBusy} openThread={openThread} /> : view === "plugins" ? <Suspense fallback={<AgentLoading copy="Loading plugins…" />}><PluginsView busy={uiBusy} tools={settings.tools} onTools={saveToolSettings} /></Suspense> : view === "archive" ? <ArchiveView threads={archivedThreads} projectName={projectName} busy={uiBusy} restore={(id) => void setArchived(id, false)} /> : <SettingsView page={settingsPage} onSelectPage={setSettingsPage} act={act} busy={uiBusy} onModelChanged={setSettings} onAttach={attachComponent} />}
       </main>
-      {(error || snapshot.warnings.length > 0) && <div className="notice" role="status"><button aria-label="Dismiss notice" onClick={() => setError("")}>×</button>{error || snapshot.warnings[0]}</div>}
+      {(error || (snapshot.warnings[0] && snapshot.warnings[0] !== dismissedWarning)) && <div className="notice" role="status"><button aria-label="Dismiss notice" onClick={() => { setError(""); setDismissedWarning(snapshot.warnings[0] ?? ""); }}>×</button>{error || snapshot.warnings[0]}</div>}
       {threadMenu && menuThread && <div className="thread-menu-scrim" onClick={(event) => { if (event.target === event.currentTarget) setThreadMenu(null); }} onContextMenu={(event) => { event.preventDefault(); if (event.target === event.currentTarget) setThreadMenu(null); }}>
         <menu className="thread-menu thread-context-menu" aria-label={`Actions for ${threadLabel(menuThread)}`} style={{ left: `clamp(8px, ${threadMenu.x}px, calc(100vw - 236px))`, top: `clamp(8px, ${threadMenu.y}px, calc(100vh - 280px))` }} onClick={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()} onKeyDown={(event) => { if (event.key === "Escape") setThreadMenu(null); }}>
           <div className="thread-menu-head">Thread</div><hr />
           <button type="button" role="menuitem" autoFocus disabled={uiBusy} onClick={() => { setThreadPinned(menuThread.id, !pins.includes(menuThread.id)); setThreadMenu(null); }}><span className="thread-menu-icon"><Pin size={14} strokeWidth={1.6} fill={pins.includes(menuThread.id) ? "currentColor" : "none"} aria-hidden="true" /></span><span>{pins.includes(menuThread.id) ? "Unpin" : "Pin"}</span></button>
-          <button type="button" role="menuitem" disabled={uiBusy} onClick={() => { setThreadMenu(null); setRenaming({ id: menuThread.id, value: threadLabel(menuThread) }); }}><span className="thread-menu-icon"><PencilIcon /></span><span>Rename</span></button>
+          <button type="button" role="menuitem" disabled={uiBusy} onClick={() => { setThreadMenu(null); startRename(menuThread.id, threadLabel(menuThread)); }}><span className="thread-menu-icon"><PencilIcon /></span><span>Rename</span></button>
           <button type="button" role="menuitem" onClick={() => markThreadUnread(menuThread.id, !unseen(menuThread.id))}><span className="thread-menu-icon"><UnreadIcon /></span><span>{unseen(menuThread.id) ? "Mark as read" : "Mark as unread"}</span></button>
           <button type="button" role="menuitem" disabled={uiBusy} onClick={() => void archiveThreads(selection.includes(menuThread.id) ? selection : [menuThread.id])}><span className="thread-menu-icon"><ArchiveIcon /></span><span>{selection.includes(menuThread.id) && selection.length > 1 ? `Archive ${selection.length} threads` : "Archive"}</span></button>
-          {!menuThread.scheduledJobId && <>
+          {!(menuThread.scheduledJobId && jobIds.has(menuThread.scheduledJobId)) && <>
             <hr />
             <div className="thread-menu-branch" onPointerEnter={() => setThreadSubmenu("project")}>
               <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={threadSubmenu === "project"} onClick={() => setThreadSubmenu("project")}><span className="thread-menu-icon"><FolderIcon /></span><span>Project</span><CaretIcon /></button>
               {threadSubmenu === "project" && <menu className="thread-submenu" aria-label="Move thread to project">
                 <div className="thread-menu-head">Move to</div><hr />
-                <button type="button" role="menuitemradio" aria-checked={!menuProjectId} onClick={() => { setThreadFolders(menuThread.id, []); setThreadMenu(null); }}><span className="thread-menu-icon"><FolderIcon /></span><span>Unfiled</span><span className="thread-menu-check"><CheckIcon /></span></button>
-                {grants.map((grant) => <button type="button" role="menuitemradio" aria-checked={menuProjectId === grant.id} key={grant.id} onClick={() => { setThreadFolders(menuThread.id, [grant.id]); setThreadMenu(null); }}><span className="thread-menu-icon"><FolderIcon /></span><span>{grant.name}</span><span className="thread-menu-check"><CheckIcon /></span></button>)}
+                <button type="button" role="menuitemradio" aria-checked={!menuProjectId} onClick={() => void moveThread(menuThread.id, [])}><span className="thread-menu-icon"><FolderIcon /></span><span>Unfiled</span><span className="thread-menu-check"><CheckIcon /></span></button>
+                {grants.map((grant) => <button type="button" role="menuitemradio" aria-checked={menuProjectId === grant.id} key={grant.id} onClick={() => void moveThread(menuThread.id, [grant.id])}><span className="thread-menu-icon"><FolderIcon /></span><span>{grant.name}</span><span className="thread-menu-check"><CheckIcon /></span></button>)}
               </menu>}
             </div>
             <div className="thread-menu-branch" onPointerEnter={() => setThreadSubmenu("tag")}>
@@ -1307,21 +1395,24 @@ function Workspace() {
 function UpdateReady() {
   const [version, setVersion] = useState("");
   const [dismissed, setDismissed] = useState("");
+  const [progress, setProgress] = useState("");
   useEffect(() => {
     void window.shinbo.updateReady().then(setVersion);
-    return window.shinbo.onUpdateReady(setVersion);
+    return window.shinbo.onUpdateReady((next) => { setVersion(next); setProgress(""); });
   }, []);
   if (!showsUpdate(version, dismissed)) return null;
   return <div className="pick-toast update" role="status">
-    <span>Update ready · {version}</span>
+    <span>{progress || `Update ready · ${version}`}</span>
     <span className="toast-actions">
-      <button type="button" onClick={() => void window.shinbo.installUpdate()}>Install and relaunch</button>
+      <button type="button" disabled={!!progress} onClick={() => void window.shinbo.installUpdate().then(setProgress).catch(() => undefined)}>Install and relaunch</button>
       <button type="button" aria-label="Dismiss" onClick={() => setDismissed(version)}>×</button>
     </span>
   </div>;
 }
 
 const THREAD_PAGE = 6;
+
+const LAYOUT_SAVE_MS = 250;
 
 const THREAD_ROW = 30;
 
@@ -1358,8 +1449,8 @@ function NavIcon({ view }: { view: string }) {
   return <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[view]}</svg>;
 }
 
-function Sortable({ id, className, children }: { id: string; className: string; children: (handle: Record<string, unknown>) => ReactNode }) {
-  const { setNodeRef, setActivatorNodeRef, listeners, transform, transition, isDragging } = useSortable({ id });
+function Sortable({ id, className, disabled, children }: { id: string; className: string; disabled?: boolean; children: (handle: Record<string, unknown>) => ReactNode }) {
+  const { setNodeRef, setActivatorNodeRef, listeners, transform, transition, isDragging } = useSortable({ id, disabled });
   return <div ref={setNodeRef} className={className} data-dragging={isDragging || undefined} style={{ transform: CSS.Transform.toString(transform), transition }}>
     {children({ ref: setActivatorNodeRef, ...listeners })}
   </div>;
@@ -1424,7 +1515,7 @@ function variableRows(outputs: string) {
 }
 
 function TaskModelPicker({ model, onChange, busy, label = "The model this task runs on", inherit = "Whichever model Shinbo is set to", codex = true }: { model: string; onChange: (model: string, settings: UserSettings) => void | Promise<void>; busy: boolean; label?: string; inherit?: string; codex?: boolean }) {
-  const settings = readSettings();
+  const settings = loadSettings();
   const [catalog, setCatalog] = useState<OpenRouterCatalog>();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
@@ -1469,7 +1560,7 @@ function TaskModelPicker({ model, onChange, busy, label = "The model this task r
 function BenchRunPicker({ model, effort, onPick, onSettingsChanged, busy }: { model: string; effort: string; onPick: (next: { model: string; effort: string }) => void; onSettingsChanged: (settings: UserSettings) => void; busy: boolean }) {
   const [catalog, setCatalog] = useState<OpenRouterCatalog>();
   useEffect(() => { void window.shinbo.request<OpenRouterCatalog>("listOpenRouterModels").then(setCatalog).catch(() => undefined); }, []);
-  const stops = thinkingStops(reasoningFor(readSettings(), catalog, model));
+  const stops = thinkingStops(reasoningFor(catalog, model));
   return <>
     <TaskModelPicker model={model} busy={busy} label="The model the cases are replayed under" inherit="Pick a model" onChange={(next, current) => { onSettingsChanged(current); onPick({ model: next, effort: "" }); }} />
     {stops.length > 1 && <select aria-label="Thinking level for this run" value={stops.includes(effort) ? effort : ""} disabled={busy} onChange={(event) => onPick({ model, effort: event.target.value })}>
@@ -1478,7 +1569,7 @@ function BenchRunPicker({ model, effort, onPick, onSettingsChanged, busy }: { mo
   </>;
 }
 
-function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, commands, view }: {
+function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, onDirty, commands, view }: {
   view: "editor" | "graph";
   job?: ScheduledJob;
   runs: Thread[];
@@ -1487,6 +1578,7 @@ function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, comm
   openThread: (id: string) => void;
   onSaved: (id: string) => void;
   onDeleted: () => void;
+  onDirty: (dirty: boolean) => void;
   commands: { skills: SlashCommand[]; tools: SlashCommand[]; atItems: SlashCommand[] };
 }) {
   const [title, setTitle] = useState(job?.title ?? "");
@@ -1495,13 +1587,17 @@ function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, comm
   const [nodes, setNodes] = useState(job?.nodes ?? "");
   const [mode, setMode] = useState<PermissionMode>(job?.permissionMode ?? DEFAULT_PERMISSION_MODE);
   const [model, setModel] = useState(job?.model ?? "");
+  const dirty = title.trim() !== (job?.title ?? "") || trigger.trim() !== (job?.schedule ?? "0 9 * * 1") || prompt.trim() !== (job?.prompt ?? "") || nodes.trim() !== (job?.nodes ?? "") || mode !== (job?.permissionMode ?? DEFAULT_PERMISSION_MODE) || model !== (job?.model ?? "");
+  useEffect(() => { onDirty(dirty); return () => onDirty(false); }, [dirty, onDirty]);
   const [dryRun, setDryRun] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [selectedNode, setSelectedNode] = useState("");
   const graph = parseWorkflow(nodes, prompt);
   const inspected = graph.nodes.find((node) => node.id === selectedNode) ?? graph.nodes[0];
   const problem = triggerProblem(trigger);
-  const ready = Boolean(title.trim() && prompt.trim()) && !problem && !graph.errors.length && graph.nodes.length > 0;
+  const promptBytes = new TextEncoder().encode(prompt.trim()).length;
+  const promptProblem = promptBytes > MAX_SCHEDULED_PROMPT_BYTES ? `The prompt is ${promptBytes.toLocaleString("en-US")} bytes; a scheduled task holds at most ${MAX_SCHEDULED_PROMPT_BYTES.toLocaleString("en-US")}. Trim it, or move the long part into a note and @-mention it.` : "";
+  const ready = Boolean(title.trim() && prompt.trim()) && !problem && !promptProblem && !graph.errors.length && graph.nodes.length > 0;
   const save = async () => {
     if (!ready || busy) return;
     const saved = await act("saveScheduledJob", {
@@ -1520,6 +1616,7 @@ function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, comm
     const run = await runWorkflow(graph.nodes, parseVariables(job?.outputs ?? ""), (text, node) => Promise.resolve(node.kind === "script" ? `(the script would run: ${text})` : `(a turn would run: ${text})`));
     setDryRun(`${describeRun(run.steps)}\n\nVariables afterwards: ${Object.keys(run.variables).join(", ") || "none"}`);
   };
+  const liveRuns = runs.filter((run) => !run.archivedAt).length;
   const remove = async () => {
     if (!job) return;
     if (!confirming) { setConfirming(true); return; }
@@ -1535,6 +1632,7 @@ function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, comm
     <div className="task-fields">
       <label><span>Name</span><input value={title} maxLength={128} disabled={busy} onChange={(event) => setTitle(event.target.value)} placeholder="Daily AI news" /></label>
       <div><span className="task-label">What should Shinbo do?</span><PromptField value={prompt} onChange={setPrompt} commands={[...commands.skills, ...commands.tools]} atItems={commands.atItems} disabled={busy} rows={7} label="What should Shinbo do?" placeholder="Write the instructions just as you would in a conversation. Type / for a skill or tool, @ for a file, artifact or saved page." /></div>
+      {promptProblem && <p className="task-problem" role="alert">{promptProblem}</p>}
       <ScheduleField value={trigger} onChange={setTrigger} disabled={busy} />
       <div className="task-run-settings">
         <TaskModelPicker model={model} onChange={setModel} busy={busy} inherit="Current model" label="Workflow model" />
@@ -1583,7 +1681,7 @@ function TaskEditor({ job, runs, act, busy, openThread, onSaved, onDeleted, comm
       <button type="button" disabled={busy || !graph.nodes.length || graph.errors.length > 0} onClick={() => void test()}>Test</button>
       {job && <button type="button" disabled={busy} onClick={() => void act("runScheduledJob", { jobId: job.id })}>Run now</button>}
       {job && <button type="button" disabled={busy} onClick={() => void act("setScheduledJobEnabled", { jobId: job.id, enabled: String(!job.enabled) })}>{job.enabled ? "Pause" : "Resume"}</button>}
-      {job && <button type="button" className="task-danger" data-armed={confirming} disabled={busy} onClick={() => void remove()}>{confirming ? "Delete for good" : "Delete"}</button>}
+      {job && <button type="button" className="task-danger" data-armed={confirming} disabled={busy} onClick={() => void remove()}>{confirming ? liveRuns ? `Delete for good · stops and archives ${liveRuns} ${liveRuns === 1 ? "run" : "runs"}` : "Delete for good" : "Delete"}</button>}
     </div>
     {dryRun && <pre className="task-dry-run">{dryRun}</pre>}
     {job && <section className="task-runs">
@@ -1599,7 +1697,14 @@ function ScheduledView({ snapshot, act, busy, openThread }: { snapshot: Snapshot
   const jobs = snapshot.scheduledJobs;
   const [picked, setPicked] = useState("");
   const [mode, setMode] = useState<"editor" | "graph">("editor");
-  const commands = useTaskCommands(readSettings().tools.disabledTools);
+  const dirty = useRef(false);
+  const onDirty = useCallback((value: boolean) => { dirty.current = value; }, []);
+  const pick = (id: string) => {
+    if (dirty.current && !confirm("Leave this workflow? What you changed here is not saved.")) return;
+    setPicked(id);
+    if (id === "new") setMode("editor");
+  };
+  const commands = useTaskCommands(loadSettings().tools.disabledTools);
   const selected = jobs.find((item) => item.id === picked);
   const creating = picked === "new" || (!selected && !jobs.length);
   const job = creating ? undefined : selected ?? jobs[0];
@@ -1613,12 +1718,12 @@ function ScheduledView({ snapshot, act, busy, openThread }: { snapshot: Snapshot
     </header>
     <div className="tasks-body">
       <nav className="tasks-rail" aria-label="Workflows">
-        {jobs.map((item) => <button key={item.id} type="button" className={!creating && item.id === job?.id ? "active" : ""} disabled={busy} onClick={() => setPicked(item.id)}>
+        {jobs.map((item) => <button key={item.id} type="button" className={!creating && item.id === job?.id ? "active" : ""} disabled={busy} onClick={() => pick(item.id)}>
           <span>{item.title}</span>
           <small>{describeTrigger(item.schedule)}</small>
           <b className={item.enabled ? "on" : ""}>{item.enabled ? "live" : "paused"}</b>
         </button>)}
-        <button type="button" className={`tasks-new ${creating ? "active" : ""}`} disabled={busy} onClick={() => { setPicked("new"); setMode("editor"); }}>+ New workflow</button>
+        <button type="button" className={`tasks-new ${creating ? "active" : ""}`} disabled={busy} onClick={() => pick("new")}>+ New workflow</button>
       </nav>
       <TaskEditor
         key={creating ? "new" : job?.id ?? "new"}
@@ -1630,6 +1735,7 @@ function ScheduledView({ snapshot, act, busy, openThread }: { snapshot: Snapshot
         openThread={openThread}
         onSaved={setPicked}
         onDeleted={() => setPicked("")}
+        onDirty={onDirty}
         commands={commands}
       />
     </div>
@@ -1740,7 +1846,7 @@ function FolderTile({ folder, notes, hue, busy, open, move, recolour, rename }: 
   </article>;
 }
 
-function NoteCard({ note, busy, open }: { note: KeptNote; busy: boolean; open: (note: KeptNote) => void }) {
+function NoteCard({ note, busy, open, openLabel }: { note: KeptNote; busy: boolean; open: (note: KeptNote) => void; openLabel: string }) {
   const source = noteSource(note);
   return <article className="kb-card" data-kind={note.kind} draggable onDragStart={(event) => { event.dataTransfer.setData("text/plain", note.path); event.dataTransfer.effectAllowed = "move"; }}>
     <button type="button" className="kb-face" title={`Read ${note.title}`} onClick={() => openPreview(note.path, note.title, note.image)}>
@@ -1753,7 +1859,7 @@ function NoteCard({ note, busy, open }: { note: KeptNote; busy: boolean; open: (
     <footer>
       <time dateTime={note.savedAt}>{date(note.savedAt)}</time>
       {source && <b title={note.sourceUrl ?? source}>{source}</b>}
-      <button type="button" className="kb-jump" disabled={busy} title="Open in Obsidian" aria-label={`Open ${note.title} in Obsidian`} onClick={() => open(note)}>↗</button>
+      <button type="button" className="kb-jump" disabled={busy} title={openLabel} aria-label={`${openLabel} · ${note.title}`} onClick={() => open(note)}>↗</button>
     </footer>
   </article>;
 }
@@ -1834,11 +1940,11 @@ function NotesView({ notes, notesError, busy, reload, hues, setHues }: { notes: 
         recolour={(choice) => { const next = { ...hues }; if (choice) next[shelf.folder.name] = choice; else delete next[shelf.folder.name]; setHues(next); }}
         rename={(name) => rename(shelf.folder.name, name)} />)}
       {naming
-        ? <article className="kb-folder kb-folder-new"><form className="kb-folder-front kb-naming" onSubmit={make}><input autoFocus value={draft} maxLength={MAX_FOLDER_NAME} spellCheck={false} aria-label="Folder name" placeholder="Name it…" onChange={(event) => setDraft(event.target.value)} onBlur={() => { setNaming(false); setDraft(""); }} onKeyDown={(event) => { if (event.key === "Escape") { setNaming(false); setDraft(""); } }} /><small>Enter to create</small></form></article>
+        ? <article className="kb-folder kb-folder-new"><form className="kb-folder-front kb-naming" onSubmit={make}><input autoFocus value={draft} maxLength={MAX_FOLDER_NAME} spellCheck={false} aria-label="Folder name" placeholder="Name it…" onChange={(event) => setDraft(event.target.value)} onBlur={() => { setNaming(false); setDraft(""); setError(""); }} onKeyDown={(event) => { if (event.key === "Escape") { setNaming(false); setDraft(""); setError(""); } }} /><small>Enter to create</small></form></article>
         : <article className="kb-folder kb-folder-new"><button type="button" className="kb-folder-open" disabled={busy} onClick={() => setNaming(true)}><span className="kb-folder-front"><strong>＋ New folder</strong><small>Drag saves onto it</small></span></button></article>}
     </div>}
     {vault && !(into ? shown.length : sorted.length) && <div className="content-empty"><Mark /><h2>{into ? "This folder is empty" : "Nothing saved yet"}</h2><p>{into ? "Drag a save onto a folder to file it here." : "Saved pages, screenshots and highlights land in the vault folder above."}</p></div>}
-    <div className="kb-board">{shown.map((note) => <NoteCard key={note.path} note={note} busy={busy} open={open} />)}</div>
+    <div className="kb-board">{shown.map((note) => <NoteCard key={note.path} note={note} busy={busy} open={open} openLabel={vault?.kind === "folder" ? (window.shinbo.platform === "win32" ? "Reveal in File Explorer" : "Reveal in Finder") : "Open in Obsidian"} />)}</div>
   </section>;
 }
 
@@ -2029,14 +2135,14 @@ function TagPicker({ threadId }: { threadId: string }) {
   </div>;
 }
 
-function DropVeil({ onFiles }: { onFiles: (files: FileList) => void }) {
+function DropVeil({ onFiles, locked }: { onFiles: (files: File[], folders: number) => void; locked: boolean }) {
   const [over, setOver] = useState(false);
   const depth = useRef(0);
-  const latest = useRef(onFiles);
-  useEffect(() => { latest.current = onFiles; });
+  const latest = useRef({ onFiles, locked });
+  useEffect(() => { latest.current = { onFiles, locked }; });
   useEffect(() => {
     const carriesFiles = (event: DragEvent) => event.dataTransfer?.types.includes("Files") ?? false;
-    const enter = (event: DragEvent) => { if (carriesFiles(event)) { depth.current += 1; setOver(true); } };
+    const enter = (event: DragEvent) => { if (carriesFiles(event)) { depth.current += 1; setOver(!latest.current.locked); } };
     const leave = () => { depth.current = Math.max(0, depth.current - 1); if (!depth.current) setOver(false); };
     const move = (event: DragEvent) => { if (!carriesFiles(event)) return; event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = "copy"; };
     const drop = (event: DragEvent) => {
@@ -2044,7 +2150,16 @@ function DropVeil({ onFiles }: { onFiles: (files: FileList) => void }) {
       setOver(false);
       if (!event.dataTransfer?.files.length) return;
       event.preventDefault();
-      latest.current(event.dataTransfer.files);
+      const files: File[] = [];
+      let folders = 0;
+      for (const item of event.dataTransfer.items) {
+        if (item.kind !== "file") continue;
+        if (item.webkitGetAsEntry()?.isDirectory) { folders += 1; continue; }
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+      if (!files.length && !folders) files.push(...event.dataTransfer.files);
+      latest.current.onFiles(files, folders);
     };
     addEventListener("dragenter", enter);
     addEventListener("dragleave", leave);
@@ -2068,12 +2183,16 @@ function SelectionQuote({ scroller, onQuote, onThread }: { scroller: RefObject<H
       const text = selection.toString().trim();
       if (!text || !node.contains(range.commonAncestorContainer)) { setPick(null); return; }
       const rect = range.getBoundingClientRect();
-      setPick({ text, x: Math.min(Math.max(rect.left + rect.width / 2, QUOTE_MENU_EDGE), innerWidth - QUOTE_MENU_EDGE), y: Math.max(rect.top, 52) });
+      const x = Math.min(Math.max(rect.left + rect.width / 2, QUOTE_MENU_EDGE), innerWidth - QUOTE_MENU_EDGE);
+      const y = Math.max(rect.top, 52);
+      setPick((current) => current && current.text === text && current.x === x && current.y === y ? current : { text, x, y });
     };
+    let frame = 0;
+    const scrolled = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(read); };
     addEventListener("pointerup", read);
     addEventListener("keyup", read);
-    node?.addEventListener("scroll", read);
-    return () => { removeEventListener("pointerup", read); removeEventListener("keyup", read); node?.removeEventListener("scroll", read); };
+    node?.addEventListener("scroll", scrolled);
+    return () => { cancelAnimationFrame(frame); removeEventListener("pointerup", read); removeEventListener("keyup", read); node?.removeEventListener("scroll", scrolled); };
   }, [scroller]);
 
   if (!pick) return null;
@@ -2096,10 +2215,12 @@ function SelectionQuote({ scroller, onQuote, onThread }: { scroller: RefObject<H
   </div>;
 }
 
-const THREAD_NAME_MAX = 128;
+const THREAD_NAME_MAX = 120;
 const threadName = (thread: Thread) => threadLabel(thread, THREAD_NAME_MAX);
 
 const COMPOSER_MAX = 65_536;
+
+const DRAFT_SAVE_MS = 250;
 
 function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clearThreadLoadError, snapshot, notes, busy, act, reload, agents, tab, setTab, newThread, onSendingChange, onModelChanged, onContextChanged, onManageModels, onManageImports, modelKey, modelLabel, modelBrand, thinkingLevel, reviewOffered, contextTokens, contextPages, onContextPages, layout, pane, showBrowser, reviewPane, showReview, artifactPaneId, setArtifactPaneId, editArtifact }: { thread: Thread & { context: ThreadContext }; loadedSubthread?: Thread; loadThread: (id: string) => Promise<void>; threadLoadError?: { id: string; text: string }; clearThreadLoadError: () => void; snapshot: Snapshot; notes: KeptNote[]; busy: boolean; act: (method: string, params?: Record<string, string>) => Promise<unknown>; reload: () => unknown; agents: LiveAgent[]; tab: string; setTab: (tab: string) => void; newThread: (seed?: string) => void; onSendingChange: (busy: boolean) => void; onModelChanged: (settings: UserSettings) => void; onContextChanged: (context: ThreadContext) => void; onManageModels: () => void; onManageImports: () => void; modelKey: string; modelLabel: string; modelBrand?: BrandDefinition; thinkingLevel: ThinkingLevel; reviewOffered: boolean; contextTokens: number; contextPages: ContextPage[]; onContextPages: (pages: ContextPage[]) => void } & PaneProps) {
   const [message, setMessage] = useState(() => takeComposerSeed(thread.id) || threadDraft(thread.id).text);
@@ -2134,12 +2255,17 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
   const [contextQuery, setContextQuery] = useState("");
   const [picks, setPicks] = useState<ContextPick[]>(() => threadDraft(threadId ?? "").picks);
   const [draftSaved, setDraftSaved] = useState(true);
+  const draft = useRef({ text: message, picks });
+  useEffect(() => { draft.current = { text: message, picks }; }, [message, picks]);
   useEffect(() => {
-    const saved = setThreadDraft(threadId ?? "", { text: message, picks });
-    let alive = true;
-    queueMicrotask(() => { if (alive) setDraftSaved(saved); });
-    return () => { alive = false; };
+    const timer = setTimeout(() => setDraftSaved(setThreadDraft(threadId ?? "", draft.current)), DRAFT_SAVE_MS);
+    return () => clearTimeout(timer);
   }, [threadId, message, picks]);
+  useEffect(() => {
+    const flush = () => { setThreadDraft(threadId ?? "", draft.current); };
+    addEventListener("pagehide", flush);
+    return () => { removeEventListener("pagehide", flush); flush(); };
+  }, [threadId]);
   const [, ledgerChanged] = useState(0);
   const [caret, setCaret] = useState(0);
   const [slashPick, setSlashPick] = useState(0);
@@ -2171,9 +2297,6 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
     const timer = setTimeout(() => setNotice(null), notice.tone === "error" ? 8000 : 2600);
     return () => clearTimeout(timer);
   }, [notice]);
-  const commandSlash = slashQuery(message, caret);
-  const commandMenuOpen = !busy && !capabilityBusy && !slashDismissed && commandSlash?.sigil === "/";
-  const commandSkillQuery = commandMenuOpen ? commandSlash?.query ?? "" : "";
   const installedSkillCount = run.blocks.filter((block) => block.kind === "step" && block.step.title === "Installing skill" && block.step.status === "completed").length;
   const sending = run.sending;
   const queued = queuedTurns(run);
@@ -2215,12 +2338,11 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
   useEffect(() => {
     let active = true;
     const load = () => {
-      const available = window.shinbo.searchImportedSkills({ query: "", limit: 64 }).catch(() => [] as ImportedSkill[]);
-      const skills = commandSkillQuery ? window.shinbo.searchImportedSkills({ query: commandSkillQuery, limit: 32 }).catch(() => [] as ImportedSkill[]) : available;
+      const skills = window.shinbo.searchImportedSkills({ query: "", limit: 64 }).catch(() => [] as ImportedSkill[]);
       const servers = window.shinbo.listImportedMcpServers().catch(() => [] as ImportedMcpServer[]);
-      void Promise.all([skills, servers, available]).then(([imported, mcp, all]) => {
+      void Promise.all([skills, servers]).then(([imported, mcp]) => {
         if (!active) return;
-        setMessageSkills(all.map((item) => item.name));
+        setMessageSkills(imported.map((item) => item.name));
         setCommands([
           ...BUILTIN_COMMANDS,
           ...imported.map((item) => ({ id: item.id, name: item.name, kind: "skill" as const, detail: `${item.source} · skill` })),
@@ -2232,7 +2354,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
     load();
     const stop = window.shinbo.onToolsChanged(load);
     return () => { active = false; stop(); };
-  }, [commandMenuOpen, commandSkillQuery, installedSkillCount]);
+  }, [installedSkillCount]);
   useEffect(() => {
     let active = true;
     const load = () => void window.shinbo.listArtifacts().then((list) => { if (active) setArtifacts(list); }).catch(() => undefined);
@@ -2294,6 +2416,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
   const [popped, setPopped] = useState<string[]>([]);
   const [raw, setRaw] = useState<string[]>([]);
   const [floated, setFloated] = useState<string[]>([]);
+  const [dismissed, setDismissed] = useState<string[]>([]);
   const [browserFloat, setBrowserFloat] = useState(false);
   useEffect(() => {
     if (tab === "thread" || tab === "goal") return;
@@ -2311,13 +2434,19 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
   const uses = threadUses(inspectedId);
   const cleared = Math.min(clearedAt(threadId ?? ""), thread?.messages.length ?? 0);
   const switches = modelSwitches(threadId ?? "");
+  const switchesAt = useMemo(() => {
+    const marks = new Map<number, ModelSwitch[]>();
+    for (const mark of switches) marks.set(mark.at, [...(marks.get(mark.at) ?? []), mark]);
+    return marks;
+  }, [switches]);
   const cut = inspectedId === threadId ? cleared : 0;
   const carried = useMemo(() => inspected && cut ? { ...inspected, messages: inspected.messages.slice(cut) } : inspected, [inspected, cut]);
   const landedCalls = useThreadCalls(inspectedId, sending);
   const ledger = useContextLedger(carried, uses, contextTokens, inFlight, threadExperiments(inspectedId), landedCalls, threadBreakdown(inspectedId));
-  const gitState = useGit(folderIds[0], sending);
+  const gitState = useGit(folderIds[0], sending, !layout.inspectorCollapsed && page.widgets.some((widget) => widget.type === "git"));
   const git = gitState.snapshot;
   const [changes, setChanges] = useState<FileChange[]>([]);
+  const changeStat = useMemo(() => diffStat(changes), [changes]);
   const reloadChanges = useCallback(() => {
     if (!threadId) return;
     void window.shinbo.threadChanges(threadId).then(setChanges).catch(() => setChanges([]));
@@ -2355,14 +2484,15 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
     () => tracedBlocks(traced.threadId, traced.threadId === threadId ? thread?.messages ?? [] : [], traced.traces),
     [threadId, thread.messages, traced],
   );
+  const from = pairingFrom(thread.id);
   useEffect(() => {
     if (!thread) return;
-    const paired = pairBlocks(thread.messages, run.landed, {}, run.pending?.after ?? 0);
+    const paired = pairBlocks(thread.messages, run.landed, {}, from);
     const turns = Object.fromEntries(thread.messages.flatMap((item, index) =>
       paired[index] && wrote(item.content, paired[index]!) ? [[item.timestamp, paired[index]!]] : []));
     rememberBlocks(thread.id, turns);
-    settleRun(thread.id, thread.messages, cachedBlocks(thread.id));
-  }, [thread, run.landed, run.pending?.after]);
+    settleRun(thread.id, thread.messages, cachedBlocks(thread.id), from);
+  }, [thread, run.landed, from]);
   const attachedTurns = useMemo(() => thread ? turnAttachments(thread.id, thread.messages) : {}, [thread]);
   const ask = usePermissionAsk(threadId ?? "", agents);
   const locked = busy || capabilityBusy || contextBusy;
@@ -2380,44 +2510,63 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
   const setFolderIds = (folderIds: string[]) => { void changeContext({ folderIds }); };
   const setReview = (review: boolean) => { void changeContext({ review }); };
   const echo = run.pending && !thread.messages.slice(run.pending.after).some((message) => message.role === "user" && message.content === run.pending?.content) ? run.pending.content : null;
-  const echoTray = echo !== null && run.pending ? pendingAttachments(thread.id, run.pending.after, echo) : [];
+  const echoTray = echo !== null ? run.pending?.attachments ?? [] : [];
   const unlanded = !sending && run.blocks.length > 0 && !arrived(thread.messages, run.blocks);
   const streaming = (sending || unlanded) && run.blocks.length ? run.blocks : null;
-  const landedBlocks = useMemo(() => pairBlocks(thread.messages, unlanded ? run.landed.slice(0, -1) : run.landed, { ...recorded, ...cached }, run.pending?.after ?? 0), [thread.messages, unlanded, run.landed, recorded, cached, run.pending?.after]);
+  const landedBlocks = useMemo(() => pairBlocks(thread.messages, unlanded ? run.landed.slice(0, -1) : run.landed, { ...recorded, ...cached }, from), [thread.messages, unlanded, run.landed, recorded, cached, from]);
   const setCapabilityRunning = (value: boolean) => { setCapabilityBusy(value); onSendingChange(value); };
   const localContext = useMemo(() => contextCommands(folders, folderIds, folderFiles), [folders, folderIds, folderFiles]);
   const cappedFolder = folderIds.map((id) => ({ folder: folders.find((item) => item.id === id), listed: folderFiles[id]?.length ?? 0, total: folderTotals[id]?.total ?? 0, capped: folderTotals[id]?.capped ?? false })).find((count) => count.total > count.listed);
   const allCommands = commands;
+  const [searchedSkills, setSearchedSkills] = useState<{ query: string; items: SlashCommand[] }>({ query: "", items: [] });
   const imported = commands.filter((item) => item.kind === "skill" || item.kind === "mcp");
   const atItems = useMemo(() => atCommands(artifacts, notes, folders, folderIds, folderFiles), [artifacts, notes, folders, folderIds, folderFiles]);
   const composerSegments = useMemo(() => highlightSegments(message, allCommands.map((item) => item.name), atItems.map((item) => item.name)), [message, allCommands, atItems]);
   const noteUses = (added: Omit<ContextUse, "turns">[]) => { recordUses(thread.id, added); ledgerChanged((current) => current + 1); };
   const dropPick = (pick: ContextPick) => setPicks((current) => current.filter((item) => pickKey(item) !== pickKey(pick)));
-  const holdAttachments = (held: HeldAttachment[]) => {
+  const holdAttachments = ({ picked, failed = [] }: { picked: HeldAttachment[]; failed?: string[] }) => {
     let room = MAX_TURN_IMAGES - picks.filter((pick) => pick.kind === "attachment" && isImageAttachment(pick.name)).length;
     let refused = 0;
-    for (const item of held) {
+    for (const item of picked) {
       if (isImageAttachment(item.name)) {
         if (room < 1) { refused += 1; continue; }
         room -= 1;
       }
       addPick({ kind: "attachment", id: item.id, name: item.name, path: item.path, ...(item.thumbnail ? { thumbnail: item.thumbnail } : {}) });
     }
-    if (refused) setRunError(`A message carries at most ${MAX_TURN_IMAGES} images — ${refused} ${plural(refused, "was", "were")} left out. Send these, then attach the rest.`);
+    const notes = [...failed, ...(refused ? [`A message carries at most ${MAX_TURN_IMAGES} images — ${refused} ${plural(refused, "was", "were")} left out. Send these, then attach the rest.`] : [])];
+    if (notes.length) setRunError(notes.join("\n"));
   };
-  const attachDropped = (files: FileList | null | undefined) => {
-    if (locked || !files?.length) return;
-    setRunError("");
-    void Promise.all([...files].map(async (file) => window.shinbo.attachData({ name: file.name, data: await file.arrayBuffer() })))
-      .then(holdAttachments)
-      .catch((reason: unknown) => setRunError(reasonText(reason)));
+  const attachDropped = (dropped: Iterable<File> | null | undefined, folders = 0) => {
+    const files = [...(dropped ?? [])];
+    if (!files.length && !folders) return;
+    if (locked) { setRunError("Wait for this turn to finish before attaching files."); return; }
+    setRunError(folders ? `${plural(folders, "A folder", "Folders")} cannot be attached — drop the files inside instead.` : "");
+    void Promise.allSettled(files.map(async (file) => {
+      if (file.size > attachmentLimit(file.name)) throw new Error(oversizeMessage(file.name, file.size));
+      return window.shinbo.attachData({ name: file.name, data: await file.arrayBuffer() });
+    })).then((results) => holdAttachments({
+      picked: results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []),
+      failed: results.flatMap((result) => result.status === "rejected" ? [reasonText(result.reason)] : []),
+    }));
   };
   const slash = locked || slashDismissed ? null : slashQuery(message, caret);
-  const slashMatches = slash ? matchCommands(slash.sigil === "@" ? atItems : allCommands, slash.query).slice(0, MENU_MAX) : [];
   const slashOpen = slash !== null;
+  const skillSearch = slash?.sigil === "/" && slash.query && !matchCommands(commands, slash.query).length ? slash.query : "";
+  useEffect(() => {
+    if (!skillSearch) return;
+    let active = true;
+    const timer = setTimeout(() => {
+      void window.shinbo.searchImportedSkills({ query: skillSearch, limit: 32 }).then((found) => {
+        if (active) setSearchedSkills({ query: skillSearch, items: found.map((item) => ({ id: item.id, name: item.name, kind: "skill" as const, detail: `${item.source} · skill` })) });
+      }).catch(() => undefined);
+    }, 150);
+    return () => { active = false; clearTimeout(timer); };
+  }, [skillSearch]);
+  const slashMatches = slash ? matchCommands(slash.sigil === "@" ? atItems : skillSearch && searchedSkills.query === skillSearch ? searchedSkills.items : allCommands, slash.query).slice(0, MENU_MAX) : [];
   const slashActive = Math.min(slashPick, slashMatches.length - 1);
   const typing = (element: HTMLTextAreaElement) => { setMessage(element.value); setCaret(element.selectionStart ?? element.value.length); setSlashDismissed(false); setSlashPick(0); setHistory(-1); };
-  const past = thread.messages.filter((item) => item.role === "user").map((item) => sentByThread(item.content).body).reverse();
+  const past = useMemo(() => thread.messages.filter((item) => item.role === "user").map((item) => sentByThread(item.content).body).reverse(), [thread.messages]);
   const openCapabilities = () => { setModelsOpen(false); setSourcesOpen(true); setCapabilitiesOpen(true); };
   const [councilOpen, setCouncilOpen] = useState(false);
   const pickCommand = (command: SlashCommand) => {
@@ -2428,7 +2577,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
     queueMicrotask(() => { input.current?.focus(); input.current?.setSelectionRange(next.caret, next.caret); setCaret(next.caret); });
     if (command.pick) addPick(command.pick);
     else if (command.kind === "tool" || command.kind === "mcp") return;
-    else if (command.kind === "skill") void window.shinbo.selectImportedSkill({ id: command.id, threadId: thread.id }).then(setSkill).catch(() => undefined);
+    else if (command.kind === "skill") void window.shinbo.selectImportedSkill({ id: command.id, threadId: thread.id }).then(setSkill).catch((reason: unknown) => setRunError(reasonText(reason)));
     else if (command.id === "agent") setAgentOpen(true);
     else if (command.id === "council") setCouncilOpen(true);
     else if (command.id === "import") onManageImports();
@@ -2488,16 +2637,18 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
     setSkill(null);
     setPicks([]);
     const after = thread.messages.length;
-    rememberTurnAttachments(thread.id, after, content, picks.map((pick) => ({
+    const attachments = picks.map((pick) => ({
       kind: pick.kind,
       name: pickBrief(pick),
       ...(pick.kind === "attachment" ? { path: pick.path, ...(pick.thumbnail ? { thumbnail: pick.thumbnail } : {}) } : {}),
-    })));
+    }));
+    rememberTurnAttachments(thread.id, after, content, attachments);
     sendTurn(thread.id, {
       content,
       after,
       params: {},
       attached: picks.length > 0 || !!attachedSkill,
+      attachments,
       prepare: folderIds.length || picks.length || attachedSkill ? async () => {
         const attached = folderIds.length || picks.length ? await buildAttachedContext(folders, folderIds, picks, folderFiles) : { text: "", uses: [], images: [] };
         return {
@@ -2522,7 +2673,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
       return;
     }
     const params = Object.fromEntries(Object.entries(turn?.params ?? {}).filter(([key]) => key !== "skillAttachmentId"));
-    stopTurn(thread.id, { content, after: mark.at, params, prepare: async () => { recordModelSwitch(thread.id, mark); return { params }; } }, reload);
+    stopTurn(thread.id, { content, after: mark.at, params, attached: turn?.attached, attachments: turn?.attachments, prepare: async () => { recordModelSwitch(thread.id, mark); return { params }; } }, reload);
   };
   const interrupt = () => {
     setConfirmStop(false);
@@ -2541,7 +2692,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
   const pastAgent = !openAgent && loadedSubthread?.id === tab ? loadedSubthread : undefined;
   const subagentLoading = !!subagentId && loadedSubthread?.id !== subagentId;
   const subagentError = threadLoadError?.id === subagentId ? threadLoadError.text : "";
-  const threadClis = cliRuns.filter((run) => run.threadId === thread.id);
+  const threadClis = cliRuns.filter((run) => run.threadId === thread.id && (run.status === "running" || !dismissed.includes(run.id)));
   const openCli = threadClis.find((run) => run.id === tab);
   const openCliRun = (id: string) => { setFloated((current) => current.filter((runId) => runId !== id)); setTab(id); };
   const parentThread = thread.parentThreadId ? snapshot.threads.find((item) => item.id === thread.parentThreadId) : undefined;
@@ -2609,7 +2760,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
     : null;
   return <GoalThreads.Provider value={snapshot.threads}><div className="thread-layout">
     <div className="thread-column">
-      <TabStrip tabs={tabs} active={tab} onPick={(id) => { if (threadTabs.has(id)) openThreadPage(id); else setTab(id); }} onClose={(id) => { if (tab === id) setTab("thread"); }} />
+      <TabStrip tabs={tabs} active={tab} onPick={(id) => { if (threadTabs.has(id)) openThreadPage(id); else setTab(id); }} onClose={(id) => { setDismissed((current) => [...current, id]); setFloated((current) => current.filter((runId) => runId !== id)); if (tab === id) setTab("thread"); }} />
       <div className="thread-stage">
       {notice && <div className={`pick-toast ${notice.tone} ${notice.funds ? "funds" : ""}`} role={notice.tone === "error" ? "alert" : "status"} key={notice.id}>
         <span>{notice.funds ? `OpenRouter would not run that turn — out of credit, or over what a free key is allowed. ${notice.text}` : notice.text}</span>
@@ -2641,8 +2792,8 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
           void act("renameThread", { threadId: thread.id, title: named }).then(reload);
         }}
       /><button type="button" className="page-info-button" aria-label="Show thread details" aria-haspopup="dialog" onClick={() => setAgentOpen(true)}>i</button><TagPicker threadId={thread.id} /><div className="thread-actions">
-        {folderIds[0] && (!!git?.diff.trim() || changes.length > 0) && <OpenIn folderId={folderIds[0]} label />}
-        {changes.length > 0 && <button type="button" className="changes-open" aria-label="Open changes pane" aria-pressed={reviewPane === "changes"} onClick={() => showReview(reviewPane === "changes" ? "" : "changes")}><ChangeCount stat={diffStat(changes)} /></button>}
+        {folderIds[0] && (!!git?.files.length || changes.length > 0) && <OpenIn folderId={folderIds[0]} label />}
+        {changes.length > 0 && <button type="button" className="changes-open" aria-label="Open changes pane" aria-pressed={reviewPane === "changes"} onClick={() => showReview(reviewPane === "changes" ? "" : "changes")}><ChangeCount stat={changeStat} /></button>}
         {folderIds[0] && <button type="button" className="pane-toggle" aria-pressed={reviewPane === "git"}
           aria-label={git ? `Open the Git pane, on branch ${git.branch}` : "Open the Git pane"} title={git ? `Git · ${git.branch}` : "Git"}
           onClick={() => showReview(reviewPane === "git" ? "" : "git")}><BranchIcon /></button>}
@@ -2659,7 +2810,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
           onHide={() => showBrowser(false)}
           onClose={() => { showBrowser(false); void window.shinbo.browserNav({ threadId: thread.id, action: "close" }).catch(() => undefined); }}
           openLabel="Open the browser pane" closeLabel="Close the browser pane"
-          hideNote="Keeps the page, its cookies and its memory" closeNote="Quits Chrome and frees what it holds"><GlobeIcon /></PaneSwitch>
+          hideNote="Keeps the page and its memory" closeNote="Quits Chrome and frees its memory; cookies are shared across threads and stay"><GlobeIcon /></PaneSwitch>
         <IndexStatus paths={folderIds.map((id) => folders.find((item) => item.id === id)?.path ?? "")} />
         <button type="button" className="pane-toggle" aria-label={layout.inspectorCollapsed ? "Expand context bar" : "Collapse context bar"} aria-pressed={!layout.inspectorCollapsed} title={layout.inspectorCollapsed ? "Show the context bar" : "Hide the context bar"} onClick={() => pane({ inspectorCollapsed: !layout.inspectorCollapsed })}><InspectorIcon /></button></div></header>
       <div className="transcript-wrap">
@@ -2669,15 +2820,15 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
         <RunContext.Provider value={runFences}>
         {(!thread.messages.length && echo === null && !sending) || <ProjectRules folder={folders.find((grant) => grant.id === folderIds[0])} />}
         {!thread.messages.length && echo === null && !sending && <Dashboard threads={snapshot.threads} folders={folders} folderId={folderIds[0] ?? ""} seed={(prompt) => { setMessage(prompt); setCaret(prompt.length); queueMicrotask(() => { input.current?.focus(); input.current?.setSelectionRange(prompt.length, prompt.length); }); }} />}
-        {thread.messages.map((item, index) => <Fragment key={`${item.timestamp}-${index}`}>{cleared > 0 && index === cleared && <ContextCut />}{switches.filter((mark) => mark.at === index).map((mark) => <ModelCut key={`model-${mark.at}`} mark={mark} />)}<Turn item={item} blocks={landedBlocks[index]} index={index} attached={attachedTurns[index]} spawned={spawned.turns.get(index)} /></Fragment>)}
+        {thread.messages.map((item, index) => <Fragment key={`${item.timestamp}-${index}`}>{cleared > 0 && index === cleared && <ContextCut />}{switchesAt.get(index)?.map((mark) => <ModelCut key={`model-${mark.at}`} mark={mark} />)}<Turn item={item} blocks={landedBlocks[index]} index={index} attached={attachedTurns[index]} spawned={spawned.turns.get(index)} /></Fragment>)}
         {cleared > 0 && cleared === thread.messages.length && <ContextCut />}
-        {switches.filter((mark) => mark.at === thread.messages.length).map((mark) => <ModelCut key={`model-${mark.at}`} mark={mark} />)}
+        {switchesAt.get(thread.messages.length)?.map((mark) => <ModelCut key={`model-${mark.at}`} mark={mark} />)}
         {echo !== null && <article className="message user pending"><MessageTray attached={echoTray} /><Body content={echo} /></article>}
         {councilOpen && <CouncilPanel threadId={thread.id} mode={mode} question={message.trim() || lastAsked(thread.messages)}
-          seed={councilSeed(readSettings())}
+          seed={councilSeed(loadSettings())}
           picker={(model, onPick, label) => <TaskModelPicker model={model} onChange={(key) => onPick(key)} busy={locked} label={label} inherit="Pick a model" codex={false} />}
-          name={(key) => key ? modelKeyLabel(readSettings(), key) : "Empty seat"}
-          brand={(key) => key ? modelKeyBrand(readSettings(), key) : undefined}
+          name={(key) => key ? modelKeyLabel(loadSettings(), key) : "Empty seat"}
+          brand={(key) => key ? modelKeyBrand(loadSettings(), key) : undefined}
           onClose={() => setCouncilOpen(false)} />}
         {streaming !== null && <Streaming blocks={streaming} threadId={thread.id} spawned={spawned.loose} />}
         {streaming === null && spawned.loose.length > 0 && <SubagentChips spawned={spawned.loose} onOpen={openSubagentTab} />}
@@ -2692,18 +2843,18 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
       </div>
       <ProjectBar folders={folders} ids={folderIds} setFolders={setFolders} setIds={setFolderIds} git={git} name={worktreeName(thread.id)} busy={locked} />
       {sending && confirmStop && <div className="queued-stack" role="status"><div className="queued-row"><span>Press Esc again to stop Shinbo</span><button type="button" onClick={() => setConfirmStop(false)} aria-label="Keep going">×</button></div></div>}
-      {queued.length > 0 && <div className="queued-stack" aria-label="Queued messages">{queued.map((turn, index) => <div className="queued-row" key={`${index}-${turn.content}`}><span>Queued · {turn.content}</span><button type="button" className="steering" disabled={!canSteer(turn)} onClick={() => steerNow(index)} aria-label="Steer the running turn with this message now" title={!canSteer(turn) ? "Attachments cannot be steered — this one waits for the turn to end" : "Steer — cut into what Shinbo is doing now and hand it this message"}>steer</button><button type="button" onClick={() => dropQueued(thread.id, index)} aria-label="Drop this queued message">×</button></div>)}</div>}
+      {queued.length > 0 && <div className="queued-stack" aria-label="Queued messages">{queued.map((turn, index) => <div className="queued-row" key={`${index}-${turn.content}`}><span>Queued · {turn.content}</span><button type="button" className="steering" disabled={!canSteer(turn)} onClick={() => steerNow(index)} aria-label="Steer the running turn with this message now" title={turn.content.length > MAX_STEER_CHARS ? `Longer than ${MAX_STEER_CHARS.toLocaleString("en-US")} characters — waits for the turn to end` : !canSteer(turn) ? "Attachments cannot be steered — this one waits for the turn to end" : "Steer — cut into what Shinbo is doing now and hand it this message"}>steer</button><button type="button" onClick={() => dropQueued(thread.id, index)} aria-label="Drop this queued message">×</button></div>)}</div>}
       {run.held.length > 0 && <div className="queued-stack held-stack" aria-label="Held messages">{run.held.map((turn, index) => <div className="queued-row" key={`${index}-${turn.content}`}><span>{turn.failure ? `Not sent · ${turn.failure}` : "Held"} · {turn.content}</span><button type="button" onClick={() => releaseHeld(thread.id, index, reload)} aria-label="Send this held message">↑</button><button type="button" onClick={() => dropHeld(thread.id, index)} aria-label="Drop this held message">×</button></div>)}</div>}
-      <DropVeil onFiles={attachDropped} />
+      <DropVeil onFiles={attachDropped} locked={locked} />
       {ask && <PermissionPrompt ask={ask} agents={agents} />}
       <TaskListBar threadId={thread.id} />
       <form className={`composer ${ask ? "asking" : ""}`} onSubmit={(event) => void send(event)}><label className="sr-only" htmlFor="message">Message Shinbo</label>
         {!draftSaved && <p className="capability-error" role="alert">This draft could not be saved. Copy it before quitting Shinbo.</p>}
-        <PickTray picks={picks} folders={folders} locked={locked} drop={dropPick} /><div className="composer-input"><div className="composer-highlight" ref={mirror} aria-hidden="true">{composerSegments.map((segment, index) => <span key={index} className={segment.hue === undefined ? undefined : "slash-token"} data-hue={segment.hue}>{segment.text}</span>)}{"\n"}</div><textarea ref={input} autoFocus={!thread.messages.length} id="message" value={message} disabled={locked} maxLength={COMPOSER_MAX} role="combobox" aria-expanded={slashOpen} aria-controls="slash-menu" aria-autocomplete="list" onChange={(event) => typing(event.currentTarget)} onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)} onScroll={(event) => { if (mirror.current) mirror.current.scrollTop = event.currentTarget.scrollTop; }} onKeyDown={composerKeys} onPaste={(event) => { if (event.clipboardData.files.length) { event.preventDefault(); attachDropped(event.clipboardData.files); } }} placeholder={sending ? `Shinbo is working — Enter queues, ${MODIFIER_LABEL}Enter steers (empty: oldest queued first), Esc Esc stops…` : thread.messages.length ? "Ask Shinbo to continue…" : "Ask Shinbo anything…"} rows={2} /></div>{message.length >= COMPOSER_MAX && <div className="composer-attachment"><span>Full — the composer holds {COMPOSER_MAX.toLocaleString()} characters, and anything past that was not taken. Attach the rest as a file.</span></div>}{slashOpen && <section className="source-popover slash-menu" id="slash-menu" role="listbox" aria-label={slash?.sigil === "@" ? "Artifacts, saved notes and files" : "Built-in tools, skills and MCP servers"}>{slashMatches.map((item, index) => <button type="button" role="option" aria-selected={index === slashActive} className={`slash-row ${index === slashActive ? "active" : ""}`} key={`${item.kind}-${item.id}`} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setSlashPick(index)} title={item.detail} onClick={() => pickCommand(item)}><strong>{slash?.sigil ?? "/"}{item.name}</strong><em className="slash-kind" data-kind={item.kind}>{KIND_LABELS[item.kind]}</em><small>{item.detail}</small></button>)}{!slashMatches.length && <p className="slash-empty">Nothing matches “{slash?.query}”. {slash?.sigil === "@" ? "Artifacts, saved notes and the files of this thread's folders appear here." : "Built-in tools, imported skills and MCP servers appear here."}</p>}</section>}<div className="composer-row"><div className="composer-tools"><button ref={sourceTrigger} type="button" className="source-trigger" disabled={locked} aria-label="Add context or plugin" aria-haspopup="dialog" aria-expanded={sourcesOpen} onClick={() => sourcesOpen ? closeSources() : setSourcesOpen(true)}>＋</button><ModePicker mode={mode} setMode={setMode} disabled={locked} />{reviewOffered && <button type="button" className="review-toggle" disabled={locked} aria-pressed={review} aria-label={review ? "Second-model review is on for this thread" : "Second-model review is off for this thread"} title={review ? "A second model reviews every turn that changes something here" : "Nothing is reviewed in this thread"} onClick={() => setReview(!review)}><ReviewIcon /></button>}</div><button ref={modelTrigger} type="button" className="model-button" disabled={locked} aria-haspopup="dialog" aria-expanded={modelsOpen} aria-label={`Select model, currently ${modelLabel}`} onClick={() => { if (modelsOpen) { closeModels(); return; } setSourcesOpen(false); setModelsOpen(true); }}><BrandIcon brand={modelBrand} className="model-brand" /><span className="model-label">{modelLabel}</span><span aria-hidden="true">▾</span></button><ThinkingControl level={thinkingLevel} modelKey={modelKey} act={act} busy={locked} onSettingsChanged={changeThreadModel} onPicked={(effort) => { if (thread.messages.length) recordModelSwitch(thread.id, { at: thread.messages.length, label: "", brand: "", effort }); }} />{sending
+        <PickTray picks={picks} folders={folders} locked={locked} drop={dropPick} /><div className="composer-input"><div className="composer-highlight" ref={mirror} aria-hidden="true">{composerSegments.map((segment, index) => <span key={index} className={segment.hue === undefined ? undefined : "slash-token"} data-hue={segment.hue}>{segment.text}</span>)}{"\n"}</div><textarea ref={input} autoFocus={!thread.messages.length} id="message" value={message} disabled={capabilityBusy || contextBusy} maxLength={COMPOSER_MAX} role="combobox" aria-expanded={slashOpen} aria-controls="slash-menu" aria-autocomplete="list" onChange={(event) => typing(event.currentTarget)} onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)} onScroll={(event) => { if (mirror.current) mirror.current.scrollTop = event.currentTarget.scrollTop; }} onKeyDown={composerKeys} onPaste={(event) => { const { files } = event.clipboardData; if (!files.length) return; const names = [...files].map((file) => file.name); if (event.clipboardData.getData("text/plain").split(/\r?\n/).every((line) => !line.trim() || names.includes(line.trim()))) event.preventDefault(); attachDropped(files); }} placeholder={sending ? `Shinbo is working — Enter queues, ${MODIFIER_LABEL}Enter steers (empty: oldest queued first), Esc Esc stops…` : thread.messages.length ? "Ask Shinbo to continue…" : "Ask Shinbo anything…"} rows={2} /></div>{message.length >= COMPOSER_MAX && <div className="composer-attachment"><span>Full — the composer holds {COMPOSER_MAX.toLocaleString()} characters, and anything past that was not taken. Attach the rest as a file.</span></div>}{slashOpen && <section className="source-popover slash-menu" id="slash-menu" role="listbox" aria-label={slash?.sigil === "@" ? "Artifacts, saved notes and files" : "Built-in tools, skills and MCP servers"}>{slashMatches.map((item, index) => <button type="button" role="option" aria-selected={index === slashActive} className={`slash-row ${index === slashActive ? "active" : ""}`} key={`${item.kind}-${item.id}`} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setSlashPick(index)} title={item.detail} onClick={() => pickCommand(item)}><strong>{slash?.sigil ?? "/"}{item.name}</strong><em className="slash-kind" data-kind={item.kind}>{KIND_LABELS[item.kind]}</em><small>{item.detail}</small></button>)}{!slashMatches.length && <p className="slash-empty">Nothing matches “{slash?.query}”. {slash?.sigil === "@" ? "Artifacts, saved notes and the files of this thread's folders appear here." : "Built-in tools, imported skills and MCP servers appear here."}</p>}</section>}<div className="composer-row"><div className="composer-tools"><button ref={sourceTrigger} type="button" className="source-trigger" disabled={locked} aria-label="Add context or plugin" aria-haspopup="dialog" aria-expanded={sourcesOpen} onClick={() => sourcesOpen ? closeSources() : setSourcesOpen(true)}>＋</button><ModePicker mode={mode} setMode={setMode} disabled={locked} />{reviewOffered && <button type="button" className="review-toggle" disabled={locked} aria-pressed={review} aria-label={review ? "Second-model review is on for this thread" : "Second-model review is off for this thread"} title={review ? "A second model reviews every turn that changes something here" : "Nothing is reviewed in this thread"} onClick={() => setReview(!review)}><ReviewIcon /></button>}</div><button ref={modelTrigger} type="button" className="model-button" disabled={locked} aria-haspopup="dialog" aria-expanded={modelsOpen} aria-label={`Select model, currently ${modelLabel}`} onClick={() => { if (modelsOpen) { closeModels(); return; } setSourcesOpen(false); setModelsOpen(true); }}><BrandIcon brand={modelBrand} className="model-brand" /><span className="model-label">{modelLabel}</span><span aria-hidden="true">▾</span></button><ThinkingControl level={thinkingLevel} modelKey={modelKey} act={act} busy={locked} onSettingsChanged={(next) => changeThreadModel(next).catch((reason: unknown) => { setRunError(reasonText(reason)); throw reason; })} onPicked={(effort) => { if (thread.messages.length) recordModelSwitch(thread.id, { at: thread.messages.length, label: "", brand: "", effort }); }} />{sending
           ? (message.trim()
             ? <button className="composer-send" disabled={locked} aria-label="Queue message" title="Queue — sent when this turn ends. Steer it from the queue to interrupt and send it now">↑</button>
             : <button type="button" className="composer-send stopping" onClick={interrupt} aria-label="Stop this turn" title="Stop this turn — Esc Esc">■</button>)
-          : <button className="composer-send" disabled={locked || !message.trim()} aria-label="Send message">↑</button>}</div>{modelsOpen && <ModelMenu ref={modelMenu} close={closeModels} act={act} busy={locked} onSettingsChanged={() => undefined} pinned={{ key: modelKey, onPick: async (key, current) => { const next = { ...current, selectedModel: key, thinkingLevel: "" as const }; await changeThreadModel(next); if (key === modelKey) return; if (stallSwap) { await swapStalledModel(next); return; } if (thread.messages.length) recordModelSwitch(thread.id, { at: thread.messages.length, label: modelKeyLabel(next, key), brand: modelKeyBrand(next, key)?.id ?? "" }); } }} onManage={onManageModels} />}{skill &&<div className="composer-attachment"><span>Skill · {skill.name} · next turn only</span><button type="button" disabled={locked} onClick={() => void window.shinbo.clearImportedSkill(skill.id).then(() => setSkill(null))} aria-label="Clear attached skill">×</button></div>}{sourcesOpen && <section className="source-popover add-menu" role="dialog" aria-modal="false" aria-labelledby="source-popover-title" tabIndex={-1} ref={(node) => { sourceMenu.current = node; if (node && !node.contains(document.activeElement)) node.focus(); }} onKeyDown={(event) => { if (event.key === "Escape" && !locked) closeSources(); }}><header><h3 id="source-popover-title">Add</h3><button type="button" disabled={locked} aria-label="Close add menu" onClick={closeSources}>×</button></header>{capabilitiesOpen ? <CapabilityPopover threadId={thread.id} locked={locked} close={() => setCapabilitiesOpen(false)} skill={skill} setSkill={setSkill} setBusy={setCapabilityRunning} /> : <><button type="button" className="add-row kind-knowledge" disabled={locked} onClick={() => { closeSources(); void window.shinbo.attachFiles().then(holdAttachments).catch((reason: unknown) => setRunError(reasonText(reason))); }}><b><ClipIcon /></b><div><strong>Attach files</strong><small>Images, code, CSVs, Markdown — dropping anywhere in the window or pasting works too</small></div></button><span className="add-section">Files</span><div className="add-context"><label className="sr-only" htmlFor="context-search">Search the files of this thread's folders</label><input id="context-search" value={contextQuery} disabled={locked} onChange={(event) => setContextQuery(event.target.value)} placeholder="Search files, skills & MCP — same as typing /" />{matchCommands(localContext, contextQuery).slice(0, 12).map((item) => <button type="button" className="slash-row" key={item.id} title={item.detail} disabled={locked} onClick={() => { if (item.pick) addPick(item.pick); }}>{item.pick?.kind === "file" ? <FileMark path={item.pick.path} /> : <span className="git-type" aria-hidden>·</span>}<strong>/{item.name}</strong><small>{item.detail}</small></button>)}{!localContext.length ? <p className="project-empty">Pick a folder in the project chip to list its files here.</p> : cappedFolder && <p className="project-empty">Showing {cappedFolder.listed} of {cappedFolder.total}{cappedFolder.capped ? "+" : ""} files in {cappedFolder.folder?.name ?? "this folder"} — the rest are not listed here.</p>}</div><span className="add-section">Skills &amp; MCP servers</span><div className="add-context">{matchCommands(imported, contextQuery).map((item) => <button type="button" className="slash-row" key={`${item.kind}-${item.id}`} title={item.detail} disabled={locked} onClick={() => { if (item.kind === "skill") { void window.shinbo.selectImportedSkill({ id: item.id, threadId: thread.id }).then(setSkill).catch(() => undefined); closeSources(); } else openCapabilities(); }}><strong>{item.kind === "skill" ? "Skill" : "MCP"} · {item.name}</strong><small>{item.detail}</small></button>)}{!imported.length && <p className="project-empty">Nothing imported yet — use /import to scan this {LOCAL_DEVICE}.</p>}</div><button type="button" className="add-row kind-capability" onClick={() => openCapabilities()}><b>{MODIFIER_LABEL}</b><div><strong>Imported skills &amp; MCP</strong><small>Attach a skill, or see the MCP servers every turn is handed</small></div></button><span className="add-section">Built-in plugins</span><button type="button" className="add-row kind-agent" onClick={() => { closeSources(); setAgentOpen(true); }}><b>⌁</b><div><strong>Agent runtime</strong><small>Inspect Shinbo's Zig harness and headless entry point</small></div></button><div className="add-row muted kind-hint"><b>{ALT_LABEL}</b><div><strong>Draw on screen</strong><small>Double-tap left {IS_WINDOWS ? "Alt" : "Option"}, then choose the yellow pen</small></div></div></>}</section>}</form>
+          : <button className="composer-send" disabled={locked || !message.trim()} aria-label="Send message">↑</button>}</div>{modelsOpen && <ModelMenu ref={modelMenu} close={closeModels} act={act} busy={locked} onSettingsChanged={() => undefined} pinned={{ key: modelKey, onPick: async (key, current) => { const next = { ...current, selectedModel: key, thinkingLevel: "" as const }; await changeThreadModel(next); if (key === modelKey) return; if (stallSwap) { await swapStalledModel(next); return; } if (thread.messages.length) recordModelSwitch(thread.id, { at: thread.messages.length, label: modelKeyLabel(next, key), brand: modelKeyBrand(next, key)?.id ?? "" }); } }} onManage={onManageModels} />}{skill &&<div className="composer-attachment"><span>Skill · {skill.name} · next turn only</span><button type="button" disabled={locked} onClick={() => void window.shinbo.clearImportedSkill(skill.id).then(() => setSkill(null))} aria-label="Clear attached skill">×</button></div>}{sourcesOpen && <section className="source-popover add-menu" role="dialog" aria-modal="false" aria-labelledby="source-popover-title" tabIndex={-1} ref={(node) => { sourceMenu.current = node; if (node && !node.contains(document.activeElement)) node.focus(); }} onKeyDown={(event) => { if (event.key === "Escape" && !locked) closeSources(); }}><header><h3 id="source-popover-title">Add</h3><button type="button" disabled={locked} aria-label="Close add menu" onClick={closeSources}>×</button></header>{capabilitiesOpen ? <CapabilityPopover threadId={thread.id} locked={locked} close={() => setCapabilitiesOpen(false)} skill={skill} setSkill={setSkill} setBusy={setCapabilityRunning} /> : <><button type="button" className="add-row kind-knowledge" disabled={locked} onClick={() => { closeSources(); void window.shinbo.attachFiles().then(holdAttachments).catch((reason: unknown) => setRunError(reasonText(reason))); }}><b><ClipIcon /></b><div><strong>Attach files</strong><small>Images, code, CSVs, Markdown — dropping anywhere in the window or pasting works too</small></div></button><span className="add-section">Files</span><div className="add-context"><label className="sr-only" htmlFor="context-search">Search the files of this thread's folders</label><input id="context-search" value={contextQuery} disabled={locked} onChange={(event) => setContextQuery(event.target.value)} placeholder="Search files, skills & MCP — same as typing /" />{matchCommands(localContext, contextQuery).slice(0, 12).map((item) => <button type="button" className="slash-row" key={item.id} title={item.detail} disabled={locked} onClick={() => { if (item.pick) addPick(item.pick); }}>{item.pick?.kind === "file" ? <FileMark path={item.pick.path} /> : <span className="git-type" aria-hidden>·</span>}<strong>/{item.name}</strong><small>{item.detail}</small></button>)}{!localContext.length ? <p className="project-empty">Pick a folder in the project chip to list its files here.</p> : cappedFolder && <p className="project-empty">Showing {cappedFolder.listed} of {cappedFolder.total}{cappedFolder.capped ? "+" : ""} files in {cappedFolder.folder?.name ?? "this folder"} — the rest are not listed here.</p>}</div><span className="add-section">Skills &amp; MCP servers</span><div className="add-context">{matchCommands(imported, contextQuery).map((item) => <button type="button" className="slash-row" key={`${item.kind}-${item.id}`} title={item.detail} disabled={locked} onClick={() => { if (item.kind === "skill") { void window.shinbo.selectImportedSkill({ id: item.id, threadId: thread.id }).then(setSkill).catch((reason: unknown) => setRunError(reasonText(reason))); closeSources(); } else openCapabilities(); }}><strong>{item.kind === "skill" ? "Skill" : "MCP"} · {item.name}</strong><small>{item.detail}</small></button>)}{!imported.length && <p className="project-empty">Nothing imported yet — use /import to scan this {LOCAL_DEVICE}.</p>}</div><button type="button" className="add-row kind-capability" onClick={() => openCapabilities()}><b>{MODIFIER_LABEL}</b><div><strong>Imported skills &amp; MCP</strong><small>Attach a skill, or see the MCP servers every turn is handed</small></div></button><span className="add-section">Built-in plugins</span><button type="button" className="add-row kind-agent" onClick={() => { closeSources(); setAgentOpen(true); }}><b>⌁</b><div><strong>Agent runtime</strong><small>Inspect Shinbo's Zig harness and headless entry point</small></div></button><div className="add-row muted kind-hint"><b>{ALT_LABEL}</b><div><strong>Draw on screen</strong><small>Double-tap left {IS_WINDOWS ? "Alt" : "Option"}, then choose the yellow pen</small></div></div></>}</section>}</form>
     </section></Region></div>
       </div>
     </div>
@@ -2712,12 +2863,12 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
       collapsed: layout.inspectorCollapsed, setCollapsed: (inspectorCollapsed: boolean) => pane({ inspectorCollapsed }),
     }}>
     <aside className={`inspector ${layout.inspectorCollapsed ? "collapsed" : ""}`}>
-      {!layout.inspectorCollapsed && <ResizeHandle label="Resize context bar" value={layout.inspectorWidth} min={210} max={360} direction={-1} onChange={(inspectorWidth) => pane({ inspectorWidth })} />}
+      {!layout.inspectorCollapsed && <ResizeHandle label="Resize context bar" value={layout.inspectorWidth} min={260} max={360} direction={-1} onChange={(inspectorWidth) => pane({ inspectorWidth })} />}
       {!layout.inspectorCollapsed && <div className="inspector-body"><header>
         {contextPages.length > 1 ? <span className="inspector-tabs" role="tablist" aria-label="Context bar pages">
           {contextPages.map((item) => <button key={item.id} type="button" role="tab" aria-selected={item.id === page.id} title={`${item.name} — ${item.widgets.length} ${plural(item.widgets.length, "component")}`} onClick={() => setContextPage(item.id)}>{item.name}</button>)}
         </span> : <span>{page.name}</span>}
-        {changes.length > 0 && <button type="button" className="changes-open" title={`${changes.length} ${plural(changes.length, "file")} changed — open the diff`} onClick={() => showReview("changes")}><ChangeCount stat={diffStat(changes)} /></button>}</header>
+        {changes.length > 0 && <button type="button" className="changes-open" title={`${changes.length} ${plural(changes.length, "file")} changed — open the diff`} onClick={() => showReview("changes")}><ChangeCount stat={changeStat} /></button>}</header>
       {inspected && inspectedId !== thread.id && <button type="button" className="inspector-subject" title={`Reading ${threadLabel(inspected)} — back to ${threadLabel(thread)}`} onClick={() => setTab("thread")}>
         <i className="agent-dot" style={{ background: agents.find((agent) => agent.threadId === inspectedId)?.color ?? "var(--text-3)" }} aria-hidden="true" />
         <span>{threadLabel(inspected)}</span><em>×</em>
@@ -2727,7 +2878,7 @@ function ThreadView({ thread, loadedSubthread, loadThread, threadLoadError, clea
     {reviewPane && <div className="browser-column">
       <ResizeHandle label={`Resize ${reviewPane}`} value={layout.browserWidth} min={MIN_BROWSER_WIDTH} max={720} direction={-1} onChange={(browserWidth) => pane({ browserWidth })} />
       <section className="review-pane artifact-pane" aria-label={reviewPane === "git" ? "Git pane" : "Changes pane"}>
-        <header><div><h2>{reviewPane === "git" ? "Git" : "Changes"}</h2></div>{reviewPane === "changes" && <ChangeCount stat={diffStat(changes)} />}
+        <header><div><h2>{reviewPane === "git" ? "Git" : "Changes"}</h2></div>{reviewPane === "changes" && <ChangeCount stat={changeStat} />}
           <button type="button" className="artifact-icon" aria-label={layout.browserWidth >= WIDE_BROWSER_WIDTH ? "Narrow pane" : "Widen pane"} aria-pressed={layout.browserWidth >= WIDE_BROWSER_WIDTH} onClick={() => pane({ browserWidth: layout.browserWidth >= WIDE_BROWSER_WIDTH ? MIN_BROWSER_WIDTH : WIDE_BROWSER_WIDTH })}><InspectorIcon /></button>
           <button type="button" className="artifact-icon" aria-label="Close pane" onClick={() => showReview("")}><CloseIcon /></button>
         </header>
@@ -2789,9 +2940,12 @@ function AgentDialog({ thread, contextTokens, close }: { thread: Thread; context
 
 const NO_MESSAGES: Message[] = [];
 
+function loadSettings(): UserSettings {
+  try { return validateSettings(JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "null")); } catch { return structuredClone(defaultSettings); }
+}
+
 function readSettings(): UserSettings {
-  let settings: UserSettings;
-  try { settings = validateSettings(JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "null")); } catch { settings = structuredClone(defaultSettings); }
+  const settings = loadSettings();
   applyAppearance(settings);
   return settings;
 }
@@ -2825,7 +2979,7 @@ function persistSettings(settings: UserSettings): UserSettings {
 function useShortcutRequests() {
   useEffect(() => window.shinbo.onShortcutRequest((request) => {
     try {
-      const saved = saveShortcut(readSettings(), request);
+      const saved = saveShortcut(loadSettings(), request);
       persistSettings(saved.settings);
       const index = Number(saved.action.at(-1));
       void window.shinbo.completeShortcutRequest({
@@ -2928,21 +3082,16 @@ function useSelectedModel(settings: UserSettings, selectedModel: string): { cont
   return { contextTokens: profile?.contextWindow || windows[selectedModel] || 0 };
 }
 
-function reasoningFor(settings: UserSettings, catalog: OpenRouterCatalog | undefined, key: string): { reasoningEfforts?: string[]; reasoningMandatory?: boolean } | undefined {
-  const routed = catalog?.routes?.[key];
-  if (key.startsWith(CODEX_PREFIX)) return routed;
+function reasoningFor(catalog: OpenRouterCatalog | undefined, key: string): { reasoningEfforts?: string[]; reasoningMandatory?: boolean } | undefined {
   if (key.startsWith("openrouter:")) return catalog?.models.find((model) => model.id === key.slice("openrouter:".length));
-  const profile = key.startsWith("provider:") ? settings.providers.find((item) => item.id === key.slice("provider:".length)) : undefined;
-  const plan = profile && planForProfile(profile);
-  const listed = plan && catalog?.models.find((model) => planForModel(model.id)?.id === plan.id && planModelId(plan, model.id) === profile.modelId);
-  return routed?.reasoningEfforts ? { ...listed, reasoningEfforts: routed.reasoningEfforts } : listed;
+  return catalog?.routes?.[key];
 }
 
 function useThinking(act: (method: string, params?: Record<string, string>) => Promise<unknown>, onSettingsChanged: (settings: UserSettings) => void | Promise<void>, modelKey?: string) {
   const [catalog, setCatalog] = useState<OpenRouterCatalog>();
   useEffect(() => { void window.shinbo.request<OpenRouterCatalog>("listOpenRouterModels").then(setCatalog).catch(() => undefined); }, []);
-  const settings = readSettings();
-  const stops = thinkingStops(reasoningFor(settings, catalog, modelKey ?? settings.selectedModel));
+  const settings = loadSettings();
+  const stops = thinkingStops(reasoningFor(catalog, modelKey ?? settings.selectedModel));
   const setLevel = async (next: ThinkingLevel) => {
     if (modelKey !== undefined) {
       await onSettingsChanged({ ...settings, selectedModel: modelKey, thinkingLevel: next });
@@ -3027,7 +3176,7 @@ function ThinkingMenu({ level, stops, setLevel, close, ref }: { level: ThinkingL
   const save = (next: ThinkingLevel) => {
     if (next === level) { setDragged(null); return; }
     setDragged(next);
-    void Promise.resolve(setLevel(next)).finally(() => setDragged((current) => current === next ? null : current));
+    void Promise.resolve(setLevel(next)).catch(() => undefined).finally(() => setDragged((current) => current === next ? null : current));
   };
   return <div ref={ref} className="source-popover thinking-menu" data-level={shown} style={style} role="dialog" aria-label="Thinking effort" onKeyDown={(event) => { if (event.key === "Escape") close(); }}>
     <header><span>Thinking</span><b>{thinkingLabel(shown)}</b></header>
@@ -3084,9 +3233,11 @@ async function selectModelKey(settings: UserSettings, key: string, act: (method:
   return { ...settings, selectedModel: key };
 }
 
+const syncOverlayPreferences = (settings: UserSettings) => window.shinbo.setOverlayPreferences({ notchGap: settings.notchGap, cursorOrbsEnabled: settings.cursorOrbsEnabled, notchConcurrency: settings.notchConcurrency, systemPrompt: settings.systemPrompt, prompts: settings.prompts });
+
 function syncMainPreferences(settings: UserSettings) {
   const ready = Promise.all([
-    window.shinbo.setOverlayPreferences({ notchGap: settings.notchGap, cursorOrbsEnabled: settings.cursorOrbsEnabled, notchConcurrency: settings.notchConcurrency, systemPrompt: settings.systemPrompt, prompts: settings.prompts }),
+    syncOverlayPreferences(settings),
     window.shinbo.request("setRouters", { routers: JSON.stringify(settings.routers) }),
     window.shinbo.setProviders(settings.providers),
     window.shinbo.setVerifier(settings.verifier),
@@ -3095,6 +3246,8 @@ function syncMainPreferences(settings: UserSettings) {
     window.shinbo.setReview(settings.review),
     window.shinbo.setDefaultMode(settings.defaultPermissionMode),
     window.shinbo.setKeybinds(settings.keybinds),
+    window.shinbo.setTagger(settings.tagger),
+    window.shinbo.setZeroRetention(settings.requireZeroRetention),
   ]);
   void ready.catch(() => undefined);
   syncImprovements();
@@ -3188,6 +3341,9 @@ function KeybindSettings({ settings, save }: { settings: UserSettings; save: (ke
     setRecording("");
     void bind({ ...settings.keybinds, [action]: keybind });
   };
+  const commitRef = useRef(commit);
+  useLayoutEffect(() => { commitRef.current = commit; });
+  const holdMs = (recording && settings.keybinds[recording]?.ms) || DEFAULT_HOLD_MS;
   useEffect(() => {
     if (!recording) return;
     const down = (event: KeyboardEvent) => {
@@ -3196,24 +3352,24 @@ function KeybindSettings({ settings, save }: { settings: UserSettings; save: (ke
       const tapped = released.current?.code === event.code;
       forgetRelease();
       if (event.key === "Escape") { holding.current = ""; setRecording(""); setProblem(""); return; }
-      if (tapped) { holding.current = ""; commit(recording, holdKeybind(event.code, TAP_MS)); return; }
+      if (tapped) { holding.current = ""; commitRef.current(recording, holdKeybind(event.code, TAP_MS)); return; }
       const accelerator = keyboardAccelerator(event, RUNTIME_PLATFORM);
       const holdAllowed = !IS_WINDOWS || !event.metaKey || /^Meta(?:Left|Right)$/.test(event.code);
       if (HOLD_KEYS[event.code] && holdAllowed && !accelerator) { holding.current = event.code; return; }
       holding.current = "";
-      if (accelerator) commit(recording, comboKeybind(normalizeAccelerator(accelerator)));
+      if (accelerator) commitRef.current(recording, comboKeybind(normalizeAccelerator(accelerator)));
     };
     const up = (event: KeyboardEvent) => {
       event.preventDefault();
       if (holding.current !== event.code) return;
       holding.current = "";
-      const timer = setTimeout(() => { released.current = null; commit(recording, holdKeybind(event.code, settings.keybinds[recording]?.ms || DEFAULT_HOLD_MS)); }, DOUBLE_TAP_WINDOW_MS);
+      const timer = setTimeout(() => { released.current = null; commitRef.current(recording, holdKeybind(event.code, holdMs)); }, DOUBLE_TAP_WINDOW_MS);
       released.current = { code: event.code, timer };
     };
     addEventListener("keydown", down, true);
     addEventListener("keyup", up, true);
     return () => { removeEventListener("keydown", down, true); removeEventListener("keyup", up, true); };
-  });
+  }, [recording, holdMs]);
   const bound = KEYBIND_ACTIONS.filter((action) => settings.keybinds[action.id]?.accelerator || settings.keybinds[action.id]?.hold).length;
   const optionTapTaken = Object.values(settings.keybinds).some((keybind) => keybind.hold === "AltLeft" && keybind.ms === TAP_MS);
   return <div className="settings-stack settings-keybinds">
@@ -3281,7 +3437,7 @@ function VoiceSettings({ settings, onChange, busy }: { settings: UserSettings; o
   };
   const { status } = dictation;
   return <div className="settings-stack settings-personal settings-voice">
-    <div className="settings-lines"><section><div><h3>Voice input</h3><p>Dictate in Quick Ask or the thread composer.</p></div><label className="check"><input type="checkbox" checked={settings.transcriptionEnabled} disabled={busy} onChange={(event) => save({ transcriptionEnabled: event.target.checked })} /> {settings.transcriptionEnabled ? "On" : "Off"}</label></section></div>
+    <div className="settings-lines"><section><div><h3>Voice input</h3><p>Dictate in Quick Ask.</p></div><label className="check"><input type="checkbox" checked={settings.transcriptionEnabled} disabled={busy} onChange={(event) => save({ transcriptionEnabled: event.target.checked })} /> {settings.transcriptionEnabled ? "On" : "Off"}</label></section></div>
     {problem && <p className="local-model-error" role="alert">{problem}</p>}
     {settings.transcriptionEnabled && <>
       <div className="settings-lines">
@@ -3307,7 +3463,7 @@ function NotchSettings({ settings, onChange, busy }: { settings: UserSettings; o
         <p>Follow the workspace selection or choose a model for new Quick Ask threads.</p>
       </div>
       <div className="notch-values">
-        <TaskModelPicker model={settings.notchModel} busy={busy} label="Quick Ask model" inherit="Workspace picker" onChange={(notchModel, current) => onChange({ ...current, notchModel })} />
+        <TaskModelPicker model={settings.notchModel} busy={busy} label="Quick Ask model" inherit="Workspace picker" codex={false} onChange={(notchModel, current) => onChange({ ...current, notchModel })} />
       </div>
     </section>
     <section>
@@ -3334,9 +3490,16 @@ function SettingsView({ page, onSelectPage, busy, ...rest }:{ page: SettingsPage
 }
 
 function SettingsBody({ page, act, busy, onModelChanged, onAttach }: { page: SettingsPage; act: (method: string, params?: Record<string, string>) => Promise<unknown>; busy: boolean; onModelChanged: (settings: UserSettings) => void; onAttach: (meta: ComponentMeta) => void }) {
-  const [settings, setSettings] = useState(readSettings);
+  const [settings, setSettings] = useState(loadSettings);
+  useEffect(() => {
+    const reload = () => setSettings(({ quickActions, cursorOrbs, cursorOrbsEnabled, notchCommandsEnabled, notchGap }) => ({ ...loadSettings(), quickActions, cursorOrbs, cursorOrbsEnabled, notchCommandsEnabled, notchGap }));
+    addEventListener("storage", reload);
+    addEventListener("shinbo-settings-changed", reload);
+    return () => { removeEventListener("storage", reload); removeEventListener("shinbo-settings-changed", reload); };
+  }, []);
   const [saved, setSaved] = useState(false);
   const [orb, setOrb] = useState(0);
+  const [scale, setScale] = useState<number>();
   const [modelPage, setModelPage] = useState("workspace");
   const [saveError, setSaveError] = useState("");
   const setOrbs = (cursorOrbs: CursorCommand[]) => { setSaved(false); setSettings((current) => ({ ...current, cursorOrbs })); };
@@ -3356,7 +3519,7 @@ function SettingsBody({ page, act, busy, onModelChanged, onAttach }: { page: Set
     setOrb(next);
   };
   const updateAction = (index: number, field: string, value: string | boolean) => setSettings((current) => ({ ...current, quickActions: current.quickActions.map((action, actionIndex) => actionIndex === index ? { ...action, [field]: value } : action) as UserSettings["quickActions"] }));
-  const save = (event: FormEvent) => { event.preventDefault(); setSaveError(""); try { const { quickActions, cursorOrbs, cursorOrbsEnabled, notchCommandsEnabled, notchGap } = settings; const valid = persistSettings({ ...readSettings(), quickActions, cursorOrbs, cursorOrbsEnabled, notchCommandsEnabled, notchGap }); setSettings(valid); syncMainPreferences(valid); onModelChanged(valid); setSaved(true); } catch (reason) { setSaved(false); setSaveError(reasonText(reason)); } };
+  const save = (event: FormEvent) => { event.preventDefault(); setSaveError(""); try { const { quickActions, cursorOrbs, cursorOrbsEnabled, notchCommandsEnabled, notchGap } = settings; const valid = persistSettings({ ...loadSettings(), quickActions, cursorOrbs, cursorOrbsEnabled, notchCommandsEnabled, notchGap }); setSettings(valid); syncMainPreferences(valid); onModelChanged(valid); setSaved(true); } catch (reason) { setSaved(false); setSaveError(reasonText(reason)); } };
   const saveModelSettings = (next: UserSettings) => {
     const valid = validateSettings(next);
     const save = () => { const saved = persistSettings(valid); setSettings(saved); onModelChanged(saved); };
@@ -3370,43 +3533,52 @@ function SettingsBody({ page, act, busy, onModelChanged, onAttach }: { page: Set
     });
     save();
   };
-  const saveNotch = (next: UserSettings) => { const { notchModel, notchConcurrency, providers } = next; const valid = persistSettings({ ...readSettings(), notchModel, notchConcurrency, providers }); setSettings((current) => ({ ...current, notchModel, notchConcurrency, providers })); syncMainPreferences(valid); onModelChanged(valid); };
+  const saveNotch = (next: UserSettings) => { const { notchModel, notchConcurrency, providers } = next; const valid = persistSettings({ ...loadSettings(), notchModel, notchConcurrency, providers }); setSettings((current) => ({ ...current, notchModel, notchConcurrency, providers })); syncMainPreferences(valid); onModelChanged(valid); };
+  const patch = (fields: Partial<UserSettings>) => { const valid = persistSettings({ ...loadSettings(), ...fields }); setSettings(valid); return valid; };
   const saveZeroRetention = async (requireZeroRetention: boolean) => {
-    const valid = persistSettings({ ...settings, requireZeroRetention });
-    setSettings(valid);
+    const valid = patch({ requireZeroRetention });
     await window.shinbo.setZeroRetention(requireZeroRetention);
     await selectModelKey(valid, valid.selectedModel, act);
     onModelChanged(valid);
   };
   const saveKeybinds = async (keybinds: Keybinds) => {
-    const valid = persistSettings({ ...settings, keybinds });
-    setSettings(valid);
+    const valid = patch({ keybinds });
     return await window.shinbo.setKeybinds(valid.keybinds).catch(() => [] as string[]);
   };
   const saveVerifier = async (verifier: VerifierSettings) => {
-    const valid = persistSettings({ ...settings, verifier });
-    setSettings(valid);
+    const valid = patch({ verifier });
     await window.shinbo.setVerifier(valid.verifier);
   };
   const saveTools = async (tools: ToolSettings) => {
-    const valid = persistSettings({ ...settings, tools });
-    setSettings(valid);
+    const valid = patch({ tools });
     await window.shinbo.setToolSettings(valid.tools);
   };
   const saveHarnessExperiments = async (harnessExperiments: HarnessExperiments) => {
-    const valid = persistSettings({ ...settings, harnessExperiments });
-    setSettings(valid);
+    const valid = patch({ harnessExperiments });
     await window.shinbo.setHarnessExperiments(valid.harnessExperiments);
   };
   const saveReview = async (next: UserSettings) => {
-    const valid = persistSettings(next);
-    setSettings(valid);
+    const valid = patch({ review: next.review });
     await window.shinbo.setReview(valid.review);
   };
-  const savePrompts = (next: UserSettings) => { const valid = persistSettings(next); setSettings(valid); syncMainPreferences(valid); };
-  const saveAppearance = (patch: Partial<UserSettings>) => setSettings(persistSettings({ ...settings, ...patch }));
+  const savePrompts = (next: UserSettings) => {
+    const current = loadSettings();
+    const valid = patch({ systemPrompt: next.systemPrompt, prompts: next.prompts, providers: next.providers });
+    void syncOverlayPreferences(valid).catch(() => undefined);
+    if (JSON.stringify(valid.providers) !== JSON.stringify(current.providers)) void window.shinbo.setProviders(valid.providers).catch(() => undefined);
+  };
+  const saveAppearance = (fields: Partial<UserSettings>) => patch(fields);
+  const previewScale = (next: number) => { setScale(next); if (isWorkspaceWindow) void window.shinbo.setZoom(next / 100); };
+  const commitScale = () => { if (scale !== undefined && scale !== settings.uiScale) saveAppearance({ uiScale: scale }); setScale(undefined); };
   const accentHex = settings.accent.startsWith("#") ? settings.accent : getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
-  const saveContextPages = (contextPages: ContextPage[]) => { try { setSettings(persistSettings({ ...settings, contextPages })); } catch { setSettings((current) => ({ ...current, contextPages })); } };
+  const saveContextPages = (contextPages: ContextPage[]) => { try { patch({ contextPages }); } catch { setSettings((current) => ({ ...current, contextPages })); } };
+  const resetSettings = () => {
+    if (!confirm("Restore every setting to its default?\n\nThreads, notes, artifacts, connected folders and saved keys stay. This cannot be undone.")) return;
+    const valid = persistSettings(structuredClone(defaultSettings));
+    setSettings(valid);
+    void syncMainPreferences(valid).then(() => selectModelKey(valid, valid.selectedModel, act)).catch(() => undefined);
+    onModelChanged(valid);
+  };
   const resetData = () => {
     if (!confirm(`Delete all Shinbo data and start fresh?\n\nEvery thread, artifact, connected folder, saved key, and setting on this ${LOCAL_DEVICE} goes, and Shinbo restarts empty. This cannot be undone.`)) return;
     localStorage.clear();
@@ -3417,9 +3589,9 @@ function SettingsBody({ page, act, busy, onModelChanged, onAttach }: { page: Set
   if (page === "appearance") return <section className="settings-view settings-personal settings-appearance">
     <header><span>Settings / appearance</span><h2>Appearance</h2><p>Make Shinbo comfortable to read and easy to navigate.</p></header>
     <div className="settings-lines">
-      <section><div><h3>Accent</h3><p>Buttons, focus rings, and selected controls.</p></div><div className="accent-values">{ACCENT_CHOICES.map((hue) => <button key={hue} type="button" className={`accent-swatch ${settings.accent === hue ? "active" : ""}`} style={{ "--swatch": `var(--${hue})` } as CSSProperties} title={hue} aria-label={hue} aria-pressed={settings.accent === hue} disabled={busy} onPointerEnter={() => !busy && previewAccent(hue)} onPointerLeave={() => previewAccent(settings.accent)} onFocus={() => !busy && previewAccent(hue)} onBlur={() => previewAccent(settings.accent)} onClick={() => saveAppearance({ accent: hue })} />)}<ColorPicker className={`accent-swatch accent-custom ${settings.accent.startsWith("#") ? "active" : ""}`} label="Any colour" value={accentHex} disabled={busy} onChange={(hex) => saveAppearance({ accent: hex as AccentChoice })} /><small>{accentHex}</small></div></section>
-      <section><div><h3>Tab color</h3><p>Conversation underlines and context bar tabs.</p></div><ColorPicker className="accent-swatch accent-custom" label="Tab color" value={settings.tabColor.startsWith("#") ? settings.tabColor : getComputedStyle(document.documentElement).getPropertyValue(`--${settings.tabColor}`).trim()} disabled={busy} onChange={(hex) => saveAppearance({ tabColor: hex as AccentChoice })} /></section>
-      <section><div><h3>Interface scale</h3><p>Resize text, controls, and spacing together.</p></div><div className="font-values"><label>Scale · {settings.uiScale}%<input type="range" min={MIN_UI_SCALE} max={MAX_UI_SCALE} step={5} value={settings.uiScale} disabled={busy} onChange={(event) => saveAppearance({ uiScale: Number(event.target.value) })} /></label></div></section>
+      <section><div><h3>Accent</h3><p>Buttons, focus rings, and selected controls.</p></div><div className="accent-values">{ACCENT_CHOICES.map((hue) => <button key={hue} type="button" className={`accent-swatch ${settings.accent === hue ? "active" : ""}`} style={{ "--swatch": `var(--${hue})` } as CSSProperties} title={hue} aria-label={hue} aria-pressed={settings.accent === hue} disabled={busy} onPointerEnter={() => !busy && previewAccent(hue)} onPointerLeave={() => previewAccent(settings.accent)} onFocus={() => !busy && previewAccent(hue)} onBlur={() => previewAccent(settings.accent)} onClick={() => saveAppearance({ accent: hue })} />)}<ColorPicker className={`accent-swatch accent-custom ${settings.accent.startsWith("#") ? "active" : ""}`} label="Any colour" value={accentHex} disabled={busy} onPreview={previewAccent} onChange={(hex) => saveAppearance({ accent: hex as AccentChoice })} /><small>{accentHex}</small></div></section>
+      <section><div><h3>Tab color</h3><p>Conversation underlines and context bar tabs.</p></div><ColorPicker className="accent-swatch accent-custom" label="Tab color" value={settings.tabColor.startsWith("#") ? settings.tabColor : getComputedStyle(document.documentElement).getPropertyValue(`--${settings.tabColor}`).trim()} disabled={busy} onPreview={(hex) => document.documentElement.style.setProperty("--tab-color", hex)} onChange={(hex) => saveAppearance({ tabColor: hex as AccentChoice })} /></section>
+      <section><div><h3>Interface scale</h3><p>Resize text, controls, and spacing together.</p></div><div className="font-values"><label>Scale · {scale ?? settings.uiScale}%<input type="range" min={MIN_UI_SCALE} max={MAX_UI_SCALE} step={5} value={scale ?? settings.uiScale} disabled={busy} onChange={(event) => previewScale(Number(event.target.value))} onPointerUp={commitScale} onKeyUp={commitScale} onBlur={commitScale} /></label></div></section>
       <section><div><h3>Conversation width</h3><p>Set the reading width of thread messages.</p></div><div className="font-values"><label>Column<select value={settings.conversationWidth} disabled={busy} onChange={(event) => saveAppearance({ conversationWidth: event.target.value as ConversationWidth })}>{CONVERSATION_WIDTHS.map((width) => <option key={width.id} value={width.id}>{width.label} · {width.detail}</option>)}</select></label></div></section>
     </div>
     <SettingsSection title="Typography" summary={`${FONT_CHOICES.find((font) => font.id === settings.interfaceFont)?.label} / ${FONT_CHOICES.find((font) => font.id === settings.agentFont)?.label}`} open>
@@ -3427,13 +3599,13 @@ function SettingsBody({ page, act, busy, onModelChanged, onAttach }: { page: Set
       <div className="appearance-preview" aria-label="Font preview"><span style={{ fontFamily: fontStack(settings.interfaceFont) }}>Shinbo <span>Today · 10:24</span></span><p style={{ fontFamily: fontStack(settings.agentFont) }}>A little space to think clearly.</p><p style={{ fontFamily: fontStack(settings.agentFont) }}>Your ideas, notes, and next steps — all in one place.</p><small style={{ fontFamily: fontStack(settings.interfaceFont) }}>Aa Bb Cc · 0123456789</small></div>
     </SettingsSection>
     <SettingsSection title="Sidebar colors" summary={settings.navIconColors ? "Colored section marks" : "Monochrome"}>
-      <div className="settings-lines"><section><div><h3>Section marks</h3><p>Give each sidebar section its own color.</p></div><label className="check"><input type="checkbox" checked={settings.navIconColors} disabled={busy} onChange={(event) => saveAppearance({ navIconColors: event.target.checked })} /> Use colors</label></section>{settings.navIconColors && <section><div className="nav-hues">{NAV_VIEWS.map((view) => <ColorPicker key={view} className="nav-hue" label={navLabels[view]} value={navHueHex(settings, view)} disabled={busy} onChange={(hex) => saveAppearance({ navHues: { ...settings.navHues, [view]: hex as AccentChoice } })}><NavIcon view={view} /></ColorPicker>)}<button type="button" className="hue-reset" disabled={busy || !Object.keys(settings.navHues).length} onClick={() => saveAppearance({ navHues: {} })}>Reset colors</button></div></section>}</div>
+      <div className="settings-lines"><section><div><h3>Section marks</h3><p>Give each sidebar section its own color.</p></div><label className="check"><input type="checkbox" checked={settings.navIconColors} disabled={busy} onChange={(event) => saveAppearance({ navIconColors: event.target.checked })} /> Use colors</label></section>{settings.navIconColors && <section><div className="nav-hues">{NAV_VIEWS.map((view) => <ColorPicker key={view} className="nav-hue" label={navLabels[view]} value={navHueHex(settings, view)} disabled={busy} onPreview={(hex) => document.documentElement.style.setProperty(`--nav-${view}`, hex)} onChange={(hex) => saveAppearance({ navHues: { ...settings.navHues, [view]: hex as AccentChoice } })}><NavIcon view={view} /></ColorPicker>)}<button type="button" className="hue-reset" disabled={busy || !Object.keys(settings.navHues).length} onClick={() => saveAppearance({ navHues: {} })}>Reset colors</button></div></section>}</div>
     </SettingsSection>
   </section>;
   if (page === "models") {
     const panels = [
       { id: "workspace", label: "Workspace", group: "Model roles", summary: modelKeyLabel(settings, settings.selectedModel), body: <div className="settings-lines"><section><div><h3>Workspace model</h3><p>The model selected for workspace turns. Existing threads keep their own selection.</p></div><TaskModelPicker model={settings.selectedModel} busy={busy} label="Workspace model" inherit="Default hosted route" onChange={async (selectedModel, current) => { const next = await selectModelKey(current, selectedModel || "fallback", act); if (next) await saveModelSettings(next); }} /></section><section><div><h3>Default route</h3><p>When no model is selected, Shinbo uses the agent’s hosted OpenRouter route. This needs network access and an OpenRouter key.</p></div></section></div> },
-      { id: "quick-ask", label: "Quick Ask", group: "Model roles", summary: settings.notchModel ? modelKeyLabel(settings, settings.notchModel) : "Workspace selection", body: <div className="settings-lines"><section><div><h3>Quick Ask model</h3><p>Use the workspace selection or pin a separate model for new Quick Ask threads.</p></div><TaskModelPicker model={settings.notchModel} busy={busy} label="Quick Ask model" inherit="Workspace selection" onChange={(notchModel, current) => saveNotch({ ...current, notchModel })} /></section></div> },
+      { id: "quick-ask", label: "Quick Ask", group: "Model roles", summary: settings.notchModel ? modelKeyLabel(settings, settings.notchModel) : "Workspace selection", body: <div className="settings-lines"><section><div><h3>Quick Ask model</h3><p>Use the workspace selection or pin a separate model for new Quick Ask threads.</p></div><TaskModelPicker model={settings.notchModel} busy={busy} label="Quick Ask model" inherit="Workspace selection" codex={false} onChange={(notchModel, current) => saveNotch({ ...current, notchModel })} /></section></div> },
       { id: "verifier", label: "Verifier", group: "Model roles", summary: settings.verifier.model || "Off · Auto asks you", body: <VerifierPanel settings={settings} onSave={saveVerifier} busy={busy} /> },
       { id: "advisor", label: "Advisor", group: "Model roles", summary: settings.tools.advisor.model || "Not configured", body: <AdvisorPanel settings={settings} onSave={(advisor) => saveTools({ ...settings.tools, advisor })} busy={busy} /> },
       { id: "vision", label: "Vision", group: "Model roles", summary: settings.tools.vision.model || "Not configured", body: <VisionPanel settings={settings} onSave={(vision) => saveTools({ ...settings.tools, vision })} busy={busy} /> },
@@ -3448,12 +3620,12 @@ function SettingsBody({ page, act, busy, onModelChanged, onAttach }: { page: Set
   }
   if (page === "voice") return <section className="settings-view"><header><span>Settings / voice</span><h2>Voice</h2></header><VoiceSettings settings={settings} onChange={saveModelSettings} busy={busy} /></section>;
   if (page === "prompts") return <section className="settings-view"><header><span>Settings / system prompt</span><h2>System prompt</h2></header><PromptSettings settings={settings} onChange={savePrompts} busy={busy} /></section>;
-  if (page === "tools") return <section className="settings-view"><header><span>Settings / tools</span><h2>Tools</h2></header><ToolSettingsPanel settings={settings} onChange={saveTools} onDefaultMode={(defaultPermissionMode) => saveModelSettings({ ...settings, defaultPermissionMode })} busy={busy} /></section>;
+  if (page === "tools") return <section className="settings-view"><header><span>Settings / tools</span><h2>Tools</h2></header><ToolSettingsPanel settings={settings} onChange={saveTools} onDefaultMode={(defaultPermissionMode) => { saveModelSettings({ ...loadSettings(), defaultPermissionMode }); void window.shinbo.setDefaultMode(defaultPermissionMode).catch(() => undefined); }} busy={busy} /></section>;
   if (page === "permissions") return <section className="settings-view"><header><span>Settings / permissions</span><h2>Permissions</h2></header><PermissionSettings busy={busy} /></section>;
   if (page === "harness") return <section className="settings-view"><header><span>Settings / harness</span><h2>Harness <b className="tag-experimental">Experimental</b></h2></header><div className="coding-harness"><ReviewPanel settings={settings} onSave={saveReview} busy={busy} /><SemanticGrepPanel settings={settings} onChange={saveHarnessExperiments} busy={busy} /><HarnessExperimentsPanel settings={settings} onChange={saveHarnessExperiments} busy={busy} /></div></section>;
   if (page === "imports") return <section className="settings-view"><header><span>Settings / imports & plugins</span><h2>Imports & plugins</h2></header><AgentImports /></section>;
   if (page === "mobile") return <section className="settings-view"><header><span>Settings / mobile</span><h2>Mobile</h2></header><MobileSettings busy={busy} /></section>;
-  if (page === "privacy") return <section className="settings-view"><header><span>Settings / data &amp; privacy</span><h2>Data &amp; privacy</h2></header><PrivacySettings busy={busy} onReset={resetData} onModels={() => { setModelPage("routing"); openSettingsPage("models"); }} /></section>;
+  if (page === "privacy") return <section className="settings-view"><header><span>Settings / data &amp; privacy</span><h2>Data &amp; privacy</h2></header><PrivacySettings busy={busy} onReset={resetData} onResetSettings={resetSettings} onModels={() => { setModelPage("routing"); openSettingsPage("models"); }} /></section>;
   if (page === "about") return <section className="settings-view"><header><span>Settings / about Shinbo</span><h2>About Shinbo</h2></header><div className="about-settings"><div className="settings-intro"><div><h3>Built with open source</h3><p>The projects behind Shinbo’s interface, agent and local data. Open a row for details and licenses.</p></div></div>{credits.map((credit) => <SettingsSection key={credit.title} title={credit.title} summary={credit.summary}><p>{credit.body}</p>{credit.href ? <a href={credit.href} target="_blank" rel="noreferrer">{credit.link}</a> : null}</SettingsSection>)}</div></section>;
   if (page === "keybinds") return <section className="settings-view"><header><h2>Keybinds</h2></header>
     <KeybindSettings settings={settings} save={saveKeybinds} />
@@ -3842,10 +4014,8 @@ function ModelCatalog({ settings, onChange, act, busy, onConfigure }: { settings
     } catch (reason) { setError(reasonText(reason)); }
   };
   const editRouter = (id: string, patch: Partial<ModelRouter>) => saveRouters(settings.routers.map((item) => item.id === id ? { ...item, ...patch } : item));
-  const rename = (id: string, value: string) => {
-    setNames((current) => ({ ...current, [id]: value }));
-    if (value.trim()) editRouter(id, { name: value.trim() });
-  };
+  const rename = (id: string, value: string) => setNames((current) => ({ ...current, [id]: value }));
+  const commitName = (item: ModelRouter) => { const value = names[item.id]?.trim(); if (value && value !== item.name) editRouter(item.id, { name: value }); };
   const addRouter = () => {
     const id = `r-${Date.now().toString(36)}`;
     saveRouters([...settings.routers, { id, name: `Router ${settings.routers.length + 1}`, models: [...FREE_ROUTER_MODELS] }]);
@@ -3887,7 +4057,7 @@ function ModelCatalog({ settings, onChange, act, busy, onConfigure }: { settings
             <BrandIcon brand={routerBrand} className="model-brand" />
             <span>
               <span className="model-name">
-                <input className="router-name" value={names[item.id] ?? item.name} maxLength={MAX_ROUTER_NAME} aria-label={`Rename ${item.name}`} onChange={(event) => rename(item.id, event.target.value)} />
+                <input className="router-name" value={names[item.id] ?? item.name} maxLength={MAX_ROUTER_NAME} aria-label={`Rename ${item.name}`} onChange={(event) => rename(item.id, event.target.value)} onBlur={() => commitName(item)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
                 {priceBadge(allFree(item.models))}
               </span>
               <small>{routerEntry(item).detail}</small>
@@ -4071,20 +4241,26 @@ const seesImages = (model: OpenRouterCatalog["models"][number]) => model.inputMo
 function PromptEditor({ value, onChange, busy, rows }: { value: string; onChange: (value: string) => void; busy: boolean; rows: number }) {
   const mirror = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const [draft, setDraft] = useState(value);
+  const [seen, setSeen] = useState(value);
+  const timer = useRef(0);
+  if (value !== seen) { setSeen(value); setDraft(value); }
+  const commit = (next: string) => { clearTimeout(timer.current); timer.current = 0; if (next !== value) onChange(next); };
+  const edit = (next: string) => { setDraft(next); clearTimeout(timer.current); timer.current = window.setTimeout(() => commit(next), 300); };
   const insert = (name: string) => {
     const node = input.current;
     if (!node) return;
-    const start = node.selectionStart ?? value.length;
+    const start = node.selectionStart ?? draft.length;
     const caret = start + name.length + 2;
-    onChange(`${value.slice(0, start)}{${name}}${value.slice(node.selectionEnd ?? start)}`.slice(0, MAX_SYSTEM_PROMPT_CHARS));
+    edit(`${draft.slice(0, start)}{${name}}${draft.slice(node.selectionEnd ?? start)}`.slice(0, MAX_SYSTEM_PROMPT_CHARS));
     requestAnimationFrame(() => { node.focus(); node.setSelectionRange(caret, caret); });
   };
   return <div className="prompt-editor">
     <div className="prompt-canvas">
-      <div className="prompt-highlight" ref={mirror} aria-hidden="true">{promptSegments(value).map((segment, index) => <span key={index} className={segment.hue === undefined ? segment.unknown ? "prompt-token prompt-token-unknown" : undefined : "prompt-token"} data-hue={segment.hue}>{segment.text}</span>)}{"\n"}</div>
-      <textarea ref={input} value={value} disabled={busy} spellCheck={false} rows={rows} maxLength={MAX_SYSTEM_PROMPT_CHARS} aria-label="Prompt text"
+      <div className="prompt-highlight" ref={mirror} aria-hidden="true">{promptSegments(draft).map((segment, index) => <span key={index} className={segment.hue === undefined ? segment.unknown ? "prompt-token prompt-token-unknown" : undefined : "prompt-token"} data-hue={segment.hue}>{segment.text}</span>)}{"\n"}</div>
+      <textarea ref={input} value={draft} disabled={busy} spellCheck={false} rows={rows} maxLength={MAX_SYSTEM_PROMPT_CHARS} aria-label="Prompt text"
         onScroll={(event) => { if (mirror.current) mirror.current.scrollTop = event.currentTarget.scrollTop; }}
-        onChange={(event) => onChange(event.target.value)} />
+        onChange={(event) => edit(event.target.value)} onBlur={() => commit(draft)} />
     </div>
     <details className="prompt-variable-picker"><summary>Insert a variable</summary><div className="prompt-variables">{PROMPT_VARIABLES.map((variable, index) => <button type="button" key={variable.name} className="prompt-token" data-hue={index % 6} disabled={busy} title={variable.detail} onClick={() => insert(variable.name)}>{`{${variable.name}}`}</button>)}</div></details>
   </div>;
@@ -4140,7 +4316,7 @@ function PromptSettings({ settings, onChange, busy }: { settings: UserSettings; 
       <header>
         <div className="prompt-name">
           <label className="check"><input type="checkbox" checked={preset.enabled} disabled={busy} onChange={(event) => write(preset.id, { enabled: event.target.checked })} /> On</label>
-          <input value={preset.name} maxLength={MAX_PROMPT_NAME_CHARS} disabled={busy} aria-label="Prompt name" onChange={(event) => write(preset.id, { name: event.target.value })} />
+          <input key={preset.name} defaultValue={preset.name} maxLength={MAX_PROMPT_NAME_CHARS} disabled={busy} aria-label="Prompt name" onBlur={(event) => { const name = event.target.value.trim(); if (name && name !== preset.name) write(preset.id, { name }); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
           {promptApplies(preset, settings.selectedModel) && <strong className="status-live"><i /> Applies to {modelKeyLabel(settings, settings.selectedModel)}</strong>}
         </div>
         <div className="prompt-card-actions">
@@ -4262,7 +4438,7 @@ function VerifierPanel({ settings, onSave, busy }: { settings: UserSettings; onS
       .catch((reason: unknown) => setError(reasonText(reason)));
   };
   return <section className="local-model-settings">
-    <header><div><div className="settings-head"><h3>Verifier · clears a call in Auto</h3><InfoDot>In <b>Auto</b>, anything that would stop and ask goes to this model first with what you asked for and the exact command about to run. It answers allow or block; a call it will not clear still comes to you, with its reason. Small models get the answer format wrong, so Shinbo re-asks up to three times before falling back to the dialog.</InfoDot></div><p>A small, cheap second model that allows or blocks each gated call. Leave it off and Auto asks you.</p></div><strong>{settings.verifier.model ? "Configured" : "Off"}</strong></header>
+    <header><div><div className="settings-head"><h3>Verifier · clears a call in Auto</h3><InfoDot>In <b>Auto</b>, anything that would stop and ask goes to this model first with what you asked for and the exact command about to run. Anything on the prohibited list is blocked before the model is asked. It answers allow or block; a call it will not clear, or a reply Shinbo cannot read, still comes to you with the reason.</InfoDot></div><p>A small, cheap second model that allows or blocks each gated call. Leave it off and Auto asks you.</p></div><strong>{settings.verifier.model ? "Configured" : "Off"}</strong></header>
     <form className="local-model-form" onSubmit={submit}>
       <SecondModelPicker label="Verifier model" off={SECOND_MODELS.verifier.off} draft={draft} providers={settings.providers} routers={settings.routers} busy={busy} onChange={(next) => { setDraft(next); setError(""); setStatus(""); }} />
       {draft.model && <SettingsSection title="Custom instructions" summary="Optional">
@@ -4313,8 +4489,8 @@ function ProviderKeys({ settings, act, busy }: { settings: UserSettings; act: (m
       setStored(await window.shinbo.saveCredential(secret === undefined ? { env } : { env, secret }));
       setDrafts((current) => ({ ...current, [env]: "" }));
       if (env === OPENROUTER_ENV) readBalance();
-      await selectModelKey(settings, settings.selectedModel, act);
-      setStatus(secret === undefined ? `${env} removed. The agent restarted without it.` : `${env} saved. The agent restarted with it.`);
+      const restarted = await selectModelKey(settings, settings.selectedModel, act);
+      setStatus(`${env} ${secret === undefined ? "removed" : "saved"}. ${restarted ? `The agent restarted ${secret === undefined ? "without" : "with"} it.` : "Restart the agent to pick that up."}`);
     } catch (reason) { fail(reason); }
   };
   const addCustom = (event: FormEvent) => {
@@ -4393,6 +4569,16 @@ function ToolSettingsPanel({ settings, onChange, onDefaultMode, busy }: { settin
   </div>;
 }
 
+function NumberField({ value, min, max, disabled, onCommit }: { value: number; min: number; max: number; disabled: boolean; onCommit: (next: number) => void }) {
+  const commit = (node: HTMLInputElement) => {
+    const parsed = Math.trunc(Number(node.value));
+    const next = node.value.trim() === "" || !Number.isFinite(parsed) ? value : Math.max(min, Math.min(max, parsed));
+    node.value = String(next);
+    if (next !== value) onCommit(next);
+  };
+  return <input key={value} type="number" defaultValue={value} min={min} max={max} disabled={disabled} onBlur={(event) => commit(event.currentTarget)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />;
+}
+
 function ExperimentRow({ label, blurb, steps, percent, suggested, onChange, busy }: {
   label: string;
   blurb: string;
@@ -4403,7 +4589,6 @@ function ExperimentRow({ label, blurb, steps, percent, suggested, onChange, busy
   busy: boolean;
 }) {
   const on = steps > 0 || percent > 0;
-  const number = (value: string, ceiling: number) => Math.max(0, Math.min(ceiling, Math.trunc(Number(value) || 0)));
   return <div className="tool-group coding-experiment">
     <div className="settings-head">
       <label className="check tool-row">
@@ -4413,8 +4598,8 @@ function ExperimentRow({ label, blurb, steps, percent, suggested, onChange, busy
       <InfoDot>{blurb}</InfoDot>
     </div>
     {on && <div className="font-values coding-dependent">
-      <label>Every N steps<input type="number" min={0} max={MAX_EXPERIMENT_STEPS} value={steps} disabled={busy} onChange={(event) => onChange({ steps: number(event.target.value, MAX_EXPERIMENT_STEPS), percent })} /></label>
-      <label>At % of context<input type="number" min={0} max={100} value={percent} disabled={busy} onChange={(event) => onChange({ steps, percent: number(event.target.value, 100) })} /></label>
+      <label>Every N steps<NumberField min={0} max={MAX_EXPERIMENT_STEPS} value={steps} disabled={busy} onCommit={(next) => onChange({ steps: next, percent })} /></label>
+      <label>At % of context<NumberField min={0} max={100} value={percent} disabled={busy} onCommit={(next) => onChange({ steps, percent: next })} /></label>
       <small>0 switches a trigger off; set both and either one fires.</small>
     </div>}
   </div>;
@@ -4476,7 +4661,7 @@ function HarnessExperimentsPanel({ settings, onChange, busy }: { settings: UserS
           <InfoDot>Compaction rewrites the cached prefix, so Shinbo waits until the current turn is over. A cache-hit gate would keep postponing on a healthy prefix; the high-water mark is the safety gate, and the compacted prefix can warm again on the following steps.</InfoDot>
         </div>
         {compacting && <div className="font-values coding-dependent">
-          <label>At % of context<input type="number" min={0} max={100} value={experiments.autoCompactPercent} disabled={busy} onChange={(event) => save({ ...experiments, autoCompactPercent: Math.max(0, Math.min(100, Math.trunc(event.currentTarget.valueAsNumber || 0))) })} /></label>
+          <label>At % of context<NumberField min={0} max={100} value={experiments.autoCompactPercent} disabled={busy} onCommit={(autoCompactPercent) => save({ ...experiments, autoCompactPercent })} /></label>
           <small>{compacting ? "Runs /compact once between turns when history reaches this mark." : "Off. /compact remains available manually."}</small>
         </div>}
         <div className="coding-dependent">
@@ -4496,7 +4681,7 @@ function HarnessExperimentsPanel({ settings, onChange, busy }: { settings: UserS
           <InfoDot>Caps one captured <code>terminal</code> command. Shinbo is mute and blind while a command runs, so the ceiling bounds how long a single call can hold a turn; anything longer belongs in a durable terminal session, which this does not touch.</InfoDot>
         </div>
         <div className="font-values">
-          <label>Minutes<input type="number" min={MIN_COMMAND_TIMEOUT_MINUTES} max={MAX_COMMAND_TIMEOUT_MINUTES} value={experiments.commandTimeoutMinutes} disabled={busy} onChange={(event) => save({ ...experiments, commandTimeoutMinutes: Math.max(MIN_COMMAND_TIMEOUT_MINUTES, Math.min(MAX_COMMAND_TIMEOUT_MINUTES, Math.trunc(event.currentTarget.valueAsNumber || defaultHarnessExperiments.commandTimeoutMinutes))) })} /></label>
+          <label>Minutes<NumberField min={MIN_COMMAND_TIMEOUT_MINUTES} max={MAX_COMMAND_TIMEOUT_MINUTES} value={experiments.commandTimeoutMinutes} disabled={busy} onCommit={(commandTimeoutMinutes) => save({ ...experiments, commandTimeoutMinutes })} /></label>
           <small>Terminated after this long, with the exit reported to the model.</small>
         </div>
       </div>
@@ -4765,7 +4950,7 @@ function VisionPanel({ settings, onSave, busy }: { settings: UserSettings; onSav
   </section>;
 }
 
-function PrivacySettings({ busy, onReset, onModels }: { busy: boolean; onReset: () => void; onModels: () => void }) {
+function PrivacySettings({ busy, onReset, onResetSettings, onModels }: { busy: boolean; onReset: () => void; onResetSettings: () => void; onModels: () => void }) {
   return <div className="privacy-settings settings-stack">
     <div className="settings-intro"><div><h3>Your data and connections</h3><p>Local storage and model requests have different boundaries.</p></div></div>
     <dl className="privacy-overview"><div><dt>Threads & notes</dt><dd>Stored on this {LOCAL_DEVICE}</dd></div><div><dt>Voice recordings</dt><dd>Transcribed locally, then deleted</dd></div><div><dt>Model requests</dt><dd>Sent to your selected provider</dd></div></dl>
@@ -4789,6 +4974,7 @@ function PrivacySettings({ busy, onReset, onModels }: { busy: boolean; onReset: 
     <SettingsSection title="Usage & diagnostics" summary="No analytics uploader">
       <p>Shinbo records local usage and execution traces but does not configure analytics or crash-report uploads. Providers, update checks, the catalog and enabled integrations still make network requests and receive ordinary request metadata.</p>
     </SettingsSection>
+    <section className="settings-danger"><div><h3>Reset settings</h3><p>Restore every setting to its default. Threads, notes, artifacts and saved keys stay.</p></div><button type="button" disabled={busy} onClick={onResetSettings}>Reset settings…</button></section>
     <section className="settings-danger"><div><h3>Reset Shinbo</h3><p>Delete threads, artifacts, saved keys and settings, then restart empty. Notes in your vault stay in place. This cannot be undone.</p></div><button type="button" className="reset-data" disabled={busy} onClick={onReset}>Reset Shinbo…</button></section>
   </div>;
 }
@@ -4801,25 +4987,30 @@ function AgentImports({ done }: { done?: () => void }) {
   useEffect(() => {
     void window.shinbo.discoverAgentImports().then((items) => {
       setSources(items);
-      setSelected(items.filter((item) => item.skills || item.mcpConfigs).map((item) => item.id));
+      const kept = items.filter((item) => item.registered);
+      setSelected((kept.length ? kept : items.filter((item) => item.skills || item.mcpConfigs)).map((item) => item.id));
     }).catch((reason) => setStatus(reasonText(reason))).finally(() => setBusy(false));
   }, []);
   const submit = async () => {
     setBusy(true); setStatus("");
     try {
       const imported = await window.shinbo.importAgentSources(selected);
+      setSources((items) => items.map((item) => ({ ...item, registered: imported.includes(item.id) })));
       setStatus(`${imported.length} ${plural(imported.length, "agent source")} registered`);
       done?.();
     } catch (reason) { setStatus(reasonText(reason)); }
     finally { setBusy(false); }
   };
   const found = sources.filter((source) => source.skills > 0 || source.mcpConfigs > 0);
+  const registered = sources.filter((source) => source.registered).map((source) => source.id);
+  const changed = selected.length !== registered.length || selected.some((id) => !registered.includes(id));
+  const adding = selected.some((id) => !registered.includes(id));
   const missing = sources.filter((source) => !found.includes(source));
   return <div className="import-sources import-settings">
     <header className="settings-intro"><div><h3>Bring your existing setup</h3><p>Use skills and MCP configurations from agents already on this computer. Their files stay where they are.</p></div><span className="settings-count">{busy ? "Scanning…" : `${found.length} sources found`}</span></header>
-    <div className="import-list">{found.map((source) => <label key={source.id}><input type="checkbox" disabled={busy} checked={selected.includes(source.id)} onChange={(event) => setSelected(event.target.checked ? [...selected, source.id] : selected.filter((id) => id !== source.id))} /><BrandIcon brand={brandForImporter(source.id)} className={`integration-mark ${source.id}`} /><div><strong>{source.label}</strong><small>{source.skills} {plural(source.skills, "skill")} · {source.mcpConfigs} MCP {plural(source.mcpConfigs, "config")}</small></div></label>)}</div>
+    <div className="import-list">{found.map((source) => <label key={source.id}><input type="checkbox" disabled={busy} checked={selected.includes(source.id)} onChange={(event) => setSelected(event.target.checked ? [...selected, source.id] : selected.filter((id) => id !== source.id))} /><BrandIcon brand={brandForImporter(source.id)} className={`integration-mark ${source.id}`} /><div><strong>{source.label}</strong><small>{source.skills} {plural(source.skills, "skill")} · {source.mcpConfigs} MCP {plural(source.mcpConfigs, "config")}{source.registered ? " · imported" : ""}</small></div></label>)}</div>
     {!busy && !found.length && <p className="import-status">No existing skills or MCP configurations were found in the default locations.</p>}
-    <footer><div><p>{selected.length} {plural(selected.length, "source")} selected</p><small>Imported tools stay inactive until selected by a thread or plugin.</small></div><button type="button" onClick={() => void submit()} disabled={busy || !selected.length}>{busy ? "Working…" : "Import selected"}</button></footer>
+    <footer><div><p>{selected.length} {plural(selected.length, "source")} selected</p><small>Imported tools stay inactive until selected by a thread or plugin.</small></div><button type="button" onClick={() => void submit()} disabled={busy || !changed}>{busy ? "Working…" : adding ? "Import selected" : "Save selection"}</button></footer>
     {status && <p className="import-status" role="status">{status}</p>}
     {found.length > 0 && <SettingsSection title="Source locations" summary="Referenced in place">{found.map((source) => <div className="import-location" key={source.id}><strong>{source.label}</strong>{source.locations.map((location) => <code key={location}>{location}</code>)}</div>)}</SettingsSection>}
     {missing.length > 0 && <SettingsSection title="Not found on this computer" summary={`${missing.length} agents`}><p>{missing.map((source) => source.label).join(" · ")}</p><p>Shinbo checked their default configuration locations.</p></SettingsSection>}
@@ -4963,9 +5154,10 @@ function SetupDialog({ close }: { close: () => void }) {
     catch (reason) { setError(reasonText(reason)); }
     finally { setBusy(false); }
   };
-  const finish = () => { if (ready && !busy) { localStorage.removeItem(SETUP_STEP_KEY); close(); } };
+  const skip = () => { if (busy) return; localStorage.removeItem(SETUP_STEP_KEY); close(); };
+  const finish = () => { if (ready) skip(); };
   const addProvider = useCallback(async (profile: ProviderProfile) => {
-    const settings = readSettings();
+    const settings = loadSettings();
     const providers = [...settings.providers, profile];
     await window.shinbo.setProviders(providers);
     await window.shinbo.request("selectProviderModel", { providerId: profile.id, effort: settings.thinkingLevel });
@@ -5001,6 +5193,7 @@ function SetupDialog({ close }: { close: () => void }) {
       </div>
       <div className="setup-actions">
           {page === 0 ? <p>{ready ? "OpenRouter is ready. Subscriptions can be added anytime." : "Verify your OpenRouter key to continue."}</p> : <button type="button" className="setup-link" disabled={busy} onClick={() => move(page - 1)}>← Back</button>}
+          {page < 2 && <button type="button" className="setup-link" disabled={busy} onClick={skip}>Skip for now</button>}
           <button type="button" className="setup-primary" disabled={!ready || busy} onClick={() => page < 2 ? move(page + 1) : finish()}>{page < 2 ? "Continue →" : "Finish setup →"}</button>
       </div>
     </section>
@@ -5296,7 +5489,7 @@ function Overlay() {
   }, [message]);
   useEffect(() => {
     let active = true;
-    if (isWorkspaceWindow) void window.shinbo.listImportedMcpServers()
+    void window.shinbo.listImportedMcpServers()
       .then((imported: ImportedMcpServer[]) => { if (active) setServers(imported.map((item) => ({ id: item.id, name: item.name, kind: "mcp" as const, detail: `${item.source} · MCP server` }))); })
       .catch(() => undefined);
     return () => { active = false; };
@@ -5321,6 +5514,8 @@ function Overlay() {
   }, [mode, modelKey]);
   useEffect(() => window.shinbo.onNewQuickSession(() => {
     session.current += 1;
+    running.current = 0;
+    window.shinbo.setOverlayBusy(false);
     endStream();
     setThread(undefined);
     setTurns([]);
@@ -5393,8 +5588,7 @@ function Overlay() {
       }
       setError(reasonText(reason));
     } finally {
-      endRun();
-      if (session.current === mine) { endStream(); setBusy(false); }
+      if (session.current === mine) { endRun(); endStream(); setBusy(false); }
     }
   };
   const dictation = useDictation(settings, useCallback((text: string) => setMessage((current) => current ? `${current.trimEnd()} ${text}` : text), []));
@@ -5422,7 +5616,7 @@ function Overlay() {
       setTurns((list) => [...list, { role: "assistant", content: latestReply(answered), steps: liveSteps.current }]);
       if (screenContextId) { setAnnotationId(""); setThumbnail(""); setAttachedApp(""); }
     } catch (reason) { if (session.current === mine) setError(reasonText(reason)); }
-    finally { endRun(); if (session.current === mine) { endStream(); setBusy(false); } }
+    finally { if (session.current === mine) { endRun(); endStream(); setBusy(false); } }
   }, [applyMode, busy, endRun, endStream, screenContextId, settings, startRun, startStream]);
   useSpaceHold(settings.voiceHoldMs, dictation.ready && !busy && !transcribing && !message.trim(), dictation);
   useEffect(() => { const listener = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && /^[123]$/.test(event.key)) { event.preventDefault(); void runAction(Number(event.key) - 1); } }; addEventListener("keydown", listener); return () => removeEventListener("keydown", listener); }, [runAction]);
@@ -5535,12 +5729,12 @@ function Overlay() {
       if (failed) mark(failed.toolCallId, failed.title, failed.kind, "failed");
       if (session.current === mine) setError(reasonText(reason));
     }
-    finally { endStream(); endRun(); if (session.current === mine) setBusy(false); }
+    finally { endStream(); if (session.current === mine) { endRun(); setBusy(false); } }
   }, [busy, endRun, endStream, setError, startRun]);
   const runCommand = useCallback((value: string) => {
     if (value === "voice") { void dictate(); return; }
     if (/^[012]$/.test(value)) void runAction(Number(value));
-    else if (value === "page") void saveScreen();
+    else if (value === "page" || value === "keep") void saveScreen();
     else if (value === "screen") void captureScreen();
     else if (value === "draw") void window.shinbo.startScreenAnnotation().catch((reason: unknown) => setError(reasonText(reason)));
     else if (value === "workspace") window.shinbo.openWorkspace();
@@ -5571,7 +5765,7 @@ function Overlay() {
       </div>
       {slashOpen && <section className="source-popover slash-menu" ref={slashMenu} id="island-slash-menu" role="listbox" aria-label={slash?.sigil === "@" ? "Artifacts, saved notes and files" : "Built-in tools, skills and MCP servers"}>
         {slashMatches.map((item, index) => <button type="button" role="option" aria-selected={index === slashActive} className={`slash-row ${index === slashActive ? "active" : ""}`} key={`${item.kind}-${item.id}`} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setSlashPick(index)} title={item.detail} onClick={() => pickCommand(item)}><strong>{slash?.sigil ?? "/"}{item.name}</strong><em className="slash-kind" data-kind={item.kind}>{KIND_LABELS[item.kind]}</em><small>{item.detail}</small></button>)}
-        {!slashMatches.length && <p className="slash-empty">Nothing matches “{slash?.query}”. {slash?.sigil === "@" ? "Artifacts, saved notes and the files of granted folders appear here." : "Built-in tools, imported skills and MCP servers appear here."}</p>}
+        {!slashMatches.length && <p className="slash-empty">Nothing matches “{slash?.query}”. {slash?.sigil === "@" ? "Artifacts, saved notes and the files of granted folders appear here." : "Built-in tools and MCP servers appear here."}</p>}
       </section>}
       <div className="island-thread" ref={transcript}>
         {turns.map((turn, index) => <Fragment key={index}>
@@ -5580,7 +5774,7 @@ function Overlay() {
           {turn.choices?.length ? <div className="turn-choices">{turn.choices.map((choice) => <button type="button" key={choice.label} disabled={busy} onClick={choice.run}>{choice.label}</button>)}</div> : null}
         </Fragment>)}
         {busy && <><p className="assistant"><b>Shinbo</b>{splitThinking(stream.text).answer || "···"}</p><Steps steps={stream.steps} /></>}
-        {turns.length >= MIGRATE_AFTER && <button type="button" className="island-migrate" onClick={() => window.shinbo.openWorkspace()}>Getting long — continue in the full app →</button>}
+        {turns.length >= MIGRATE_AFTER && <button type="button" className="island-migrate" onClick={() => window.shinbo.openWorkspace(undefined, thread?.id)}>Getting long — continue in the full app →</button>}
       </div>
       {modelsOpen && <ModelMenu ref={modelMenu} close={() => setModelsOpen(false)} act={act} busy={busy} onSettingsChanged={setSettings} onManage={() => window.shinbo.openWorkspace()} pinned={settings.notchModel ? { key: settings.notchModel, onPick: pickModel } : undefined} />}
       {modesOpen && <ModeMenu ref={modeMenu} mode={mode} setMode={pickMode} close={() => setModesOpen(false)} />}

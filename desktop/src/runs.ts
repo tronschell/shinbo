@@ -5,7 +5,7 @@ import { visualDrawn } from "../shared/visualize";
 import { charLabel } from "../shared/usage";
 import { splitThinking } from "../shared/thinking";
 import type { Message, Thread } from "./types";
-import { cachedBlocks, rememberBlocks, recordBreakdown, recordCompaction, recordExperiment } from "./context";
+import { cachedBlocks, rememberBlocks, recordBreakdown, recordCompaction, recordExperiment, type TurnAttachment } from "./context";
 import { reasonText } from "./errors";
 
 export type QueuedTurn = {
@@ -14,6 +14,7 @@ export type QueuedTurn = {
   params: Record<string, string>;
   prepare?: () => Promise<Pick<QueuedTurn, "params" | "delivered">>;
   attached?: boolean;
+  attachments?: TurnAttachment[];
   cancelled?: boolean;
   delivered?: () => void;
   notice?: string;
@@ -159,7 +160,9 @@ function adoptForeign(threadId: string, snapshot?: ReturnType<typeof recoverySna
   if (!previous.landed.length) {
     settlementFrom.set(threadId, undefined);
     void window.shinbo.request<Thread>("thread", { threadId }).then((thread) => {
-      if (generations.get(threadId) === token && read(threadId).sending && read(threadId).foreign) settlementFrom.set(threadId, thread.messages.length);
+      if (generations.get(threadId) !== token || !read(threadId).sending || !read(threadId).foreign) return;
+      settlementFrom.set(threadId, thread.messages.length);
+      write(threadId, (run) => (run.pending ? { pending: { ...run.pending, after: thread.messages.length } } : {}));
     }).catch(() => undefined);
   } else if (!settlementFrom.has(threadId)) settlementFrom.set(threadId, previous.pending?.after);
   void rehydrate(threadId, token, snapshot);
@@ -298,14 +301,20 @@ function rehydrate(threadId: string, token: number, snapshot = recoverySnapshot(
     .catch(() => undefined);
 }
 
+const promptAsked = new Set<string>();
+
 function reconcile(live: LiveAgent[]) {
   let snapshot: ReturnType<typeof recoverySnapshot> | undefined;
   for (const agent of live) {
     if (agent.status === "stopped" && runs.has(agent.threadId) && !read(agent.threadId).stopped) write(agent.threadId, { stopped: true });
-    if (agent.status !== "running" && agent.status !== "waiting") continue;
+    if (agent.status !== "running" && agent.status !== "waiting") { promptAsked.delete(agent.threadId); continue; }
     if (!read(agent.threadId).sending) adoptForeign(agent.threadId, snapshot ??= recoverySnapshot());
-    if (!read(agent.threadId).pending && typeof agent.prompt === "string" && agent.prompt.trim()) {
-      write(agent.threadId, { pending: { content: agent.prompt, after: 0, params: {} } });
+    if (read(agent.threadId).pending) continue;
+    if (typeof agent.prompt === "string") {
+      if (agent.prompt.trim()) write(agent.threadId, { pending: { content: agent.prompt, after: 0, params: {} } });
+    } else if (!promptAsked.has(agent.threadId)) {
+      promptAsked.add(agent.threadId);
+      void window.shinbo.listAgents().then(reconcile).catch(() => undefined);
     }
   }
   for (const [threadId, run] of runs) {
@@ -402,6 +411,8 @@ export const RUN_ERROR_EVENT = "shinbo:run-error";
 
 export const runOf = (threadId: string): Run => read(threadId);
 
+export const pairingFrom = (threadId: string): number => (settlementFrom.has(threadId) ? settlementFrom.get(threadId) : read(threadId).pending?.after) ?? 0;
+
 export const turnToRetry = (threadId: string): QueuedTurn | null => {
   const run = read(threadId);
   return run.sending ? run.pending : null;
@@ -411,7 +422,7 @@ export function settleRun(threadId: string, messages: Message[], cached: Record<
   const run = read(threadId);
   const settled = run.landed.at(-1);
   if (run.sending || run.foreign || run.queue.length || !settled?.length || run.blocks !== settled) return;
-  const paired = pairBlocks(messages, run.landed, {}, from ?? run.pending?.after ?? 0);
+  const paired = pairBlocks(messages, run.landed, {}, from ?? pairingFrom(threadId));
   if (paired.filter(Boolean).length < run.landed.length) return;
   for (const [at, blocks] of paired.entries()) {
     if (!blocks) continue;
@@ -480,7 +491,8 @@ export function sendTurn(threadId: string, turn: QueuedTurn, reload: () => unkno
 
 const inFlight = (run: Run) => (run.sending && !run.foreign ? 1 : 0);
 
-export const canSteer = (turn: QueuedTurn) => !turn.attached && Object.keys(turn.params).length === 0;
+export const MAX_STEER_CHARS = 4096;
+export const canSteer = (turn: QueuedTurn) => !turn.attached && Object.keys(turn.params).length === 0 && turn.content.length <= MAX_STEER_CHARS;
 
 export function queuedTurns(run: Run) {
   return run.queue.slice(inFlight(run));
@@ -491,6 +503,7 @@ export function dropQueued(threadId: string, index: number) {
 }
 
 export function steerRunning(threadId: string, content: string) {
+  if (content.length > MAX_STEER_CHARS) return Promise.reject(new Error(`A steering message is at most ${MAX_STEER_CHARS.toLocaleString("en-US")} characters; this one is ${content.length.toLocaleString("en-US")}. Trim it, or wait for the turn to end and send it as its own message.`));
   const block: Block = { kind: "notice", text: content, plain: true, steer: true };
   write(threadId, (run) => ({ blocks: [...run.blocks, block] }));
   return window.shinbo.steerAgent({ threadId, text: content }).catch((reason: unknown) => {
@@ -508,7 +521,6 @@ export function steerQueued(threadId: string, index: number) {
   void steerRunning(threadId, turn.content).catch((reason: unknown) => {
     write(threadId, (current) => ({ queue: [...current.queue.slice(0, inFlight(current)), turn, ...current.queue.slice(inFlight(current))] }));
     dispatchEvent(new CustomEvent<RunFailure>(RUN_ERROR_EVENT, { detail: { threadId, text: reasonText(reason) } }));
-    interruptQueued(threadId, 0);
   });
 }
 
@@ -517,7 +529,7 @@ export function interruptQueued(threadId: string, index: number) {
   const at = index + inFlight(run);
   const turn = run.queue[at];
   if (!turn) return;
-  if (run.pending?.prepare) run.pending.cancelled = true;
+  if (run.pending) run.pending.cancelled = true;
   const queue = [...run.queue];
   const [picked] = queue.splice(at, 1);
   queue.splice(inFlight(run), 0, picked);
@@ -527,7 +539,7 @@ export function interruptQueued(threadId: string, index: number) {
 
 export function stopTurn(threadId: string, turn?: QueuedTurn, reload: () => unknown = refresh) {
   const run = read(threadId);
-  if (run.pending?.prepare) run.pending.cancelled = true;
+  if (run.pending) run.pending.cancelled = true;
   write(threadId, {
     queue: [...run.queue.slice(0, inFlight(run)), ...(turn ? [turn] : [])],
     held: [...run.held, ...run.queue.slice(inFlight(run))],
@@ -554,11 +566,13 @@ async function drain(threadId: string, reload: () => unknown) {
   if (draining.has(threadId)) return;
   draining.add(threadId);
   try {
+    let waited = false;
     for (;;) {
       if (read(threadId).sending) return;
       const next = read(threadId).queue[0];
       if (!next) return;
       began(threadId);
+      waited ||= read(threadId).landed.length > 0;
       if (!read(threadId).landed.length) settlementFrom.delete(threadId);
       write(threadId, {
         sending: true, foreign: false, pending: next, stopped: false, activeAt: Date.now(), recovery: "",
@@ -566,6 +580,15 @@ async function drain(threadId: string, reload: () => unknown) {
       });
       let failed = false;
       try {
+        if (waited) {
+          const thread = await window.shinbo.request<Thread>("thread", { threadId }).catch(() => null);
+          if (thread && read(threadId).pending === next) {
+            if (read(threadId).landed.length && !settlementFrom.has(threadId)) settlementFrom.set(threadId, next.after);
+            next.after = thread.messages.length;
+            write(threadId, { pending: next });
+          }
+        }
+        waited = true;
         if (next.prepare) {
           Object.assign(next, await next.prepare());
           delete next.prepare;
@@ -575,11 +598,16 @@ async function drain(threadId: string, reload: () => unknown) {
           write(threadId, (run) => ({ pending: null, held: [next, ...run.held], stopped: true }));
         }
         else {
-          await window.shinbo.request("sendMessage", { threadId, content: next.content, ...next.params });
+          try {
+            await window.shinbo.request("sendMessage", { threadId, content: next.content, ...next.params });
+          } finally {
+            delete next.cancelled;
+          }
           next.delivered?.();
         }
       } catch (reason) {
         failed = true;
+        delete next.cancelled;
         const text = reasonText(reason);
         next.failure = text;
         write(threadId, (run) => ({ pending: null, blocks: [], held: [...run.held, next] }));

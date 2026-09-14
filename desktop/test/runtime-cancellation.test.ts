@@ -40,7 +40,7 @@ function fixture(deps: Partial<LoopDeps> = {}, mode = turn.mode) {
   const harnessTurns = new Map([[turn.threadId, current]]);
   let executed = 0;
   const run = runInNewContext(compiled, {
-    HARNESS_TOOL_NAMES: {}, harnessTurns, agents, toolGate, toolSettings: { disabledTools: [] },
+    HARNESS_TOOL_NAMES: {}, harnessTurns, agents, toolGate, toolSettings: { disabledTools: [] }, mountsCode: async () => false,
     whyUnavailable: () => undefined, parseToolArgs, describeToolCall, OWN_TOOLS, benchReplay,
     executeTool: async () => { executed++; return "inert"; },
   }) as (threadId: string, name: string, args: Record<string, unknown>) => Promise<string>;
@@ -347,7 +347,7 @@ test("setThreadModel puts the phone's pick on the thread, keyed the way the harn
 
 test("setThreadContext keeps a thread's effort only while its model is unchanged", () => {
   const threadContexts = new Map<string, Record<string, unknown>>();
-  const keepThreadContext = lifted("keepThreadContext", { threadContexts });
+  const keepThreadContext = lifted("keepThreadContext", { threadContexts, selectedModel: "", selectedEffort: "" });
   const held = { folderIds: [], mode: "ask", model: "openrouter:anthropic/claude-x" };
 
   threadContexts.set("t", { ...held, effort: "high" });
@@ -375,7 +375,7 @@ for (const channel of ["desktop", "mobile"] as const) {
     const context = { threadId: "t", folderIds: [], mode: "ask", model: "" };
     const threadContexts = new Map<string, Record<string, unknown>>();
     const set = runInNewContext(ts.transpileModule(`(${setter})`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, {
-      agents: f.agents, threadContexts, keepThreadContext: lifted("keepThreadContext", { threadContexts }),
+      agents: f.agents, threadContexts, keepThreadContext: lifted("keepThreadContext", { threadContexts, selectedModel: "", selectedEffort: "" }),
       threadContextRequest: () => context, mainWindowSender() {}, overlay: undefined,
     });
     if (channel === "desktop") set({ sender: { mainFrame: {} } }, context);

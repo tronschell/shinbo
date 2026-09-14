@@ -424,3 +424,8 @@ test("computer use continues past twenty calls until stopped, then the next turn
   await computer.execute(thread, state(), async () => { asked = true; return "allowed" as const; });
   assert.equal(asked, true);
 });
+
+test("a missing helper binary reports how to fix it instead of a raw ENOENT", async () => {
+  enumerate = async () => { throw Object.assign(new Error("spawn /fake/shinbo-computer ENOENT"), { code: "ENOENT" }); };
+  await assert.rejects(runtime().execute(thread, { action: "list_apps" }, allow), /computer helper is not installed; rebuild the native helpers/);
+});

@@ -112,7 +112,7 @@ export function branchPrefixName(prefix: string, name: string): string {
   return stem ? `${stem}/${clean}` : clean;
 }
 
-export type GitReady = "ready" | "no-git" | "no-repo";
+export type GitReady = "ready" | "no-git" | "no-repo" | { error: string };
 
 export type GitFileState = "new" | "modified" | "deleted" | "renamed" | "untracked" | "conflict";
 

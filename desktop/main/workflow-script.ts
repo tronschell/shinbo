@@ -1,6 +1,7 @@
 import { type ChildProcess } from "node:child_process";
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
+import { withoutCredentials } from "./credentials";
 import { isWindows, spawnCommand, windowsPowerShellExecutable } from "./platform";
 import { MAX_VARIABLE_CHARS } from "../shared/workflow";
 
@@ -23,16 +24,17 @@ export async function workflowScriptPath(file: string, roots: string[]): Promise
 
 function executable(script: string): { command: string; args: string[]; env: NodeJS.ProcessEnv } {
   const extension = path.extname(script).toLowerCase();
-  if ([".js", ".cjs", ".mjs"].includes(extension)) return { command: process.execPath, args: [script], env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } };
+  const env = withoutCredentials(process.env);
+  if ([".js", ".cjs", ".mjs"].includes(extension)) return { command: process.execPath, args: [script], env: { ...env, ELECTRON_RUN_AS_NODE: "1" } };
   if (isWindows) {
-    if (extension === ".ps1") return { command: windowsPowerShellExecutable(), args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script], env: process.env };
-    if (extension === ".py") return { command: "python", args: [script], env: process.env };
-    return { command: script, args: [], env: process.env };
+    if (extension === ".ps1") return { command: windowsPowerShellExecutable(), args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script], env };
+    if (extension === ".py") return { command: "python", args: [script], env };
+    return { command: script, args: [], env };
   }
-  if (extension === ".py") return { command: "/usr/bin/env", args: ["python3", script], env: process.env };
-  if (extension === ".sh") return { command: "/bin/sh", args: [script], env: process.env };
-  if (extension === ".zsh") return { command: "/bin/zsh", args: [script], env: process.env };
-  return { command: script, args: [], env: process.env };
+  if (extension === ".py") return { command: "/usr/bin/env", args: ["python3", script], env };
+  if (extension === ".sh") return { command: "/bin/sh", args: [script], env };
+  if (extension === ".zsh") return { command: "/bin/zsh", args: [script], env };
+  return { command: script, args: [], env };
 }
 
 function stop(child: ChildProcess) {

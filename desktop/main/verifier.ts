@@ -4,8 +4,10 @@ import { localDevice } from "../shared/platform-copy";
 
 export { PROHIBITED, defaultVerifierSystem } from "../shared/settings";
 
-const MAX_DETAIL_CHARS = 2_000;
+const MAX_DETAIL_CHARS = 4_096;
 const MAX_REASON_CHARS = 300;
+const VERIFIER_TIMEOUT = 20_000;
+const VERIFIER_MAX_TOKENS = 700;
 
 export type Verdict = { allow: boolean; reason: string };
 
@@ -77,9 +79,37 @@ export type ContentPart =
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string | ContentPart[] };
 
-export async function review(request: VerifierRequest): Promise<VerifierReview> {
-  const verdict = screen(request);
-  return { model: "prohibited-list", prompt: verifierPrompt(request), reply: verdict.reason, verdict, attempts: 1 };
+export function parseVerdict(reply: string): Verdict | undefined {
+  const text = reply.replace(/<(think|thinking|reasoning)>[\s\S]*?(?:<\/\1>|$)/gi, "").trim();
+  const keyed = /"(?:allow|allowed|safe|approved?)"\s*:\s*(true|false)/i.exec(text);
+  if (keyed) {
+    const reason = /"reason"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(text);
+    return { allow: keyed[1].toLowerCase() === "true", reason: clamp(reason?.[1] ?? "", MAX_REASON_CHARS) };
+  }
+  const bare = /^[^A-Za-z]*(allow|approved?|safe|yes|deny|denied|block(?:ed)?|unsafe|no)(?=\s*[^\sA-Za-z0-9]|\s*\n|\s*$)/i.exec(text);
+  if (!bare) return undefined;
+  return { allow: /^(allow|approved?|safe|yes)$/i.test(bare[1]), reason: clamp(text.replace(/\s+/g, " "), MAX_REASON_CHARS) };
+}
+
+export async function review(settings: VerifierSettings, request: VerifierRequest, ask = chatCompletion): Promise<VerifierReview | undefined> {
+  if (!settings.model.trim()) return undefined;
+  const prompt = verifierPrompt(request);
+  const screened = screen(request);
+  if (!screened.allow) return { model: "prohibited-list", prompt, reply: screened.reason, verdict: screened, attempts: 0 };
+  if (request.detail.length > MAX_DETAIL_CHARS) return { model: settings.model, prompt, reply: "", error: `This is ${request.detail.length.toLocaleString()} characters, more than the ${MAX_DETAIL_CHARS.toLocaleString()} a verifier reads in full, so it needs your own review.`, attempts: 0 };
+  const key = settings.credentialEnv ? process.env[settings.credentialEnv]?.trim() ?? "" : "";
+  if (settings.credentialEnv && !key) return { model: settings.model, prompt, reply: "", error: `${settings.credentialEnv} is not stored, so the verifier cannot be reached.`, attempts: 0 };
+  const messages: ChatMessage[] = [
+    { role: "system", content: settings.system },
+    { role: "user", content: `${prompt}\n\nIs it safe to run this now? Answer with one JSON line: {"allow": true or false, "reason": "one sentence"}` },
+  ];
+  try {
+    const reply = await ask(settings, messages, key, { maxTokens: VERIFIER_MAX_TOKENS, timeoutMs: VERIFIER_TIMEOUT, label: "verifier", thinking: true });
+    const verdict = parseVerdict(reply);
+    return { model: settings.model, prompt, reply, verdict, ...(verdict ? {} : { error: "The verifier gave no readable verdict." }), attempts: 1 };
+  } catch (error) {
+    return { model: settings.model, prompt, reply: "", error: error instanceof Error ? error.message : String(error), attempts: 1 };
+  }
 }
 
 export async function chatCompletion(

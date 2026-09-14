@@ -441,7 +441,7 @@ fn writeMatchLine(
 }
 
 fn writeClippedLine(writer: *std.Io.Writer, line: []const u8, max_read_file_line_len: usize) !void {
-    const clipped_len = @min(line.len, max_read_file_line_len);
+    const clipped_len = text_utils.utf8BackwardBoundary(line, max_read_file_line_len);
     try writer.writeAll(line[0..clipped_len]);
     if (line.len > max_read_file_line_len) {
         try writer.writeAll("...");
@@ -821,6 +821,13 @@ fn failingCollectFile(
     _: ?glob_pattern.Pattern,
 ) anyerror!grep_search.Result {
     return error.InjectedScanFailure;
+}
+
+test "grep_files clips long match lines on a utf8 boundary" {
+    var out: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer out.deinit();
+    try writeClippedLine(&out.writer, "abc\u{e9}xyz", 4);
+    try std.testing.expectEqualStrings("abc...\n", out.written());
 }
 
 test "grep_files decodes invalid argument shapes as failures" {

@@ -14,7 +14,7 @@ process.once("message", (request: { file: string; sql: string; params: (null | n
 });
 
 function query({ file, sql, params }: { file: string; sql: string; params: (null | number | string)[] }): Record<string, unknown>[] {
-  const database = new DatabaseSync(file);
+  const database = new DatabaseSync(file, { timeout: 1000 });
   try {
     database.exec("pragma hard_heap_limit = 67108864; pragma temp_store = memory");
     const pageSize = Number((database.prepare("pragma page_size").get() as { page_size?: number } | undefined)?.page_size) || 4096;

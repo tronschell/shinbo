@@ -1548,8 +1548,8 @@ fn isRetryableModelStatus(status: std.http.Status) bool {
 }
 
 const request_too_large_diagnostic =
-    "The request is still too large after older tool results were pruned. " ++
-    "Send another message and Shinbo will compact the thread first.";
+    "The request was still too large after older tool results were pruned, " ++
+    "so Shinbo compacted the thread. Send Continue to pick up where it left off.";
 
 fn isContextOverflowRejection(status: std.http.Status, detail: []const u8) bool {
     if (status == .payload_too_large) return true;

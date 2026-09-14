@@ -64,7 +64,7 @@ the global pointer; screen-context and annotation capture are separate features.
 | Renderer → main | `keepRequest`, `vaultRequest`, `runCommandRequest`, `validJpegDataUrl` | Per-channel shape checks for the channels that do not reach the host |
 | Renderer → main | Component request validation and execution | Fixed public HTTPS destinations, bounded requests/responses, and native approval before credentials are sent; widgets share the renderer and are not isolated identities. See [components.md](components.md) |
 | Main → host | Bounded request reader in [`main.rs`](../crates/host/src/main.rs) | Ordinary requests stay capped at 128 KiB. `recordTrace` allows 6 MiB plus 128 KiB for JSON escaping around the existing 1 MiB trace budget. Oversize lines are refused with the request id recovered, and the next request remains readable |
-| Host → main | serde `deny_unknown_fields` on every params struct | An unknown or misspelled field is an error, not a default |
+| Main → host | serde `deny_unknown_fields` on every params struct | An unknown or misspelled field is an error, not a default |
 | Host → main | `BoundedLines` in [`ndjson.ts`](../desktop/main/ndjson.ts) | 16 MiB per line, UTF-8 fatal decode, `parseHostLine` re-checks every envelope |
 | Harness → main | `BoundedLines` in [`harness.ts`](../desktop/main/harness.ts) | 8 MiB per ACP line; unknown methods answered `-32601` |
 | Model → user's computer | `toolGate` in [`shared/permissions.ts`](../desktop/shared/permissions.ts) | Which tools ask, which run, per permission mode |

@@ -1,7 +1,7 @@
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { FileMark } from "./git";
 import { GlobeIcon } from "./icons";
-import { parseBlocks, type Item, type Row, type Span } from "./markdown-parse";
+import { parseBlocks, type List, type Row, type Span } from "./markdown-parse";
 import { openPreview } from "./preview";
 import { CodeBlock } from "./run-block";
 import { highlightSegments } from "../shared/slash";
@@ -41,7 +41,7 @@ function Picture({ path, alt }: { path: string; alt: string }) {
   }, [path]);
   const source = preview?.path === path ? preview.image : "";
   return <span ref={target}>{source
-    ? <img className="md-image" src={source} alt={alt} title={path} onClick={() => openPreview(path, alt || undefined)} />
+    ? <button type="button" className="md-image-button" aria-label={`Open ${path}`} title={path} onClick={() => openPreview(path, alt || undefined)}><img className="md-image" src={source} alt={alt} /></button>
     : <PathSpan path={path} text={alt} />}</span>;
 }
 
@@ -58,20 +58,20 @@ function Spans({ spans }: { spans: Span[] }) {
     if (span.image && span.path) return <Picture key={index} path={span.path} alt={span.text} />;
     if (span.path) return <PathSpan key={index} path={span.path} text={span.text} />;
     if (span.code) return <code key={index}>{span.text}</code>;
-    if (span.bold) return <strong key={index}>{span.text}</strong>;
+    if (span.bold) return <strong key={index}>{span.italic ? <em>{span.text}</em> : span.text}</strong>;
     if (span.strike) return <del key={index}>{span.text}</del>;
     if (span.italic) return <em key={index}>{span.text}</em>;
     return <TextSpan key={index} text={span.text} />;
   })}</>;
 }
 
-function Items({ ordered, items }: { ordered: boolean; items: Item[] }) {
-  const List = ordered ? "ol" : "ul";
-  return <List>{items.map((item, index) => <li key={index} className={item.checked === undefined ? undefined : "md-task"}>
+function Items({ list }: { list: List }) {
+  const Tag = (list.ordered ? "ol" : "ul") as "ol";
+  return <Tag start={list.ordered && list.start !== 1 ? list.start : undefined}>{list.items.map((item, index) => <li key={index} className={item.checked === undefined ? undefined : "md-task"}>
     {item.checked !== undefined && <input type="checkbox" checked={item.checked} disabled aria-label={item.checked ? "Done" : "Not done"} />}
     <Spans spans={item.spans} />
-    {item.sub && <Items ordered={item.sub.ordered} items={item.sub.items} />}
-  </li>)}</List>;
+    {item.sub?.map((sub, at) => <Items key={at} list={sub} />)}
+  </li>)}</Tag>;
 }
 
 function Cells({ row, head }: { row: Row; head?: true }) {
@@ -90,7 +90,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
       case "code":
         return <CodeBlock key={index} text={block.text} language={block.language} />;
       case "list":
-        return <Items key={index} ordered={block.ordered} items={block.items} />;
+        return <Items key={index} list={block} />;
       case "table":
         return <div key={index} className="md-table"><table>
           <thead><Cells row={block.head} head /></thead>

@@ -43,7 +43,9 @@ would take explicit loopback.
 An imported skill is an inactive reference until a thread attaches it; its
 `SKILL.md` is loaded only on attachment. An imported MCP server is registered
 when the harness builds a session, then launched only when the model first
-searches for or calls an MCP tool.
+searches for or calls an MCP tool. The harness keys servers by name, so when two
+sources define the same name the first source in the manifest wins and the rest
+are skipped with a log line; Settings and the harness see the same one.
 
 Configs and environment values stay in the main process. The renderer receives
 bounded metadata, redacted arguments, and environment **key names** only.
@@ -117,9 +119,13 @@ over one is replaced on the next launch.
 `mirrorSkillsToHarness` copies every visible skill — bundled, imported, written,
 and plugin — into the harness's own `.fx/skills` root, because the harness
 discovers skills from its `$HOME`. Copied, not symlinked; the harness drops
-symlinked skill directories. A skill switched off in Settings is simply not
-written. A missing `name`/`description` frontmatter header is generated from the
-first non-heading line, since the harness's catalog is description-driven.
+symlinked skill directories, though a symlinked source directory (the Vercel
+`skills` CLI layout) is read through. Each copy carries a `.shinbo-mirrored`
+marker; a directory without one is a harness `install_skill` clone, which the
+mirror leaves alone and which shadows a same-named import. A skill switched off
+in Settings is simply not written. A missing `name`/`description` frontmatter
+header is generated from the first non-heading line, since the harness's catalog
+is description-driven.
 
 ## Plugins
 
@@ -186,14 +192,13 @@ manifest `hooks` entry (one path, an array of paths, one inline object, or an
 array of those). Only `"type": "command"` handlers are kept; the three levels
 are event → matcher group → handlers.
 
-Four events run:
+Three events run:
 
 | Event | When |
 | --- | --- |
 | `SessionStart` | A thread's first turn opens a harness session. `matcher` sees `startup` |
 | `UserPromptSubmit` | Immediately before `session/prompt` |
 | `Stop` | When that prompt resolves, with `stop_reason` and `last_assistant_message` |
-| `SessionEnd` | Sessions are dropped: a capability change, a settings change, quit. `matcher` sees `other` |
 
 Every payload also carries `session_id`, `cwd`, `hook_event_name`, `model`,
 `permission_mode`, and `transcript_path: null` — Shinbo keeps no transcript file.
@@ -226,7 +231,7 @@ a second command. `PLUGIN_DATA` is
 `<userData>/plugin-data/<marketplace>/<plugin>/`, created `0700` on first use.
 
 **Ceilings.** 32 hooks per plugin; 10s each unless the hook asks for more, 60s
-at most, 3s at `SessionEnd`; 8 KiB of captured output; 4 KiB of command text.
+at most; 8 KiB of captured output; 4 KiB of command text.
 Hooks on one event start together. A failure is one line in the turn, never a
 stack trace. Each hook gets its own process group and the timeout kills the
 group, not just the shell — `sh -c` forks for anything compound.

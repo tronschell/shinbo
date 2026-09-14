@@ -251,7 +251,7 @@ const LineSelectionState = struct {
             self.budget.bytes += self.records.items.len * (width - self.budget.width);
             self.budget.width = width;
         }
-        const clipped_len = @min(text.len, self.max_line_len);
+        const clipped_len = text_utils.utf8BackwardBoundary(text, self.max_line_len);
         const line_truncated = text.len > self.max_line_len;
         const display_len = clipped_len + if (line_truncated) line_truncated_suffix.len else 0;
         const rendered_bytes = self.budget.bytes + renderedLineBytes(self.budget.width, display_len);
@@ -933,6 +933,24 @@ test "read_file records full coverage for files within both caps" {
     try std.testing.expect(record.model_view_covers_full_file);
     try std.testing.expect(record.snapshot_covers_full_file);
     try std.testing.expectEqualSlices(u8, &read_tracker.contentHash(content), &record.content_hash);
+}
+
+test "read_file clips long lines on a utf8 boundary" {
+    const alloc = std.testing.allocator;
+    var records: std.ArrayList(LineRecord) = .empty;
+    defer freeLineRecords(alloc, &records);
+    const input = Input{ .path = &.{}, .start_line = 1, .line_count = max_line_count };
+    var selection = LineSelectionState{
+        .alloc = alloc,
+        .input = &input,
+        .max_line_len = 4,
+        .records = &records,
+    };
+
+    try selection.keepLine(1, "abc\u{e9}xyz");
+    try std.testing.expect(selection.display_truncated);
+    try std.testing.expectEqualStrings("abc" ++ line_truncated_suffix, records.items[0].text);
+    try std.testing.expect(std.unicode.utf8ValidateSlice(records.items[0].text));
 }
 
 test "read_file display budget tracks line number width growth" {

@@ -75,10 +75,19 @@ test("stopping a thread cancels its descendant asks without answering another th
   assert.equal(await runtime.question(application, { humanOnly: true }), false);
 });
 
-test("finishing, forgetting and stopping all resolve outstanding asks exactly once", async () => {
+test("forgetting a thread leaves a live run's ask pending", async () => {
+  const { runtime, asked, answered } = fixture();
+  const pending = runtime.question(application, { humanOnly: true });
+  runtime.forget(application.threadId);
+  assert.equal(runtime.list()[0]?.status, "waiting");
+  runtime.answer(asked[0].id, true);
+  assert.equal(await pending, true);
+  assert.deepEqual(answered, [{ id: asked[0].id, allowed: true }]);
+});
+
+test("finishing and stopping all resolve outstanding asks exactly once", async () => {
   for (const close of [
     (runtime: AgentRuntime) => runtime.finish(application.threadId),
-    (runtime: AgentRuntime) => runtime.forget(application.threadId),
     (runtime: AgentRuntime) => runtime.stopAll(),
   ]) {
     const { runtime, asked, answered } = fixture();

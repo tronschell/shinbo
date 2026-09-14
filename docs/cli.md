@@ -64,7 +64,7 @@ it.
 
 | | |
 | --- | --- |
-| Finding the binary | macOS uses `/bin/bash -lc command -v <bin>` and caches the result; Windows searches the inherited `PATH` with its executable extensions. The resolved path is handed to every child |
+| Finding the binary | macOS reads the login shell's `PATH` once with `bash -lc 'printf %s "$PATH"'` (`loginShellPath`), then `findExecutable` walks that `PATH` for an executable and caches the hit; Windows searches the inherited `PATH` with its executable extensions. The resolved path is handed to every child |
 | Spawning | `detached: true`, `stdio: ["ignore", "pipe", "pipe"]`, own process group, so Stop takes whatever the CLI forked. macOS uses SIGTERM then SIGKILL after 2 s; Windows uses `taskkill` for the process tree |
 | Pipes, not a pty | Every CLI here has a non-interactive mode. A pty would mean node-pty plus a terminal emulator in the renderer |
 | Output | stdout and stderr merged, capped at `MAX_OUTPUT` 256 KiB, oldest bytes dropped. `terminalText` strips CSI/OSC/two-byte ANSI escapes and applies carriage returns, so a spinner reads correctly. Not an emulator: a CLI that addresses the cursor to redraw a box needs a real one |

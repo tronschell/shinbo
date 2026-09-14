@@ -48,6 +48,8 @@
 
 .message-body .md-image { display: block; max-width: 100%; margin: var(--s-2) 0; border: 1px solid var(--border); cursor: zoom-in; }
 .message-body .md-image:hover { border-color: var(--border-strong); }
+.message-body .md-image-button { display: block; max-width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
+.message-body .md-image-button:focus-visible .md-image { border-color: var(--text-2); outline: 1px solid var(--text-2); }
 
 
 

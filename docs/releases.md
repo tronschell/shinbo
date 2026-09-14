@@ -107,9 +107,10 @@ detaches, and deletes the copy afterwards. The unsigned copy is launched through
 say.
 
 Both then run [`install-smoke.mjs`](../desktop/scripts/install-smoke.mjs), which
-starts the installed binary with a scratch `SHINBO_DATA_DIR` and `--user-data-dir`
-under `RUNNER_TEMP`, reads the real port out of `DevToolsActivePort` because the
-app forces `remote-debugging-port=0`, checks `/json/version` and `/json/list`,
+starts the installed binary with a scratch `SHINBO_DATA_DIR`, `--user-data-dir`
+under `RUNNER_TEMP`, and `SHINBO_REMOTE_DEBUG=1`, reads the real port out of
+`DevToolsActivePort` because a packaged build listens on `remote-debugging-port=0`
+only when that variable is set, checks `/json/version` and `/json/list`,
 requires a page target ending in `dist-renderer/index.html`, evaluates
 `document.querySelector(".app-shell")?.className` over the DevTools WebSocket,
 saves a `Page.captureScreenshot`, and quits the app. Every wait is bounded, and

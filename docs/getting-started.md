@@ -85,8 +85,9 @@ instead of opening one. A packaged app and a dev run share Electron's `userData`
 lock — see [troubleshooting.md](troubleshooting.md).
 
 A three-step walkthrough opens once (**Connect · Permissions · Quick Ask**),
-gated on `shinbo.setupSeen.v1` in `localStorage`. Connect requires a verified
-OpenRouter API key; a free key is enough. Subscription connections are optional
+gated on `shinbo.setupSeen.v1` in `localStorage`. Connect asks for a verified
+OpenRouter API key; a free key is enough, and **Skip for now** on the Connect or
+Permissions step closes setup without one. Subscription connections are optional
 and do not replace OpenRouter.
 
 Permissions shows each grant’s purpose, current status, and system settings
