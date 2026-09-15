@@ -123,8 +123,9 @@ for (const resource of resources) {
   const libraries = output("otool", ["-L", file]).trim().split("\n").slice(1);
   assert.ok(libraries.every((line) => /^\s*\/(?:usr\/lib\/|System\/Library\/)/.test(line)), `Unbundled native dependency: ${file}`);
 }
-run("codesign", ["--force", "--deep", "--sign", "-", app]);
+const identity = process.env.SHINBO_CODESIGN_IDENTITY ?? /Developer ID Application: [^"\n]+/.exec(output("security", ["find-identity", "-v", "-p", "codesigning"]))?.[0] ?? "-";
+run("codesign", ["--force", "--deep", "--sign", identity, app]);
 run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", app]);
 for (const name of ["shinbo-option-tap", "shinbo-computer", "shinbo-pty"]) run(path.join(app, "Contents/Resources", name), ["--self-test"]);
 assert.equal(execFileSync(path.join(app, "Contents/Resources/rg"), ["--pcre2", "--only-matching", "(?<=release-)ready"], { input: "release-ready\n", encoding: "utf8" }).trim(), "ready");
-console.log(`Verified Shinbo ${version}: ${app}`);
+console.log(`Verified Shinbo ${version} signed as ${identity === "-" ? "ad hoc" : identity}: ${app}`);

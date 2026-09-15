@@ -259,6 +259,18 @@ Shinbo follows the custom-tool approach, not a dependency on Codex's private run
 
 ## Verification
 
+On 2026-09-14 the Accessibility recovery path was rebuilt. The shipped 0.9.2 app on the
+owner's Mac was listed as enabled under Privacy & Security → Accessibility yet every
+`get_app_state` was refused: the grant row was pinned to the code hash of an earlier
+ad-hoc build under the same bundle id, and toggling the switch never rekeys it. The
+packaged 0.9.4 build resets such rows at startup and raises the prompt itself when the
+helper is refused. It was launched through `open` against the owner's real Shinbo data:
+startup removed the stale row and wrote one keyed to the Developer ID requirement, and a
+real `gpt-5.6-luna` turn that approved Notes and called `get_app_state` received the
+"macOS is asking for it now" refusal while the system Accessibility dialog appeared, with
+no relaunch. The grant itself is a human toggle and was not automated, so the helper
+restart after the grant was covered by tests only.
+
 On 2026-09-12, an isolated macOS development app rendered the compact indicator
 at 108 × 44 pixels near the top-right corner. Its real preload Stop path closed
 the indicator, unregistered Escape and revoked computer access while the adopted
