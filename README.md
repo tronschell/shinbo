@@ -23,25 +23,95 @@ The name draws on two Japanese words pronounced **shinbō (しんぼう)**: **[�
 
 ---
 
-- **One loop, every surface.** Composer, Quick Ask, quick actions, scheduled jobs — all enter the same interception in Electron main.
-- **A coding agent with the usual verbs.** Files, grep, shell, browser, screen, MCP tools, skills installed mid-turn, work fanned out to subagents.
-- **It drives the CLI you already use.** Claude Code, Codex, Pi, OpenCode, and Cursor run as workers in your working tree.
-- **Every turn is instrumented.** A span tree per run — model requests, tool calls, wall clock, token deltas — appended to the thread's Markdown.
-- **Plain Markdown records.** Threads, task lists, and plans stay on disk; kept notes go into the vault folder you picked.
+Shinbo works with files, shell commands, browsers, and desktop apps. Add tools through MCP and skills, or delegate to Claude Code, Codex, Pi, OpenCode, and Cursor. Threads, tasks, and plans are saved as Markdown on disk.
 
-<img src="desktop/screenshots/workspace-thread.png" alt="Shinbo with a thread open: projects on the left, the Markdown conversation and composer in the middle, and the context bar on the right" width="900">
+<img src="desktop/screenshots/workspace-thread.png" alt="Shinbo workspace with projects, a conversation, and the context bar" width="900">
 
-## Quickstart
+## Get started
 
-Published macOS and Windows builds are distributed through [GitHub Releases](https://github.com/tronschell/shinbo/releases).
-On macOS, open `Shinbo-vX.Y.Z-darwin-arm64.dmg` and drag `Shinbo.app` onto
-Applications. On Windows 10 version 1809 or later on x64, run
-`Shinbo-vX.Y.Z-win32-x64-Setup.exe`; it installs per user and needs no
-administrator prompt. Windows builds are not code signed yet, so SmartScreen
-warns once — click **More info**, then **Run anyway**. Both platforms
-auto-update from the published release. Windows ARM64 packages from source but
-is not a published target. The toolchains below are only needed to build from
-source:
+**[Download for macOS or Windows](https://github.com/tronschell/shinbo/releases)**
+
+- **macOS:** Open the DMG and drag Shinbo into Applications.
+- **Windows:** Run the installer. Builds are unsigned; in SmartScreen, choose **More info → Run anyway**.
+
+Both platforms update automatically. Choose a provider in **Settings → Models** and add your key, or connect a local model.
+
+### Requirements
+
+macOS 12+ on Apple silicon, or Windows 10 version 1809+ on x64. Windows ARM64 is available from source.
+
+## Plans and subagents
+
+<img src="desktop/screenshots/plan-subagents.png" alt="A task plan with dependencies and subagent progress" width="900">
+
+Break a job into steps and run independent work in parallel. Follow each subagent's progress; blocked steps pause the work that depends on them. [Plans and subagents](docs/concepts.md)
+
+## Permissions
+
+Choose how much the agent can do without asking:
+
+| Mode | Behavior |
+|---|---|
+| `ask` (default) | Asks before file writes and commands. |
+| `acceptEdits` | Allows file edits; asks before commands. |
+| `auto` | A verifier reviews gated actions and asks you when it cannot approve. |
+| `full` | Runs tools automatically. |
+
+App access still requires approval in every mode. Subagents inherit your choice. Escape stops a computer run. [Permissions](docs/permissions.md)
+
+## The context bar
+
+<img src="desktop/screenshots/settings-context-bar.png" alt="Context bar settings with draggable components and a live preview" width="900">
+
+Arrange plans, agents, Git status, token usage, and system stats across up to four pages. Inspect model requests, tool calls, and timing for each turn. [Context bar](docs/context-bar.md)
+
+## Self-improvement
+
+<img src="desktop/screenshots/agent-dashboard.png" alt="Agent dashboard showing activity, threads, and subagents" width="900">
+
+Shinbo looks for recurring failures, proposes changes to its instructions or verifier rules, and tests them before keeping them. You can revert a change at any time. [Self-improvement](docs/agents.md)
+
+## Quick Ask
+
+<img src="desktop/screenshots/notch-island.png" alt="Quick Ask around the Mac camera notch" width="820">
+
+<img src="desktop/screenshots/notch-radial.png" alt="Quick actions in a ring around the cursor" width="420">
+
+Double-tap **left Option** on macOS or **left Alt** on Windows to ask from anywhere. Quick Ask sits at the Mac's notch or near the top of a Windows display. Run quick actions with **Command/Ctrl-1/2/3** or the ring at your cursor. [Quick Ask and shortcuts](docs/notch.md)
+
+## Knowledge base
+
+<img src="desktop/screenshots/knowledge-base.png" alt="Knowledge base setup with a vault picker" width="900">
+
+Save answers and attachments to an Obsidian vault or any folder. Shinbo titles and tags each Markdown note. [Knowledge base](docs/knowledge.md)
+
+## Workflows
+
+<img src="desktop/screenshots/scheduled-jobs.png" alt="Workflow editor with prompt, schedule, model, and permissions" width="900">
+
+Schedule recurring work, run it manually, or trigger it from an app event or another job. Add steps and conditions for longer workflows. [Workflows](docs/jobs.md)
+
+## Models
+
+<img src="desktop/screenshots/model-picker.png" alt="Model picker with favorites, context lengths, and thinking controls" width="900">
+
+Use any OpenAI-compatible provider, including local models through Ollama, LM Studio, or llama.cpp. Keys are encrypted using the OS credential store.
+
+**Private routing** requires OpenRouter endpoints with no training and zero retention for the main agent. Secondary models and tools use separate routes; a local chat model alone does not make the app offline. [Models](docs/models.md) · [Privacy and routing limits](docs/privacy.md)
+
+## Terminal
+
+Run the same agent from your terminal:
+
+```bash
+/Applications/Shinbo.app/Contents/Resources/shinbo-cli ask "explain this repository"
+```
+
+On Windows, use `resources/shinbo-cli.exe` in the installed app directory. Run it without arguments for an interactive session. [CLI reference](docs/cli.md)
+
+## Build from source
+
+Install the [required toolchains](docs/getting-started.md#prerequisites), then:
 
 ```bash
 git clone https://github.com/tronschell/shinbo.git
@@ -50,154 +120,23 @@ npm install --prefix desktop
 npm run dev
 ```
 
-On macOS, double-tap the physical **left Option** key to open Quick Ask; on
-Windows, double-tap the physical **left Alt** key. Windows uses **Ctrl** where
-macOS uses **Command** in shortcut labels. Pick a model in **Settings → Models**:
-any OpenAI-compatible endpoint, including a local one (Ollama, LM Studio,
-llama.cpp) for local inference. Optional tools and secondary models have their
-own routes; choosing a local chat model is not an app-wide offline switch. For
-hosted, `export OPENROUTER_API_KEY=…` or paste a key in Settings.
+Electron and React provide the desktop interface, Rust stores the data, and a Zig harness runs the agent loop.
 
-### Requirements
+Read [AGENTS.md](AGENTS.md) before contributing. See the [development guide](docs/development.md) for checks and packaging, and the [release guide](docs/releases.md) for publishing.
 
-| | |
+## Documentation
+
+[All docs](docs/README.md) · [Getting started](docs/getting-started.md) · [Tools](docs/tools.md) · [Architecture](docs/architecture.md) · [Troubleshooting](docs/troubleshooting.md)
+
+## Credits and license
+
+Shinbo's harness is forked from [vercel-labs/fx](https://github.com/vercel-labs/fx) (Apache-2.0, © Vercel, Inc. and fx contributors). See [credits](docs/credits.md) for dependencies and licenses.
+
+Shinbo is [MIT licensed](LICENSE), with separate terms for:
+
+| Component | License |
 |---|---|
-| **OS** | macOS 12 or later on Apple silicon, or Windows 10 version 1809 or later on x64; ARM64 builds from source but is not published |
-| **Node** | 24+ |
-| **Rust** | 1.97.1 (`rust-toolchain.toml` pins it) |
-| **Zig** | 0.16.0 |
-| **Xcode** | macOS only: `clang` builds native helpers; packaging also needs full Xcode's `actool` |
-| **Windows toolchain** | Windows only: LLVM `clang`/`clang++` and Windows SDK import libraries build native helpers; CI packages and publishes the x64 Squirrel installer |
-
-New to the repo? **[docs/getting-started.md](docs/getting-started.md)**
-
-## Plans and subagents
-
-<img src="desktop/screenshots/plan-subagents.png" alt="A thread with the Run tab open in the context bar: a four-step plan drawn as a dependency graph, the current step with its checklist, and empty subagent and sub-thread slots waiting to fill" width="900">
-
-`plan` breaks a job into steps, runs the independent ones as parallel subagents, and keeps the whole graph as one Markdown file it edits as it goes. A step it can't finish stays red and holds everything downstream. → **[docs/concepts.md](docs/concepts.md)**
-
-## Permissions
-
-| Mode | | What it means |
-|---|---|---|
-| `ask` | ◈ | File writes and commands ask first; app access asks once per turn. **Default.** |
-| `acceptEdits` | ◆ | File edits go through; commands and app access still ask. |
-| `auto` | ⬗ | A verifier reads gated calls; anything it won't clear still asks you. App access always asks you. |
-| `full` | ⬥ | Tools run automatically; app access still asks. Escape stops a computer run. |
-
-One table in [`desktop/shared/permissions.ts`](desktop/shared/permissions.ts) decides what each mode advertises *and* what it gates, so the label and the check can't drift. Subagents inherit the mode. → **[docs/permissions.md](docs/permissions.md)** · **[docs/tools.md](docs/tools.md)**
-
-## The context bar
-
-<img src="desktop/screenshots/settings-context-bar.png" alt="Settings → Context bar: page tabs, a list of components to drag in and out of the column, and a live preview of the bar" width="900">
-
-Ten components you arrange across up to four pages: thread stats, the context-window ledger, the turn timeline, the plan graph, subagents, sub-threads, Git, and three readings of one machine sampler. One `Ledger` object feeds them all, so no two readings can disagree. → **[docs/context-bar.md](docs/context-bar.md)**
-
-## Self-improvement
-
-<img src="desktop/screenshots/agent-dashboard.png" alt="The Agent page: live threads, turns asked, subagents spawned and a day streak across the top, then the daily activity strip, threads started, projects over time, and the thread tree" width="900">
-
-The Agent page mines its own traces for repeat failures, drafts one change to the standing instructions or the verifier rules, A/Bs it live, and keeps it only if a replay bench clears both a paired t-test and a sign test. **Revert** never needs evidence. → **[docs/agents.md](docs/agents.md)**
-
-## The notch surfaces
-
-<img src="desktop/screenshots/notch-island.png" alt="Quick Ask open at the notch, wrapping the camera housing" width="820">
-
-<img src="desktop/screenshots/notch-radial.png" alt="The radial command ring orbiting the cursor" width="420">
-
-On macOS, Quick Ask wraps the real camera housing, measured per display; screens
-without one get a calibrated virtual notch. On Windows it appears as a small
-pill near the top of the display. Three quick actions use `Command-1/2/3` on
-macOS and `Ctrl-1/2/3` on Windows, plus a radial ring at the cursor. Either
-surface can be switched off. → **[docs/notch.md](docs/notch.md)**
-
-## Knowledge base
-
-<img src="desktop/screenshots/knowledge-base.png" alt="The knowledge view before a vault is chosen: zero saves and a single button to pick the Obsidian vault or folder Shinbo saves into" width="900">
-
-Point `keep` at an Obsidian vault or any plain folder: one Markdown note per save, attachments alongside, YAML front matter, titled and tagged by a small model. No mirror, no second copy. → **[docs/knowledge.md](docs/knowledge.md)**
-
-## Jobs
-
-<img src="desktop/screenshots/scheduled-jobs.png" alt="The Workflows editor: a new workflow with its prompt, schedule, model, permissions, and advanced steps" width="900">
-
-A job is one validated trigger (cron, `manual`, `after <job-id>`, or an app event) plus a graph of `agent` / `set` / `if` nodes. → **[docs/jobs.md](docs/jobs.md)**
-
-## Models
-
-<img src="desktop/screenshots/model-picker.png" alt="The model picker: the live OpenRouter catalog with context lengths and starred favourites, provider marks, and a thinking slider" width="900">
-
-Any OpenAI-compatible local or hosted endpoint. Keys are encrypted with the OS secure credential store and reach the harness through its spawn environment. **Private routing** requests no-training, zero-retention OpenRouter endpoints for the main agent loop and fails when none qualify. It does not cover secondary models, tools, or your provider account's logging settings. → **[docs/models.md](docs/models.md)** · **[docs/privacy.md](docs/privacy.md)**
-
-## In a terminal
-
-```bash
-/Applications/Shinbo.app/Contents/Resources/shinbo-cli ask "explain this repository"
-```
-
-On Windows, run `resources/shinbo-cli.exe` from the installed app directory.
-
-The same agent, headless. Bare `shinbo-cli` is a REPL in the current directory; `sessions`, `tasks`, and `permissions` are its other subcommands, gated on the tty under the same modes.
-
-## Architecture
-
-```text
-     sandboxed React renderer
-             │  allowlisted IPC
-     Electron main / preload
-             ├─ newline-delimited JSON over stdio
-             │      Rust host ──► shinbo-core ──► Markdown stores
-             └─ Agent Client Protocol over stdio
-                    Zig harness ──► OpenAI-compatible providers and MCP tools
-```
-
-```text
-desktop/        Electron main/preload and React 19 workspace
-crates/core/    Markdown thread and scheduled records
-crates/host/    NDJSON host bridge
-harness/        shinbo-cli, Shinbo's fork of vercel-labs/fx, Apache-2.0
-docs/           Product and architecture contracts
-```
-
-[`harness/`](harness) is a fork of [vercel-labs/fx](https://github.com/vercel-labs/fx), driven over the [Agent Client Protocol](https://github.com/zed-industries/agent-client-protocol). It owns the agent loop, tools, hooks, skills, subagents, and the MCP client. Every turn runs on it — there is no second loop. → **[docs/architecture.md](docs/architecture.md)** · **[docs/harness.md](docs/harness.md)**
-
-## Development
-
-```bash
-npm --prefix desktop run check
-cargo fmt --all -- --check
-cargo check --workspace --locked --all-targets
-cargo test --workspace --locked
-cargo clippy --workspace --locked --all-targets -- -D warnings
-(cd harness && zig build test)
-```
-
-[`AGENTS.md`](AGENTS.md) is the source of truth for anyone — human or agent — changing this repo. `just check`, `just test`, and `just package` wrap the rest; `npm run package:mac` builds macOS and `npm run package:win` builds the current native Windows x64 or ARM64 target.
-
-Release flow: feature branches → `dev` → `main`. PR titles and release summaries
-feed the automatic changelog; the root `package.json` sets the version. Promoting
-a prepared release to `main` checks and packages both platforms, signs,
-notarizes and staples macOS, and publishes one release carrying the macOS disk
-image and zip and the Windows x64 Squirrel installer, package, and `RELEASES`
-feed. Windows publishes unsigned until a code signing certificate is added.
-→ **[Release guide](docs/releases.md)** · **[Development](docs/development.md)**
-
-## Docs
-
-Everything lives in **[`docs/`](docs/README.md)** — [getting started](docs/getting-started.md), [concepts](docs/concepts.md), [architecture](docs/architecture.md), [permissions](docs/permissions.md), [tools](docs/tools.md), [models](docs/models.md), [privacy](docs/privacy.md), [context bar](docs/context-bar.md), [components](docs/components.md), [knowledge](docs/knowledge.md), [notch](docs/notch.md), [voice](docs/voice.md), [terminal](docs/terminal.md), [jobs](docs/jobs.md), [computer use](docs/computer-use.md), [goals](docs/goals.md), [agents](docs/agents.md), [browser](docs/browser.md), [mobile](docs/mobile.md), [CLI](docs/cli.md), [harness](docs/harness.md), [plugins](docs/plugins.md), [design system](docs/design-system.md), [development](docs/development.md), [data](docs/data.md), [credits](docs/credits.md), [troubleshooting](docs/troubleshooting.md).
-
-## Credits
-
-Forked from [vercel-labs/fx](https://github.com/vercel-labs/fx) (Apache-2.0, © Vercel, Inc. and fx contributors) at `580a0c5`. Built on Electron, React, TypeScript, Vite, Tailwind, xterm.js, serde, [ripgrep](https://github.com/BurntSushi/ripgrep), [Departure Mono](https://departuremono.com), and more. Every dependency and its license: **[docs/credits.md](docs/credits.md)**.
-
-## License
-
-MIT — see [`LICENSE`](LICENSE). Subtrees with their own terms:
-
-| | |
-|---|---|
-| `harness/` | Apache-2.0 — [`harness/LICENSE`](harness/LICENSE), [`harness/FORK.md`](harness/FORK.md) |
-| `crates/` | Declares `Apache-2.0` in [`Cargo.toml`](Cargo.toml) |
-| Departure Mono | SIL Open Font License — [`desktop/assets/DepartureMono-LICENSE.txt`](desktop/assets/DepartureMono-LICENSE.txt) |
-| Brand assets | Per [`docs/icon-sources.md`](docs/icon-sources.md) |
+| Harness | [Apache-2.0](harness/LICENSE) · [Fork details](harness/FORK.md) |
+| Rust crates | [Apache-2.0](Cargo.toml) |
+| Departure Mono | [SIL Open Font License](desktop/assets/DepartureMono-LICENSE.txt) |
+| Brand assets | [Asset terms](docs/icon-sources.md) |
