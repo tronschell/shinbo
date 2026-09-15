@@ -580,6 +580,16 @@ function startQuickAskHotkey() {
   let restart = false;
   hotkeyHelper = child;
   sendHoldKeybinds();
+  if (isMac && !systemPreferences.isTrustedAccessibilityClient(false)) {
+    const poll = setInterval(() => {
+      if (!systemPreferences.isTrustedAccessibilityClient(false)) return;
+      clearInterval(poll);
+      restart = true;
+      child.kill();
+    }, 3000);
+    poll.unref();
+    child.once("exit", () => clearInterval(poll));
+  }
   child.stdout?.on("data", (data: Buffer) => {
     try {
       for (const line of lines.push(data)) {
@@ -1155,17 +1165,24 @@ function setupStatus(): SetupStatus {
   };
 }
 
-function resetStaleAccessibilityGrant() {
-  if (systemPreferences.isTrustedAccessibilityClient(false)) return Promise.resolve();
+function resetStaleGrants(): Promise<void> {
+  if (!isMac || !app.isPackaged) return Promise.resolve();
+  const stale = [
+    !systemPreferences.isTrustedAccessibilityClient(false) && "Accessibility",
+    systemPreferences.getMediaAccessStatus("microphone") === "denied" && "Microphone",
+    systemPreferences.getMediaAccessStatus("screen") === "denied" && "ScreenCapture",
+  ].filter((service): service is string => Boolean(service));
   const plist = path.resolve(app.getPath("exe"), "../../Info.plist");
   const bundleId = /<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/.exec(readFileSync(plist, "utf8"))?.[1];
-  if (!bundleId) return Promise.resolve();
-  return new Promise<void>((resolve) => {
-    const reset = spawn("tccutil", ["reset", "Accessibility", bundleId], { stdio: "ignore" });
+  if (!bundleId || !stale.length) return Promise.resolve();
+  return Promise.all(stale.map((service) => new Promise<void>((resolve) => {
+    const reset = spawn("tccutil", ["reset", service, bundleId], { stdio: "ignore" });
     reset.once("error", () => resolve());
     reset.once("exit", () => resolve());
-  });
+  }))).then(() => undefined);
 }
+
+let accessibilityPromptedAt = 0;
 
 const LOADER_ENV = /^(PATH|NODE_OPTIONS|NODE_PATH|npm_config_\w+|(DYLD|LD)_\w+|ELECTRON_RUN_AS_NODE|SHELL|IFS)$/i;
 
@@ -1772,7 +1789,8 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
     }
     case "computer": {
       ensureComputerRun(turn.threadId);
-      const said = await computerRuntime!.execute(turn.threadId, args.args, async (target, signal) => {
+      try {
+        return await computerRuntime!.execute(turn.threadId, args.args, async (target, signal) => {
         const starting = !("pid" in target);
         const answer = await agents!.approval({
           threadId: turn.threadId,
@@ -1784,8 +1802,15 @@ async function executeTool(args: ToolArgs, turn: TurnRequest): Promise<string> {
         }, { humanOnly: true, signal });
         if (answer === "allowed" && !signal.aborted) openRunBanner();
         return answer;
-      });
-      return said;
+        });
+      } catch (error) {
+        if (!isMac || !(error instanceof Error) || !error.message.startsWith("Accessibility permission is required")) throw error;
+        if (Date.now() - accessibilityPromptedAt > 60_000) {
+          accessibilityPromptedAt = Date.now();
+          systemPreferences.isTrustedAccessibilityClient(true);
+        }
+        throw new Error("Accessibility permission is required. macOS is asking for it now: tell the user to turn Shinbo on under System Settings > Privacy & Security > Accessibility, then call get_app_state again. No relaunch is needed.", { cause: error });
+      }
     }
     case "shortcut":
       return await saveShortcutFromTool(args);
@@ -5490,7 +5515,7 @@ if (primaryInstance) app.whenReady().then(() => {
     const mac = isMac;
     if (value === "microphone" && mac && systemPreferences.getMediaAccessStatus("microphone") === "not-determined" && await systemPreferences.askForMediaAccess("microphone")) return;
     if (value === "accessibility" && mac) {
-      await resetStaleAccessibilityGrant();
+      await resetStaleGrants();
       systemPreferences.isTrustedAccessibilityClient(true);
     }
     void shell.openExternal(url);
@@ -6158,7 +6183,7 @@ if (primaryInstance) app.whenReady().then(() => {
   screen.on("display-added", readNotchGeometry);
   screen.on("display-removed", readNotchGeometry);
   screen.on("display-metrics-changed", readNotchGeometry);
-  startQuickAskHotkey();
+  void resetStaleGrants().then(startQuickAskHotkey);
   app.on("activate", openMain);
 });
 

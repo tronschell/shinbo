@@ -53,7 +53,7 @@ Three ways, and they are not interchangeable.
 | --- | --- | --- |
 | **Dev** | `npm run dev` | Builds host + native + main, starts Vite, launches Electron against it. Only `desktop/src/**` hot-reloads |
 | **Prod-ish** | `npm --prefix desktop start` | Same builds, no Vite — Electron runs the built bundle. Closest thing to the shipped app without packaging |
-| **Packaged** | `npm run package:mac` | Release Rust + ReleaseSafe Zig + `electron-packager` → `desktop/release/Shinbo-darwin-arm64/Shinbo.app`. Apple silicon only, unsigned |
+| **Packaged** | `npm run package:mac` | Release Rust + ReleaseSafe Zig + `electron-packager` → `desktop/release/Shinbo-darwin-arm64/Shinbo.app`. Apple silicon only; signed with the `Developer ID Application` identity in your keychain when there is one (or `SHINBO_CODESIGN_IDENTITY`), ad hoc otherwise, so privacy grants survive rebuilds |
 
 First clone:
 

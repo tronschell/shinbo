@@ -5318,7 +5318,7 @@ function SetupDialog({ close }: { close: () => void }) {
           <ControlLesson done={tapped} onDone={() => void showQuickAsk()} />
           <h3>Make Shinbo easy to reach.</h3>
           <p>{IS_WINDOWS ? "Try Quick Ask here, then use the shortcut from another app." : status?.accessibility ? "Accessibility is enabled. Try the shortcut from another app." : "Enable Accessibility in macOS so the shortcut works outside Shinbo. You can also keep using the main window."}</p>
-          {!IS_WINDOWS && !status?.accessibility && <><button className="setup-button" type="button" onClick={() => void window.shinbo.openPrivacySettings("accessibility").catch((reason: unknown) => setError(reasonText(reason)))}>Enable Accessibility ↗</button><small>After granting access, relaunch Shinbo. Setup will resume here.</small></>}
+          {!IS_WINDOWS && !status?.accessibility && <><button className="setup-button" type="button" onClick={() => void window.shinbo.openPrivacySettings("accessibility").catch((reason: unknown) => setError(reasonText(reason)))}>Enable Accessibility ↗</button><small>Setup resumes here once you have granted it.</small></>}
           <button className="setup-button" type="button" disabled={busy} onClick={() => void showQuickAsk()}>Show Quick Ask ↗</button>
         </section>}
         {error && <p className="dialog-error" role="alert">{error}</p>}
