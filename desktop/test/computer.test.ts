@@ -15,6 +15,7 @@ const spawned: { args: string[]; child: EventEmitter & { killed: boolean } }[] =
 let captures = 0;
 let snapshots = 0;
 let cursorEvents: () => unknown[] = () => [];
+let refusal: string | undefined;
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const childProcess: typeof import("node:child_process") = require("node:child_process");
@@ -45,6 +46,10 @@ mock.method(childProcess, "spawn", (_helper: string, args: string[]) => {
         if (child.killed) return;
         if (!apps.some((candidate) => JSON.stringify(candidate) === JSON.stringify(app))) {
           stdout.write(`${JSON.stringify({ ok: false, error: "The approved app instance changed" })}\n`);
+          return;
+        }
+        if (refusal) {
+          stdout.write(`${JSON.stringify({ ok: false, error: refusal })}\n`);
           return;
         }
         for (const event of cursorEvents()) stdout.write(`${JSON.stringify(event)}\n`);
@@ -90,6 +95,7 @@ afterEach(() => {
   opened.length = 0;
   captures = 0;
   cursorEvents = () => [];
+  refusal = undefined;
   resolveReply = (name) => ({ ok: true, app: launchTarget(name) });
   launchReply = (name) => ({ ok: true, app: launchedApp(name), target: launchTarget(name) });
 });
@@ -428,4 +434,16 @@ test("computer use continues past twenty calls until stopped, then the next turn
 test("a missing helper binary reports how to fix it instead of a raw ENOENT", async () => {
   enumerate = async () => { throw Object.assign(new Error("spawn /fake/shinbo-computer ENOENT"), { code: "ENOENT" }); };
   await assert.rejects(runtime().execute(thread, { action: "list_apps" }, allow), /computer helper is not installed; rebuild the native helpers/);
+});
+
+test("an Accessibility refusal drops the helper so the retry starts a fresh process", async () => {
+  const computer = runtime();
+  refusal = "Accessibility permission is required.";
+  await assert.rejects(computer.execute(thread, state(), allow), /^Error: Accessibility permission is required\.$/);
+  assert.equal(spawned.length, 1);
+  assert.equal(spawned[0]!.child.killed, true);
+  refusal = undefined;
+  assert.match(await computer.execute(thread, state(), allow), /Snapshot: /);
+  assert.equal(spawned.length, 2);
+  assert.equal(sent.length, 2);
 });

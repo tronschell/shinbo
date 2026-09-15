@@ -328,7 +328,14 @@ export class ComputerUseRuntime {
       this.check(run);
       this.progress({ ...progress, cursor });
     };
-    const result = await grant.helper!.send(payload, action.action === "get_app_state" ? undefined : report);
+    const helper = grant.helper!;
+    const result = await helper.send(payload, action.action === "get_app_state" ? undefined : report).catch((error: Error) => {
+      if (error.message.startsWith("Accessibility permission is required")) {
+        helper.close(error);
+        grant.helper = undefined;
+      }
+      throw error;
+    });
     this.check(run);
     if (typeof result.text !== "string" || result.text.length > 32768) throw new Error("Invalid computer app state");
     if (action.action === "get_app_state") {
