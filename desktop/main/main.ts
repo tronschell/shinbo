@@ -5514,10 +5514,7 @@ if (primaryInstance) app.whenReady().then(() => {
     const url = privacySettingsUrl(value, process.platform);
     const mac = isMac;
     if (value === "microphone" && mac && systemPreferences.getMediaAccessStatus("microphone") === "not-determined" && await systemPreferences.askForMediaAccess("microphone")) return;
-    if (value === "accessibility" && mac) {
-      await resetStaleGrants();
-      systemPreferences.isTrustedAccessibilityClient(true);
-    }
+    if (value === "accessibility" && mac) systemPreferences.isTrustedAccessibilityClient(true);
     void shell.openExternal(url);
   });
   ipcMain.handle("shinbo:pick-vault-folder", async (event): Promise<VaultChoice | null> => {
